@@ -63,6 +63,18 @@ update the plugin: `claude plugin marketplace update ecology`.
   **/design-qa** (on-demand quality pass), **/ship** (sync → build → deploy →
   public URL), **/request-lego** (file a hub gap)
 
+## Microcopy — every non-editable string
+
+All interface copy the user cannot edit (titles, labels, buttons, card
+summaries, empty states, tooltips, helper text, errors, toasts, column headers
+— and invented mock-data labels) is governed by the repo-local **`microcopy`**
+skill (`.claude/skills/microcopy/`). Load it before writing or editing any
+user-facing string.
+
+Non-negotiable order: **Clarity > Concision > Character.** Front-load. Titles
+60 chars, summaries 160, push 200 — or the component's real limit, whichever is
+tighter. Generate 3+ options and score them; never ship the first draft.
+
 ## Confidentiality
 
 This repo and its deployed site are PUBLIC. Client-sensitive material lives

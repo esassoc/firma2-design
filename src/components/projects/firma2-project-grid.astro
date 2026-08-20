@@ -1,0 +1,302 @@
+---
+// firma2-project-grid — the Projects index: a scannable, searchable, filterable
+// table of every project in the portfolio, with the Stage/Program filter
+// dropdowns, quick search, record-count footer, and CSV export that this
+// spoke's data grids share. Column set follows the open-source ProjectFirma data model
+// (ProjectName, taxonomy tier, lead organization, ProjectStage,
+// ImplementationStartYear, CompletionYear, EstimatedTotalCost) so the screen
+// speaks the product's own language.
+//
+// Search and filters live INSIDE this component rather than beside it: both
+// feed the same AG Grid instance (quick filter and external filter), so
+// splitting them into a sibling section would mean plumbing a gridApi across a
+// component boundary for no gain. Same seam cb-fish-design's grids use.
+//
+// bcn-lego-checked: ecology has NO table/grid/data-grid lego — checked the full
+// node_modules/@esa/ecology/src/components catalog. esa-grid is a
+// documentation-only reference page for Beacon's Angular AG Grid wrapper with
+// no .astro or .ts implementation to import; esa-card/esa-pill/esa-badge are
+// atoms and none render a sortable, filterable tabular surface. Beacon is not
+// cloned on this machine, so tier 2 is unavailable. AG Grid Community is the
+// established tabular surface across this spoke family (cb-fish-design ships it
+// as a direct dependency with the same Theming-API-only setup), and
+// shared/firma2-data-grid-chrome.css is the reusable home for its frame. Every
+// other control here IS a lego: esa-text-field for search, esa-filter-container
+// + esa-filter-dropdown for the Stage and Program filters, esa-button for the
+// CTA and the CSV download, and the Stage cells clone real server-rendered
+// esa-pill markup rather than restyling a chip by hand.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { projects as defaultProjects, programs, STAGE_ORDER, STAGE_TONE } from '../../data/firma2-projects';
+import type { Project } from '../../data/firma2-projects';
+
+interface Props {
+  projects?: Project[];
+}
+
+const { projects = defaultProjects } = Astro.props;
+
+// The dot colour each esa-pill variant paints, so a stage option in the panel
+// reads as the same thing as its pill in the Stage column. All five are the
+// `content-*` (grass/gray step 11) rung of their ramp, so the dots sit at one
+// saturation instead of mixing a solid-fill step in among text steps.
+const TONE_DOT: Record<(typeof STAGE_TONE)[keyof typeof STAGE_TONE], string> = {
+  default: 'var(--color-content-default-tertiary)',
+  info: 'var(--color-content-utility-info)',
+  primary: 'var(--color-content-brand)',
+  success: 'var(--color-content-utility-success)',
+  warning: 'var(--color-content-utility-warning)',
+};
+
+// Stage options in canonical lifecycle order (not alphabetical). Only stages
+// actually present are listed, so the control never offers a filter that
+// returns nothing. There is no "All" entry: in a dropdown an empty selection
+// already IS all, and the trigger stays collapsed until someone wants this
+// dimension.
+const stageOptions = STAGE_ORDER.filter((s) => projects.some((p) => p.stage === s)).map((s) => ({
+  value: s,
+  label: s,
+  color: TONE_DOT[STAGE_TONE[s]],
+}));
+
+// Program options — same convention, derived from the data. No dots: program is
+// a taxonomy tier, not a status, and nothing else on the screen colours it.
+const programOptions = programs.map((p) => ({ value: p, label: p }));
+---
+<section class="firma2-project-grid stack" data-gap="md">
+  <!-- Search and the two filters are ONE row now. The filters are collapsed
+       dropdowns rather than chip rows: every stage and every program used to be
+       on screen permanently, which is a wall of options a reader has to skip
+       past on the way to the table. A trigger spends one word per dimension and
+       only spends the options once someone opens the dimension they actually
+       want. The trigger carries its own accessible name via the lego's `label`
+       prop, so the old visible caption spans are gone with them.
+
+       repel of TWO groups: search + filters cluster at the left, Download CSV
+       at the right. The filters stay INSIDE the left cluster rather than
+       spreading across the row — esa-filter-dropdown's panel is `position:
+       absolute; left: 0` with a 200px min-width and no viewport-edge flip, so a
+       trigger pushed flush against the right content edge opens its panel PAST
+       that edge and widens the document. The download button is the only thing
+       that touches the right edge, and a button has no panel to open. Let a
+       filter drift rightward only once the hub lego flips near an edge.
+
+       size="md" on all of them. sm was tried for compactness — grid chrome is not
+       the page's subject — but the sm rung is not finished across the form
+       family: at sm a text field's label lands on the `-xs` type rung (12px)
+       while a filter dropdown's lands on `-sm` (14px), so two controls sharing
+       this row disagreed by 2px and 12px is under the 13px floor
+       design-principles sets for any text. md is the kit's documented default
+       and the rung where those labels agree natively (15px both). Filed as
+       esassoc/ecology#31. -->
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__controls-filters cluster">
+      <div class="firma2-data-grid__search">
+        <esa-text-field
+          label="Search projects"
+          placeholder="Project, organization, or county"
+          size="md"
+          data-projects-search
+        ></esa-text-field>
+      </div>
+
+      <EsaFilterContainer>
+        <esa-filter-dropdown
+          data-projects-stage-filter
+          name="stage"
+          label="Stage"
+          size="md"
+          multiple
+          placeholder="Search stages"
+          options={JSON.stringify(stageOptions)}
+        ></esa-filter-dropdown>
+        <esa-filter-dropdown
+          data-projects-program-filter
+          name="program"
+          label="Program"
+          size="md"
+          multiple
+          placeholder="Search programs"
+          options={JSON.stringify(programOptions)}
+        ></esa-filter-dropdown>
+      </EsaFilterContainer>
+    </div>
+
+    <!-- sm, then pinned to 40px by firma2-data-grid-chrome.css. An icon-only
+         esa-button is a padding square whose rungs land on 32 / 38 / 46 — none
+         of which is the 40px the filter triggers render at, so no size prop can
+         match this row on its own. sm carries the 16px icon (md's is 20px, which
+         at this box would stop being subordinate to its control), and the
+         stylesheet supplies the last 2px. Unlike the text field, esa-button
+         renders in LIGHT DOM, so that is an ordinary CSS rule rather than a
+         shadow-root injection. -->
+    <EsaButton variant="chrome" iconOnly icon="download" label="Download CSV" size="sm" data-projects-csv />
+  </div>
+
+  <!-- AG Grid mounts here. autoHeight grows with rows so the page (not an inner
+       pane) owns vertical scroll; the wrapper owns the framed surface. -->
+  <div class="firma2-data-grid__grid" data-projects-grid></div>
+
+  <!-- The footer is the record count alone now — export moved up to the control
+       row, where the rest of the actions on this table live. -->
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-projects-count>
+      {projects.length} projects
+    </span>
+  </footer>
+
+  <!-- Real esa-pill markup, server-rendered once per stage and cloned into grid
+       cells, so the status chips in the table ARE the lego rather than a
+       hand-rolled copy of it. removable=false: a stage indicator, not a
+       removable filter chip. All six stages render, including any not currently
+       present in the data, so a newly-created project still finds its pill. -->
+  <div data-projects-badge-templates hidden aria-hidden="true">
+    {STAGE_ORDER.map((s) => (
+      <span data-stage={s}>
+        <EsaPill label={s} variant={STAGE_TONE[s]} size="sm" removable={false} />
+      </span>
+    ))}
+  </div>
+
+  <!-- The no-match empty state, server-rendered once and handed to AG Grid as its
+       overlayNoRowsTemplate. Without this the grid falls back to its OWN built-in
+       "No Rows To Show" — Title Case, not this product's voice, and it names no way
+       out. Copy follows esa-empty-state's contract: the title states what is absent
+       as a fact, the description is one imperative recovery action naming the actual
+       controls on screen. -->
+  <div data-projects-empty hidden aria-hidden="true">
+    <EsaEmptyState
+      size="sm"
+      title="No matching projects"
+      description="Try a different search, or clear the Stage and Program filters."
+    />
+  </div>
+
+  <!-- Row data, serialized so the client module (which imports ag-grid-community)
+       hydrates without a second fetch. -->
+  <script type="application/json" data-projects-data set:html={JSON.stringify(projects)}></script>
+</section>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-filter-dropdown';
+  import { escGridHtml as esc, gridCurrencyFormatter as money, wireDataGrid } from '../shared/grid-chrome';
+  import { STAGE_ORDER } from '../../data/firma2-projects';
+  import type { Project } from '../../data/firma2-projects';
+  import type { ColDef } from 'ag-grid-community';
+
+  /** Lifecycle position, so the Stage column sorts Proposal → Deferred rather than alphabetically. */
+  const stageRank = (s: string): number => {
+    const i = (STAGE_ORDER as readonly string[]).indexOf(s);
+    return i === -1 ? STAGE_ORDER.length : i;
+  };
+
+  function initProjectGrid(root: HTMLElement) {
+    // outerHTML of the element itself, not the wrapper's innerHTML: AG Grid's
+    // overlayNoRowsTemplate takes HTML with a SINGLE root element, and innerHTML
+    // would hand it the surrounding whitespace text nodes as well.
+    const emptyState = root.querySelector<HTMLElement>('[data-projects-empty] > *');
+    const stageFilter = root.querySelector<HTMLElement>('[data-projects-stage-filter]');
+    const programFilter = root.querySelector<HTMLElement>('[data-projects-program-filter]');
+
+    // Pre-clone the real esa-pill markup per stage (server-rendered with the
+    // design-system scope hash) so grid cells reuse the lego verbatim.
+    const pillHTML = new Map<string, string>();
+    root.querySelectorAll<HTMLElement>('[data-projects-badge-templates] [data-stage]').forEach((el) => {
+      pillHTML.set(el.dataset.stage ?? '', el.innerHTML);
+    });
+
+    // Dropdown-driven filters, kept out of AG Grid's own column-filter UI so the
+    // esa-filter-dropdowns stay the single filter surface on this screen. Both
+    // are multi-select: an empty array means "no constraint on this dimension",
+    // which is what the removed "All" chip used to say out loud.
+    let stageValues: string[] = [];
+    let programValues: string[] = [];
+
+    // Only name/organization/county feed quick search — stage and program have
+    // their own dropdowns. defaultColDef opts every column out; these three opt in.
+    const handle = wireDataGrid<Project>({
+      root,
+      gridSelector: '[data-projects-grid]',
+      dataSelector: '[data-projects-data]',
+      searchSelector: '[data-projects-search]',
+      countSelector: '[data-projects-count]',
+      csvSelector: '[data-projects-csv]',
+      countNoun: 'projects',
+      csvFileName: 'projectfirma-projects.csv',
+      suppressCellFocus: true,
+      columnDefs: [
+        // Widths are explicit on every fixed column: AG Grid's `minWidth` is only
+        // a floor, and a column without `width` defaults to 200px, which silently
+        // pushed the last column off-screen at 1280.
+        {
+          headerName: 'Project', field: 'projectName', colId: 'projectName',
+          flex: 2, minWidth: 200, cellClass: 'firma2-grid-name', tooltipField: 'projectName',
+          getQuickFilterText: (p) => p.data?.projectName ?? '',
+        },
+        { headerName: 'Program', field: 'program', colId: 'program', flex: 1, minWidth: 150, tooltipField: 'program' },
+        {
+          headerName: 'Lead organization', field: 'leadOrganization', colId: 'leadOrganization',
+          flex: 1, minWidth: 170, tooltipField: 'leadOrganization',
+          getQuickFilterText: (p) => p.data?.leadOrganization ?? '',
+        },
+        {
+          headerName: 'County', field: 'county', colId: 'county', width: 110,
+          getQuickFilterText: (p) => p.data?.county ?? '',
+        },
+        {
+          headerName: 'Stage', field: 'stage', colId: 'stage', width: 175,
+          headerTooltip: 'Lifecycle order, Proposal through Completed. Deferred means work is paused.',
+          comparator: (a: string, b: string) => stageRank(a) - stageRank(b),
+          cellRenderer: (p: { value: string }) =>
+            `<span class="firma2-grid-status">${pillHTML.get(p.value) ?? esc(p.value)}</span>`,
+        },
+        // Start and completion read as one fact — a span — so they share a
+        // column. Two year columns cost ~90px of width that the truncating
+        // Program and Lead organization columns need more, and sorting on the
+        // underlying start year is what a reader means by "sort by timeline".
+        {
+          headerName: 'Timeline', field: 'implementationStartYear', colId: 'timeline', width: 125,
+          headerTooltip: 'Implementation start to completion.',
+          cellClass: 'firma2-grid-num',
+          valueFormatter: (p) =>
+            p.data ? `${p.data.implementationStartYear}–${p.data.completionYear}` : '',
+        },
+        {
+          headerName: 'Estimated cost', field: 'estimatedTotalCost', colId: 'estimatedTotalCost', width: 150,
+          headerTooltip: 'Total across all years.',
+          cellClass: 'firma2-grid-cost', headerClass: 'firma2-grid-cost-header',
+          valueFormatter: (p) => (typeof p.value === 'number' ? money.format(p.value) : ''),
+        },
+      ] satisfies ColDef[],
+      gridOptions: {
+        // The server-rendered esa-empty-state, reused verbatim — same reason the
+        // Stage pills are cloned rather than re-built: it keeps the lego (and its
+        // scoped styles) as the single source. A JS overlayComponent would mean
+        // re-authoring the lego's markup by hand.
+        overlayNoRowsTemplate: emptyState?.outerHTML,
+        isExternalFilterPresent: () => stageValues.length > 0 || programValues.length > 0,
+        doesExternalFilterPass: (node) =>
+          (stageValues.length === 0 || stageValues.includes(node.data?.stage ?? '')) &&
+          (programValues.length === 0 || programValues.includes(node.data?.program ?? '')),
+      },
+    });
+    if (!handle) return;
+    const { gridApi } = handle;
+
+    // `selection-change` carries the whole selection (an array, because these are
+    // `multiple`), so each handler replaces its dimension's list wholesale — the
+    // dropdown owns the state, this only mirrors it into the grid.
+    const onSelection = (apply: (values: string[]) => void) => (event: Event) => {
+      apply((event as CustomEvent<{ value?: string[] }>).detail?.value ?? []);
+      gridApi.onFilterChanged();
+    };
+    stageFilter?.addEventListener('selection-change', onSelection((v) => { stageValues = v; }));
+    programFilter?.addEventListener('selection-change', onSelection((v) => { programValues = v; }));
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-grid').forEach(initProjectGrid);
+</script>

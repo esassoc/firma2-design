@@ -1,0 +1,321 @@
+---
+// AppLayout — the application chrome every ProjectFirma 2.0 prototype renders
+// inside: top bar with the omnibox and account menu, collapsible sidenav, and a
+// scrolling content region. A thin wrapper over esa-app-shell, the hub's
+// CANONICAL house chrome — this layout contributes the nav model, the search
+// index, and the fixed-height frame the shell needs, and no visual primitives
+// of its own.
+//
+// Use this for prototypes (screens of the product). BaseLayout stays the bare
+// document for anything that is NOT the app — the landing page and the
+// design-system browser, which carry DocsLayout's own chrome instead.
+import BaseLayout from './BaseLayout.astro';
+import EsaAppShell from '@esa/ecology/esa-app-shell.astro';
+import { navItems, searchIndex } from '../data/firma2-nav';
+import { withBase } from '../lib/base';
+
+interface Props {
+  /** Document title. The shell's wordmark is the product name and does not change. */
+  title?: string;
+  /** `key` of the nav item to mark current. */
+  active?: string;
+}
+
+const { title = 'ProjectFirma 2.0', active } = Astro.props;
+
+// The nav model and search index are stored base-less; the base prefix is a
+// render-time concern (dev serves at /, the GitHub Pages build at /firma2-design/).
+// `disabled` is DERIVED from the missing href rather than stored beside it, so
+// the two can never disagree: a route this spoke has not built is a route you
+// cannot go to, and it says so.
+//
+// It has to be `disabled` and not just the absence of an href. esa-sidebar-nav
+// renders an href-less row as an inert <span>, which is genuinely unclickable —
+// but `.link--inert` only sets `cursor: default`, so it LOOKS exactly like a
+// working row. Unavailable and indistinguishable is the worst of both. Setting
+// `disabled` dims the row to opacity 0.5 and takes it out of the pointer and
+// tab order, so the appearance matches the behaviour.
+//
+// Most of the rail is dimmed today because most of the product is unbuilt. That
+// is an accurate picture of a spoke with one working screen, not a styling
+// problem — the dimming recedes on its own as pages land.
+const items = navItems.map((item) => ({
+  ...item,
+  href: item.href ? withBase(item.href) : undefined,
+  disabled: !item.href,
+}));
+const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry.id) }));
+
+// No `mark` is passed: this spoke has no ProjectFirma wordmark or glyph yet, and
+// the brand ramp still points at the hub's default. Inventing a logo for a real
+// product would be worse than the text wordmark the shell falls back to —
+// design-principles wants the identity RESEARCHED, not fabricated.
+---
+<BaseLayout title={title}>
+  <div class="firma2-app-frame">
+    <EsaAppShell
+      title="ProjectFirma 2.0"
+      active={active}
+      items={items}
+      searchIndex={searchEntries}
+      searchPlaceholder="Search projects, organizations, and pages"
+      userName="Dana Whitfield"
+      brandHref={withBase('/')}
+    >
+      <slot />
+    </EsaAppShell>
+  </div>
+</BaseLayout>
+
+<script>
+  // Put the sidebar's collapse control back INSIDE the sidebar.
+  //
+  // esa-sidebar-nav renders its own collapse button (a chevrons toggle in its
+  // header) whenever `collapsible` is true — which is its default. esa-app-shell
+  // deliberately turns it off (`nav.collapsible = false`) so that its own
+  // top-bar button is the single control; that is the hub's baked-in house
+  // decision. This spoke wants the opposite: the control for the rail lives in
+  // the rail. The stylesheet hides the bar button, this restores the native one,
+  // so there is still exactly ONE collapse affordance — it just moved.
+  //
+  // Timing: the shell wires itself synchronously on module evaluation, and
+  // module execution order across component scripts is not guaranteed, so this
+  // waits for the element definition and then defers a frame. By then the
+  // shell's `collapsible = false` has already run and this is the last write.
+  // The rail's collapse control wears the SIDEBAR glyph, not chevrons.
+  //
+  // esa-sidebar-nav hard-codes `chevrons-left` / `chevrons-right` from the icon
+  // registry, and exposes no `part=` and no slot for that button — so there is
+  // no supported way to re-skin it. The registry has no panel/sidebar glyph
+  // either; the one we want exists only as a raw inline SVG inside
+  // esa-app-shell's own (now hidden) bar toggle. This is the same panel mark,
+  // as a mask so it still paints with `currentColor` and keeps every hover and
+  // focus colour the component already defines.
+  //
+  // Delivered as a STYLESHEET appended to the shadow root rather than by
+  // rewriting the button's markup: Lit re-renders that button every time
+  // `collapsed` flips, which would wipe injected markup on the first click. An
+  // adopted stylesheet survives re-render. The button's own aria-label still
+  // swaps between "Collapse sidebar" and "Expand sidebar", so the direction is
+  // announced even though the glyph no longer points.
+  const SIDEBAR_MASK =
+    "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"black\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M9 3v18\"/></svg>')";
+
+  const TOGGLE_GLYPH_CSS = `
+    .toggle > span { display: none; }
+    .toggle::before {
+      content: '';
+      width: var(--icon-size-md, 20px);
+      height: var(--icon-size-md, 20px);
+      background-color: currentColor;
+      -webkit-mask: ${SIDEBAR_MASK} center / contain no-repeat;
+      mask: ${SIDEBAR_MASK} center / contain no-repeat;
+    }
+  `;
+
+  function dressSidebarToggle(): void {
+    document.querySelectorAll<HTMLElement & { collapsible?: boolean }>('esa-sidebar-nav').forEach((nav) => {
+      // The shell sets collapsible = false so ITS bar button is the only
+      // control; this spoke wants the control inside the rail instead, and the
+      // stylesheet hides the bar one. See the <style> block.
+      nav.collapsible = true;
+
+      const root = nav.shadowRoot;
+      if (!root || (root as ShadowRoot & { _firma2Glyph?: boolean })._firma2Glyph) return;
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(TOGGLE_GLYPH_CSS);
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      (root as ShadowRoot & { _firma2Glyph?: boolean })._firma2Glyph = true;
+    });
+  }
+
+  // esa-text-field is TALLER THAN EVERY CONTROL BESIDE IT, at every size.
+  //
+  // Measured control heights, the two legos a filter row is built from:
+  //
+  //     size   esa-text-field .control   esa-filter-dropdown trigger
+  //     xs     31px                      28px
+  //     sm     38px                      32px
+  //     md     46px                      40px      <- the row this spoke uses
+  //     lg     58px                      48px
+  //
+  // They never agree, so a search field next to a filter dropdown is ragged out
+  // of the box. design-principles asks for the opposite in as many words:
+  // "every control sharing a row, bar, or group matches its siblings in rendered
+  // height, font size, and variant. Verify RENDERED output — different
+  // components can resolve different tokens and silently mismatch." This is that
+  // failure exactly.
+  //
+  // No token can reach it: --form-height-* was deleted (2026-08-14) and
+  // --form-padding-* the same week, so a field's height is padding read straight
+  // off --spacing-* with no hook. Hence a literal 40px — not a chosen value but a
+  // MEASURED one, the height esa-filter-dropdown renders at md. Zeroing the
+  // input's block padding lets it centre in the shorter box.
+  //
+  // Scoped to size="md" because that is the rung this spoke's filter rows use;
+  // sm and lg are untouched and still ragged if something adopts them.
+  //
+  // TEMPORARY — belongs upstream. Not yet filed; #31 covers the LABEL half of
+  // the same root cause (one `size` prop mapped onto ramps that disagree).
+  const FIELD_HEIGHT_CSS = `
+    .control { height: 40px; }
+    .input { padding-block: 0; }
+  `;
+
+  function matchFieldHeightToSiblings(): void {
+    document.querySelectorAll('esa-text-field[size="md"]').forEach((field) => {
+      const root = field.shadowRoot;
+      if (!root || (root as ShadowRoot & { _firma2FieldH?: boolean })._firma2FieldH) return;
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(FIELD_HEIGHT_CSS);
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      (root as ShadowRoot & { _firma2FieldH?: boolean })._firma2FieldH = true;
+    });
+  }
+
+  customElements.whenDefined('esa-text-field').then(() => {
+    requestAnimationFrame(matchFieldHeightToSiblings);
+  });
+
+  // The shell wires itself synchronously on module evaluation and module order
+  // across component scripts is not guaranteed, so wait for the definition and
+  // defer a frame — by then the shell's `collapsible = false` has run and this
+  // is the last write.
+  customElements.whenDefined('esa-sidebar-nav').then(() => {
+    requestAnimationFrame(dressSidebarToggle);
+  });
+
+  // Send focus back to the OMNIBOX TRIGGER when the omnibox closes.
+  //
+  // The accessibility contract for a modal is "Esc closes it and focus returns
+  // to the trigger". The shell's omnibox opens on the `/` hotkey as well as on
+  // its button, and `showModal()` restores focus to whatever happened to hold it
+  // before the dialog opened — which, after a click on any dead space in the
+  // content region, is esa-app-shell's own `<main tabindex="0">` scroll pane.
+  //
+  // That restore is PROGRAMMATIC, so Chrome grants it `:focus-visible`, and
+  // @esa/tokens/focus.css then applies its `[tabindex]:focus-visible` rule: a 2px
+  // ring at 2px offset around the ENTIRE content pane. Click empty space, press
+  // `/`, press Escape, and the whole screen is outlined in brand green. It reads
+  // as a rendering fault rather than as a focus indicator, which is precisely
+  // what a focus indicator must never do.
+  //
+  // THE RING IS NOT THE BUG and is deliberately left alone — a keyboard user who
+  // genuinely Tabs to the scroll pane has to be able to see where they are, and
+  // suppressing that indicator is the failure mode check-a11y exists to block.
+  // What is wrong is where focus LANDS, so this corrects the destination.
+  //
+  // Guarded on the restore having actually landed on the pane: opening the
+  // omnibox by clicking its button already returns focus to that button, and
+  // this must not stomp on it.
+  //
+  // TEMPORARY: esa-entity-search should own this in its own close path so every
+  // spoke gets it, rather than each spoke re-deriving it. File as a lego request
+  // and delete this once the hub ships it.
+  function wireOmniboxFocusReturn(): void {
+    document.querySelectorAll<HTMLElement>('esa-entity-search').forEach((omnibox) => {
+      const shell = omnibox.closest('.esa-app-shell');
+      const trigger = shell?.querySelector<HTMLElement>('.esa-app-shell__search');
+      const pane = shell?.querySelector<HTMLElement>('.esa-app-shell__content');
+      if (!trigger || !pane) return;
+
+      // `open` is a reflected Lit property, so the attribute IS the close signal.
+      new MutationObserver(() => {
+        if (omnibox.hasAttribute('open')) return;
+        // The dialog's native restore runs first; correct it a frame later.
+        requestAnimationFrame(() => {
+          if (document.activeElement === pane) trigger.focus();
+        });
+      }).observe(omnibox, { attributes: true, attributeFilter: ['open'] });
+    });
+  }
+
+  customElements.whenDefined('esa-entity-search').then(wireOmniboxFocusReturn);
+</script>
+
+<style>
+  /* esa-app-shell is deliberately layout-agnostic: it fills its parent and only
+     its main region scrolls, so the frame has to own a height. 100dvh rather
+     than 100vh so mobile browser chrome cannot clip the app bar. This is the
+     whole of the layout's CSS — the shell owns every surface inside it. */
+  .firma2-app-frame {
+    height: 100dvh;
+  }
+
+  /* FULL-HEIGHT SIDENAV. esa-app-shell stacks a full-width bar ABOVE a row that
+     holds the nav, so the rail starts below the bar. This spoke wants the rail
+     to own the full viewport height with the bar beside it — a layout variant
+     the shell exposes no prop for, so it is re-flowed here.
+     The nav is a GRANDCHILD of the shell (shell > __body > nav), which a grid on
+     the shell could not place. `display: contents` on __body dissolves that
+     wrapper so the nav, bar, and content all become items of the same grid:
+       col 1 = rail (spans both rows) · col 2 = bar over content.
+     Everything below is placement only — no colour, no spacing, no type. */
+  .firma2-app-frame :global(.esa-app-shell) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .firma2-app-frame :global(.esa-app-shell__body) {
+    display: contents;
+  }
+  .firma2-app-frame :global(.esa-app-shell__nav) {
+    grid-column: 1;
+    grid-row: 1 / 3;
+  }
+  .firma2-app-frame :global(.esa-app-shell__bar) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  /* min-height: 0 so the scroll container can actually shrink inside its track —
+     without it a grid item floors at its content height and the page scrolls
+     instead of the main region. */
+  .firma2-app-frame :global(.esa-app-shell__content) {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 0;
+  }
+
+  /* The sidebar's collapse control belongs to the SIDEBAR. esa-app-shell bakes in
+     the opposite house decision — "the top-bar left corner is the collapse
+     toggle" — which puts the control for the rail outside the rail it collapses.
+     esa-sidebar-nav already ships the in-rail affordance (a chevrons button in
+     its header); the shell just suppresses it with `nav.collapsible = false`.
+     The companion script re-enables it, so this hides the orphaned bar button
+     and leaves exactly one collapse control, inside the thing it controls. */
+  .firma2-app-frame :global(.esa-app-shell__toggle) {
+    display: none;
+  }
+
+  /* Omnibox icon: stop the placeholder from eating it.
+     esa-app-shell lays the search trigger out as a flex row —
+       [ svg ] gap [ .__search-label ] gap [ .__search-kbd ]
+     — and assigns flex to only two of the three. The kbd is `flex: none`, the
+     label is `flex: 1`, and the raw inline <svg> gets nothing, so it keeps the
+     initial `flex-shrink: 1`. The label also carries `white-space: nowrap` with
+     `min-width: auto`, so its automatic minimum size is the WHOLE placeholder
+     string, which it can never give back.
+
+     With a long placeholder that row is over-constrained, and the icon is the
+     only item that can yield, so it absorbs the entire deficit. Measured on this
+     page: content box 314px, label floor 272.23px, kbd 18px, gaps 16px — leaving
+     the icon 7.77px. It collapses to the SAME 7.77px whatever width it is given
+     (a bigger icon just makes the deficit bigger by exactly as much), which is
+     why sizing it alone does nothing at all.
+
+     So both rules are load-bearing: `flex: none` takes the icon out of the
+     shrink pool, and `min-width: 0` lets the label ellipsize — its intended
+     behaviour, since it already asks for `text-overflow: ellipsis` it can never
+     reach. Deliberately NO size override: at its native 16px the icon draws a
+     13px glyph against a 10px text cap, which is right. It only ever looked
+     undersized because it was being crushed, not because 16px is wrong.
+
+     TEMPORARY: filed on the hub as esassoc/ecology#27 — every spoke with a
+     placeholder longer than its omnibox inherits this. Delete once that ships. */
+  .firma2-app-frame :global(.esa-app-shell__search > svg) {
+    flex: none;
+  }
+  .firma2-app-frame :global(.esa-app-shell__search-label) {
+    min-width: 0;
+  }
+</style>

@@ -22,7 +22,17 @@ export interface Prototype {
   status: PrototypeStatus;
 }
 
-export const prototypes: Prototype[] = [];
+export const prototypes: Prototype[] = [
+  {
+    slug: 'projects',
+    title: 'Projects index',
+    description:
+      'Every project in one searchable table, with stage and program filters and CSV export.',
+    route: '/prototypes/projects',
+    createdAt: '2026-08-19',
+    status: 'in-progress',
+  },
+];
 
 /** Newest first — the order the index table renders. */
 export const prototypesByNewest = (): Prototype[] =>
