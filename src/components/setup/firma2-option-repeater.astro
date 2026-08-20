@@ -1,0 +1,552 @@
+---
+// firma2-option-repeater — an add/remove list of NAMED DIMENSIONS, each carrying
+// its own option vocabulary.
+//
+// In Performance Measure setup this collects SUBCATEGORIES: a subcategory named
+// "Habitat type" whose options are Riparian / Wetland / Upland. It is deliberately
+// generic, because every entity setup in this product has some version of the same
+// shape — an organization's contacts, a funding source's grant cycles, a protocol's
+// sampling methods. "A repeating row with a name and a set of values" is the
+// pattern, and this component is that pattern's home. Nothing here knows the word
+// "subcategory": the caller supplies the nouns.
+//
+// COMPOSED, NOT BUILT. The row is two legos and a button:
+//   - esa-text-field  — the dimension's name.
+//   - esa-input-tag   — the option vocabulary. This is the whole reason the
+//     component is cheap: input-tag is already a free-form token multiselect with
+//     Enter-to-add, Backspace-to-remove-last, and a removable × per chip. Writing
+//     "a comma-separated list, but nicer" by hand would have been a worse version
+//     of a lego that already exists and is already tested.
+//   - esa-button (chrome, icon-only) — remove. esa-icon-button was deprecated
+//     2026-08-14 into exactly this call, so this skips the shim.
+// The list, the vacancy state and the add control around them are esa-empty-state,
+// esa-button and layout primitives. There is no bespoke control in this file.
+//
+// `tags-below` on the options field is load-bearing, not cosmetic. Inline chips
+// share the 40px field box with the text cursor, so a vocabulary of six options
+// pushes the place you type off the right edge of its own control. Below the box,
+// the list can be as long as the work requires and the input never moves.
+//
+// ONE SIZE ACROSS THE ROW (md) — and that is not enough on its own, which is the
+// trap this spoke already documents twice. See the CSS and the client script: the
+// two field legos resolve their heights from different rules and land 1–2px apart
+// at the same nominal size, and the icon-only button's md rung is 46px, nowhere
+// near either. All three are pinned to the 40px the rest of the app measured.
+//
+// FOCUS IS THE POINT OF THE SCRIPT. Add and remove both move it deliberately —
+// a keyboard user who presses "Add subcategory" is put in the new name field rather
+// than left on the button they just pressed, and a user who deletes row 2 lands in
+// row 3 rather than on <body>. Removal also destroys typed data with no visible
+// confirmation, so it is announced through the kit's shared announcer; per-component
+// live regions degrade every other region on the page.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+
+export interface RepeaterRow {
+  /** The dimension's name. */
+  name: string;
+  /** Its option vocabulary, in the order reporters see. */
+  options: string[];
+}
+
+interface Props {
+  /** What ONE row is, singular and lowercase — "subcategory". Drives the add button and the empty state. */
+  itemNoun: string;
+  /** Label for the per-row name field — "Subcategory name". */
+  nameLabel: string;
+  /** Label for the per-row options field — "Options". */
+  optionsLabel: string;
+  /** The non-obvious entry mechanic for the options field. Optional. */
+  optionsHint?: string;
+  /** Rows to render initially. Defaults to none. */
+  rows?: RepeaterRow[];
+  /** Empty-state body copy. Optional — derive a sensible default from itemNoun. */
+  emptyText?: string;
+}
+
+const {
+  itemNoun,
+  nameLabel,
+  optionsLabel,
+  // esa-input-tag ships a visually-hidden cue describing the arrow/Enter/Backspace
+  // mechanics to screen readers already. What it cannot do is tell a SIGHTED user
+  // that a typed option is not committed until Enter — so that instruction is the
+  // default, and a caller with a stricter vocabulary can replace it.
+  optionsHint = 'Press Enter after each option.',
+  rows = [],
+  emptyText,
+} = Astro.props;
+
+// The component is generic, so the plural of `itemNoun` is not knowable — and naive
+// +"s" is wrong for two of the nouns this thing is meant to serve ("category" ->
+// "categorys", "address" -> "addresss"). Two rules cover every noun in the product's
+// vocabulary; anything they get wrong is a caller passing a noun that needs `emptyText`.
+function pluralize(noun: string): string {
+  if (/(s|x|z|ch|sh)$/i.test(noun)) return `${noun}es`;
+  if (/[^aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`;
+  return `${noun}s`;
+}
+
+const addLabel = `Add ${itemNoun}`;
+// States what is absent, as a fact — which is all esa-empty-state's title is for.
+const vacancyTitle = `No ${pluralize(itemNoun)} yet`;
+
+// NO DERIVED DEFAULT for `emptyText`, deliberately. esa-empty-state specifies its
+// description as "one imperative recovery action" — and the recovery action here is
+// the "Add <noun>" button sitting directly beneath, in view, already saying those
+// words. A derived default could only be "Add a subcategory.", which is the button
+// read aloud a second time: the duplication the house style bans. Callers with
+// something the title cannot say pass `emptyText` and it renders.
+
+// ONE AUTHORED COPY OF THE ROW.
+//
+// New rows must be identical to server-rendered ones, and the .astro half of the
+// row (the remove button) cannot be constructed from JavaScript — so the client
+// script clones a prototype. The obvious way to supply one is to hand-write the row
+// a second time inside a <template>, which means two copies drifting apart on the
+// first edit. Instead the prototype is rendered by the SAME map as the real rows,
+// as a `hidden` trailing item, and the script lifts it out into a <template> before
+// anything else runs. `hidden` is `display: none`, so it is out of the layout AND
+// out of the accessibility tree — it does not appear in the list's item count — and
+// with JS off it is simply an inert node nobody can see.
+const BLANK: RepeaterRow = { name: '', options: [] };
+const entries = [
+  ...rows.map((row) => ({ row, prototype: false })),
+  { row: BLANK, prototype: true },
+];
+---
+
+<div class="firma2-option-repeater stack" data-gap="md" data-item-noun={itemNoun}>
+  <!-- A <ul>: the rows are a countable set of peers, and the list role is what
+       tells a screen-reader user there are three of these — and which one they are
+       standing in — before they start tabbing through six fields that all share
+       two labels. (A per-row <fieldset>/<legend> was the alternative and was
+       rejected: the legend would have to be an invented visible "Subcategory 1"
+       heading, or a hidden one that AT prepends inconsistently, and the remove
+       button already carries the row's identity in its own name.) -->
+  <ul class="firma2-option-repeater__rows stack" data-gap="lg">
+    {entries.map(({ row, prototype }, index) => (
+      <li
+        class="firma2-option-repeater__row repel"
+        data-gap="sm"
+        data-align="start"
+        hidden={prototype}
+        data-prototype={prototype ? '' : undefined}
+      >
+        <!-- .switcher, not a bespoke two-column grid: the two fields sit side by
+             side while there is room for both and drop to one column below the
+             threshold, which is the entire rule and is already a primitive. -->
+        <div class="firma2-option-repeater__fields switcher" data-gap="sm">
+          <esa-text-field
+            class="firma2-option-repeater__name"
+            label={nameLabel}
+            size="md"
+            value={row.name}
+          ></esa-text-field>
+
+          <!-- The initial options can only be applied as a PROPERTY: `value` on
+               esa-input-tag is an accessor pair, not a declared reactive property,
+               so there is no attribute for it and an array cannot be one anyway.
+               The script reads this JSON back after the element upgrades. -->
+          <esa-input-tag
+            class="firma2-option-repeater__options"
+            label={optionsLabel}
+            help-text={optionsHint}
+            size="md"
+            tags-below
+            data-options={JSON.stringify(row.options)}
+          ></esa-input-tag>
+        </div>
+
+        <!-- The accessible name identifies WHICH row this deletes, and the script
+             keeps it current: the typed name once there is one ("Remove subcategory:
+             Habitat type"), the position until then. Six buttons all announcing
+             "Remove" is a list of six identical destructive controls. -->
+        <EsaButton
+          class="firma2-option-repeater__remove"
+          variant="chrome"
+          size="sm"
+          iconOnly
+          icon="trash-2"
+          label={`Remove ${itemNoun} ${index + 1}`}
+        />
+      </li>
+    ))}
+  </ul>
+
+  <!-- esa-empty-state owns the state itself; this wrapper exists ONLY because the
+       lego takes no pass-through attributes, so `hidden` has nowhere else to live.
+       Hidden rather than absent, because the script has to be able to bring it back
+       when the last row is removed — and `hidden` is `display: none`, so it
+       contributes no gap to the .stack while it waits. -->
+  <div class="firma2-option-repeater__vacancy" hidden={rows.length > 0}>
+    <EsaEmptyState title={vacancyTitle} description={emptyText} size="sm" />
+  </div>
+
+  <!-- Ghost, because adding a row is not the page's primary action — the form's
+       save is. It carries no leading icon: the icon registry ships no "plus", and
+       an add button whose label is the verb does not need one. -->
+  <div class="firma2-option-repeater__add">
+    <EsaButton class="firma2-option-repeater__add-button" variant="ghost" size="md">{addLabel}</EsaButton>
+  </div>
+</div>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-input-tag';
+  // The kit's ONE polite live region, imported rather than re-invented. A region
+  // per repeater (or per row) is not an additive feature — several regions on a
+  // page means some messages are announced twice and others not at all.
+  import { announce } from '@esa/ecology/announcer';
+
+  interface RepeaterRow {
+    name: string;
+    options: string[];
+  }
+
+  // 40px is MEASURED, not chosen here: it is the height the rest of this spoke
+  // already lines its controls up on (src/layouts/AppLayout.astro's
+  // `matchFieldHeightToSiblings`, and src/components/shared/firma2-data-grid-chrome.css).
+  //
+  // The legos do not agree on their own at the md rung. esa-text-field's `.control`
+  // and esa-input-tag's `.container` are both "padding + whatever the line box is",
+  // and the line box is a clamp() — so they drift with the viewport and land 1–2px
+  // apart from each other, side by side, in the same row. AppLayout already patches
+  // esa-text-field, but it does so ONCE at load: rows this component adds later miss
+  // that pass entirely and would render a millimetre taller than their neighbours.
+  // So the patch is re-applied here, per row, with AppLayout's own guard flag so the
+  // two passes can never double-apply.
+  //
+  // TEMPORARY, and it belongs upstream — one `size` prop mapped onto ramps that
+  // disagree is a hub bug, not a spoke decision.
+  const TEXT_FIELD_CSS = `
+    .control { height: 40px; }
+    .input { padding-block: 0; }
+  `;
+  // Safe to fix the height only because `tags-below` puts the chips in a SIBLING of
+  // .container — inline chips would be clipped by this.
+  const INPUT_TAG_CSS = `
+    .container { height: 40px; padding-block: 0; }
+  `;
+
+  // Keyed to the two literal flags rather than a string index signature: an open
+  // Record intersected with ShadowRoot would collapse `adoptedStyleSheets` into an
+  // uninhabitable type, and the whole point of the marker is that it is the SAME
+  // name AppLayout writes.
+  type PatchFlag = '_firma2FieldH' | '_firma2TagH';
+  type Marked = ShadowRoot & Partial<Record<PatchFlag, boolean>>;
+
+  function adopt(host: Element, css: string, flag: PatchFlag): void {
+    const root = host.shadowRoot as Marked | null;
+    if (!root || root[flag]) return;
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(css);
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+    root[flag] = true;
+  }
+
+  /** Resolve once the Lit element has rendered, so its shadow root exists. */
+  function settled(el: Element): Promise<void> {
+    const lit = el as Element & { updateComplete?: Promise<unknown> };
+    return Promise.resolve(lit.updateComplete).then(() => undefined);
+  }
+
+  /**
+   * Height patch + initial option values for one row.
+   *
+   * Both halves have to wait for the element, and for different reasons: the patch
+   * needs a shadow root to exist, and `value` needs the element UPGRADED — setting
+   * an accessor-backed property on a not-yet-upgraded element creates an own
+   * property that shadows the prototype's setter for the rest of its life. Lit
+   * rescues declared reactive properties from that; `value` here is not one.
+   */
+  function dressRow(li: HTMLElement): void {
+    const name = li.querySelector('esa-text-field');
+    if (name) void settled(name).then(() => adopt(name, TEXT_FIELD_CSS, '_firma2FieldH'));
+
+    const options = li.querySelector<HTMLElement & { value?: string[] }>('esa-input-tag');
+    if (!options) return;
+    void settled(options).then(() => {
+      adopt(options, INPUT_TAG_CSS, '_firma2TagH');
+      const raw = options.dataset.options;
+      if (raw == null) return;
+      // Consumed once. Leaving it would re-apply the SERVER's options over anything
+      // the user has since typed, the next time this row is dressed.
+      delete options.dataset.options;
+      try {
+        const parsed = JSON.parse(raw) as string[];
+        if (Array.isArray(parsed) && parsed.length) options.value = parsed;
+      } catch {
+        /* A malformed payload is a caller bug, not a reason to break the row. */
+      }
+    });
+  }
+
+  function sentence(text: string): string {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function init(root: HTMLElement): void {
+    const list = root.querySelector<HTMLElement>('.firma2-option-repeater__rows');
+    const vacancy = root.querySelector<HTMLElement>('.firma2-option-repeater__vacancy');
+    const addButton = root.querySelector<HTMLElement>('.firma2-option-repeater__add-button button');
+    const prototype = list?.querySelector<HTMLElement>('[data-prototype]');
+    if (!list || !vacancy || !addButton || !prototype) return;
+
+    const noun = root.dataset.itemNoun ?? 'item';
+
+    // Lift the prototype row out of the list and into a real <template>. Reading
+    // `outerHTML` off it serializes the LIGHT DOM only — attributes and children,
+    // never the shadow roots the two field legos have already rendered — so what
+    // lands in the template is the pristine markup Astro emitted.
+    prototype.remove();
+    prototype.removeAttribute('hidden');
+    prototype.removeAttribute('data-prototype');
+    const template = document.createElement('template');
+    template.innerHTML = prototype.outerHTML.trim();
+    const blankRow = template.content.firstElementChild;
+    if (!blankRow) return;
+
+    const allRows = (): HTMLElement[] =>
+      Array.from(list.querySelectorAll<HTMLElement>('.firma2-option-repeater__row'));
+
+    function readRows(): RepeaterRow[] {
+      return allRows().map((li) => ({
+        name: (
+          li.querySelector<HTMLElement & { value?: string }>('.firma2-option-repeater__name')?.value ?? ''
+        ).trim(),
+        options: [
+          ...(li.querySelector<HTMLElement & { value?: string[] }>('.firma2-option-repeater__options')?.value ?? []),
+        ],
+      }));
+    }
+
+    /**
+     * Re-derive every remove button's name. Runs on add, on remove, and on every
+     * keystroke in a name field — the position numbers shift when a row is deleted,
+     * and a button named after row 3 that now removes row 2 is worse than one named
+     * by position alone.
+     */
+    function relabel(): void {
+      allRows().forEach((li, index) => {
+        const button = li.querySelector<HTMLElement>('.firma2-option-repeater__remove button');
+        if (!button) return;
+        const typed = (
+          li.querySelector<HTMLElement & { value?: string }>('.firma2-option-repeater__name')?.value ?? ''
+        ).trim();
+        const label = typed ? `Remove ${noun}: ${typed}` : `Remove ${noun} ${index + 1}`;
+        button.setAttribute('aria-label', label);
+        // esa-button sets `title` alongside aria-label for icon-only, which is the
+        // sighted-hover half of the same name. Keep the two saying one thing.
+        button.setAttribute('title', label);
+      });
+    }
+
+    function syncVacancy(): void {
+      vacancy!.hidden = allRows().length > 0;
+    }
+
+    function emitChange(): void {
+      root.dispatchEvent(
+        new CustomEvent('firma2-repeater-change', { detail: { rows: readRows() }, bubbles: true }),
+      );
+    }
+
+    /** Send focus to a row's name field — the field, not the host: esa-text-field
+        forwards `focus()` into its shadow root, so this is one call either way. */
+    function focusName(li: HTMLElement): void {
+      const field = li.querySelector<HTMLElement>('.firma2-option-repeater__name');
+      if (!field) return;
+      void settled(field).then(() => field.focus());
+    }
+
+    function addRow(): void {
+      const row = blankRow!.cloneNode(true) as HTMLElement;
+      list!.appendChild(row);
+      dressRow(row);
+      relabel();
+      syncVacancy();
+      emitChange();
+      // The new row is empty, so there is nothing to announce that landing in it
+      // does not already say. Moving focus is a change of context — out of scope
+      // for SC 4.1.3 and better than a live region every time it is available.
+      focusName(row);
+    }
+
+    function removeRow(li: HTMLElement): void {
+      const index = allRows().indexOf(li);
+      li.remove();
+      const remaining = allRows();
+      relabel();
+      syncVacancy();
+      emitChange();
+
+      // Focus must not fall to <body>. Prefer the row that slid into this position,
+      // fall back to the new last row (this WAS the last row), and only when the
+      // list is empty does the add button take it — which is also the one control
+      // left that does anything.
+      const next = remaining[index] ?? remaining[remaining.length - 1];
+      if (next) focusName(next);
+      else addButton!.focus();
+
+      // Destructive, instant, and it takes typed options with it. Focus alone
+      // cannot report a deletion — it reports an arrival.
+      announce(
+        remaining.length
+          ? `${sentence(noun)} removed. ${remaining.length} left.`
+          : `${sentence(noun)} removed.`,
+      );
+    }
+
+    list.addEventListener('click', (event) => {
+      const trigger = (event.target as Element | null)?.closest('.firma2-option-repeater__remove');
+      const li = trigger?.closest<HTMLElement>('.firma2-option-repeater__row');
+      if (li) removeRow(li);
+    });
+
+    // Delegated: `input` from esa-text-field's inner control and `change` from
+    // esa-input-tag are both composed, so they cross the shadow boundary and arrive
+    // here. One listener covers rows that do not exist yet.
+    const onEdit = (): void => {
+      relabel();
+      emitChange();
+    };
+    list.addEventListener('input', onEdit);
+    list.addEventListener('change', onEdit);
+
+    addButton.addEventListener('click', addRow);
+
+    allRows().forEach(dressRow);
+    relabel();
+    syncVacancy();
+
+    /**
+     * Replace every row from the outside. The counterpart to readRows(), and the
+     * reason it exists: a host that restores saved state (this spoke's local
+     * measure drafts) has the rows in hand but no way to put them back, because
+     * rows are built here from a cloned prototype and nowhere else.
+     *
+     * It reuses addRow()'s exact construction path — clone, seed, dress — rather
+     * than building rows a second way, so a restored row and a typed one are the
+     * same markup. `data-options` is the SAME channel the server render uses, and
+     * dressRow() consumes it once, so the options land through one mechanism in
+     * both directions.
+     *
+     * IT EMITS, AND THE TIMING IS THE WHOLE POINT. dressRow() applies the option
+     * vocabulary ASYNCHRONOUSLY — it has to wait for esa-input-tag to upgrade,
+     * because `value` is an accessor and writing it early creates an own property
+     * that shadows the setter forever. So for a tick after this function returns,
+     * every restored row reads back with its NAME and an EMPTY option list.
+     *
+     * A caller that restores rows and then reads them immediately therefore sees
+     * half-built rows and acts on them. That is not hypothetical: it shipped, and
+     * a saved subcategory came back visible in the rail while the reporting-form
+     * preview showed no grid at all, because the preview had been told about a
+     * subcategory with zero options and correctly filtered it out.
+     *
+     * So the announcement waits for every option field to settle, and then one
+     * more frame — the frame is not superstition. Each settle is a SEPARATE
+     * promise, so dressRow's `.then` and this one are not ordered against each
+     * other by registration; rAF runs after all microtasks and is what guarantees
+     * the values are actually on the elements before anyone is told to read them.
+     *
+     * Deliberately does NOT move focus. addRow() focuses because a person asked
+     * for an empty row and needs to be in it; a restore happens on load, where
+     * stealing focus is a change of context nobody requested.
+     */
+    function setRows(next: RepeaterRow[]): void {
+      allRows().forEach((li) => li.remove());
+      const optionFields: Element[] = [];
+      for (const entry of next) {
+        const li = blankRow!.cloneNode(true) as HTMLElement;
+        const name = li.querySelector('esa-text-field');
+        // The attribute, not the property: the element in a detached clone has
+        // not upgraded yet, so a property write would be shadowed by Lit's own
+        // accessor the moment it does. The attribute survives the upgrade.
+        if (name) name.setAttribute('value', entry.name);
+        const options = li.querySelector<HTMLElement>('esa-input-tag');
+        if (options) {
+          options.dataset.options = JSON.stringify(entry.options);
+          optionFields.push(options);
+        }
+        list!.appendChild(li);
+        dressRow(li);
+      }
+      relabel();
+      syncVacancy();
+
+      void Promise.all(optionFields.map((field) => settled(field))).then(() => {
+        requestAnimationFrame(() => emitChange());
+      });
+    }
+
+    // Read-out for the caller: `repeater.readRows()` returns the current state as
+    // RepeaterRow[], and every edit also fires `firma2-repeater-change` with the
+    // same payload. Named, not `change` — a bare `change` would collide with the
+    // ones the field legos are already bubbling through this element.
+    (root as HTMLElement & {
+      readRows?: () => RepeaterRow[];
+      setRows?: (rows: RepeaterRow[]) => void;
+    }).readRows = readRows;
+    (root as HTMLElement & { setRows?: (rows: RepeaterRow[]) => void }).setRows = setRows;
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-option-repeater').forEach(init);
+</script>
+
+<style>
+  /* .stack is the layout engine; this only strips the list chrome that came with
+     choosing <ul> for its semantics. No spacing here — data-gap owns that. */
+  .firma2-option-repeater__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* .repel puts the remove button at the far end of the row. The fields take the
+     slack, with a basis wide enough that a row wraps its button underneath before
+     the two fields get squeezed into unusable widths. */
+  .firma2-option-repeater__fields {
+    flex: 1 1 24rem;
+  }
+
+  /* THE REMOVE BUTTON IS ALIGNED TO THE FIELD BOX, NOT THE ROW.
+     data-align="start" tops the button out level with the field LABELS, which is
+     one label-height too high. This is that height, expressed in the same tokens
+     the label itself resolves — so it tracks the font-size clamp across the
+     viewport instead of freezing a desktop measurement into a magic number.
+     (--form-label-gap is esa-text-field's label-to-control gap; esa-input-tag
+     spends the same 4px rung on its .field gap.)
+     Assumes a one-line label, which is what a field label should be.
+
+     Anchored on __row and reaching through :global() because the class here sits
+     on esa-button's WRAPPER, which the lego renders — this file's scope attribute
+     is on the <li>, which is the nearest element it can be certain of. */
+  .firma2-option-repeater__row :global(.firma2-option-repeater__remove) {
+    margin-block-start: calc(
+      var(--typography-label-md-font-size, 0.9375rem) * var(--typography-label-md-line-height, 1.6) +
+        var(--form-label-gap, 0.25rem)
+    );
+  }
+
+  /* Pinning the box, not restyling the lego — the same correction, for the same
+     reason, as .firma2-data-grid__controls in src/components/shared/firma2-data-grid-chrome.css:
+     an icon-only esa-button steps 32 / 38 / 46 and never touches the 40px the
+     fields sit at. sm is the nearest rung and carries the correctly subordinate
+     16px glyph, so it is pinned the remaining 2px rather than jumping to md's
+     46px box. Width is set alongside height so the square cannot depend on which
+     of the two aspect-ratio resolves first. */
+  .firma2-option-repeater__row :global(.firma2-option-repeater__remove .esa-button__native) {
+    height: 40px;
+    width: 40px;
+  }
+
+  /* The one colour in the component, and it is on a destructive control's hover —
+     the trash glyph says what the button does, this confirms it at the moment of
+     commitment. chrome takes its resting colour from context, so the row stays
+     neutral until you reach for it. */
+  .firma2-option-repeater__row :global(.firma2-option-repeater__remove .esa-button__native:hover),
+  .firma2-option-repeater__row :global(.firma2-option-repeater__remove .esa-button__native:focus-visible) {
+    color: var(--color-content-utility-danger, #ce2c31);
+  }
+</style>

@@ -1,0 +1,261 @@
+---
+// firma2-project-funding — the "who is paying for this" section of the project
+// detail page: every funding source behind the project, what each contributes,
+// and the sum, which is the project's estimated total cost.
+//
+// THE AMOUNTS ARE GIVEN, NOT DERIVED. firma2-project-detail.ts builds funding so
+// the sources sum to estimatedTotalCost to the dollar (every source but the last
+// rounds to $500; the last absorbs the remainder). So this component renders the
+// authored total rather than re-adding the column: summing here would produce a
+// second source of truth that agrees today and drifts the first time the data
+// module changes its rounding. The one thing that IS computed here is how the
+// SHARE percentages round for display — see PERCENTAGES below.
+//
+// WHY A PLAIN <table> AND NOT AG GRID. This spoke's precedent for tabular data is
+// AG Grid with the full standard chrome (src/components/shared/grid-chrome.ts,
+// firma2-data-grid-chrome.css) — search, filters, CSV export, record count. That
+// precedent is for the PORTFOLIO table, hundreds of rows a user has to hunt
+// through. Two or three funders on a detail page is a set the eye takes in whole:
+// there is nothing to search, nothing to filter, nothing worth exporting, and a
+// record count would be counting to three. Wrapping that chrome around three rows
+// costs a grid runtime and a toolbar and buys the reader nothing, so the scale
+// is what makes the precedent not apply, not a disagreement with it.
+//
+// NO PROGRESS BAR IN THE SHARE COLUMN, DELIBERATELY. esa-progress-bar exists and
+// would render a share as a proportional bar — but the performance-measures
+// section of this same page is already using progress bars, where a bar means
+// "how far along toward a target". A funding share is not progress toward
+// anything; it is one slice of a whole that is already fully committed. Same
+// visual, two meanings, one screen, and the reader has to work out which is which
+// on every glance. The percentages carry the fact on their own, and polish is
+// subtractive — so the column is numbers.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import '../shared/firma2-card-section.css';
+// NOT esa-icon-button: as of 2026-08-14 that lego is a deprecated shim that
+// forwards to exactly this and console.warn()s on every build. Going straight to
+// the button keeps the build quiet and matches where the hub landed.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import type { FundingSource } from '../../data/firma2-project-detail';
+
+interface Props {
+  /** The project's funding sources, in the order the data module authored them. */
+  funding: FundingSource[];
+  /**
+   * The project's estimated total cost. Equals the sum of `funding` amounts by
+   * construction — passed in rather than re-added here (see the note above).
+   */
+  estimatedTotalCost: number;
+}
+
+const { funding, estimatedTotalCost } = Astro.props;
+
+// Whole dollars: these are budget figures, not ledger entries, and cents on a
+// $1.2M grant are noise in every column they appear in.
+//
+// Imported from src/lib/format.ts, NOT from shared/grid-chrome.ts. grid-chrome
+// exports the identical Intl.NumberFormat, but its module imports
+// ag-grid-community at the top level AND calls ModuleRegistry.registerModules()
+// as an import side effect, so reading one formatter off it would pull the whole
+// grid runtime into this page's build graph for four lines of number formatting.
+// format.ts is the dependency-free home; grid-chrome re-exports from it under
+// the old grid-prefixed names, so the grids are unaffected.
+import { currencyFormatter as currency } from '../../lib/format';
+
+// PERCENTAGES — largest-remainder rounding, so the column always sums to 100.
+//
+// The underlying shares are exact (each is amount / total, and the amounts sum to
+// the total), so the true shares sum to 1. Rounding each one independently to a
+// whole percent does not preserve that: 45.4 + 33.4 + 21.2 renders as 45 + 33 + 21
+// = 99, under a footer that says 100%, and the table looks broken even though the
+// data is right. Largest remainder floors every value and hands the leftover
+// points to the entries with the biggest fractions, so what the reader adds up is
+// what the total row claims. This changes only how the numbers are DISPLAYED —
+// the amounts are untouched.
+const rawPercents = funding.map((source) => source.share * 100);
+const percents = rawPercents.map(Math.floor);
+// Guarded on length: with no sources the leftover would be a full 100 points to
+// hand out and the distribution loop would index an empty array and throw at
+// build time. The data module never authors an empty list, but a section that
+// takes down the build rather than rendering nothing is the wrong failure.
+const leftover = funding.length > 0 ? 100 - percents.reduce((sum, whole) => sum + whole, 0) : 0;
+// Sort is stable, so equal fractions keep the data module's authored order and
+// the same input always renders the same output.
+const byRemainder = rawPercents
+  .map((percent, index) => ({ index, fraction: percent - Math.floor(percent) }))
+  .sort((a, b) => b.fraction - a.fraction);
+for (let i = 0; i < leftover; i += 1) {
+  percents[byRemainder[i % byRemainder.length].index] += 1;
+}
+
+// The table needs an accessible name. esa-card renders its title as an <h3> with
+// no id, so there is nothing to point aria-labelledby at without taking over the
+// whole header slot — which would mean re-implementing the header the other five
+// sections get for free. A <caption> is the table's own naming mechanism anyway,
+// and it is visually hidden because printing "Funding sources" directly under a
+// card header that already says "Funding sources" is text about the page.
+---
+<EsaCard title="Funding sources">
+  <!-- ADD, not edit. This section is a COLLECTION, and that is what separates
+       it from Basics and Description: those hold scalar values, so each one got
+       a per-field affordance that appears on hover and edits in place, and their
+       section pencils went away. A set has no single field to hover — you add to
+       it, remove from it, reorder it — so the section keeps one control and it
+       names the act it actually performs. "Edit <section>" was the old pencil's
+       label and it was vague about which of those it meant.
+
+       `size="sm"` is not a local taste call — it is the size every section's
+       header control renders at, and the card headers down this page have to
+       agree exactly in height. Change it here only if it changes in all of them.
+
+       Still inert: nothing is wired behind it yet. It is a real, enabled
+       <button> so the eventual handler has somewhere to land, and deliberately
+       not `disabled` — disabled claims the action is unavailable to THIS user,
+       which is a different and false statement. Per-row editing and removal
+       inside this section are not built yet. -->
+  <EsaButton slot="actions" variant="chrome" size="sm" icon="plus">Add source</EsaButton>
+
+  <!-- bcn-lego-checked: no esa- lego renders a table. Walked the full catalog at
+       node_modules/@esa/ecology/src/components/ — there is no esa-table, and the
+       nearest candidates do not fit: esa-card/esa-stat hold one figure each and
+       would turn four columns of parallel data into three stacked boxes that lose
+       the alignment doing the work; esa-link-column is a list of links; esa-chart
+       plots a series and cannot show the administering organization or the exact
+       dollars. Beacon is not cloned on this machine, so tier 2 was skipped.
+       AG Grid is this spoke's tabular precedent but is scoped to the portfolio
+       table (reasons in the frontmatter). A native <table> IS the semantic
+       primitive here — real <th scope> headers are what make the amounts
+       navigable — so the honest answer is markup, not a component. It stays a
+       one-off rather than a bcn-table because a reusable table lego is a hub
+       concern, filed as a /request-lego candidate, not something to invent in a
+       spoke off a single three-row use. -->
+  <table class="firma2-project-funding">
+    <caption class="visually-hidden">Funding sources</caption>
+    <thead>
+      <tr>
+        <th scope="col" class="typography-label-md-strong">Source</th>
+        <!-- "Administered by", not "Agency" or "Organization": the funders are a
+             mix of boards, trusts and alliances, and a Local Sponsor Match is
+             administered by the project's own lead organization. The relationship
+             is the fact worth naming; the entity type is not. -->
+        <th scope="col" class="typography-label-md-strong">Administered by</th>
+        <th scope="col" class="firma2-project-funding__num typography-label-md-strong">Amount</th>
+        <!-- "Share of total" rather than "Share" — it names the denominator, so
+             the percentage is readable before the reader reaches the total row. -->
+        <th scope="col" class="firma2-project-funding__num typography-label-md-strong">Share of total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {funding.map((source, index) => (
+        <tr>
+          <!-- The funder names the row, so it is a row header, not a cell: it is
+               what a screen reader reads back to place you when you arrow across
+               into the amount. -->
+          <th scope="row">{source.name}</th>
+          <td>{source.organization}</td>
+          <td class="firma2-project-funding__num">{currency.format(source.amount)}</td>
+          <td class="firma2-project-funding__num">{percents[index]}%</td>
+        </tr>
+      ))}
+    </tbody>
+    <tfoot>
+      <tr>
+        <!-- Named for what the sum IS, not that it is a sum. "Total" would only
+             tell the reader the column was added up, which they can see; naming
+             it the estimated total cost says the committed funding covers the
+             project's estimate — the fact the section exists to deliver. -->
+        <th scope="row" colspan="2" class="typography-label-md-strong">Estimated total cost</th>
+        <td class="firma2-project-funding__num typography-label-md-strong">{currency.format(estimatedTotalCost)}</td>
+        <td class="firma2-project-funding__num typography-label-md-strong">100%</td>
+      </tr>
+    </tfoot>
+  </table>
+</EsaCard>
+
+<style>
+  /* No .stack or .grid here: the card body holds exactly one child and a table
+     lays itself out. A layout primitive wrapping a single element would be
+     spacing nothing against nothing. */
+  .firma2-project-funding {
+    width: 100%;
+    /* Collapsed so each row is separated by ONE hairline rule rather than a pair
+       of adjacent borders — the doubled line reads as a heavier band than the
+       token intends and makes a quiet table look striped. */
+    border-collapse: collapse;
+    /* Deliberately `auto`: the two text columns need to absorb long grant and
+       agency names ("Watershed Resilience Grant Program", "California Watershed
+       Restoration Board") by wrapping. That wrapping is what removes the need for
+       a horizontally scrolling wrapper at narrow widths — and a scroll container
+       would have to be focusable to be keyboard-operable, which is a whole extra
+       tab stop bought for four columns. */
+    table-layout: auto;
+    /* Type is inherited from esa-card's body (.typography-body-md). Not downshifted
+       to body-sm: at the small end of the fluid scale that lands under the 14px
+       dense floor, and three rows are not dense enough to need it. */
+  }
+
+  /* Header cells carry `typography-label-md-strong` in the MARKUP — the same
+     rung as the body text beside them, at label weight. The weight used to be a
+     raw --font-weight-semibold here, which is the adoption debt the composites
+     exist to retire: a weight on its own is an ingredient, not a role, and
+     assembling type out of ingredients is how a surface drifts off the scale.
+     Only colour is left for CSS, because no composite carries colour. */
+  .firma2-project-funding thead th {
+    color: var(--color-content-default-secondary, #646464);
+    /* The rule under the header band is the one structural line in the table;
+       everything else is a hairline between rows. */
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  .firma2-project-funding th,
+  .firma2-project-funding td {
+    /* Text left, always — the funder and the agency are strings, and centring
+       either would break the left edge the eye scans down. */
+    text-align: start;
+    vertical-align: baseline;
+    padding-block: var(--spacing-200, 0.5rem);
+    padding-inline: var(--spacing-300, 0.75rem);
+  }
+
+  /* The outer columns lose their outer padding so the table's text aligns with
+     the card header's text above it. Without this the table sits visibly inset
+     from its own title. */
+  .firma2-project-funding th:first-child,
+  .firma2-project-funding td:first-child { padding-inline-start: 0; }
+  .firma2-project-funding th:last-child,
+  .firma2-project-funding td:last-child { padding-inline-end: 0; }
+
+  .firma2-project-funding tbody th {
+    /* A row header is a label for its row, not a heading shouting over it — same
+       weight as the data beside it, so the row reads as one line of facts. */
+    font-weight: inherit;
+  }
+
+  .firma2-project-funding tbody tr + tr th,
+  .firma2-project-funding tbody tr + tr td {
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  /* Numeric columns: right-aligned so place values stack, tabular figures so the
+     digits sit in fixed-width cells and $1,240,000 lines up under $985,500
+     column by column. `nowrap` because a dollar figure broken across two lines
+     is unreadable — the text columns do the wrapping instead. The header cell
+     carries the same class so it follows its column's alignment. */
+  .firma2-project-funding__num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    /* Shrink-to-fit against `table-layout: auto` — the 1% is not a real width,
+       it is the standard way to tell auto layout "take only what the content
+       needs", which hands the leftover space to the two wrapping text columns. */
+    width: 1%;
+  }
+
+  .firma2-project-funding tfoot th,
+  .firma2-project-funding tfoot td {
+    /* The total is separated from the rows it sums by a full-strength rule — the
+       same weight as the header's, so the body reads as bracketed between them.
+       Weight is what marks it as the total; no fill, no tint. Containers stay
+       neutral, and a shaded footer on a three-row table is decoration. */
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+</style>

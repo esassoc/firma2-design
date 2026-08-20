@@ -1,0 +1,224 @@
+---
+// firma2-project-timeline — the project's milestones, oldest first: the dated
+// events a program manager uses to answer "where is this in its life?" without
+// reading the whole record. Scoping and permitting, then construction, then the
+// monitoring that outlives it.
+//
+// bcn-lego-checked: there is NO timeline lego. `ls node_modules/@esa/ecology/src/
+// components/` (67 files, checked 2026-08-20) has no esa-timeline, esa-stepper,
+// esa-steps or esa-progress-list; esa-progress-bar is a single ratio, not a dated
+// sequence, and esa-pagination's step dots are a control, not a record. Beacon is
+// not cloned on this machine, so tier 2 could not be walked. What IS composed from
+// legos is everything inside the shell: esa-card is the section surface, esa-button
+// (chrome/iconOnly — esa-icon-button is a deprecated shim over it) is the header
+// affordance, and esa-icon draws all three status markers. The bespoke part is
+// exactly one thing — the three-column subgrid that keeps the date column aligned
+// down the list — and no layouts.css primitive can do that: `.cluster` and `.repel`
+// are flex, so every row would size its own date and the column would go ragged,
+// and `.grid` is an auto-fit track generator for equal cards, not a row template.
+// firma2-project-timeline is the reusable home for it (see the note at the bottom
+// on promoting it to the hub).
+import EsaCard from '@esa/ecology/esa-card.astro';
+import '../shared/firma2-card-section.css';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import type { Milestone } from '../../data/firma2-project-detail';
+
+interface Props {
+  /** Chronological, oldest first — the order buildMilestones() emits. */
+  milestones: Milestone[];
+}
+
+const { milestones } = Astro.props;
+
+// One marker per status. Three deliberate choices are packed in here:
+//
+// SHAPE, NOT A COLOURED EDGE. design-principles bans `border-left: Npx solid
+// <color>` as a status indicator by name, and a vertical timeline is the exact
+// place that anti-pattern shows up — a tinted rail segment per row. These are
+// icons instead, so the state survives a greyscale print and a colour-blind
+// reader. All three sit on the same 24-unit ring, which is why they line up in a
+// single-pixel-wide column and the rail can run dead straight between them.
+//
+// `paths` IS THE LEGO'S OWN EXTENSION POINT, not a fork. esa-icon documents it as
+// "inner SVG markup for a glyph not in the built-in registry", used as the
+// fallback when `name` is unknown. ICON_PATHS ships circle-check but neither
+// `circle` nor `circle-dot` (checked icon-registry.ts, 55 glyphs), so those two
+// carry their Lucide bodies inline. `name` is still passed for both: the registry
+// wins when it has the glyph, so the day the hub adds them this file needs no edit.
+//
+// THE LABEL IS THE ACCESSIBLE HALF. With `label` set, esa-icon renders
+// role="img" + aria-label, so the status is text to a screen reader and not
+// colour alone (SC 1.4.1) or shape alone (SC 1.1.1). It is announced BEFORE the
+// date and title because the DOM order is marker, date, title — "Complete,
+// February 2024, Site assessment and planting plan complete" is the order a
+// person reads the row in too.
+const MARKERS: Record<Milestone['status'], { name: string; paths?: string; label: string }> = {
+  complete: {
+    name: 'circle-check',
+    label: 'Complete',
+  },
+  current: {
+    name: 'circle-dot',
+    paths: '<circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="1"></circle>',
+    label: 'In progress',
+  },
+  upcoming: {
+    name: 'circle',
+    paths: '<circle cx="12" cy="12" r="10"></circle>',
+    label: 'Upcoming',
+  },
+};
+
+// NO EMPTY STATE ON PURPOSE. buildMilestones() throws when a program has no
+// template and otherwise always returns six, so an empty list is unreachable in
+// this prototype — an esa-empty-state here would be a string nobody can ever see,
+// and polish is subtractive. If real data ever arrives that can be empty, that is
+// the moment to add one, with copy written for whatever "empty" turns out to mean.
+---
+<EsaCard title="Milestones">
+  <!-- ADD, not edit. This section is a COLLECTION, and that is what separates
+       it from Basics and Description: those hold scalar values, so each one got
+       a per-field affordance that appears on hover and edits in place, and their
+       section pencils went away. A set has no single field to hover — you add to
+       it, remove from it, reorder it — so the section keeps one control and it
+       names the act it actually performs. "Edit <section>" was the old pencil's
+       label and it was vague about which of those it meant.
+
+       `size="sm"` is not a local taste call — it is the size every section's
+       header control renders at, and the card headers down this page have to
+       agree exactly in height. Change it here only if it changes in all of them.
+
+       Still inert: nothing is wired behind it yet. It is a real, enabled
+       <button> so the eventual handler has somewhere to land, and deliberately
+       not `disabled` — disabled claims the action is unavailable to THIS user,
+       which is a different and false statement. Per-row editing and removal
+       inside this section are not built yet. -->
+  <EsaButton slot="actions" variant="chrome" size="sm" icon="plus">Add milestone</EsaButton>
+
+  <!-- <ol>, because these are sequential and countable and the semantics are
+       free. role="list" is not redundant belt-and-braces: Safari + VoiceOver drop
+       list semantics from any list whose `list-style` is none, and the numbers
+       have to go — the markers already number the rows visually. -->
+  <ol class="firma2-timeline" role="list">
+    {milestones.map((milestone) => {
+      const marker = MARKERS[milestone.status];
+      return (
+        <li class="firma2-timeline__item" data-status={milestone.status}>
+          <span class="firma2-timeline__marker">
+            <EsaIcon name={marker.name} paths={marker.paths} size="sm" label={marker.label} />
+          </span>
+          <span class="firma2-timeline__date typography-body-md">{milestone.date}</span>
+          <span class="firma2-timeline__title typography-body-md">{milestone.title}</span>
+        </li>
+      );
+    })}
+  </ol>
+</EsaCard>
+
+<style>
+  /* Row gap lives on the CELLS, not on the grid, and that is load-bearing rather
+     than a preference: the rail below is a flex child of the marker column that
+     grows to fill its row, so it can only reach the next marker if the row's
+     height includes the spacing. A `row-gap` would open a hole the rail cannot
+     cross without a negative margin. Paying for it with cell padding keeps the
+     rail continuous and the arithmetic honest. */
+  .firma2-timeline {
+    display: grid;
+    /* marker | date | title. The date is `max-content` ONCE for the whole list,
+       which is the entire reason this is a grid: every date starts at the same x,
+       so the column scans vertically. minmax(0, 1fr) rather than 1fr so a long
+       milestone title wraps instead of forcing the track wider. */
+    grid-template-columns: max-content max-content minmax(0, 1fr);
+    column-gap: var(--spacing-300, 0.75rem);
+    row-gap: 0;
+    /* <ol> arrives with UA margin, padding-inline-start for the numbers, and a
+       list-style this list does not use — the markers ARE the numbering. */
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* subgrid is what makes the shared date column possible while each <li> stays a
+     real box — needed because the rail is drawn inside one. `display: contents`
+     would also share the tracks but would delete the box and with it the rail. */
+  .firma2-timeline__item {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+  }
+
+  .firma2-timeline__item:not(:last-child) > .firma2-timeline__date,
+  .firma2-timeline__item:not(:last-child) > .firma2-timeline__title {
+    padding-block-end: var(--spacing-400, 1rem);
+  }
+
+  .firma2-timeline__marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* The 16px icon optically centres on the first line of a 16px/1.5 title, not
+       on its top edge. A quarter-step is the difference; anything token-driven is
+       coarser than the correction. */
+    padding-block-start: var(--spacing-100, 0.25rem);
+  }
+
+  /* The rail. STRUCTURE, NOT STATUS: one neutral hairline in the border role, the
+     same colour under a complete milestone as under an upcoming one, because what
+     it says is "these are one sequence" and the markers say the rest. Colouring it
+     per row is the left-border anti-pattern wearing a costume.
+
+     `:not(:last-child)` is how it stops at the last marker instead of trailing off
+     into the card's padding — the final milestone has no next event to connect to.
+     flex: 1 lets it grow to whatever height the row's text ended up needing, so a
+     title that wraps to three lines does not break the line. */
+  .firma2-timeline__item:not(:last-child) > .firma2-timeline__marker::after {
+    content: '';
+    flex: 1;
+    width: var(--border-width-default, 1px);
+    margin-block-start: var(--spacing-100, 0.25rem);
+    background: var(--color-border-default, #cccfcc);
+  }
+
+  /* Tabular figures so the years stack digit over digit down the column. The
+     months still vary in width, which is why the grid track — not the font — is
+     what actually aligns the column; this just stops "2024" and "2031" from
+     drifting against each other inside it. */
+  .firma2-timeline__date {
+    color: var(--color-content-default-secondary, #60655f);
+    font-variant-numeric: tabular-nums;
+    /* A date is one token; wrapping "February" off "2024" would be noise. */
+    white-space: nowrap;
+  }
+
+  /* The title stays at full strength at every status. An upcoming milestone is
+     real information — it is the answer to "what happens next" — and greying it
+     is the "fainter as it matters less" move design-principles rules out. Its
+     quietness comes from the marker's shape instead: an empty ring carries a
+     fraction of the ink of a check. */
+  .firma2-timeline__title {
+    color: var(--color-content-default, #1d211c);
+  }
+
+  /* Status colour, on the marker only.
+     complete + upcoming share the secondary content role. That is deliberate, not
+     an oversight: the obvious "quieter" choice for upcoming is a border step, and
+     --color-border-default-strong resolves to olive-8 (#b9bcb8) here — about
+     1.9:1 on the card, well under the 3:1 SC 1.4.11 asks of a graphic that
+     carries meaning. So the two states separate by GLYPH (check vs empty ring),
+     which costs no contrast at all, and neither one is dimmed. */
+  .firma2-timeline__item[data-status='complete'] > .firma2-timeline__marker,
+  .firma2-timeline__item[data-status='upcoming'] > .firma2-timeline__marker {
+    color: var(--color-content-default-secondary, #60655f);
+  }
+
+  /* The one place colour is spent. Brand at the content step (grass-11), which is
+     a text-legible ramp position rather than the brand FILL — the house keeps
+     saturated brand for the primary action, and this is a marker, not a button.
+     Paired with circle-dot's filled centre, "now" is the only row on the list
+     carrying both a hue and a solid centre, and it needs no tinted row behind it
+     to be found. */
+  .firma2-timeline__item[data-status='current'] > .firma2-timeline__marker {
+    color: var(--color-content-brand, #2a7e3b);
+  }
+</style>

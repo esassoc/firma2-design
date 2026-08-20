@@ -1,0 +1,138 @@
+---
+// firma2-page-header — the page's own top edge: the breadcrumb trail and the
+// page title (plus whatever actions the page hangs off them), held at the top of
+// the viewport while the rest of the page scrolls underneath.
+//
+// WHY IT IS PINNED AND THE APP BAR IS NOT. AppLayout scrolls the DOCUMENT, so
+// the bar with the omnibox and the account menu rides up and out of the way —
+// it is chrome for the app, and once you are reading a record you are done with
+// it. What you are never done with is WHICH record you are reading and the way
+// back out of it, and on a long page (a project detail runs six sections) both
+// scroll off within a screen. So the header is the one band that stays: the
+// crumb is the exit, the title is the answer to "what am I looking at", and the
+// actions are the thing you came to do.
+//
+// bcn-lego-checked: esa-page-header IS this header and remains the whole of the
+// markup — the title role, the eyebrow, the breadcrumbs and actions slots are
+// all its own, and esa-breadcrumbs renders the trail. Nothing here re-implements
+// either. What is added is ONE behaviour neither lego has: the band. Walked the
+// catalog (`ls node_modules/@esa/ecology/src/components/`) for a sticky/affix/
+// page-top primitive — the only sticky-adjacent lego is esa-back-to-top, which
+// is a floating button, not a region, and esa-app-bar is the app's bar, not the
+// page's. Beacon is not cloned in this checkout. Every prototype opens with this
+// section, so one shared component is its home rather than the same four rules
+// pasted into four pages — which is also what keeps the band's height, its
+// hairline and its bleed identical on every screen.
+import EsaPageHeader from '@esa/ecology/esa-page-header.astro';
+import EsaBreadcrumbs from '@esa/ecology/esa-breadcrumbs.astro';
+
+/** One step of the trail. The LAST crumb is the current page and takes no href —
+    esa-breadcrumbs marks it aria-current="page" on that basis. */
+export interface Crumb {
+  label: string;
+  href?: string;
+}
+
+interface Props {
+  /** The page's name. Renders as the h1. */
+  title: string;
+  /** The trail above the title. Omit on a top-level page, where a single crumb
+      would only repeat the title one line below it. */
+  crumbs?: Crumb[];
+}
+
+const { title, crumbs } = Astro.props;
+const hasCrumbs = (crumbs?.length ?? 0) > 0;
+---
+<div class="firma2-page-header">
+  {/* TWO BRANCHES, not one with a conditional inside. esa-page-header decides
+      whether to render its breadcrumbs container with Astro.slots.has(), and a
+      slot counts as FILLED as soon as an element carrying `slot="breadcrumbs"`
+      appears in the children — even inside an expression that evaluates false.
+      Passing `{hasCrumbs && <EsaBreadcrumbs …/>}` therefore rendered an empty
+      breadcrumbs div on every top-level page, and its 12px bottom margin showed
+      up as unexplained space over the title. The only way to leave the slot
+      genuinely empty is not to write it, so the crumb-less page gets its own
+      call. Actions forward unconditionally: an empty actions cluster is a
+      zero-width flex box on the bar's trailing edge and changes nothing. */}
+  {hasCrumbs ? (
+    <EsaPageHeader title={title}>
+      <EsaBreadcrumbs slot="breadcrumbs" items={crumbs} />
+      <slot name="actions" slot="actions" />
+    </EsaPageHeader>
+  ) : (
+    <EsaPageHeader title={title}>
+      <slot name="actions" slot="actions" />
+    </EsaPageHeader>
+  )}
+</div>
+
+<script>
+  // FOCUS MUST NOT LAND UNDER THE BAND. WCAG 2.4.11 (Focus Not Obscured, AA in
+  // 2.2) fails the moment a sticky region covers the element that just took
+  // focus — and that is the default behaviour here: Tab to a control sitting
+  // just below the fold and the browser scrolls it flush to the top of the
+  // scrollport, which is now underneath this header. The same applies to any
+  // in-page anchor and to find-in-page.
+  //
+  // scroll-padding on the SCROLL CONTAINER is the one declaration that fixes all
+  // three at once — the browser honours it for every scroll-into-view it
+  // performs, so nothing has to be annotated element by element. AppLayout
+  // scrolls the document, so the container is the root element.
+  //
+  // Measured rather than hard-coded, because the band is not one height: it is
+  // taller with a breadcrumb than without, and taller again if a long title
+  // wraps at a narrow width. The observer covers the wrap case, which is a live
+  // resize and not something a build-time constant could know.
+  const band = document.querySelector<HTMLElement>('.firma2-page-header');
+  if (band) {
+    const sync = (): void => {
+      const h = Math.round(band.getBoundingClientRect().height);
+      document.documentElement.style.scrollPaddingBlockStart = `${h}px`;
+    };
+    sync();
+    new ResizeObserver(sync).observe(band);
+  }
+</script>
+
+<style>
+  .firma2-page-header {
+    position: sticky;
+    top: 0;
+    /* The header role from the z scale, not a hand-picked number. It has to
+       outrank ordinary page content (unpositioned, so effectively 0) and the
+       layers the two embedded libraries paint inside it. Verified rendered
+       rather than reasoned: the project grid's rows and the work-area map —
+       including Leaflet's zoom control, whose own z-index is 800 — both clip
+       cleanly under the band as they scroll past, because each library scopes
+       its stack inside a container of its own. If one ever leaks, the fix is
+       `isolation: isolate` on that container, not a higher bid here. */
+    z-index: var(--z-header, 200);
+
+    /* FULL BLEED, then pad back. esa-app-shell's content pane carries
+       `padding: var(--spacing-500)`, so a band that respected it would stop
+       short of the rail and the right edge and read as a floating card rather
+       than as the top of the page. The negative margins reach through the
+       gutters, the padding puts the title back on the content column's own
+       left edge, and the negative block-start lets the band sit against the app
+       bar with no seam of canvas between them.
+
+       This is the one place in the spoke that knows the pane's padding value.
+       It is the shell's own literal (esa-app-shell.astro), not a token the pane
+       exposes — worth a /request-lego for a `--app-shell-content-padding` hook
+       so a full-bleed child can read it instead of restating it. */
+    --_bleed: var(--spacing-500, 1.5rem);
+    margin-inline: calc(var(--_bleed) * -1);
+    margin-block-start: calc(var(--_bleed) * -1);
+    padding-inline: var(--_bleed);
+    padding-block: var(--spacing-400, 1rem);
+
+    /* Opaque, or the content scrolling beneath shows straight through. The
+       CANVAS role — the same surface the pane is painted with, so the band is
+       not a second elevation stacked on the page but the page's own top. The
+       hairline is what separates it once content is moving under it; at rest it
+       reads as the rule under a title, which is what it also is. */
+    background: var(--color-background-default, #fcfcfc);
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+</style>

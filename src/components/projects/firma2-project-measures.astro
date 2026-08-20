@@ -1,0 +1,182 @@
+---
+// firma2-project-measures — the performance-measures section of a project's
+// detail page: every measure the project committed to, and what it has reported
+// against that commitment. It is the section a reader uses to judge delivery,
+// which is why each row carries the two raw numbers and not only a bar. A bar
+// answers "roughly how far along"; "8.6 of 8.6 miles shaded" is the fact that
+// settles an argument, and a percentage on its own throws the magnitude away.
+//
+// COMPOSED, not built: esa-card is the section surface (the convention every
+// section of this page follows), esa-progress-bar is the row, and `.stack` /
+// `.repel` are the layout. The only CSS below is list chrome and the two flex
+// knobs `.repel` exposes for its own children — no layout engine is re-authored
+// here.
+//
+// WHY THE LEGO'S OWN `label`, AND NOT A HEADING I COMPOSE MYSELF. Both are
+// legitimate readings of esa-progress-bar's API; this one is forced by
+// accessibility. The lego renders `role="progressbar"` with
+// `aria-label={label || 'Progress'}` and its Props interface has no index
+// signature, so an `aria-label` passed from here is dropped on the floor. Hand
+// the bar no label and all four rows announce as "Progress" — four identical,
+// unidentifiable progressbars in a rotor. So the measure name goes in `label`,
+// where it does both jobs at once: the visible row title AND the bar's
+// accessible name. That is one string in one place rather than a visible name
+// and an invisible one that can drift apart, and it satisfies SC 2.5.3 (Label
+// in Name) for free. It is not double-announced either: `aria-label` wins the
+// name computation, and ARIA gives `progressbar` children-presentational, so
+// the same words sitting inside the element are not read a second time as
+// content.
+//
+// WHY `showValue={false}`, against the lego's default. That default exists for
+// a real reason — the lego documents it — a bar alone is a fill and a track
+// that differ ONLY in background colour, so in forced-colors mode both flatten
+// and the bar is unreadable at every value. The percentage is its fallback
+// readout. Here the bar is never alone: the reported-against-expected figure
+// sits on the same line as the label, in text, and survives forced colors
+// exactly as well as "55%" would while carrying strictly more information.
+// Printing both would be the same fact twice, and polish is subtractive.
+//
+// SIZE. `md` gives the label composite at 14px — the dense floor, correct for a
+// data row inside a card. `sm` would drop it to 12px, below what a label is
+// allowed to be; `lg` would put four 12px-thick bars in one card, which is a lot
+// of ink for a supporting graphic.
+//
+// THE ZERO CASE IS NOT AN EMPTY STATE. A project in Proposal or Planning &
+// Design has reported nothing against any measure, which is most of the
+// portfolio at any moment. The targets are still the information — what this
+// project has promised to do — so the rows render with the bars at zero and the
+// numbers read "0 of 62 acres". Nothing here says work has not started: the
+// stage pill in the page header already says it, and a sentence explaining the
+// data to the reader would be text about the page rather than of it.
+//
+// UNDER-DELIVERY IS NOT AN ALARM. A Completed project can report less than it
+// expected; real ones routinely do, and the funder already knows. The bar keeps
+// the neutral primary variant at every value — no danger red, no warning icon —
+// because the number is the finding, and colouring it would be this component
+// editorialising about a project it knows nothing about.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import '../shared/firma2-card-section.css';
+import EsaProgressBar from '@esa/ecology/esa-progress-bar.astro';
+// esa-icon-button is the name in the house convention for this affordance, but
+// reading it shows it was deprecated (2026-08-14) into a shim that forwards
+// verbatim to `<EsaButton variant="chrome" iconOnly>` and console.warns on every
+// render. Calling the real component renders byte-identical markup without the
+// build noise.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import type { PerformanceMeasure } from '../../data/firma2-project-detail';
+
+interface Props {
+  /**
+   * The project's measures, in the order the project reports them. Deliberately
+   * not re-sorted here: a project's measure list has an authored order (the
+   * headline measure first, its supporting measures after) and sorting by
+   * percent complete would put the least-delivered measure at the top of every
+   * card, which is a judgement this section is not making.
+   */
+  measures: PerformanceMeasure[];
+}
+
+const { measures } = Astro.props;
+
+// Thousands separators, and NO fixed fraction count. `reported` carries one
+// decimal for continuous units (acres, miles, acre-feet, cfs) and a whole
+// number for counts, and the two live in the same column — force two decimals
+// and "4 crossings" becomes "4.00 crossings", which reads as fabricated data.
+// Intl's default (up to 3 fraction digits, none padded) prints each as authored.
+const fmt = (n: number): string => n.toLocaleString('en-US');
+
+// Percent for the bar's fill and its aria-valuenow. Rounded, because an
+// unrounded 55.16129032258065 is what a screen reader would read aloud — but
+// never rounded UP to a full bar: 99.6% of a target is not delivered, and a bar
+// that reads full while the numbers beside it disagree is the kind of small lie
+// that costs a prototype its credibility.
+const percentOf = ({ reported, expected }: PerformanceMeasure): number => {
+  if (expected <= 0) return 0;
+  const raw = (reported / expected) * 100;
+  if (raw >= 100) return 100;
+  const rounded = Math.round(raw);
+  return rounded === 100 ? 99 : rounded;
+};
+---
+{measures.length > 0 && (
+  <EsaCard title="Performance measures">
+    <!-- ADD, not edit. This section is a COLLECTION, and that is what separates
+         it from Basics and Description: those hold scalar values, so each one
+         got a per-field affordance that appears on hover and edits in place,
+         and their section pencils went away. A set has no single field to
+         hover — you add to it, remove from it, reorder it — so the section
+         keeps one control and it names the act it actually performs. "Edit
+         <section>" was the old pencil's label and it was vague about which of
+         those it meant.
+
+         Still inert: nothing is wired behind it yet. It is a real, enabled
+         <button> so the eventual handler has somewhere to land, and
+         deliberately not `disabled` — disabled claims the action is
+         unavailable to THIS user, which is a different and false statement.
+         Per-row editing and removal inside this section are not built yet. -->
+    <EsaButton slot="actions" variant="chrome" size="sm" icon="plus">Add measure</EsaButton>
+
+    <!-- A <ul>: this is a countable set of peers, and the list role is what
+         tells a screen-reader user there are three of these before they start
+         through them. `role="list"` is not redundant — Safari drops list
+         semantics from a <ul> the moment `list-style: none` is applied, which
+         is exactly what the CSS below does. -->
+    <ul class="firma2-project-measures__list stack" data-gap="md" role="list">
+      {measures.map((measure) => (
+        <li class="firma2-project-measures__measure repel" data-gap="sm" data-align="baseline">
+          <!-- The wrapper exists so the flex knob lands on an element this
+               component owns. Astro's scoped styles do not reliably reach a
+               child component's root, and reaching into esa-progress-bar's
+               internals would couple this section to the lego's markup. -->
+          <div class="firma2-project-measures__bar">
+            <EsaProgressBar
+              value={percentOf(measure)}
+              label={measure.name}
+              showValue={false}
+              size="md"
+            />
+          </div>
+          <!-- ONE expression, not `{a} of {b} {unit}`. A whitespace-only text
+               node sitting between two adjacent expressions is dropped by the
+               compiler, so the separated form rendered "34.1 of 62acres" — the
+               " of " survived because it is text WITH content, and the lone
+               space before the unit did not. A template literal puts the
+               spacing inside the expression where nothing can collapse it. -->
+          <p class="firma2-project-measures__value typography-body-sm">
+            {`${fmt(measure.reported)} of ${fmt(measure.expected)} ${measure.unit}`}
+          </p>
+        </li>
+      ))}
+    </ul>
+  </EsaCard>
+)}
+
+<style>
+  /* .stack is the engine; this only strips the list chrome that comes with
+     choosing <ul> for its semantics. layouts.css already zeroes the UA margin
+     at :where(), but not the padding-inline-start that carries the markers. */
+  .firma2-project-measures__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* The two knobs .repel exposes to its own children, and nothing else — the
+     row's layout is the primitive's. The bar takes the row and gives way first;
+     12rem is its floor, below which the label wraps into an unreadable column
+     and the whole row is better off stacked (.repel wraps it there on its own). */
+  .firma2-project-measures__bar {
+    flex: 1 1 12rem;
+  }
+
+  .firma2-project-measures__value {
+    flex: 0 0 auto;
+    /* The figure is one fact and breaks into nonsense mid-phrase ("34.1 of / 62
+       acres"). Kept whole, so a narrow viewport wraps the ROW instead. */
+    white-space: nowrap;
+    /* The values form a column against the card's right edge, and this is what
+       makes it a column worth scanning: proportional digits would leave every
+       row's numbers a different width and the eye with nothing to follow. */
+    font-variant-numeric: tabular-nums;
+  }
+</style>

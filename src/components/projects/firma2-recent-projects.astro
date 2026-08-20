@@ -1,0 +1,136 @@
+---
+// firma2-recent-projects — the row of cards above the Projects table: the
+// handful of projects this user opened most recently, newest first, so getting
+// back to yesterday's work does not mean re-running yesterday's search.
+//
+// Composed from legos and layout primitives: `.grid` (auto-fit, wraps
+// 4 -> 3 -> 2 -> 1 on its own) is the row, esa-card is the card, esa-pill is the
+// stage marker, and the typography composites carry the heading. Deliberately no
+// `--grid-min` override — the primitive's 16rem default already lands four cards
+// across the content region at desktop width, and a narrower floor would only
+// squeeze the long project names into more wrapped lines.
+//
+// SUBTRACTIVE by design. A card carries four facts and no more: which project,
+// whose project, where it is in its lifecycle, and when you last had it open.
+// County, timeline, and cost all live one section down in the table; repeating
+// them here would make the row a second, worse table rather than a way back in.
+//
+// THE WHOLE CARD IS THE LINK, not just the title. This row exists to be clicked
+// — it is a shortcut back into work in progress — and a shortcut whose target is
+// a 30px line of text inside a 250px box is a worse shortcut than the search it
+// replaces. One <a> per card is also one tab stop per card, so keyboard users
+// cross the row in four presses rather than four times whatever the card holds.
+//
+// The href points at /prototypes/projects/<slug>, WHICH THIS SPOKE HAS NOT BUILT
+// YET — the detail page is the next screen. Until it lands these four links 404,
+// which is a deliberate, accepted state and NOT the precedent the sidenav sets
+// (it renders unbuilt routes inert precisely to avoid dead links). Build the
+// route and this section needs no change: projectHref and the route's
+// getStaticPaths read the same projectSlug.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import { recentlyViewed as defaultRecents, projectHref, STAGE_TONE } from '../../data/firma2-projects';
+import type { RecentlyViewedProject } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** Most recent first. Defaults to the mock session's row. */
+  items?: RecentlyViewedProject[];
+}
+
+const { items = defaultRecents } = Astro.props;
+
+// The section is a landmark, so it needs an accessible name — pointed at the
+// heading that is already on screen rather than an aria-label duplicating it.
+const headingId = 'firma2-recent-projects-heading';
+---
+{items.length > 0 && (
+  <section class="firma2-recent-projects stack" data-gap="sm" aria-labelledby={headingId}>
+    <h2 id={headingId} class="typography-title-strong">Recently viewed</h2>
+
+    <!-- A <ul>, not a row of <div>s: this is a countable set of peers, and the
+         list role is what tells a screen-reader user there are four of these
+         before they start arrowing through them. -->
+    <ul class="firma2-recent-projects__row grid" data-gap="md">
+      {items.map(({ project, viewedAt }) => (
+        <li>
+          <!-- aria-label carries the project NAME alone. Without it the link's
+               accessible name is every string in the card concatenated —
+               "Yuba Headwaters Fuels Reduction Yuba Headwaters Partnership
+               Implementation Today" — which is accurate but useless in a
+               rotor's list of links. The label still contains the visible title
+               verbatim, so SC 2.5.3 (Label in Name) holds and voice control
+               can still say "click Yuba Headwaters Fuels Reduction". -->
+          <a
+            class="firma2-recent-projects__link"
+            href={withBase(projectHref(project))}
+            aria-label={project.projectName}
+          >
+            <EsaCard
+              title={project.projectName}
+              subtitle={project.leadOrganization}
+              padding="compact"
+            >
+              <EsaPill
+                label={project.stage}
+                variant={STAGE_TONE[project.stage]}
+                size="sm"
+                removable={false}
+              />
+              <!-- The heading above already says these were VIEWED, so each card
+                   spends its footer on the one thing that differs: how long ago.
+                   Repeating the verb four times would be the row narrating
+                   itself. A screen reader lands on a card without that heading
+                   in earshot, though, so the verb is carried silently for the
+                   name to make sense on its own. -->
+              <span slot="footer"><span class="visually-hidden">Viewed </span>{viewedAt}</span>
+            </EsaCard>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}
+
+<style>
+  /* The typography composites set type ONLY — family, size, weight, line-height —
+     and there is no heading reset anywhere in tokens.css or BaseLayout's global
+     block. So the UA's own `margin: 0.83em 0` is still on this h2, and inside a
+     .stack it stacks on top of the primitive's gap: the heading would sit
+     ~13px further from the cards than `data-gap="sm"` says. Zeroing it is not a
+     visual choice, it is the composite's missing half — the spine owns spacing. */
+  .firma2-recent-projects > h2 { margin: 0; }
+
+  /* .grid is the layout engine; this only strips the list chrome that comes with
+     choosing <ul> for its semantics. No spacing here — data-gap owns that. */
+  .firma2-recent-projects__row {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* The <a> is the card's box, not a phrase inside it. `display: block` (never
+     `display: contents`) so it has a box of its own for the focus ring to trace,
+     and `height: 100%` so a short card in a row of tall ones is still clickable
+     edge to edge. */
+  .firma2-recent-projects__link {
+    display: block;
+    height: 100%;
+    /* BaseLayout sets `a { color: var(--color-content-link) }` globally, which
+       would paint the card's title and subtitle link-blue. The card is the link;
+       its text is content. */
+    color: inherit;
+    /* Matches esa-card's own `--_card-radius: var(--radius-md)` so the focus ring
+       traces the card's corners instead of squaring them off. */
+    border-radius: var(--radius-md, 0.5rem);
+  }
+
+  /* Hover/focus affordance via esa-card's PUBLIC theming hook, so this never
+     reaches into the lego's internals. One quiet step on the border — the house
+     keeps containers neutral, and a lift or a tint on four cards at once would
+     turn a shortcut row into the loudest thing on the page. */
+  .firma2-recent-projects__link:hover,
+  .firma2-recent-projects__link:focus-visible {
+    --card-border-color: var(--color-border-default-strong, #8f8f8f);
+  }
+</style>

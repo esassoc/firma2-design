@@ -90,5 +90,99 @@ export const projects: Project[] = [
   { projectName: 'Arroyo Seco Urban Greenway', program: 'Stormwater & Water Quality', leadOrganization: 'Central LA Watershed Coalition', county: 'Los Angeles', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2030, estimatedTotalCost: 3120000 },
 ];
 
+/**
+ * URL-safe id for a project, derived from its name rather than stored beside it.
+ *
+ * Derived because a hand-maintained slug column is a second name to keep in
+ * sync, and the two drift the first time somebody fixes a typo in one of them.
+ * The real ProjectFirma keys projects by an integer ProjectID; a slug is the
+ * prototype's stand-in, and it reads in the address bar, which an integer does
+ * not.
+ *
+ * This is the SINGLE source for the id: the detail route's getStaticPaths and
+ * every link into it both call this, so a link can never point at a slug the
+ * route did not generate.
+ */
+export const projectSlug = (project: Project): string =>
+  project.projectName
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+/**
+ * Route to a project's detail page. Root-relative and BASE-LESS — wrap with
+ * withBase() at render, the same contract src/data/prototypes.ts and
+ * firma2-nav.ts use, because dev serves at / and the Pages build at
+ * /firma2-design/.
+ */
+export const projectHref = (project: Project): string =>
+  `/prototypes/projects/${projectSlug(project)}`;
+
+// Two projects whose names slugify identically would silently collapse into one
+// detail page and one working link, which is the kind of bug that surfaces as
+// "why does this card open the wrong project" long after the row was added.
+// Fail the build instead.
+{
+  const seen = new Map<string, string>();
+  for (const project of projects) {
+    const slug = projectSlug(project);
+    const clash = seen.get(slug);
+    if (clash) {
+      throw new Error(
+        `projectSlug collision on "${slug}": "${clash}" and "${project.projectName}"`,
+      );
+    }
+    seen.set(slug, project.projectName);
+  }
+}
+
 /** Programs present in the data, alphabetical — the filter never lists an empty bucket. */
 export const programs: string[] = Array.from(new Set(projects.map((p) => p.program))).sort();
+
+/**
+ * One entry in the signed-in user's "Recently viewed" row.
+ *
+ * Recency is SESSION state, not a project attribute: a project is recent for
+ * one person and not for the next. Keeping it beside the portfolio rather than
+ * as a column on Project also keeps it out of the row data the grid serializes
+ * into the page, where no column would read it.
+ */
+export interface RecentlyViewedProject {
+  project: Project;
+  /** Relative label — "Today", "Yesterday", "4 days ago". */
+  viewedAt: string;
+}
+
+/**
+ * `viewedAt` stores the rendered LABEL, not a timestamp, on purpose. This spoke
+ * is a static build: a stored date formatted against build time would read
+ * "Today" on deploy day and "47 days ago" a month later, and formatting it
+ * against the visitor's clock would need client JS to avoid disagreeing with
+ * the server-rendered string. A literal label is deterministic in the way
+ * design-principles asks mock data to be — the demo reads identically forever.
+ */
+const RECENTLY_VIEWED: { projectName: string; viewedAt: string }[] = [
+  { projectName: 'Yuba Headwaters Fuels Reduction', viewedAt: 'Today' },
+  { projectName: 'Scott River Fish Passage Barrier Removal', viewedAt: 'Yesterday' },
+  { projectName: 'Elk River Sediment Reduction', viewedAt: '2 days ago' },
+  { projectName: 'Cosumnes Floodplain Reconnection', viewedAt: '4 days ago' },
+];
+
+const projectsByName = new Map(projects.map((p) => [p.projectName, p]));
+
+/**
+ * Most recent first — the order the Recently viewed row renders. Resolved by
+ * name against `projects` so the row can never drift into showing a stage,
+ * organization, or cost the table disagrees with; renaming a project without
+ * updating RECENTLY_VIEWED fails the build instead of silently dropping a card.
+ */
+export const recentlyViewed: RecentlyViewedProject[] = RECENTLY_VIEWED.map(
+  ({ projectName, viewedAt }) => {
+    const project = projectsByName.get(projectName);
+    if (!project) {
+      throw new Error(`recentlyViewed: no project named "${projectName}" in projects`);
+    }
+    return { project, viewedAt };
+  },
+);

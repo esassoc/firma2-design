@@ -42,31 +42,25 @@ export const firma2GridTheme = themeQuartz.withParams({
   borderRadius: 'var(--radius-100, 4px)',
 });
 
-/** Renders a Date back to a readable "Oct 1, 2020" form (more scannable than a raw slashed string). */
-export const gridDateFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-});
-
-/** Whole-dollar currency for cost columns — ProjectFirma costs are budget figures, not cents. */
-export const gridCurrencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-});
-
-/** Parses a source M/D/YYYY string to a Date so date columns sort chronologically; blank/invalid -> null. */
-export function asGridDate(s?: string): Date | null {
-  if (!s) return null;
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/** Escapes text dropped into a cellRenderer's HTML string. */
-export function escGridHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// The four formatting helpers below moved to src/lib/format.ts on 2026-08-20
+// and are re-exported here under their original names so existing grid call
+// sites are unchanged.
+//
+// They moved because THIS module has a side effect — the
+// registerModules([AllCommunityModule]) call above — so importing a formatter
+// from here pulls the whole AG Grid runtime into the importer's bundle. That is
+// free for a grid and pure cost for a page section that renders the same
+// dollars with no grid on it (the project detail page's estimated cost and
+// funding table). src/lib/format.ts has no imports and no side effects.
+//
+// A page section should import from '../../lib/format' directly. These aliases
+// exist for the grids, which are already paying for AG Grid anyway.
+export {
+  dateFormatter as gridDateFormatter,
+  currencyFormatter as gridCurrencyFormatter,
+  asDate as asGridDate,
+  escapeHtml as escGridHtml,
+} from '../../lib/format';
 
 export interface DataGridWiring<T> {
   root: HTMLElement;

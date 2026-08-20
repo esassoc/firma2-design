@@ -1,0 +1,792 @@
+---
+// firma2-measure-rollup-preview — the lower of the two preview panels on a
+// performance measure's setup page. It answers one question, and only that one:
+// what has this measure actually accumulated across every project reporting it?
+//
+// WHY A PREVIEW PANEL AND NOT A REPORT. Setup is where an author decides whether
+// a measure is worth defining the way they are defining it, and that decision is
+// unmakeable in the abstract. "Acres treated with prescribed fire" reads fine as
+// a definition and turns out to be one project, 538 of 1,300 acres, four years
+// in. Seeing the portfolio it already rolls up is what turns an abstract
+// vocabulary decision into a concrete one — so the panel sits under the fields
+// that produce it, on the same screen, collapsible because it is context rather
+// than a control.
+//
+// IT IS LIVE, AND THAT IS THE POINT OF THE SCREEN. The layout's whole claim is
+// that the previews answer as you define the measure. A panel rendered once from
+// the seed record and never updated makes that claim false — the rail edits, the
+// preview sits there showing yesterday's answer, and a reviewer learns to
+// distrust both panels. So this one listens on the frozen MEASURE_CHANGE_EVENT
+// contract in src/lib/measure-draft.ts and recomputes.
+//
+// IT RECOMPUTES EVERYTHING, DELIBERATELY. getMeasureRollup() is a pure function
+// of the record; asking "did this edit touch a field the rollup reads?" is a
+// second, hand-maintained copy of that dependency list, and the first time
+// someone adds a field to the rollup and forgets to add it here, the panel
+// starts lying again in a way nothing can see. One call, every change.
+//
+// RENAMING GENUINELY CHANGES THE ANSWER, AND THE PANEL MUST SAY SO. The rollup
+// JOINS ON MEASURE NAME, exactly (see the module header). So editing the name
+// detaches the measure from every project reporting it, usually to nothing, and
+// this panel drops to its empty state mid-rename. That is not a rendering bug to
+// paper over with the last good numbers — the last good numbers would be the
+// only actual lie available here. It is the join being honest, and showing it is
+// arguably the most useful thing this panel does: renaming a measure in a live
+// catalog has a cost, and this is where an admin can see it before saving.
+//
+// IT COMPUTES NOTHING ITSELF. getMeasureRollup() owns the join between the
+// measure catalog and the per-project reported values, including the rule that
+// the match is by EXACT name and that a near-miss returns an empty rollup rather
+// than a fuzzy total. That rule is documented once, in the module's header, next
+// to the two datasets it reconciles. This file deliberately does not import
+// firma2-project-detail: a second path to the same numbers is a second answer
+// that can disagree with the first.
+//
+// THREE STATES, ALL REAL, ALL DELIBERATE — and the middle one is the reason the
+// empty state is conditioned on `series.length` rather than on `reportedTotal`:
+//
+//   1. Reporting, with values.  acres-treated-prescribed-fire: 1 project,
+//      2023–2026, 538 of 1,300 acres.
+//   2. Reporting, nothing reported yet.  fish-passage-barriers-removed: 2
+//      projects, 0 of 7 barriers, because both are still in planning. The chart
+//      draws two zero-height bars against a real axis, which is the honest
+//      picture — projects ARE attached and the answer so far is nothing. An
+//      empty state here would say "no projects report this", which is false.
+//   3. Nothing reports it.  plant-survival-rate, sediment-load-reduced,
+//      cost-per-acre-treated, and every unnamed draft. `series` is empty, and
+//      esa-empty-state is the lego for exactly that.
+//
+// The `series.length` test is now made in TWO places — the frontmatter below for
+// the static first paint, and paint() in the script for every answer after it.
+// Both read the same field off the same function's return, so they cannot
+// disagree about which state is which; and the script paints once on load, so
+// the client's answer is the only one on screen after hydration either way.
+//
+// BOTH STATE-1/2 AND STATE-3 MARKUP IS ALWAYS RENDERED, one of them `hidden`.
+// A transition between them is then a `hidden` flip, not a subtree build: the
+// stats, the note and the data table survive as the same nodes with new text,
+// the esa-collapsible frame is never touched, and there is no markup this file
+// can only produce from JavaScript. The one exception is the chart — see the
+// script.
+//
+// ALL THE BARS ARE THE SAME HEIGHT, AND THAT IS THE DATA TELLING THE TRUTH.
+// Every measure in this catalog is reported by a single project, and a project
+// stores one cumulative figure plus its implementation window — so the module
+// spreads that total evenly and each year gets an identical share. The chart is
+// therefore a picture of WHEN a measure has been accruing, not of how the pace
+// changed. That claim is not left to be inferred from flat bars: it is stated in
+// one line under the chart and wired to the chart as its description. See NOTE.
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import EsaStat from '@esa/ecology/esa-stat.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { getMeasureRollup } from '../../data/firma2-measure-rollup';
+import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+
+interface Props {
+  /**
+   * The measure this panel rolls up — the SEED record. Only its name, unit and
+   * precision are read. After load the panel follows the working record off
+   * MEASURE_CHANGE_EVENT instead; this prop is the answer before the first
+   * event, and the answer for a reader with no JavaScript.
+   */
+  measure: PerformanceMeasureDefinition;
+}
+
+const { measure } = Astro.props;
+const rollup = getMeasureRollup(measure);
+const hasSeries = rollup.series.length > 0;
+
+// A LOCAL Intl.NumberFormat, and the one case src/lib/format.ts does not cover.
+// The shared formatters are shared because a page showing "$1,240,000" in one
+// section and "$1.24M" in another is how that file's header opens. This one
+// cannot be shared: its precision comes off the RECORD — decimalPlaces is 0 for
+// barriers, 1 for acres of riparian habitat, 2 for stream miles — so there is no
+// single instance to hoist. Pinning both bounds to the same value is what stops
+// a derived 0.666… from rendering more decimals than the measure would ever
+// accept from a reporter. It is rebuilt per paint in the script for the same
+// reason: decimalPlaces is one of the fields being edited.
+const number = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: measure.decimalPlaces,
+  maximumFractionDigits: measure.decimalPlaces,
+});
+
+// The unit travels with the figure rather than being hoisted into a label,
+// because it is not constant across measures ("acres", "barriers", "plants",
+// "tons per year") and is EMPTY for Percent and Currency measures, which carry
+// their own mark. Concatenating on a blank string degrades to a bare number
+// instead of a stray space — no branch needed at the call sites below.
+const unitSuffix = rollup.unit ? ` ${rollup.unit}` : '';
+// Sentence case, because it is used as an axis title and a column header, both
+// of which start a phrase. "tons per year" -> "Tons per year".
+const unitTitle = rollup.unit ? rollup.unit.charAt(0).toUpperCase() + rollup.unit.slice(1) : '';
+
+// The chart's accessible name, and it names what the chart SHOWS. esa-chart
+// warns at runtime when `label` is absent because AG Charts then generates
+// "chart, 1 series" — a name that describes the shape of the object and nothing
+// about the subject. The measure's own name is what a reader arrived with, so it
+// has to track the name the reader is currently editing, not the one this page
+// was built from. The script re-applies it on every paint.
+const chartLabel = `${measure.name} reported by year`;
+
+// Scoped to the measure so two panels on one screen never collide on the IDREF
+// esa-chart resolves for its description. Slugs are already URL-safe.
+const noteId = `firma2-rollup-note-${measure.slug}`;
+
+// THE SEED RECORD, SERIALIZED — not the seed ROLLUP.
+//
+// The old version of this file shipped the computed rows in a data- attribute
+// and the script only had to hand them to the chart. That cannot survive going
+// live: the rows are a function of a record the user is still editing, and the
+// set of records they can produce is every string they can type.
+//
+// Serializing the RECORD instead, and calling the same getMeasureRollup() in the
+// browser, keeps the one-function rule the header opens with. The alternative —
+// precomputing a name→rollup table at build time, since the join key is a finite
+// set of names in static data — was measured and rejected on two counts. It is
+// not actually finite: `decimalPlaces` rounds the series, so the table is names ×
+// precisions, and it would have to be rebuilt from a re-derivation rather than
+// from getMeasureRollup itself, which is exactly the second disagreeing answer
+// the header bans. And the saving is nothing: bundling getMeasureRollup with its
+// two data modules costs 31.5 KB minified / 9.3 KB gzipped (esbuild, --bundle
+// --minify), against the 353 KB gzipped of ag-charts-community that any page
+// showing a chart already pays. It is 2.6% of the chart library, on a page that
+// only exists to render the chart. Serialized on the element rather than passed
+// through `define:vars`, which forces `is:inline` and would leave the bare
+// specifiers in the script below unresolvable by the browser.
+const measurePayload = JSON.stringify(measure);
+
+// PLURALIZATION, spelled out rather than bolted on with "(s)". One project
+// reporting is the common case in this catalog, not an edge case, and
+// firma2-measure-readiness makes the same call for its outstanding-field count.
+const projectsLabel = `${rollup.projectCount === 1 ? 'Project' : 'Projects'} reporting`;
+---
+
+<!-- "Reported across the portfolio" — front-loaded on the word that separates
+     this panel from the one above it, which previews how the measure will look
+     to a reporter. "Portfolio" is this spoke's own word for the whole project
+     set (it is what firma2-project-grid is called in prose), so it names the
+     scope with a term already on the reader's screen elsewhere.
+
+     THE COLLAPSIBLE IS NEVER RE-RENDERED. It is a native <details>, so its
+     open/closed state is DOM state on this element — and every update below
+     happens strictly inside it, on nodes that already exist. Nothing this
+     component does can collapse the panel, reset it, or move the scroll
+     position, because nothing replaces the element that holds those.
+
+     No leading icon. esa-collapsible takes one and the house sanctions icons on
+     section headers — but the only glyph in esa-icon's registry that is close is
+     `trending-up`, and nothing here trends: the bars are flat by construction.
+     A glyph that asserts a shape the data does not have is worse than no glyph. -->
+<EsaCollapsible title="Reported across the portfolio" open>
+  <!-- The panel root the script binds to. `data-firma2-rollup-slug` is the
+       address: MEASURE_CHANGE_EVENT is dispatched on `document` and carries ONE
+       record, so a screen stacking two of these panels would otherwise repaint
+       both from whichever measure was edited. The slug is not an editable field,
+       so it is a stable key for the life of the page. -->
+  <div
+    class="firma2-measure-rollup"
+    data-firma2-rollup-panel
+    data-firma2-rollup-slug={measure.slug}
+    data-firma2-rollup-measure={measurePayload}
+  >
+    <!-- States 1 and 2. `stack` rather than nothing, because inserting this
+         wrapper takes the children out of esa-collapsible's body flex and its
+         1rem gap with them; `.stack`'s default --gap is --spacing-400, the same
+         token the collapsible body uses, so the rhythm is unchanged rather than
+         re-guessed. -->
+    <div class="firma2-measure-rollup__view stack" data-firma2-rollup-view="data" hidden={!hasSeries}>
+      <!-- The totals come FIRST, above the chart. The question the panel exists
+           to answer is "how much, out of how much, from how many projects" —
+           that is a number, and the dataviz skill is explicit that a headline
+           figure belongs in a stat tile rather than being read off a bar. The
+           chart is the follow-up question (when did it accrue), so it sits
+           second. esa-stat is the lego for a value/label pair; it renders its
+           own display-sm value and label-md label, so there is nothing to style.
+
+           `cluster`, not a bespoke flex row: two stats that wrap to a second
+           line at narrow widths is exactly what the primitive does.
+
+           The wrapper div around each esa-stat is an ADDRESS, not a layout. The
+           script has to retarget the text inside these on every paint, and
+           `querySelectorAll('.esa-stat')[0]` would silently retarget itself the
+           day a third stat is added in front. See the legoGap note in the
+           script: esa-stat is an .astro lego with no slots, so its rendered
+           light-DOM BEM classes are the only handle a runtime update has. -->
+      <div class="cluster" data-gap="xl">
+        <!-- Value carries the unit; `sub` carries the denominator. Splitting
+             expected into a third tile would give equal visual weight to a
+             figure that only means anything AGAINST the first one — "538 acres"
+             under "of 1,300 expected" is the comparison in one read.
+
+             `sub` is always passed, never conditionally: esa-stat renders the
+             sub node only when the prop is truthy, and a node that is absent at
+             build time is a node the script cannot fill later. Every measure
+             with a series has an expected total, so there is no case where this
+             is empty anyway. -->
+        <div data-firma2-rollup-stat="total">
+          <EsaStat
+            value={`${number.format(rollup.reportedTotal)}${unitSuffix}`}
+            label="Reported to date"
+            sub={`of ${number.format(rollup.expectedTotal)} expected`}
+          />
+        </div>
+        <div data-firma2-rollup-stat="projects">
+          <EsaStat value={rollup.projectCount} label={projectsLabel} />
+        </div>
+      </div>
+
+      <!-- COLUMNS, not a line, and the form was chosen from the dataviz skill's
+           job table rather than from habit. The reader's job here is comparing
+           the magnitude of discrete annual buckets, which is the bar row. A line
+           would be worse than merely unfashionable: it draws a continuous path
+           between year points and so asserts values BETWEEN them, and there are
+           none — a project reports a cumulative figure, and the module buckets
+           it by whole years. Bars leave the gaps as gaps.
+
+           ONE SERIES, so no legend (esa-chart only enables one past a single
+           series) and no direct labels: "a number on every data point" is in the
+           skill's anti-pattern list, and with 4–6 identical bars it would be six
+           copies of one number. The y-axis ticks carry the values on screen and
+           the data table below carries them exactly.
+
+           COLOUR is the categorical family's slot 1 — esa-chart's default scale,
+           resolved from --color-background-dataviz-categorical-1 in JS because a
+           canvas cannot read a custom property. Slot 1 is the only correct
+           answer for a single series: the sequential family encodes magnitude in
+           lightness, and magnitude here is already carried by bar length, so a
+           ramp would double-encode it and burn the one free channel (the skill
+           calls that out by name as "a value-ramp on nominal categories").
+
+           THE <esa-chart> ELEMENT IS NOT HERE AT BUILD TIME. It is minted into
+           this slot the first time the panel has a series, and then kept
+           forever. The reason is a 353 KB gzipped one: esa-chart dynamically
+           imports ag-charts-community from firstUpdated(), so an element that
+           exists downloads the library and an element that does not, does not.
+           Rendering it unconditionally would make every measure with no rollup —
+           which is most of the catalog, and every new draft — pay for a chart it
+           is not showing. The chart is 100% JavaScript either way, so nothing is
+           lost for a reader without it; the data table below is the state that
+           survives with scripting off, and it is real markup. -->
+      <div class="firma2-measure-rollup__chart" data-firma2-rollup-chart></div>
+
+      <!-- NOTE — the provenance of the per-year split, stated once, plainly, and
+           immediately under the marks it qualifies.
+
+           This is NOT narration about the page, which design-principles bans: it
+           does not tell the reader what the data shows or how to feel about it.
+           It is a statement about how these particular numbers came to exist,
+           and without it the chart makes a claim the data cannot support — a bar
+           per year reads as a year's reported figure, and it is not one. A
+           reader who takes four flat bars as four annual reports has been misled
+           by the rendering, not by the source, so the correction belongs at the
+           rendering.
+
+           It is wired to the chart with `described-by`: esa-chart resolves the
+           IDREF in the light DOM and applies it by element reflection, which is
+           the one association that crosses a shadow boundary. So the caveat is
+           announced with the figure rather than only sitting near it. The
+           sentence is invariant across measures — the split rule does not depend
+           on the record — so the script never rewrites it, and the id it is
+           wired by never changes. The association therefore cannot be broken by
+           an update, which is the failure mode a rebuilt description would have.
+
+           Primary ink, not the secondary grey that `body-sm` usually wears here.
+           A qualification a reader must not skip should not be styled as the
+           thing on the page most safely skipped. -->
+      <p id={noteId} data-firma2-rollup-note class="firma2-measure-rollup__note typography-body-sm">
+        Yearly figures are estimated: each project&rsquo;s running total, split evenly
+        across its reporting years.
+      </p>
+
+      <!-- THE TABLE IS THE CHART'S TEXT ALTERNATIVE, and it is not optional.
+           AG Charts ships no table, no figcaption and no offscreen text — the
+           hub's own component doc scores that as a straight FAIL and says the
+           fix is a composition, not a prop, because a paired disclosure gives a
+           sighted keyboard user a real affordance instead of an offscreen table
+           only a screen reader can find. There is a second reason in the hub's
+           notes: several slots of the categorical palette sit under 3:1 against
+           a light surface, and the validator passes them only WITH relief —
+           visible labels or a table view. This is that relief.
+
+           SO IT UPDATES WITH THE CHART, IN THE SAME PAINT. A text alternative
+           that lags the figure it duplicates is not a weaker alternative, it is
+           a false one — and it is false only for the reader who cannot check it
+           against the canvas. paint() writes the caption, the unit header and
+           every row from the same rollup object that feeds the chart, in one
+           synchronous pass, so there is no interval in which the two disagree.
+
+           The stats above do not discharge this. They are portfolio totals; the
+           chart plots a per-year series, and no total contains a year's figure.
+
+           `flush` so it reads as a quiet row inside this panel rather than a
+           second card boxed inside the first. Its own open/closed state is also
+           native <details> state on an element nothing below replaces — a reader
+           who opened the table stays looking at the table across every edit.
+           "View as data" is the hub's own string for this pairing, kept verbatim
+           — an approved pattern is canon, and a reader who has met it on one
+           chart should meet it on all. -->
+      <EsaCollapsible title="View as data" flush>
+        <!-- bcn-lego-checked: no esa- lego renders a table. Walked the catalog at
+             node_modules/@esa/ecology/src/components/ — there is no esa-table;
+             esa-stat holds one figure, esa-link-column is a list of links, and
+             esa-chart is the thing this exists to make readable. AG Grid is this
+             spoke's tabular precedent but is scoped to the portfolio table:
+             search, filters and CSV export around four rows of derived figures
+             is chrome with nothing to operate on. Beacon is not cloned on this
+             machine, so tier 2 was skipped. A native <table> with real <th
+             scope> IS the semantic primitive here — that association is the
+             whole point of rendering it — so the honest answer is markup. It
+             stays a one-off rather than a bcn- component for the same reason
+             firma2-project-funding's does: a reusable table is a hub concern. -->
+        <table class="firma2-measure-rollup__table">
+          <!-- Named for the chart it duplicates, so the two are recognisably the
+               same data — which means it carries the measure NAME, and so it is
+               repainted with everything else. Hidden because printing it under a
+               disclosure row that already says "View as data" would be the same
+               words twice. -->
+          <caption class="visually-hidden" data-firma2-rollup-caption>{chartLabel}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Year</th>
+              <!-- The unit lives in the header rather than being repeated down
+                   the column: 40 rendered units in a four-row table is noise,
+                   and the column is homogeneous by construction. -->
+              <th scope="col" class="firma2-measure-rollup__num" data-firma2-rollup-unit-header>
+                {unitTitle ? `Reported (${rollup.unit})` : 'Reported'}
+              </th>
+            </tr>
+          </thead>
+          <tbody data-firma2-rollup-rows>
+            {rollup.series.map((year) => (
+              <tr>
+                <!-- The year names the row, so it is a row header: it is what a
+                     screen reader reads back to place you when you arrow across
+                     into the figure. -->
+                <th scope="row">{year.year}</th>
+                <td class="firma2-measure-rollup__num">{number.format(year.value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </EsaCollapsible>
+    </div>
+
+    <!-- State 3. The title states what is absent as a fact, and states the
+         RIGHT fact: nothing is wrong with the measure, it simply is not attached
+         to any project yet — which is where every measure starts, including the
+         unnamed draft, and where every measure goes the moment its name stops
+         matching. The description is the one recovery action, imperative and
+         short, per esa-empty-state's own contract. `sm` matches every other
+         empty state in this spoke's card sections — and keeps the height this
+         state costs small, which matters now that it is a state the panel enters
+         and leaves rather than one it was built in.
+
+         The wrapper exists to carry `hidden`: esa-empty-state is an .astro
+         component and does not forward arbitrary attributes to its root. -->
+    <div data-firma2-rollup-view="empty" hidden={hasSeries}>
+      <EsaEmptyState
+        title="No projects report this measure"
+        description="Add this measure to a project to start collecting values."
+        size="sm"
+      />
+    </div>
+  </div>
+</EsaCollapsible>
+
+<script>
+  import '@esa/ecology/esa-chart';
+  import { MEASURE_CHANGE_EVENT, type MeasureChangeDetail } from '../../lib/measure-draft';
+  import { getMeasureRollup } from '../../data/firma2-measure-rollup';
+  import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+
+  /*
+   * WHAT THIS SCRIPT IS FOR: keeping the panel equal to the record the user is
+   * editing. It listens; it never dispatches. The config rail owns the record
+   * and owns MEASURE_CHANGE_EVENT, and a preview that wrote back to the thing it
+   * previews would be a loop with no obvious end.
+   *
+   * THE ACCESSIBILITY OF THE UPDATE ITSELF, decided rather than defaulted.
+   * This panel changes while focus is in a field somewhere else, which is the
+   * shape of a status message (SC 4.1.3). The accessibility skill's
+   * STATUS-MESSAGE contract is explicit that a live region is the LAST of four
+   * options, and it is the wrong one here for a specific reason, not a general
+   * distaste:
+   *
+   *   - The content is not transient. Everything this panel can say stays on the
+   *     screen, inside a named disclosure, re-readable at any time — which is
+   *     precisely what an announcement is not. Nothing has to be caught in
+   *     flight, because nothing goes away.
+   *   - Announcing it would be actively worse than silence. The field that moves
+   *     this panel most is the NAME field, and the join is exact — so every
+   *     keystroke of a rename passes through a non-matching name. A live region
+   *     would read "no projects report this measure" into the ear of someone in
+   *     the middle of typing a word, over and over. That is the skill's
+   *     filtering anti-pattern verbatim: wrapping results in aria-live so every
+   *     keystroke reads the list back.
+   *   - The transition-into-empty exception does not apply either. The skill
+   *     reserves an assertive announcement for a search that empties out,
+   *     because that user is typing into nothing and needs to correct. Here
+   *     "empty" is not an error and needs no correction — it is the correct
+   *     answer for a measure not yet attached to a project, and it is the state
+   *     the user is deliberately passing through on the way to a new name.
+   *
+   * So option 1 in the contract is the fit: an instructional cue, set once, on
+   * the control the user is operating. By construction that cue lives on the
+   * rail's fields, not in this file — see the note returned to the page
+   * controller. What this file owes the same reader instead is that the panel is
+   * never STALE when they arrive at it: the chart's accessible name tracks the
+   * current measure name, and the data table is repainted in the same pass as
+   * the chart, so navigating here at any moment finds the current answer
+   * correctly named. A panel that is always right when read is the thing an
+   * announcement would only be approximating.
+   */
+
+  /** esa-chart's element class is not imported for typing — the module is
+   *  imported for its REGISTRATION side effect, which is all a custom element
+   *  needs to exist in the document. */
+  type ChartElement = HTMLElement & Record<string, unknown>;
+
+  /*
+   * DEBOUNCE. Long enough to sit out a fast typist's inter-keystroke interval
+   * (~120–200ms), short enough that the panel still reads as a response to the
+   * edit rather than a page that reloaded. It is not a performance hedge — one
+   * getMeasureRollup() over 24 projects is trivial — it is a STABILITY one: a
+   * rename walks through non-matching names, so an undebounced panel would drop
+   * to the empty state and climb back out on nearly every keystroke, and the
+   * height would move with it. Settling once per pause is the difference between
+   * a preview and a strobe.
+   */
+  const SETTLE_MS = 250;
+
+  const setUp = (panel: HTMLElement): void => {
+    const slug = panel.dataset.firma2RollupSlug ?? '';
+    const seedJson = panel.dataset.firma2RollupMeasure;
+    if (!seedJson) return;
+
+    const dataView = panel.querySelector<HTMLElement>('[data-firma2-rollup-view="data"]');
+    const emptyView = panel.querySelector<HTMLElement>('[data-firma2-rollup-view="empty"]');
+    const chartSlot = panel.querySelector<HTMLElement>('[data-firma2-rollup-chart]');
+    const caption = panel.querySelector<HTMLElement>('[data-firma2-rollup-caption]');
+    const unitHeader = panel.querySelector<HTMLElement>('[data-firma2-rollup-unit-header]');
+    const rows = panel.querySelector<HTMLElement>('[data-firma2-rollup-rows]');
+    const noteId = panel.querySelector<HTMLElement>('[data-firma2-rollup-note]')?.id ?? '';
+
+    /*
+     * legoGap — esa-stat is a presentational .astro lego with no slots and no
+     * Lit counterpart, so there is no supported way to change a stat's value
+     * after render. Reaching for its light-DOM BEM classes is the least-bad
+     * handle available: they are stable, they are what the lego's own stylesheet
+     * targets, and the alternative is hand-rolling a value/label pair, which is
+     * the exact reinvention esa-stat exists to prevent. Worth a /request-lego
+     * for a Lit `esa-stat` (or slot support on the .astro one) so a live figure
+     * has a real contract. Queried through the address wrapper rather than by
+     * position so adding a stat cannot silently repoint these.
+     */
+    const statPart = (stat: string, part: string): HTMLElement | null =>
+      panel.querySelector<HTMLElement>(`[data-firma2-rollup-stat="${stat}"] .esa-stat__${part}`);
+
+    const totalValue = statPart('total', 'value');
+    const totalSub = statPart('total', 'sub');
+    const countValue = statPart('projects', 'value');
+    const countLabel = statPart('projects', 'label');
+
+    if (!dataView || !emptyView || !chartSlot || !rows) return;
+
+    /*
+     * ONE CHART INSTANCE, EVER. Minted on first need (see the markup for why it
+     * is not server-rendered), then retained for the life of the page — hidden
+     * with its subtree when the panel falls back to the empty state, never
+     * removed. Removal is not a neutral act here: esa-chart destroys its AG
+     * Charts instance in disconnectedCallback, so a rename that bounced through
+     * the empty state would tear down and rebuild the whole chart, and a
+     * re-entrant rebuild is the thrash this refactor exists to avoid. Hidden and
+     * reused, it stays connected, keeps its instance, and comes back on a
+     * property assignment.
+     */
+    let chart: ChartElement | null = null;
+    const ensureChart = (): ChartElement => {
+      if (chart) return chart;
+      const el = document.createElement('esa-chart') as ChartElement;
+      // Attributes, not properties, for the two ARIA inputs — mirroring what the
+      // markup used to declare, and observed by esa-chart's `static properties`.
+      // `described-by` is set once because the note's id never changes.
+      if (noteId) el.setAttribute('described-by', noteId);
+      chartSlot.appendChild(el);
+      chart = el;
+      return el;
+    };
+
+    const paint = (measure: PerformanceMeasureDefinition): void => {
+      const rollup = getMeasureRollup(measure);
+      // STATE 2 IS NOT STATE 3. Conditioned on the series, not on the total —
+      // two projects reporting zero barriers so far is a real chart of zeroes,
+      // and calling it "no projects report this measure" would be false. Same
+      // test as the frontmatter, off the same field.
+      const hasSeries = rollup.series.length > 0;
+
+      /*
+       * VISIBILITY FIRST, then content. The chart is created and measured inside
+       * dataView; a `display: none` ancestor makes its container 0×0, and AG
+       * Charts would lay out against that. Flipping `hidden` before any chart
+       * work means the box has its real width by the time Lit's update runs.
+       */
+      dataView.hidden = !hasSeries;
+      emptyView.hidden = hasSeries;
+      if (!hasSeries) return;
+
+      // Rebuilt per paint: precision is one of the fields being edited, so the
+      // formatter is part of the answer rather than a constant. See frontmatter.
+      const number = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: measure.decimalPlaces,
+        maximumFractionDigits: measure.decimalPlaces,
+      });
+      const unitSuffix = rollup.unit ? ` ${rollup.unit}` : '';
+      const unitTitle = rollup.unit
+        ? rollup.unit.charAt(0).toUpperCase() + rollup.unit.slice(1)
+        : '';
+      const chartLabel = `${measure.name} reported by year`;
+
+      if (totalValue) {
+        totalValue.textContent = `${number.format(rollup.reportedTotal)}${unitSuffix}`;
+      }
+      if (totalSub) totalSub.textContent = `of ${number.format(rollup.expectedTotal)} expected`;
+      if (countValue) countValue.textContent = String(rollup.projectCount);
+      // The singular/plural branch, kept identical to the frontmatter's. One
+      // project reporting is the common case in this catalog, not an edge case.
+      if (countLabel) {
+        countLabel.textContent = `${rollup.projectCount === 1 ? 'Project' : 'Projects'} reporting`;
+      }
+
+      // THE TEXT ALTERNATIVE, in the same pass. Caption carries the measure name
+      // so the table and the chart are recognisably the same data; the header
+      // carries the unit so the column does not repeat it forty times.
+      if (caption) caption.textContent = chartLabel;
+      if (unitHeader) {
+        unitHeader.textContent = unitTitle ? `Reported (${rollup.unit})` : 'Reported';
+      }
+
+      /*
+       * Rows are built with createElement rather than an HTML string — no
+       * injection surface for a name the user typed, and `textContent` is the
+       * only writer. replaceChildren() swaps the whole body in one mutation, so
+       * a screen reader walking the table can never land between an old row and
+       * a new one.
+       *
+       * The class here is deliberately NOT scoped by Astro: nodes minted at
+       * runtime never receive the compile-time `data-astro-cid-*` attribute, so
+       * the table's rules are declared :global() below. See the style block.
+       */
+      const next = document.createDocumentFragment();
+      for (const year of rollup.series) {
+        const tr = document.createElement('tr');
+        const th = document.createElement('th');
+        th.scope = 'row';
+        th.textContent = String(year.year);
+        const td = document.createElement('td');
+        td.className = 'firma2-measure-rollup__num';
+        td.textContent = number.format(year.value);
+        tr.append(th, td);
+        next.append(tr);
+      }
+      rows.replaceChildren(next);
+
+      /*
+       * THE CHART IS UPDATED, NOT REBUILT. `data`, `series` and `options` are
+       * PROPERTIES on esa-chart — assigning them marks the element dirty, and
+       * esa-chart's updated() routes a change in any of those to
+       * chart.update(), which is AG Charts' in-place update. Nothing is
+       * destroyed and nothing re-initialises.
+       *
+       * Reassigning `data` on the way back from the empty state is NOT
+       * redundant even when the numbers are identical: the container was 0×0
+       * while hidden, and the property assignment is what asks AG Charts to lay
+       * out again now that it is not.
+       *
+       * `label` goes through setAttribute, which esa-chart routes to
+       * applyAria() instead of a redraw — the accessible name follows the name
+       * the user is typing without repainting the canvas for it.
+       */
+      const el = ensureChart();
+      el.setAttribute('label', chartLabel);
+      el.data = rollup.series.map((year) => ({
+        // Years are handed to the chart as STRINGS. A category axis given the
+        // integer 2023 formats it as a number and renders "2,023" under the bar
+        // — a thousands separator inside a year, which reads as a data bug
+        // rather than a formatting one. Strings bypass the numeric formatter.
+        year: String(year.year),
+        value: year.value,
+      }));
+      el.series = [
+        {
+          type: 'bar',
+          xKey: 'year',
+          yKey: 'value',
+          // Names the quantity in the tooltip. Falls back to the verb when the
+          // measure carries no unit (Percent and Currency measures do not).
+          yName: unitTitle || 'Reported',
+          // Both numbers are the dataviz skill's fixed mark spec, not taste:
+          // a 4px rounded data-end, and bars capped at 24px so a four-year
+          // series does not render four slabs filling their whole bands. AG
+          // Charts' `width` is a fixed pixel width; at esa-chart's 300px
+          // minimum with six categories the band is still wider than 24, so it
+          // never overflows its slot.
+          cornerRadius: 4,
+          width: 24,
+        },
+      ];
+      // The axis title replaces the legend a single series does not get: it is
+      // where the unit is stated on the chart itself. Built conditionally rather
+      // than set to `undefined`, so a measure with no unit (Percent, Currency)
+      // hands AG Charts an axis with no `title` key at all instead of a present
+      // key holding nothing.
+      const valueAxis: Record<string, unknown> = { type: 'number', position: 'left' };
+      if (unitTitle) valueAxis.title = { enabled: true, text: unitTitle };
+
+      // Only `axes` is overridden. esa-chart merges this object OVER everything
+      // it computes, so the token-resolved mark colours, the theme params, the
+      // forced-colors repaint and the reduced-motion decision all survive.
+      el.options = {
+        axes: [{ type: 'category', position: 'bottom' }, valueAxis],
+      };
+    };
+
+    /*
+     * `data`, `series` and `options` are PROPERTIES, not attributes — assigning
+     * them before the class is registered would write plain expandos onto an
+     * HTMLUnknownElement, which Lit's upgrade does not reclaim, so the chart
+     * would come up empty with nothing in the console. whenDefined is the gate,
+     * and every paint goes through it rather than only the first: it resolves
+     * once and then costs a microtask.
+     */
+    const ready = customElements.whenDefined('esa-chart');
+
+    /*
+     * `latest` rather than a captured argument, so a change that lands while the
+     * first paint is still queued cannot be overwritten by it. The listener is
+     * registered SYNCHRONOUSLY at module evaluation — deferred module scripts
+     * all run before DOMContentLoaded, so a controller that dispatches its
+     * initial (draft-merged) event on DOMContentLoaded is guaranteed to find
+     * this listener already attached. That ordering is the contract; see the
+     * note returned to the page controller.
+     */
+    let latest = JSON.parse(seedJson) as PerformanceMeasureDefinition;
+    let timer = 0;
+
+    document.addEventListener(MEASURE_CHANGE_EVENT, (event: Event) => {
+      const detail = (event as CustomEvent<MeasureChangeDetail>).detail;
+      // Addressed by slug: the event is document-scoped and carries one record,
+      // and nothing stops a screen from stacking two of these panels.
+      if (!detail?.measure || (slug && detail.measure.slug !== slug)) return;
+      latest = detail.measure;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void ready.then(() => paint(latest)), SETTLE_MS);
+    });
+
+    /*
+     * First paint, undebounced, through the SAME function every later paint uses.
+     * The server already rendered this panel from the seed, so this looks
+     * redundant — it is not. It makes the client path the only live answer, so
+     * the two copies of the formatting rules above cannot drift into showing two
+     * different things; it wires the chart, which the server cannot; and it
+     * means the panel is correct even if the controller never dispatches.
+     */
+    void ready.then(() => paint(latest));
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-firma2-rollup-panel]').forEach(setUp);
+</script>
+
+<style>
+  /* No layout rules for the panel body beyond the `stack` in the markup, which
+     restates esa-collapsible's own 1rem column gap for the wrapper this refactor
+     had to introduce. Same token, so the rhythm is unchanged. */
+
+  /* `hidden` has to win. The UA stylesheet's [hidden] { display: none } is the
+     weakest rule in the cascade, and `.stack` sets display: flex from an author
+     stylesheet — so without this the data view would stay visible in its empty
+     state. Two classes' worth of specificity, scoped to this panel, rather than
+     an !important that would be inherited by anything nested here later. */
+  .firma2-measure-rollup [hidden] {
+    display: none;
+  }
+
+  /* The chart's box is stable before the chart arrives. esa-chart renders its
+     own wrap/canvas with an inline height (320px by default) on its first Lit
+     update, so the slot is at full height a microtask after the element is
+     appended — well before ag-charts-community finishes its dynamic import and
+     paints into it. Nothing here reserves a height, because nothing needs to:
+     the element sizes itself, and the data it holds never changes that size. */
+
+  .firma2-measure-rollup__note {
+    margin: 0;
+    /* Primary ink deliberately — see the NOTE comment in the markup. `body-sm`
+       is 14px, the house dense floor, and design-principles' rule for small text
+       is "darken as you shrink", not grey it out. */
+    color: var(--color-content-default, #202020);
+  }
+
+  /* THE TABLE'S RULES ARE :global(), AND THAT IS NOT A SHORTCUT.
+     Its rows are rebuilt from JavaScript on every paint (they carry per-year
+     figures that change with the record), and Astro's scoping is a COMPILE-TIME
+     `data-astro-cid-*` attribute stamped onto nodes in the template. A <tr> made
+     by document.createElement never receives it, so a scoped `.foo td` rule
+     simply would not match — the table would lose its padding and alignment the
+     first time the panel updated, and only then. Declaring them global is the
+     honest fix; the `firma2-measure-rollup__` prefix is what keeps them from
+     reaching anything else on the page. */
+  :global(.firma2-measure-rollup__table) {
+    width: 100%;
+    /* Collapsed so rows are separated by ONE hairline rather than a pair of
+       adjacent borders, which reads as a heavier band than the token intends.
+       Same call, same reason, as firma2-project-funding's table. */
+    border-collapse: collapse;
+    /* Type is inherited from the collapsible's body (.typography-body-md). Not
+       downshifted: two columns of four rows is not a dense surface. */
+  }
+
+  :global(.firma2-measure-rollup__table th),
+  :global(.firma2-measure-rollup__table td) {
+    text-align: start;
+    vertical-align: baseline;
+    padding-block: var(--spacing-200, 0.5rem);
+    padding-inline: var(--spacing-300, 0.75rem);
+  }
+
+  /* Outer columns drop their outer padding so the table's text aligns with the
+     disclosure row above it rather than sitting visibly inset from it. */
+  :global(.firma2-measure-rollup__table th:first-child),
+  :global(.firma2-measure-rollup__table td:first-child) { padding-inline-start: 0; }
+  :global(.firma2-measure-rollup__table th:last-child),
+  :global(.firma2-measure-rollup__table td:last-child) { padding-inline-end: 0; }
+
+  :global(.firma2-measure-rollup__table thead th) {
+    color: var(--color-content-default-secondary, #646464);
+    font-weight: var(--font-weight-semibold, 600);
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  /* A row header labels its row; it does not shout over it. Same weight as the
+     figure beside it, so the row reads as one line. */
+  :global(.firma2-measure-rollup__table tbody th) {
+    font-weight: inherit;
+  }
+
+  :global(.firma2-measure-rollup__table tbody tr + tr th),
+  :global(.firma2-measure-rollup__table tbody tr + tr td) {
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  /* Right-aligned with tabular figures so place values stack — 1,300 lines up
+     under 538 digit for digit. This is the case the dataviz skill reserves
+     tabular-nums for (columns that must align vertically); the stat tiles above
+     stay proportional, which is why they are not given this class. */
+  :global(.firma2-measure-rollup__num) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    /* Shrink-to-fit under `table-layout: auto` — the standard idiom for "take
+       only what the content needs", handing the leftover width to the Year
+       column so neither ever wraps. */
+    width: 1%;
+  }
+</style>

@@ -1,0 +1,167 @@
+---
+// Project detail — one page per project in the portfolio, the screen the
+// Projects index and the Recently viewed row have been linking at.
+//
+// WHO IT IS FOR. Not only the sponsor. An executive director checking whether
+// their organization's project is on track, and a member of the public who
+// found it from the index, land on the same page and both have to be able to
+// tell what the work is, where it happens, what it promised, who is paying, and
+// where it has got to. That is the section order below, and it is why the
+// description and the map come before the numbers: you cannot judge 62 acres of
+// riparian habitat until you know it is six miles of Deer Creek.
+//
+// IT IS ALSO A WORKFLOW ENTRY POINT. Every section carries an edit affordance
+// and the header carries the primary one. All of them are inert in this
+// prototype — they render, focus, and take a click, and nothing happens. They
+// are deliberately NOT `disabled`: a greyed-out control tells a reviewer the
+// action is unavailable to them, which is a different and false claim than "not
+// wired yet". Each affordance names its own section, so a screen-reader rotor
+// lists "Edit basics / Edit description / Edit work areas / …" rather than six
+// buttons all called "Edit".
+//
+// ROUTE. getStaticPaths builds one page per project from `projects`, keyed by
+// projectSlug — the SAME function projectHref() uses, so a link in the index or
+// the recently-viewed row can never point at a slug this route did not
+// generate. firma2-projects.ts throws at build on a slug collision, which is
+// what keeps that guarantee honest as projects are added.
+//
+// ZERO PAGE CSS. Every section owns its own markup and styles; this file is the
+// spine and the manifest, nothing else.
+import AppLayout from '../../../layouts/AppLayout.astro';
+import Firma2PageHeader from '../../../components/shared/firma2-page-header.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import Firma2ProjectFacts from '../../../components/projects/firma2-project-facts.astro';
+import Firma2ProjectDescription from '../../../components/projects/firma2-project-description.astro';
+import Firma2ProjectMap from '../../../components/projects/firma2-project-map.astro';
+import Firma2ProjectMeasures from '../../../components/projects/firma2-project-measures.astro';
+import Firma2ProjectFunding from '../../../components/projects/firma2-project-funding.astro';
+import Firma2ProjectTimeline from '../../../components/projects/firma2-project-timeline.astro';
+import { projects, projectSlug, STAGE_TONE } from '../../../data/firma2-projects';
+import type { Project } from '../../../data/firma2-projects';
+import { getProjectDetail } from '../../../data/firma2-project-detail';
+import { withBase } from '../../../lib/base';
+
+export function getStaticPaths() {
+  return projects.map((project) => ({
+    params: { project: projectSlug(project) },
+    props: { project },
+  }));
+}
+
+interface Props {
+  project: Project;
+}
+
+const { project } = Astro.props;
+const detail = getProjectDetail(project);
+---
+<!-- manifest:
+  layout: stack(2xl) > sidebar[data-side=end]
+  sections:
+    - page header          -> firma2-page-header
+    - rail: key facts      -> firma2-project-facts
+    - work areas map       -> firma2-project-map
+    - description          -> firma2-project-description
+    - performance measures -> firma2-project-measures
+    - funding sources      -> firma2-project-funding
+    - milestones           -> firma2-project-timeline
+  note: listed in DOM order. The rail section renders on the trailing edge via
+        data-side="end"; the other five are the main column, in this order.
+-->
+<AppLayout title={`${project.projectName} — ProjectFirma 2.0`} active="projects">
+  <div class="stack" data-gap="2xl">
+    <!-- Two crumbs, not three. "Home > Projects > <name>" would spend a step on a
+         route this app's sidenav already owns; the one thing a reader needs from
+         here is the way back to the list they came from. The last crumb takes no
+         href and esa-breadcrumbs marks it aria-current="page". Both crumb and
+         title ride in the sticky band, so the way out stays on screen for the
+         whole page rather than only for its first screenful. -->
+    <Firma2PageHeader
+      title={project.projectName}
+      crumbs={[
+        { label: 'Projects', href: withBase('/prototypes/projects') },
+        { label: project.projectName },
+      ]}
+    >
+      <!-- The stage pill sits in the actions cluster because that is where
+           esa-page-header puts anything trailing the title — the lego has no
+           status slot, which is a real gap worth filing rather than a reason to
+           hand-roll a header. It is not an action and it does not pretend to be
+           one: no href, no handler, not focusable.
+
+           The visually-hidden "Stage" is load-bearing. A pill reading
+           "Implementation" beside a project name is unambiguous to a sighted
+           reader only because of where it sits; announced on its own it could
+           as easily be a project type or a program. This is the label that used
+           to sit in the Basics panel, which is why the panel no longer repeats
+           the pill. -->
+      <span slot="actions" class="visually-hidden">Stage</span>
+      <EsaPill
+        slot="actions"
+        label={project.stage}
+        variant={STAGE_TONE[project.stage]}
+        size="md"
+        removable={false}
+      />
+      <EsaButton slot="actions" variant="primary">Edit project</EsaButton>
+    </Firma2PageHeader>
+
+    <!-- The .sidebar primitive: its FIRST DOM child is always the aside, and
+         data-side="end" orders it to the TRAILING edge. So the rail renders on
+         the right while staying first in the source.
+
+         WHY THE RAIL HOLDS THE RECORD AND THE MAIN COLUMN HOLDS THE WORK. The
+         main column is what the page is FOR — where the work happens, what it
+         promised, what it has delivered so far, who paid for it, and where it has
+         got to. That is what a director checking their organization's project and
+         a member of the public who arrived from the index both came to see, and
+         the map leads it because none of the numbers mean anything until you can
+         see the ground they describe. The rail carries the other kind of fact:
+         who runs it, under what program, over what years, for how much. Those
+         place the project once you already care about it, which is a quieter job,
+         so they get the quieter column.
+
+         SOURCE ORDER. The rail comes first in the DOM and second on screen, which
+         is the one place this layout's reading order and visual order disagree.
+         It is marked up as <aside>, so a screen reader announces a complementary
+         landmark and offers to skip past it in a keystroke, and a reader who does
+         step through it gets five short labelled facts before the map — the same
+         framing the header's title and stage pill already gave them. Reversing
+         the DOM to match the eye would mean fighting the primitive, which reads
+         its aside off :first-child.
+
+         The primitive wraps to one column on its own below --sidebar-content-min;
+         nothing here is a media query. -->
+    <div class="sidebar" data-side="end" data-gap="xl">
+      <!-- .stack on the <aside> itself, not a wrapper around it. .sidebar is a row
+           primitive that declares no cross-axis alignment, so its children stretch
+           to the tallest: left as the card alone, Basics grew to the full height of
+           the main column and rendered as a mostly-empty box. .stack is the COLUMN
+           primitive, so its own child keeps its natural height while the stack
+           absorbs the stretch. Structure, not a page style override.
+
+           The real fix is upstream: .sidebar exposes --gap, --sidebar-width and
+           --sidebar-content-min but no alignment knob, and `data-align` sets
+           --align, which .sidebar never reads. Filed in the improvement ledger.
+
+           No aria-label: the landmark is immediately followed by its own "Basics"
+           heading, and there is only one complementary region on the page, so a
+           name here would be the heading said twice. -->
+      <aside class="stack">
+        <Firma2ProjectFacts detail={detail} />
+      </aside>
+
+      <div class="stack" data-gap="xl">
+        <Firma2ProjectMap detail={detail} />
+        <Firma2ProjectDescription description={detail.projectDescription} />
+        <Firma2ProjectMeasures measures={detail.measures} />
+        <Firma2ProjectFunding
+          funding={detail.funding}
+          estimatedTotalCost={detail.project.estimatedTotalCost}
+        />
+        <Firma2ProjectTimeline milestones={detail.milestones} />
+      </div>
+    </div>
+  </div>
+</AppLayout>

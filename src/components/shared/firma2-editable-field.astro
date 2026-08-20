@@ -1,0 +1,734 @@
+---
+// firma2-editable-field — ONE record attribute on a ProjectFirma detail page,
+// rendered as a label → value pair that can be CORRECTED in place.
+//
+// This is a trimmed port of cb-fish-design's `cbf-invoice-field` — the vetted
+// precedent for this exact interaction. What carries over verbatim in spirit:
+// the read↔edit swap scoped to ONE row, the affordance that stays quiet until
+// the row is engaged, the explicit save/cancel (never a blur-commit), and the
+// rule that opening a row moves as little as possible. What is DROPPED, because
+// this page has no review workflow: the copy control, the flag/raise-an-issue
+// control, and the issue-note machinery. A project page is a record you keep
+// accurate, not a submission you adjudicate.
+//
+// EDITS ARE REAL AND THEY ARE LOCAL. Typing a new lead organization and pressing
+// Save writes it into the display immediately. Nothing is persisted — there is no
+// API behind this prototype — so a reload restores the seeded record. That is the
+// intended behaviour, and it is recorded HERE rather than in visible copy: a
+// "changes are not saved" banner would be text ABOUT the page, and the reviewer
+// being walked through this already knows it is a prototype.
+//
+// PINNED CONTRACT (the delegated script at the bottom of this file drives every
+// instance; consumers only render the component):
+//   root  [data-editable-field]        the delegation hook
+//         [data-field="<key>"]         the field's stable key
+//         [data-control] [data-format] which control it flips to, how it renders back
+//         [data-raw]                   the value BEHIND the display ("412000",
+//                                      "2023,2027") — the control is seeded from
+//                                      this and it is rewritten on save
+//         [data-editing]               present while THIS row is open; the
+//                                      control-cluster swap is pure CSS off it
+//   read  [data-field-display]         the formatted value
+//   edit  [data-field-edit-region]     wraps the control(s), revealed while editing
+//         [data-field-input]           THE control — esa-text-field / esa-textarea /
+//                                      esa-select, all of which expose `.value` and
+//                                      `.errorText`, so one read/write path serves all
+//         [data-field-edit] / [data-field-edit-save] / [data-field-edit-cancel]
+//
+// bcn-lego-checked: there is no `esa-inline-edit` / editable-field lego — checked
+// the full `node_modules/@esa/ecology/src/components/` catalog (esa-form-field is
+// label+control chrome for a FORM, not a read/edit data row; esa-stat and esa-card
+// are read-only). This ports cb-fish-design's `cbf-invoice-field`, the vetted
+// precedent for the same interaction in a sibling spoke. Every control it flips to
+// IS a lego (esa-text-field / esa-textarea / esa-select) and so is every affordance
+// (esa-button), so nothing here restyles a primitive — the bespoke part is the
+// read↔edit CHOREOGRAPHY, which is what a component is for. Beacon is not cloned on
+// this machine. firma2-editable-field is the reusable home: the project detail
+// page's Basics, Description and Work-areas sections all render it.
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+interface Props {
+  /** Stable key, e.g. "leadOrganization". Lands on the root as data-field. */
+  field: string;
+  /** The field's name. Always rendered for AT; see labelHidden. */
+  label: string;
+  /** Display value, ALREADY formatted — "$412,000", "2023–2027", "Tehama". */
+  value: string;
+  /** Which control the row flips to. Default 'text'. */
+  control?: 'text' | 'textarea' | 'select' | 'number' | 'year-range';
+  /** Options for control="select". */
+  options?: string[];
+  /**
+   * Raw value handed to the control when it differs from the display value:
+   * "412000" behind "$412,000", "2023,2027" behind "2023–2027".
+   * Defaults to `value`.
+   */
+  editValue?: string;
+  /** How a saved value is re-rendered into the display. Default 'text'. */
+  format?: 'text' | 'currency' | 'year-range';
+  /**
+   * Element shape. 'dl-pair' emits <div><dt/><dd/></div> for use inside a <dl>
+   * (the Basics panel). 'block' emits a plain <div>. Default 'dl-pair'.
+   */
+  as?: 'dl-pair' | 'block';
+  /**
+   * Render the label visually-hidden — for a field whose card title already names
+   * it (the Description section). It is still in the DOM and still names the
+   * control. Default false.
+   */
+  labelHidden?: boolean;
+}
+
+const {
+  field,
+  label,
+  value,
+  control = 'text',
+  options = [],
+  editValue,
+  format = 'text',
+  as = 'dl-pair',
+  labelHidden = false,
+} = Astro.props;
+
+// `dl-pair` is the shape firma2-project-facts already renders — a <div> grouping a
+// <dt> and a <dd>, which is the spec's own grouping form for a <dl> and what makes
+// each pair a TIGHT stack inside a list that breathes between pairs. `block` is the
+// same choreography without the list semantics, for a section that is one field.
+const Head = as === 'dl-pair' ? 'dt' : 'div';
+const Body = as === 'dl-pair' ? 'dd' : 'div';
+
+// The value BEHIND the display. `editValue` exists because a formatted value is
+// not a value a control can hold: a number input cannot be seeded with "$412,000",
+// and a pair of year boxes cannot be seeded with "2023–2027".
+const seed = editValue ?? value;
+
+// A year range arrives either as the raw "2023,2027" or as the already-formatted
+// "2023–2027"; both split to the same pair, so a consumer that only passes `value`
+// still gets a working editor.
+const yearParts = (() => {
+  if (format !== 'year-range' && control !== 'year-range') return null;
+  const parts = seed
+    .split(/[,–—-]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length === 2 ? parts : null;
+})();
+
+const raw = yearParts ? yearParts.join(',') : seed;
+
+// esa-select takes `{ value, label }` records as a PROPERTY (Astro can only set
+// attributes), so the list rides across as JSON and the script assigns it after
+// upgrade. Identical value and label: these are plain vocabulary strings, not codes.
+const selectOptions = options.map((o) => ({ value: o, label: o }));
+---
+<div
+  class="firma2-editable-field stack"
+  data-gap="3xs"
+  data-editable-field
+  data-field={field}
+  data-control={control}
+  data-format={format}
+  data-raw={raw}
+  data-label-hidden={labelHidden ? '' : undefined}
+>
+  <Head class="firma2-editable-field__head">
+    <span class:list={['firma2-editable-field__label', 'typography-label-sm', labelHidden && 'visually-hidden']}>
+      {label}
+    </span>
+  </Head>
+
+  <Body class="firma2-editable-field__body">
+    <!-- READ. The value, and the only thing on screen at rest.
+         It is also a click target: clicking the value opens the editor, which is
+         the gesture people reach for before they find the pencil. That does NOT
+         make it the keyboard path — the pencil beside it is a real <button> and
+         is what Tab reaches, so nothing here is mouse-only. -->
+    <span class="firma2-editable-field__value" data-field-display>
+      {yearParts ? (
+        <Fragment>
+          {yearParts[0]}<span aria-hidden="true">–</span><span class="visually-hidden"> to </span>{yearParts[1]}
+        </Fragment>
+      ) : value}
+    </span>
+
+    <!-- EDIT. Exactly one control (or, for a year range, one pair) renders,
+         chosen by `control`. It stands precisely where the read value stood, so
+         opening a row shifts only this line — the label above it does not move.
+
+         SIZE. `sm` on every control, and it is honoured by all three legos: this
+         panel is ~18rem wide, and md (40px) plus the lego's own label gap would
+         make a five-row aside noticeably taller than the values it holds. sm is
+         also esa-select's documented floor, so the three agree on one rung.
+
+         NO VISIBLE LABEL on the single controls: the row's own label sits
+         directly above and stays there while editing, so a control that drew its
+         own label would print the word twice and shove the row around. The legos
+         render no <label> when `label` is empty; the script names the inner
+         control from the same rendered text a sighted user reads (see the
+         accessible-name note in the script). The year pair is the exception and
+         says why below. -->
+    <div class="firma2-editable-field__edit stack" data-gap="2xs" data-field-edit-region hidden>
+      {control === 'textarea' && (
+        <esa-textarea
+          class="firma2-editable-field__input"
+          data-field-input
+          data-name={label}
+          size="md"
+          rows="5"
+        ></esa-textarea>
+      )}
+
+      {control === 'select' && (
+        <esa-select
+          class="firma2-editable-field__input"
+          data-field-input
+          data-control="select"
+          data-name={label}
+          data-options={JSON.stringify(selectOptions)}
+          size="md"
+          placeholder="Select an option"
+        ></esa-select>
+      )}
+
+      {(control === 'text' || control === 'number') && (
+        <esa-text-field
+          class="firma2-editable-field__input"
+          data-field-input
+          data-name={label}
+          size="md"
+          type={control === 'number' ? 'number' : 'text'}
+          inputmode={control === 'number' ? 'numeric' : undefined}
+          prefix={format === 'currency' ? '$' : undefined}
+        ></esa-text-field>
+      )}
+
+      <!-- A range is TWO values, so it is two controls — and two identical number
+           boxes under one "Timeline" label are indistinguishable without a word
+           each. These are the only controls here that render their lego label
+           visibly, because they are the only ones the row's own label does not
+           already name. The words are the record's own field names
+           (implementationStartYear / completionYear), not invented shorthand. -->
+      {control === 'year-range' && (
+        <!-- "Start" / "Completion", not "Start year" / "Completion year". The row's
+       own label already says Timeline and both boxes take four digits, so the
+       word "year" is carried twice over and earns nothing. It also cost
+       alignment: in the ~289px rail these two sit ~135px wide, where
+       "Completion year" wraps to a second line and "Start year" does not, so
+       the pair rendered 68px and 92px tall — two controls in one row at
+       different heights, which is the exact thing design-principles asks
+       sibling controls never to do. -->
+  <div class="firma2-editable-field__years cluster" data-gap="xs">
+          <esa-text-field
+            class="firma2-editable-field__input firma2-editable-field__year"
+            data-field-input
+            data-year="start"
+            label="Start"
+            size="md"
+            type="number"
+            inputmode="numeric"
+          ></esa-text-field>
+          <esa-text-field
+            class="firma2-editable-field__input firma2-editable-field__year"
+            data-field-input
+            data-year="end"
+            label="Completion"
+            size="md"
+            type="number"
+            inputmode="numeric"
+          ></esa-text-field>
+        </div>
+      )}
+    </div>
+
+    <!-- Row affordances. LAST in the DOM on purpose: Tab out of the control has to
+         land on Save, and a cluster placed above the control would send it past
+         both buttons to the next row instead. They are painted back to the top
+         right corner by the stylesheet, which is where they belong beside a label.
+
+         Two mutually exclusive sets, swapped by [data-editing]: what you can DO to
+         the field, and how you get OUT of doing it. The rest-state control is not
+         disabled while editing, it is GONE — there is nothing to mis-click. -->
+    <!-- NAMED WITH `aria-label`, NOT `label`, and the difference is the point.
+         esa-button sets BOTH aria-label and `title` from `label` when iconOnly —
+         and `title` is a native browser tooltip: unstyleable, delayed, and
+         positioned by the UA. These controls are docked to the top-right corner
+         of the row, so the UA parked the tooltip directly over the row ABOVE:
+         hovering Cancel on one field covered the LABEL of the field above it.
+         The tooltip was redundant anyway — this row's own <dt> is on screen two
+         lines up saying what the button's name repeats. esa-button counts an
+         `aria-label` arriving through ...rest as a valid accessible name (its
+         own pre-consolidation docs told people to write exactly that), so the
+         screen reader still hears "Cancel editing Lead organization" and
+         nothing is painted over. -->
+    <div class="firma2-editable-field__controls">
+      <span class="firma2-editable-field__control firma2-editable-field__control--rest" data-field-edit>
+        <EsaButton variant="chrome" iconOnly icon="pencil" aria-label={`Edit ${label}`} size="xs" />
+      </span>
+      <span class="firma2-editable-field__control firma2-editable-field__control--editing" data-field-edit-save>
+        <EsaButton variant="chrome" iconOnly icon="check" aria-label={`Save ${label}`} size="xs" />
+      </span>
+      <span class="firma2-editable-field__control firma2-editable-field__control--editing" data-field-edit-cancel>
+        <EsaButton variant="chrome" iconOnly icon="x" aria-label={`Cancel editing ${label}`} size="xs" />
+      </span>
+    </div>
+  </Body>
+</div>
+
+<style>
+  /* The controls are painted OUT OF FLOW at the row's top-right corner.
+     In flow they would set the head's height to the button's instead of
+     the label's (~22px), which breaks the thing firma2-project-facts spent a
+     `data-gap="3xs"` building: the label sitting tight ON its value. Out of flow,
+     a row at rest measures exactly what it measured before this component existed. */
+  .firma2-editable-field {
+    position: relative;
+  }
+
+  /* Space kept clear for the buttons, so a long label never runs under them the
+     moment they appear on hover. Two `sm` icon buttons plus their gap; the label
+     wraps before it reaches them rather than colliding. */
+  .firma2-editable-field__head {
+    padding-inline-end: calc(var(--spacing-800, 4rem) + var(--spacing-200, 0.5rem));
+  }
+
+  /* The label is the quiet half of the pair — the same treatment
+     firma2-project-facts gave its own <dt>, carried over so a converted row and an
+     unconverted one are indistinguishable. */
+  .firma2-editable-field__label {
+    display: block;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* With the label visually hidden there is nothing to hold the corner open, so
+     the strip is reserved explicitly and the value starts below the pencil rather
+     than under it. */
+  .firma2-editable-field[data-label-hidden] .firma2-editable-field__head {
+    min-block-size: var(--spacing-600, 2rem);
+  }
+
+  .firma2-editable-field__body {
+    min-width: 0;
+  }
+
+  .firma2-editable-field__value {
+    display: block;
+    overflow-wrap: anywhere;
+    /* Only ever seen while hovering the value — which is exactly when the row's
+       pencil has appeared too, so the two affordances arrive together. */
+    cursor: pointer;
+  }
+  /* `display: block` above outranks the UA's `[hidden] { display: none }`, so the
+     script hiding the read value would be silently ignored without this. Every
+     display-setting rule in this file needs its own guard. */
+  .firma2-editable-field__value[hidden] {
+    display: none;
+  }
+
+  /* Years and dollars are figures, so they get figures' shaping — the same
+     treatment the Projects index table gives these two exact fields, so a cost
+     reads as the same kind of thing in both places. */
+  .firma2-editable-field[data-format='currency'] .firma2-editable-field__value,
+  .firma2-editable-field[data-format='year-range'] .firma2-editable-field__value {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-editable-field__edit[hidden] {
+    display: none;
+  }
+
+  /* The legos are custom elements — inline by default, so they would sit at their
+     content width instead of filling the column. */
+  .firma2-editable-field__input {
+    display: block;
+    width: 100%;
+  }
+  /* The two year boxes share the column and wrap to two rows only when it gets
+     genuinely too narrow for a 4-digit field and its label. */
+  .firma2-editable-field__year {
+    flex: 1 1 6rem;
+    width: auto;
+  }
+
+  /* A label sitting 2px above a line of text reads as one unit; 2px above a
+     32px bordered box reads as a collision. The value line takes the extra
+     breath — the LABEL does not move, which is the geometry rule that matters. */
+  .firma2-editable-field[data-editing] {
+    --gap: var(--spacing-150, 0.375rem);
+  }
+
+  /* Affordances recede until the row is engaged, so a panel of five rows reads as
+     data rather than as a wall of buttons. Focus-within keeps them tab-reachable,
+     and a touch device — where there is no hover to reveal anything — gets them
+     unconditionally. */
+  .firma2-editable-field__controls {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    display: inline-flex;
+    gap: var(--spacing-050, 0.125rem);
+    color: var(--color-content-default-tertiary, #757575);
+  }
+  .firma2-editable-field__control {
+    display: inline-flex;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  /* THE CHIP IS SIZED TO THE LABEL'S LINE, and that is a bleed fix, not a taste
+     one. esa-button at `xs` draws a 32px box; the row's label line is 22.4px.
+     Anchored at the row's top edge, the button's hover/focus background
+     therefore hung ~10px BELOW the label and landed on top of the value beneath
+     it — and a value like "Deer Creek Watershed Alliance" runs nearly the full
+     289px rail, so the grey chip sat squarely on the text.
+     Padding the VALUE to clear it was the other option and is worse: the
+     reservation would apply at rest as well as on hover, permanently narrowing
+     every value in a column that has no width to spare. Sizing the chip is the
+     one fix that costs nothing when nobody is hovering.
+     24px, not 22.4: that is the floor WCAG 2.2 SC 2.5.8 (Target Size Minimum)
+     sets for a pointer target, so the chip stops at the smallest box it is
+     allowed to be rather than at the label's exact height. The 14px glyph is
+     untouched — it was already correct and subordinate.
+     Reached through :global() because esa-button is an .astro component: its
+     .esa-button__native carries ITS scope hash, not this file's, so a plain
+     selector here compiles to something that matches nothing. Contained by the
+     __control class, so it cannot leak to any other button on the page. */
+  .firma2-editable-field__control :global(.esa-button__native) {
+    block-size: 24px;
+    inline-size: 24px;
+    min-block-size: 0;
+  }
+  .firma2-editable-field:hover .firma2-editable-field__control,
+  .firma2-editable-field:focus-within .firma2-editable-field__control {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .firma2-editable-field__control {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-editable-field__control {
+      transition: none;
+    }
+  }
+
+  /* Only one set exists in the DOM's flow at a time — removed, not disabled, so
+     there is nothing to mis-click and nothing to explain. A row being edited keeps
+     its controls lit: it is unambiguously engaged, and its save/cancel must never
+     need a hover to be found. */
+  .firma2-editable-field:not([data-editing]) .firma2-editable-field__control--editing {
+    display: none;
+  }
+  .firma2-editable-field[data-editing] .firma2-editable-field__control--rest {
+    display: none;
+  }
+  .firma2-editable-field[data-editing] .firma2-editable-field__control {
+    opacity: 1;
+  }
+  .firma2-editable-field[data-editing] [data-field-edit-save] {
+    color: var(--color-background-brand, currentColor);
+  }
+</style>
+
+<script>
+  // The three controls a row can flip to. Registering them here rather than in the
+  // page keeps the component self-contained: a consumer imports the .astro file and
+  // gets working legos, with no second import to remember.
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-select';
+  // Dependency-free formatter module. NOT shared/grid-chrome.ts, which exports the
+  // identical Intl.NumberFormat but registers the whole AG Grid runtime at module
+  // scope — importing it here would pull the grid into every page holding a field.
+  import { currencyFormatter } from '../../lib/format';
+
+  type Control = HTMLElement & {
+    value?: string | string[];
+    options?: { label: string; value: string }[];
+    errorText?: string;
+    updateComplete?: Promise<unknown>;
+  };
+
+  const ROW = '[data-editable-field]';
+
+  const rowOf = (el: Element | null): HTMLElement | null =>
+    el ? el.closest<HTMLElement>(ROW) : null;
+  const inputsOf = (row: HTMLElement): Control[] =>
+    Array.from(row.querySelectorAll<Control>('[data-field-input]'));
+  const displayOf = (row: HTMLElement) => row.querySelector<HTMLElement>('[data-field-display]');
+  const regionOf = (row: HTMLElement) => row.querySelector<HTMLElement>('[data-field-edit-region]');
+  const pencilOf = (row: HTMLElement) =>
+    row.querySelector<HTMLElement>('[data-field-edit] button');
+  const isEditing = (row: HTMLElement) => row.hasAttribute('data-editing');
+
+  const setError = (control: Control | undefined, message: string): void => {
+    if (!control) return;
+    control.errorText = message;
+    control.focus?.();
+  };
+  const clearErrors = (row: HTMLElement): void => {
+    inputsOf(row).forEach((c) => {
+      c.errorText = '';
+    });
+  };
+
+  /**
+   * Re-render a saved year range into the display.
+   *
+   * Built from nodes rather than a string of HTML — there is no escaping to get
+   * wrong, and the aria-hidden dash / visually-hidden "to" pair is the same one
+   * firma2-project-facts server-renders. Screen readers do not reliably voice an
+   * en dash, so unhidden it yields "2023 2027" — two years with no stated
+   * relationship. The dash carries the meaning for eyes, the word for ears, and
+   * only one of them is ever perceived at a time.
+   */
+  const paintYearRange = (display: HTMLElement, start: string, end: string): void => {
+    const dash = document.createElement('span');
+    dash.setAttribute('aria-hidden', 'true');
+    dash.textContent = '–';
+    const spoken = document.createElement('span');
+    spoken.className = 'visually-hidden';
+    spoken.textContent = ' to ';
+    display.replaceChildren(document.createTextNode(start), dash, spoken, document.createTextNode(end));
+  };
+
+  const openEdit = (row: HTMLElement): void => {
+    if (isEditing(row)) return;
+    const inputs = inputsOf(row);
+    if (inputs.length === 0) return;
+
+    // Seed from the record ONLY here, at the moment the row opens — so a row left
+    // open is never silently re-seeded out from under whatever was typed into it.
+    const raw = row.dataset.raw ?? '';
+    if (row.dataset.control === 'year-range') {
+      const [start = '', end = ''] = raw.split(',').map((s) => s.trim());
+      inputs[0].value = start;
+      inputs[1].value = end;
+    } else {
+      inputs[0].value = raw;
+    }
+    clearErrors(row);
+
+    row.dataset.editing = '';
+    const display = displayOf(row);
+    const region = regionOf(row);
+    if (display) display.hidden = true;
+    if (region) region.hidden = false;
+
+    // Focus MOVES INTO the edit region, which is what announces the swap: the
+    // control is read out with its name and its seeded value, and the stale display
+    // value beside it is `hidden` rather than merely invisible, so nothing reads it.
+    requestAnimationFrame(() => inputs[0]?.focus?.());
+  };
+
+  const closeEdit = (row: HTMLElement): void => {
+    row.removeAttribute('data-editing');
+    const display = displayOf(row);
+    const region = regionOf(row);
+    if (region) region.hidden = true;
+    if (display) display.hidden = false;
+    clearErrors(row);
+    // Focus comes back to the control that opened the row, either way out. Without
+    // this it would fall to <body> and a keyboard user would restart their tab from
+    // the top of the page to correct the next field.
+    pencilOf(row)?.focus();
+  };
+
+  const saveEdit = (row: HTMLElement): void => {
+    const display = displayOf(row);
+    const inputs = inputsOf(row);
+    if (!display || inputs.length === 0) return;
+    clearErrors(row);
+
+    if (row.dataset.control === 'year-range') {
+      const start = String(inputs[0].value ?? '').trim();
+      const end = String(inputs[1].value ?? '').trim();
+      const startYear = Number(start);
+      const endYear = Number(end);
+      if (!start || !Number.isFinite(startYear)) return setError(inputs[0], 'Enter a year.');
+      if (!end || !Number.isFinite(endYear)) return setError(inputs[1], 'Enter a year.');
+      // The ONLY rule worth enforcing on a range: it has to run forwards. Anything
+      // more (a plausible century, a cap on span) would be inventing policy the
+      // record does not have. Surfaced through the lego's own errorText, wired to
+      // the control by aria-describedby — never a bespoke message element.
+      if (endYear < startYear) return setError(inputs[1], `Must be ${startYear} or later.`);
+      row.dataset.raw = `${startYear},${endYear}`;
+      paintYearRange(display, String(startYear), String(endYear));
+      closeEdit(row);
+      return;
+    }
+
+    const next = String(inputs[0].value ?? '').trim();
+
+    if (row.dataset.format === 'currency') {
+      const amount = Number(next);
+      if (!next || !Number.isFinite(amount)) return setError(inputs[0], 'Enter an amount.');
+      row.dataset.raw = String(amount);
+      display.textContent = currencyFormatter.format(amount);
+      closeEdit(row);
+      return;
+    }
+
+    row.dataset.raw = next;
+    display.textContent = next;
+    closeEdit(row);
+  };
+
+  // Cancel discards by simply closing: nothing was written, so the read state that
+  // reappears is still the truth, and the next open re-seeds from data-raw.
+  const cancelEdit = (row: HTMLElement): void => closeEdit(row);
+
+  /**
+   * Per-page setup: hand esa-select its options, and name the controls that render
+   * no visible label.
+   *
+   * THE NAMING, and why it reaches through a shadow root. The row's own label sits
+   * above the control and stays there while editing, so passing `label` to the lego
+   * would print the word twice and grow the row. The hub legos render no <label>
+   * when `label` is empty — but they also expose no `hide-label`, so the honest
+   * alternative is unavailable and a bare control would announce "edit text, blank".
+   * These are Lit elements with OPEN shadow roots, so the inner control is reachable
+   * and an aria-label on it is safe (none of the three binds that attribute, and Lit
+   * leaves attributes it does not own alone). `aria-label` also goes on the HOST,
+   * which is the naming path esa-text-field's own nameless warning blesses — it is
+   * inert today, and becomes the whole mechanism the day the hub honours it.
+   * The name comes from `data-name`, which is the same string the <dt> renders, so
+   * the two cannot drift.
+   */
+
+  // ── esa-select: align the option labels with the trigger's value ────────────
+  //
+  // Open the Program select and the list reads as indented against the box that
+  // opened it: the same string sits 24px further right in the list than it does
+  // in the trigger, so choosing a value makes it visibly jump left as the panel
+  // closes. The panel WIDTH is correct — it is exactly the trigger's, same left
+  // edge — so this is purely where the text starts.
+  //
+  // Cause, from esa-select's shadow CSS: `.option` is a flex row padded 12px,
+  // whose FIRST child is an 18px `.check` that is present for every option and
+  // merely `opacity: 0` when unselected. Label left is therefore
+  // 12 + 18 + 4 (gap) = 34px, while the trigger's value sits at its field
+  // padding — 10px at the `sm` rung this component uses.
+  //
+  // The fix orders the check to the trailing edge instead of removing it: the
+  // tick still marks the current value, still animates by opacity alone, and
+  // `.option__label { flex: 1 }` (already in the component) takes up the slack,
+  // so the label starts at the row's own 12px padding. That leaves 2px between
+  // list and trigger rather than 24 — inside the noise, and no size rung is
+  // hard-coded to get there.
+  //
+  // Injected as an ADOPTED STYLESHEET rather than by writing inline styles on
+  // the nodes: Lit re-renders the option list on every filter keystroke and
+  // every selection, which would wipe per-node styles on first use. This is the
+  // same technique and the same reason as AppLayout's sidebar-glyph injection.
+  //
+  // It reaches into another component's shadow root, which is a thing to do
+  // sparingly and never quietly — this is a HUB DEFECT, not a spoke preference,
+  // and it wants fixing upstream so every spoke gets it. Filed as a
+  // /request-lego; delete this the day esa-select lands it.
+  const SELECT_ALIGN_CSS = `
+    .option > .check { order: 1; }
+    .option__label { order: 0; }
+  `;
+
+  function alignSelectOptions(el: Control): void {
+    const root = el.shadowRoot as (ShadowRoot & { _f2SelectAligned?: boolean }) | null | undefined;
+    if (!root || root._f2SelectAligned) return;
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(SELECT_ALIGN_CSS);
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+    root._f2SelectAligned = true;
+  }
+
+  const hydrate = (root: ParentNode = document): void => {
+    root.querySelectorAll<Control>('[data-field-input]').forEach((el) => {
+      if (el.dataset.f2Hydrated !== undefined) return;
+      el.dataset.f2Hydrated = '';
+
+      const name = el.dataset.name ?? '';
+      if (name) el.setAttribute('aria-label', name);
+
+      customElements.whenDefined(el.localName).then(async () => {
+        if (el.dataset.control === 'select') {
+          try {
+            el.options = JSON.parse(el.dataset.options ?? '[]');
+          } catch {
+            el.options = [];
+          }
+        }
+        await el.updateComplete;
+        if (el.dataset.control === 'select') alignSelectOptions(el);
+        if (!name) return;
+        const inner = el.shadowRoot?.querySelector('input, textarea, [role="combobox"]');
+        if (inner && !inner.hasAttribute('aria-label')) inner.setAttribute('aria-label', name);
+      });
+    });
+  };
+
+  const onClick = (event: MouseEvent): void => {
+    const target = event.target as Element | null;
+    const row = rowOf(target);
+    if (!row || !target) return;
+
+    if (target.closest('[data-field-edit-save]')) return saveEdit(row);
+    if (target.closest('[data-field-edit-cancel]')) return cancelEdit(row);
+    if (target.closest('[data-field-edit]')) return openEdit(row);
+
+    // Clicking the value opens the editor — but not when the click was the end of a
+    // drag-select, which is how someone copies a figure out of the panel.
+    if (!isEditing(row) && target.closest('[data-field-display]')) {
+      if (window.getSelection()?.isCollapsed === false) return;
+      openEdit(row);
+    }
+  };
+
+  /**
+   * Enter commits, Escape abandons — the keys a text field already answers to.
+   * Reaching for the mouse to leave a one-word correction is the difference between
+   * fixing five fields and fixing one.
+   *
+   * NOT for every control, though. In a textarea Enter is a newline, and in a select
+   * Enter picks the highlighted option; stealing those would break the control to
+   * save a keystroke, so those rows commit with their buttons.
+   *
+   * CAPTURE PHASE, deliberately. esa-select calls preventDefault() on Escape
+   * unconditionally, so by the time a bubbling listener saw the key the listbox
+   * would already be closed and there would be no way to tell "close the menu" from
+   * "abandon the edit". Capturing lets this ask the question BEFORE the lego acts:
+   * an open dropdown gets the first Escape, the edit gets the second.
+   */
+  const KEY_COMMIT = new Set(['text', 'number', 'year-range']);
+
+  const onKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter' && event.key !== 'Escape') return;
+    const row = rowOf(event.target as Element | null);
+    if (!row || !isEditing(row)) return;
+
+    if (event.key === 'Escape') {
+      const select = row.querySelector<Control>('[data-control="select"]');
+      if (select?.shadowRoot?.querySelector('.dropdown')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelEdit(row);
+      return;
+    }
+
+    if (!KEY_COMMIT.has(row.dataset.control ?? 'text')) return;
+    event.preventDefault();
+    saveEdit(row);
+  };
+
+  // ONE pair of delegated listeners for every row on the page, not one per instance.
+  // Astro emits this module once however many fields render, but a page can also
+  // import it through several sections at once — the flag makes a second evaluation
+  // a no-op rather than a double-fire that would open and immediately re-open a row.
+  const w = window as Window & { __firma2EditableField?: boolean };
+  if (!w.__firma2EditableField) {
+    w.__firma2EditableField = true;
+    document.addEventListener('click', onClick);
+    document.addEventListener('keydown', onKeydown, true);
+    document.addEventListener('astro:page-load', () => hydrate());
+  }
+  hydrate();
+</script>

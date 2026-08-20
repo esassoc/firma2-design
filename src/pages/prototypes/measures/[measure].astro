@@ -1,0 +1,168 @@
+---
+// Performance measure setup — one page per measure.
+//
+// THE SHAPE, AND WHY IT CHANGED TWICE. This screen was first a four-step
+// wizard, then four full-width form cards, and is now a live PREVIEW beside a
+// dense CONFIG RAIL. Each change fixed a real fault, and both faults are worth
+// remembering:
+//
+//   1. A wizard assumes the user finishes in one sitting. Defining a measure is
+//      part exploration and part consulting other people, so the record is
+//      created by answering ONE question (its data type) and lives at a URL you
+//      can bookmark and send to a colleague.
+//   2. Four cards of empty inputs made the DEFINITION the hero. It isn't. The
+//      thing an admin needs to see is what the definition PRODUCES — so the
+//      centre of the page is the artifact, and the definition moves to a rail
+//      that can be scanned without opening anything.
+//
+// WHAT THE PREVIEW SHOWS, which is the whole question this layout answers.
+// Two stacked panels:
+//   - The REPORTING FORM a project will see. This is the payoff: subcategories
+//     multiply, so "Burn type" x "Ownership" silently becomes a 16-cell entry
+//     grid every reporting period, and nothing else in the product tells an
+//     admin that before reporters complain.
+//   - The PORTFOLIO ROLLUP: what the measure has actually accumulated across
+//     the projects reporting it.
+//
+// Both degrade rather than block on an incomplete draft, which is the state
+// this page is in most often.
+//
+// ROUTE. getStaticPaths builds one page per measure from `measures`, keyed by
+// the slug already on the record — the same slug measureHref() builds links
+// from, so the catalog can never point at a page this route did not generate.
+//
+// ZERO PAGE CSS. The one inline custom property below is a SPINE knob, not a
+// style: the layout primitive's own documented hook, set where the layout is
+// declared. Every section owns its own markup and CSS.
+import AppLayout from '../../../layouts/AppLayout.astro';
+import Firma2PageHeader from '../../../components/shared/firma2-page-header.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import Firma2MeasureConfig from '../../../components/measures/firma2-measure-config.astro';
+import Firma2MeasureReporterPreview from '../../../components/measures/firma2-measure-reporter-preview.astro';
+import Firma2MeasureRollupPreview from '../../../components/measures/firma2-measure-rollup-preview.astro';
+import { measures, measureDisplayName, MEASURE_STATUS_TONE } from '../../../data/firma2-performance-measures';
+import type { PerformanceMeasureDefinition } from '../../../data/firma2-performance-measures';
+import { withBase } from '../../../lib/base';
+
+export function getStaticPaths() {
+  return measures.map((measure) => ({
+    params: { measure: measure.slug },
+    props: { measure },
+  }));
+}
+
+interface Props {
+  measure: PerformanceMeasureDefinition;
+}
+
+const { measure } = Astro.props;
+
+// A measure reaches this page before it has a name, so the title, the crumb and
+// the document title all route through one fallback rather than each deciding
+// separately what to do about an empty string.
+const displayName = measureDisplayName(measure);
+---
+<!-- manifest:
+  layout: stack(2xl)
+  sections:
+    - page header       -> firma2-page-header
+    - config rail       -> firma2-measure-config
+    - reporting preview -> firma2-measure-reporter-preview
+    - portfolio rollup  -> firma2-measure-rollup-preview
+    - save feedback     -> esa-snackbar-container
+-->
+<AppLayout title={`${displayName} — ProjectFirma 2.0`} active="performance-measures">
+  <div class="stack" data-gap="2xl">
+    <!-- Two crumbs, not three: the sidenav already owns the way home, and the one
+         thing a reader needs from here is the way back to the catalog. Crumb and
+         title ride in the sticky band, so that way back stays on screen for the
+         whole page rather than only its first screenful. -->
+    <Firma2PageHeader
+      title={displayName}
+      crumbs={[
+        { label: 'Performance measures', href: withBase('/prototypes/performance-measures') },
+        { label: displayName },
+      ]}
+    >
+      <!-- Status rides in the actions cluster because esa-page-header has no
+           status slot — the gap the project detail route already documents. It
+           is not an action: no href, no handler, not focusable. The
+           visually-hidden "Status" is load-bearing, since a pill reading
+           "Draft" is unambiguous beside a title only because of where it sits.
+           The config rail deliberately does NOT repeat it. -->
+      <span slot="actions" class="visually-hidden">Status</span>
+      <EsaPill
+        slot="actions"
+        label={measure.status}
+        variant={MEASURE_STATUS_TONE[measure.status]}
+        size="md"
+        removable={false}
+      />
+
+      <!-- ONE Save for the record, not one per section. The rail edits a single
+           draft, so a per-section save would ask which part of one record you
+           meant. Windows order: primary LEFT of cancel inside the group.
+           esa-button spreads ...rest, so the id reaches the native <button>.
+
+           THESE ACTUALLY WORK, and what they do is worth being precise about.
+           There is no backend — this spoke is a static build on GitHub Pages —
+           so Save writes to localStorage and nothing leaves the machine. That
+           is enough to demonstrate the model this screen argues for (a draft
+           you leave and come back to) and NOT enough to be mistaken for a
+           product: the toast says "in this browser", because a colleague
+           opening the link you send them sees the seed record, not your edits.
+           Cancel discards everything since the last save by reloading. -->
+      <EsaButton slot="actions" variant="primary" id="fmc-save">Save</EsaButton>
+      <EsaButton slot="actions" variant="ghost" id="fmc-cancel">Cancel</EsaButton>
+    </Firma2PageHeader>
+
+    <!-- .sidebar with data-side="end" — the aside is the FIRST child and the
+         primitive orders it to the trailing edge, so the rail sits right and the
+         preview takes the fluid column, matching the reference.
+         --sidebar-width is the primitive's own documented knob; 18rem is too
+         narrow for a rail holding two textareas and the subcategory repeater.
+
+         KNOWN TRADEOFF, stated rather than hidden: data-side="end" means DOM
+         order (rail, then preview) is not visual order (preview, then rail).
+         That is acceptable here because the resulting reading order is itself
+         meaningful under SC 1.3.2 — you are told what you are defining, then
+         shown what it produces — but it is a real divergence, and the honest
+         alternative is putting the rail on the leading edge as the project
+         detail route does. The primitive exposes no way to have both. -->
+    <div class="sidebar" data-side="end" data-gap="xl" style="--sidebar-width: 22rem">
+      <div class="stack">
+        <Firma2MeasureConfig measure={measure} />
+      </div>
+
+      <div class="stack" data-gap="xl">
+        <Firma2MeasureReporterPreview measure={measure} />
+        <Firma2MeasureRollupPreview measure={measure} />
+      </div>
+    </div>
+
+    <!-- Save confirmation. No `duration`: the lego documents auto-dismiss as an
+         SC 2.2.1 (Timing Adjustable) failure unless the host supplies its own
+         adjustment, and persistent-until-dismissed is the conforming default. -->
+    <esa-snackbar-container></esa-snackbar-container>
+  </div>
+</AppLayout>
+
+<script>
+  // WIRING, not a section. The rail owns the controls and the two previews own
+  // their own rendering; neither can own the record they share, so the page
+  // holds the controller that reads the rail, layers local drafts, and
+  // announces the working record. Everything it does lives in the module —
+  // this block exists only because the page is the one place that knows the
+  // seed record and that all three sections are present.
+  import '@esa/ecology/esa-snackbar-container';
+  import { initMeasureEditor } from '../../../lib/measure-editor';
+  import { measures } from '../../../data/firma2-performance-measures';
+
+  // The slug is read from the DOM rather than interpolated into the script,
+  // because a define:vars script cannot use import statements.
+  const slug = document.querySelector('[data-firma2-rollup-slug]')?.getAttribute('data-firma2-rollup-slug')
+    ?? document.querySelector('[data-firma2-reporter-preview]')?.getAttribute('data-firma2-reporter-preview');
+  const seed = measures.find((m) => m.slug === slug);
+  if (seed) initMeasureEditor({ seed });
+</script>

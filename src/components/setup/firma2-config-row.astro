@@ -1,0 +1,289 @@
+---
+// firma2-config-row — ONE setting in a configuration rail.
+//
+//   [icon]  Data type                              [ Count ]  >
+//
+// A rail is a vertical list of these. Each row is a disclosure: the row itself is
+// the summary line, and the real control lives underneath, revealed on click. The
+// value chip on the trailing edge is what makes the pattern worth having — with
+// every row carrying its current value, the CLOSED rail is already a readable
+// summary of the whole configuration, so the user opens only the one setting they
+// came to change instead of opening six to find out where they stand.
+//
+// GENERIC ON PURPOSE. Nothing here knows what a performance measure is. It knows
+// "a labelled setting with a current value and a control", which is every entity
+// setup in this product — a funding source's fiscal calendar, an organization's
+// default region, a protocol's sampling frequency. The caller owns the control and
+// the control's own label; this component owns the row chrome around it.
+//
+// bcn-lego-checked: esa-collapsible IS this disclosure and was the first stop —
+// same native <details>, same hidden marker, same right-hand caret, and its `flush`
+// variant is documented for exactly this stacked-rail case. It cannot be wrapped,
+// for one structural reason: its <summary> takes `title` as a STRING and spends the
+// row's trailing edge on its own ::after caret, so there is nowhere to hang a value
+// chip — and the chip is the entire reason this row exists. Checked Beacon: its
+// expansion panels are title-only too. So the disclosure is rebuilt here, and the
+// chrome (marker suppression, 8px border caret, rotation) is copied from
+// esa-collapsible VERBATIM rather than redesigned, because a rail row and a hub
+// collapsible sitting on the same screen must not disagree about what a caret looks
+// like. Filed upstream as a `summary-end` slot request; the day that lands, the
+// body of this file becomes a wrapper and the props survive unchanged.
+//
+// NATIVE <details>, NOT A BUTTON + A HIDDEN DIV. The browser already ships the
+// open/close state, the Enter/Space contract, the correct aria-expanded on the
+// summary, and — in current engines — auto-expansion when a fragment navigation
+// targets the element or anything inside it. That last one is why `id` is required
+// rather than optional: /setup/measure#unit is a link that opens the Unit row for
+// you, and it costs no JavaScript.
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+
+interface Props {
+  /** esa-icon registry name. Marks the row's subject; structural, never decorative. */
+  icon: string;
+  /** The setting's name. "Data type", "Unit", "Aggregation". */
+  label: string;
+  /** Current value, rendered as the chip. Empty or undefined means unset. */
+  value?: string;
+  /** What an unset row's affordance reads as. Default "Set". */
+  emptyLabel?: string;
+  /** Stable id — the disclosure's id, so a row can be linked to and opened. */
+  id: string;
+  /** Start expanded. Default false. */
+  open?: boolean;
+}
+
+const {
+  icon,
+  label,
+  value,
+  // "Set" — the imperative, because every row here IS a control and the trailing
+  // edge should name the action that is available rather than narrate a vacancy.
+  // Ruled out: "Choose" (presumes a closed list; this row is just as likely to
+  // reveal a text field), "Add" (wrong verb — a setting is set, not accumulated),
+  // "Not set" (states the fact but reads passive next to a caret, and risks
+  // scanning as a VALUE), and an em dash (invisible to a screen reader, and no
+  // affordance at all). A caller who genuinely wants the fact-style reading —
+  // a read-only summary rail, say — passes emptyLabel="Not set".
+  emptyLabel = 'Set',
+  id,
+  open = false,
+} = Astro.props;
+
+const trimmed = (value ?? '').trim();
+const hasValue = trimmed.length > 0;
+
+// See the aria-hidden note on the markup below — the state is computed here so it
+// is already correct in the server-rendered HTML, before the script runs at all.
+const summaryHidden = open ? 'true' : undefined;
+---
+
+<details class="firma2-config-row" id={id} open={open}>
+  <!-- .repel is the row: subject left, state right, one primitive instead of a
+       bespoke space-between. It wraps, which is the behaviour we want in a narrow
+       rail — a long value drops under the label rather than crushing it. -->
+  <summary class="firma2-config-row__summary repel" data-gap="sm">
+    <span class="firma2-config-row__subject cluster" data-gap="xs">
+      <!-- No `label` on the icon, so esa-icon renders it aria-hidden. The icon
+           marks the row's subject VISUALLY — it is how you find "Unit" in a rail
+           of nine rows without reading — but the label text beside it says the
+           same thing, and naming the glyph too would announce every row twice. -->
+      <EsaIcon name={icon} size="sm" />
+      <span class="firma2-config-row__label typography-label-md">{label}</span>
+    </span>
+
+    <!-- ARIA-HIDDEN WHILE OPEN, and this is the one judgement call in the file.
+         The chip is a SUMMARY of the control below it, not a second value: once
+         the row is open, the control announces its own label and its own value,
+         so leaving the chip in the accessibility tree gives a screen-reader user
+         "Data type Count" from the summary and then "Data type, Count, combobox"
+         a moment later — the same fact twice, with no way to tell they are the
+         same fact. Hiding visible content from AT is normally a smell; it is
+         sanctioned precisely here, where the content is duplicated verbatim by
+         something else already in the tree. Collapsed, the chip is the ONLY place
+         the value exists, so it is exposed and the summary reads "Data type
+         Count". The label span is never hidden in either state, so the row's
+         accessible name always contains the setting's name — never a bare "Set". -->
+    <span class="firma2-config-row__state cluster" data-gap="xs">
+      <span class="firma2-config-row__value" hidden={!hasValue} aria-hidden={summaryHidden}>
+        <!-- variant="secondary": the quiet rung. The default `primary` is a solid
+             brand fill with knockout text, and a rail of nine rows would then be
+             nine saturated brand marks — the house reserves that weight for the
+             single primary action. Size and radius are the lego's own defaults,
+             untouched. -->
+        <EsaBadge value={trimmed} variant="secondary" />
+      </span>
+      <span
+        class="firma2-config-row__empty typography-label-md"
+        hidden={hasValue}
+        aria-hidden={summaryHidden}
+      >{emptyLabel}</span>
+    </span>
+  </summary>
+
+  <div class="firma2-config-row__body stack" data-gap="md"><slot /></div>
+</details>
+
+<script>
+  // The chip mirrors whatever the slotted control reports. Deliberately blind to
+  // WHICH control that is: esa-select, esa-text-field, esa-radio-group and a bare
+  // native <input> all reach this listener the same way, and the day a new lego is
+  // slotted in, it works without an edit here.
+  //
+  // The Lit legos dispatch `change` bubbling + composed with the payload on
+  // event.detail.value; a native control leaves the payload on event.target.value
+  // and carries no detail. Read detail first, fall back to the target — in that
+  // order, because a Lit component's inner native input can be the target of an
+  // event whose detail is the one the host actually means.
+
+  // Empty is a real state, not a missing one: clearing a field must return the row
+  // to its unset affordance rather than render an empty chip. Arrays are flattened
+  // rather than special-cased — a multi-select's value IS a list, and joining it is
+  // what "show me the current value" means for any of them.
+  function normalize(raw: unknown): string {
+    if (raw == null) return '';
+    if (Array.isArray(raw)) return raw.filter((v) => v != null && v !== '').map(String).join(', ');
+    return String(raw).trim();
+  }
+
+  document.querySelectorAll<HTMLDetailsElement>('.firma2-config-row').forEach((row) => {
+    // Idempotence guard — the same shape AppLayout uses. A second pass would
+    // double-bind and re-render the chip twice per change.
+    if (row.dataset.configRowReady !== undefined) return;
+    row.dataset.configRowReady = '';
+
+    const chip = row.querySelector<HTMLElement>('.firma2-config-row__value');
+    const empty = row.querySelector<HTMLElement>('.firma2-config-row__empty');
+    const body = row.querySelector<HTMLElement>('.firma2-config-row__body');
+    if (!chip || !empty || !body) return;
+
+    // REACHING INTO THE LEGO, knowingly. esa-badge is an .astro component: it is
+    // compile-time only, so there is no element here to hand a new value to and no
+    // way to render a fresh one from script — the only handle on its text is the
+    // span it emits. `?? chip` keeps the row functional if that internal class ever
+    // changes: the chip would then carry unstyled text rather than stale text.
+    // Filed upstream: a default slot on esa-badge would remove this coupling
+    // entirely by putting the text node in the caller's hands.
+    const chipText = chip.querySelector<HTMLElement>('.esa-badge__text') ?? chip;
+
+    function render(next: string): void {
+      const has = next.length > 0;
+      chipText.textContent = next;
+      chip.hidden = !has;
+      empty.hidden = has;
+    }
+
+    // Bound on the BODY, not the row: the summary holds only chrome, and a listener
+    // that far up would also hear anything a future header control emits.
+    body.addEventListener('change', (event: Event) => {
+      const detail = (event as CustomEvent<{ value?: unknown }>).detail;
+      const fromDetail = detail !== null && typeof detail === 'object' && 'value' in detail;
+      const target = event.target as { value?: unknown } | null;
+      render(normalize(fromDetail ? detail.value : target?.value));
+    });
+
+    // Native `toggle` fires on every open/close, keyboard and pointer alike, so the
+    // chip's exposure follows the disclosure with no state of our own to keep.
+    row.addEventListener('toggle', () => {
+      const hide = row.open ? 'true' : null;
+      [chip, empty].forEach((node) => {
+        if (hide) node.setAttribute('aria-hidden', hide);
+        else node.removeAttribute('aria-hidden');
+      });
+    });
+  });
+</script>
+
+<style>
+  /* The row draws its OWN bottom hairline, so a rail is just a stack of these and
+     needs no divider logic of its own. Neutral border, neutral (absent) background:
+     the surface belongs to whatever container the rail sits in, and a per-row fill
+     would turn a list of settings into a list of cards. No left border of any
+     colour — state here is carried by the chip, which is the point of the chip. */
+  .firma2-config-row {
+    border-bottom: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  .firma2-config-row__summary {
+    padding: var(--spacing-300, 0.75rem);
+    color: var(--color-content-default, #202020);
+    cursor: pointer;
+    /* Suppressing the native marker in both engines — verbatim from
+       esa-collapsible, which needs it for the same reason: the caret leads from
+       the right so the icon can lead from the left. */
+    list-style: none;
+  }
+  .firma2-config-row__summary::-webkit-details-marker { display: none; }
+
+  /* No :focus-visible rule anywhere in this file, deliberately. @esa/tokens/focus.css
+     already rings `summary` from the three ring tokens at zero specificity, so the
+     row gets the house indicator for free and there is nothing here to remove. */
+
+  /* One quiet step of surface on hover — enough to say "the whole row is the
+     target", not enough to make a nine-row rail flicker as the pointer crosses it.
+     It paints the summary's whole box, padding included, so the tint traces the
+     actual hit area rather than just the text. */
+  .firma2-config-row__summary:hover {
+    background: var(--color-background-default-hover, #f1f1f1);
+  }
+
+  .firma2-config-row__subject {
+    /* The subject may shrink; the state must not. A long label wraps or truncates
+       before the value chip gives up a pixel — the value is the scannable half. */
+    min-width: 0;
+  }
+
+  /* Icon quieter than its label and one size down (sm = 16px): it marks structure
+     and is subordinate to the text it introduces. :global because the glyph is
+     esa-icon's markup, not this component's. */
+  .firma2-config-row__subject :global(.esa-icon) {
+    flex-shrink: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* The label is CONTENT — normal case, label-md (the spoke's UI label rung, ~15px
+     at desktop and never below the 14px dense floor at the sizes a rail is used
+     at), full-strength default ink. Not an uppercase letter-spaced micro-label. */
+  .firma2-config-row__label {
+    color: var(--color-content-default, #202020);
+  }
+
+  .firma2-config-row__state {
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+  }
+
+  /* Same type rung as the label, one step back in ink. This is hierarchy between
+     two equally-sized strings — a secondary-vs-default pairing at 15px — and not
+     the grayed-out small text the house bans; --color-content-default-secondary
+     clears AA against every surface in this theme. */
+  .firma2-config-row__empty {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* THE CARET — copied from esa-collapsible unchanged, including the 8px box and
+     the 2px strokes, so the rail's disclosure and the hub's disclosure are the same
+     mark. Approved patterns are canon; this is not the place to redraw one. */
+  .firma2-config-row__state::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid var(--color-content-default-secondary, #646464);
+    border-bottom: 2px solid var(--color-content-default-secondary, #646464);
+    transform: rotate(-45deg);
+    transition: transform var(--duration-150, 150ms) var(--easing-standard, ease);
+    flex-shrink: 0;
+  }
+  .firma2-config-row[open] .firma2-config-row__state::after {
+    transform: rotate(45deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-config-row__state::after { transition: none; }
+  }
+
+  /* The body indents to the summary's inline padding and drops the top gap — the
+     control below reads as belonging to the row above it, not as a new block. */
+  .firma2-config-row__body {
+    padding: 0 var(--spacing-300, 0.75rem) var(--spacing-400, 1rem);
+  }
+</style>

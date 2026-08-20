@@ -1,0 +1,141 @@
+---
+// firma2-project-facts — the key-facts panel in the project detail page's aside:
+// the five structured attributes that live on the ProjectFirma project RECORD
+// (lead organization, program, county, timeline, estimated cost), and
+// nothing else. It is the row from the Projects table, turned on its side for
+// the one project you opened.
+//
+// SUBTRACTIVE. Only fields that already exist on `Project` are here. No
+// description (a sibling section owns it), no derived roll-ups, no counts of
+// things rendered further down the page. A panel that restated the funding
+// section's total or the milestone section's next date would be a second,
+// worse copy of them.
+//
+// THE LABELS ARE THE TABLE'S COLUMN HEADERS, VERBATIM — "Lead
+// organization", "Program", "County", "Timeline", "Estimated cost" all appear
+// as `headerName`s in firma2-project-grid. Same datum, same word, in both
+// places: a reader who filtered the index by Program should not have to work
+// out that this panel's differently-named row is the field they filtered on.
+//
+// LAYOUT — labels ABOVE values, one column. This panel renders inside the
+// page's `.sidebar` aside at roughly 18rem. Beside-style label/value columns
+// would split that into ~8rem each, and the real values are long
+// ("Meadow & Wetland Restoration", "Deer Creek Watershed Alliance"): every
+// other pair would wrap to three or four ragged lines. Stacked, each value
+// gets the full column and most fit on one line.
+//
+// STAGE IS NOT HERE, AND THAT IS A PAGE-LEVEL DECISION, not an oversight.
+// This panel originally opened with a labelled "Stage" pair, on the reasoning
+// that stage is a field on the record exactly like the other five and that an
+// unlabelled pill invites a reader to guess whether "Implementation" is a
+// lifecycle stage or a project type. That reasoning is sound and the label
+// survives — it just moved. The project's stage now renders once, beside the
+// title in the page header, where it is the record's headline status and stays
+// with the name a reader arrived looking for; the header carries a
+// visually-hidden "Stage" so the pill is never an unlabelled colour to a
+// screen reader. Rendering it in both places would have been the same fact
+// twice on one screen, which design-principles cuts.
+//
+// If this panel is ever reused on a surface with no page header — a drawer, a
+// comparison column — the stage pair belongs back at the top of the list.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import '../shared/firma2-card-section.css';
+import Firma2EditableField from '../shared/firma2-editable-field.astro';
+import { programs } from '../../data/firma2-projects';
+import type { ProjectDetail } from '../../data/firma2-project-detail';
+
+interface Props {
+  /** The whole detail record; this section reads only `detail.project`. */
+  detail: ProjectDetail;
+}
+
+const { detail } = Astro.props;
+const { project } = detail;
+
+// Whole-dollar currency from the shared, side-effect-free formatter module.
+// NOT from shared/grid-chrome.ts, which exports the identical Intl.NumberFormat
+// but imports ag-grid-community and calls
+// `ModuleRegistry.registerModules([AllCommunityModule])` at module scope — so
+// reading one formatter off it would pull the whole grid runtime into this
+// page's build for four lines of number formatting. That is why src/lib/format.ts
+// exists; grid-chrome re-exports from it under the old grid-prefixed names.
+import { currencyFormatter as money } from '../../lib/format';
+---
+<EsaCard title="Basics">
+  <!-- NO SECTION-LEVEL EDIT CONTROL. There was a pencil here, and it went when
+       the fields themselves became editable: every row below now carries its
+       own affordance, revealed on hover and on focus, so a section button
+       offering "edit the five things underneath" would be a second route to the
+       same act — the redundancy design-principles cuts. The collection sections
+       on this page (Work areas, Performance measures, Funding sources,
+       Milestones) DO keep a header control, because a set has no single field
+       to hover: theirs says "Add", which is the thing a per-field affordance
+       cannot do. -->
+
+  <!-- A <dl>, because these ARE term/value pairs — the list semantics, the
+       dt/dd association, and the "5 items" announcement come free and correct.
+       The <div> wrappers are the spec's own grouping form for a dl, and they
+       are what lets each pair be a TIGHT stack (label sitting on its value)
+       inside a list that breathes between pairs. Two nested .stacks, no
+       bespoke flex.
+
+       No margin reset here: layouts.css already zeroes dl/dd at :where(), so
+       the UA's `margin: 1em 0` and `dd { margin-inline-start: 40px }` are gone
+       before this component loads. Re-declaring them would be dead CSS. -->
+  <dl class="firma2-project-facts stack" data-gap="md">
+    <Firma2EditableField
+      field="leadOrganization"
+      label="Lead organization"
+      value={project.leadOrganization}
+    />
+
+    <!-- A SELECT, not a text box. Program is the taxonomy tier projects roll up
+         into and the Projects index filters on — typing a new spelling of an
+         existing program is how a filter bucket silently splits in two. The
+         options are the programs actually present in the portfolio, the same
+         list the index's Program filter reads. -->
+    <Firma2EditableField
+      field="program"
+      label="Program"
+      value={project.program}
+      control="select"
+      options={programs}
+    />
+
+    <Firma2EditableField field="county" label="County" value={project.county} />
+
+    <!-- One row, two controls. The en dash is the range visually; screen readers
+         do not reliably voice it, so the component keeps the spoken " to "
+         beside an aria-hidden dash — the dash carries the meaning for eyes, the
+         word for ears, and only one is ever perceived at a time. Editing opens
+         two labelled year boxes, because "2023–2027" is not a string a person
+         should have to retype correctly. -->
+    <Firma2EditableField
+      field="timeline"
+      label="Timeline"
+      value={`${project.implementationStartYear}–${project.completionYear}`}
+      editValue={`${project.implementationStartYear},${project.completionYear}`}
+      control="year-range"
+      format="year-range"
+    />
+
+    <Firma2EditableField
+      field="estimatedTotalCost"
+      label="Estimated cost"
+      value={money.format(project.estimatedTotalCost)}
+      editValue={String(project.estimatedTotalCost)}
+      control="number"
+      format="currency"
+    />
+  </dl>
+</EsaCard>
+
+<style>
+  /* Deliberately no rules for the label or the figures. Both moved into
+     firma2-editable-field when these rows became editable: it renders the same
+     <dt> at `label-sm` / content-default-secondary, and applies tabular-nums to
+     the currency and year-range values itself. Restating them here would be two
+     declarations that agree today and drift the first time one side changes —
+     and the component has to own them anyway, because the value it writes back
+     after an edit is built by its own script, not by this file. */
+</style>

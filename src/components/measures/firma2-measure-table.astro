@@ -1,0 +1,486 @@
+---
+// firma2-measure-table — the Performance Measures index: the tenant's whole
+// catalog of measures as one scannable, searchable, filterable table, with the
+// Program/Status filter dropdowns, quick search, Clear all, record-count footer
+// and CSV export this spoke's data grids share. It is the surface the measure
+// setup drawer opens on top of, so the columns are the fields the drawer
+// collects — name, program, data type + unit, reporting frequency, status —
+// rather than a separate reading of the same record.
+//
+// Column set follows the open-source ProjectFirma performance-measure model, so
+// the screen speaks the product's own language. Deliberately absent: definition,
+// reporter guidance, aggregation, decimal places and subcategories. They are all
+// real fields on the record and none of them is SCANNABLE — a paragraph in a
+// cell is a wall, and a reader comparing measures compares the six facts below.
+// Definition still reaches the reader, as the Measure column's tooltip.
+//
+// Search and filters live INSIDE this component rather than beside it: both feed
+// the same AG Grid instance (quick filter and external filter), so splitting
+// them into a sibling section would mean plumbing a gridApi across a component
+// boundary for no gain. Same seam firma2-project-grid uses.
+//
+// bcn-lego-checked: ecology has NO table/grid/data-grid lego — checked the full
+// node_modules/@esa/ecology/src/components catalog. esa-grid is a
+// documentation-only reference page for Beacon's Angular AG Grid wrapper with no
+// .astro or .ts implementation to import; esa-card/esa-pill/esa-badge are atoms
+// and none renders a sortable, filterable tabular surface. Beacon is not cloned
+// on this machine, so tier 2 is unavailable. AG Grid Community is the
+// established tabular surface across this spoke family (cb-fish-design ships it
+// as a direct dependency with the same Theming-API-only setup), and
+// shared/firma2-data-grid-chrome.css is the reusable home for its frame — reused
+// here verbatim, not forked. Every other control IS a lego: esa-text-field for
+// search, esa-filter-container + esa-filter-dropdown for the Program and Status
+// filters, esa-filter-clear-button for Clear all, esa-button for the CSV
+// download, esa-empty-state for the no-results overlay, and the Status cells
+// clone real server-rendered esa-pill markup rather than restyling a chip by
+// hand.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
+import EsaFilterClearButton from '@esa/ecology/esa-filter-clear-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { measuresByName, MEASURE_STATUS_TONE, PROGRAMS } from '../../data/firma2-performance-measures';
+import type { MeasureStatus, PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+
+interface Props {
+  measures?: PerformanceMeasureDefinition[];
+}
+
+const { measures = measuresByName() } = Astro.props;
+
+// The dot colour each esa-pill variant paints, so a status option in the panel
+// reads as the same thing as its pill in the Status column. All five are the
+// `content-*` (grass/gray step 11) rung of their ramp, so the dots sit at one
+// saturation instead of mixing a solid-fill step in among text steps.
+const TONE_DOT: Record<(typeof MEASURE_STATUS_TONE)[MeasureStatus], string> = {
+  default: 'var(--color-content-default-tertiary)',
+  info: 'var(--color-content-utility-info)',
+  primary: 'var(--color-content-brand)',
+  success: 'var(--color-content-utility-success)',
+  warning: 'var(--color-content-utility-warning)',
+};
+
+// Lifecycle order, not alphabetical — and taken from the tone record's own key
+// order rather than typed again here, so a fourth status added to the data
+// module arrives in this control (and in its sort) with a pill colour already
+// attached. Alphabetical would put Draft before Active, which is backwards for
+// a lifecycle.
+const STATUS_ORDER = Object.keys(MEASURE_STATUS_TONE) as MeasureStatus[];
+
+// Only statuses actually present are offered, so the control never presents a
+// filter that returns nothing. RETIRED IS NOT SPECIAL-CASED OUT and nothing is
+// pre-selected: there is no "All" entry in this spoke's filter dropdowns because
+// an empty selection already IS all, which is exactly what keeps retired
+// measures visible in the catalog at rest. A retired measure is quiet, not
+// hidden — it still carries the values projects reported against it.
+const statusOptions = STATUS_ORDER.filter((s) => measures.some((m) => m.status === s)).map((s) => ({
+  value: s,
+  label: s,
+  color: TONE_DOT[MEASURE_STATUS_TONE[s]],
+}));
+
+// Program options come from the portfolio's vocabulary (PROGRAMS), narrowed to
+// the branches this catalog actually uses — same "never offer an empty filter"
+// convention as the status list. No dots: program is a taxonomy tier, not a
+// status, and nothing else on the screen colours it.
+const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program === p)).map((p) => ({
+  value: p,
+  label: p,
+}));
+---
+<section class="firma2-measure-table stack" data-gap="md">
+  <!-- Search, the two filters and Clear all are ONE row. The filters are
+       collapsed dropdowns rather than chip rows: a trigger spends one word per
+       dimension and only spends the options once someone opens the dimension
+       they actually want. Each trigger carries its own accessible name via the
+       lego's `label` prop, so no visible caption span is needed beside it.
+
+       repel of TWO groups: search + filters + Clear all cluster at the left,
+       Download CSV at the right. The filters stay INSIDE the left cluster rather
+       than spreading across the row — esa-filter-dropdown's panel is `position:
+       absolute; left: 0` with a 200px min-width and no viewport-edge flip, so a
+       trigger pushed flush against the right content edge opens its panel PAST
+       that edge and widens the document. The download button is the only thing
+       touching the right edge, and a button has no panel to open.
+
+       size="md" on all of them, matching firma2-project-grid: the sm rung is not
+       finished across the form family (at sm a text field's label lands on the
+       `-xs` type rung, 12px, while a filter dropdown's lands on `-sm`, 14px), so
+       two controls sharing this row would disagree by 2px and 12px is under the
+       13px floor design-principles sets. md is the kit's documented default and
+       the rung where those labels agree natively. Filed as esassoc/ecology#31. -->
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__controls-filters cluster">
+      <div class="firma2-data-grid__search">
+        <esa-text-field
+          label="Search measures"
+          placeholder="Measure name or unit"
+          size="md"
+          data-measures-search
+        ></esa-text-field>
+      </div>
+
+      <EsaFilterContainer>
+        <esa-filter-dropdown
+          data-measures-program-filter
+          name="program"
+          label="Program"
+          size="md"
+          multiple
+          placeholder="Search programs"
+          options={JSON.stringify(programOptions)}
+        ></esa-filter-dropdown>
+        <esa-filter-dropdown
+          data-measures-status-filter
+          name="status"
+          label="Status"
+          size="md"
+          multiple
+          placeholder="Search statuses"
+          options={JSON.stringify(statusOptions)}
+        ></esa-filter-dropdown>
+      </EsaFilterContainer>
+
+      <!-- Clear all sits OUTSIDE esa-filter-container on purpose. The container
+           lays its children out `align-items: center`, and a dropdown is a label
+           stacked above a trigger — so a centred short button floats above the
+           trigger row rather than lining up with it. In the surrounding cluster
+           (`align-items: flex-end`, from the shared chrome) it bottom-aligns with
+           the triggers, and the height rule below makes it match them outright.
+
+           It clears the two FILTERS and leaves the search box alone: the lego
+           hard-codes aria-label="Clear all filters", and wiping typed search text
+           under that name would make the accessible name a lie. The search field
+           has its own obvious affordance.
+
+           No data-* hook of ours on it: an .astro lego renders only its declared
+           props, so an extra attribute here would simply be dropped. The script
+           selects it by the lego's OWN hook, [data-esa-filter-clear]. -->
+      <EsaFilterClearButton />
+    </div>
+
+    <!-- sm, then pinned to 40px by firma2-data-grid-chrome.css. An icon-only
+         esa-button is a padding square whose rungs land on 32 / 38 / 46 — none of
+         which is the 40px the filter triggers render at, so no size prop can match
+         this row on its own. sm carries the 16px icon (md's is 20px, which at this
+         box would stop being subordinate to its control) and the shared stylesheet
+         supplies the last 2px. -->
+    <EsaButton variant="chrome" iconOnly icon="download" label="Download CSV" size="sm" data-measures-csv />
+  </div>
+
+  <!-- AG Grid mounts here. autoHeight grows with rows so the page (not an inner
+       pane) owns vertical scroll; the wrapper owns the framed surface. -->
+  <div class="firma2-data-grid__grid" data-measures-grid></div>
+
+  <!-- The record count alone. Export lives up in the control row with the rest of
+       this table's actions. -->
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-measures-count>
+      {measures.length} measures
+    </span>
+  </footer>
+
+  <!-- Real esa-pill markup, server-rendered once per status and cloned into grid
+       cells, so the status chips in the table ARE the lego rather than a
+       hand-rolled copy of it. removable=false: a status indicator, not a
+       removable filter chip. ALL statuses render, including any absent from the
+       current data, so a measure that changes status still finds its pill. -->
+  <div data-measures-pill-templates hidden aria-hidden="true">
+    {STATUS_ORDER.map((s) => (
+      <span data-status={s}>
+        <EsaPill label={s} variant={MEASURE_STATUS_TONE[s]} size="sm" removable={false} />
+      </span>
+    ))}
+  </div>
+
+  <!-- The no-match empty state, server-rendered once and handed to AG Grid as its
+       overlayNoRowsTemplate. Without this the grid falls back to its OWN built-in
+       "No Rows To Show" — Title Case, not this product's voice, and it names no
+       way out. Copy follows esa-empty-state's contract: the title states what is
+       absent as a fact, the description is one imperative recovery action naming
+       the actual controls on screen. -->
+  <div data-measures-empty hidden aria-hidden="true">
+    <EsaEmptyState
+      size="sm"
+      title="No matching measures"
+      description="Try a different search, or clear the Program and Status filters."
+    />
+  </div>
+
+  <!-- Row data, serialized so the client module (which imports ag-grid-community)
+       hydrates without a second fetch. -->
+  <script type="application/json" data-measures-data set:html={JSON.stringify(measures)}></script>
+</section>
+
+<style>
+  /* bcn-lego-checked: both rules below adjust the esa-filter-clear-button LEGO in
+     place — they add no bespoke button, and no esa-* control exists that pairs a
+     "clear the filters" affordance with a filter row at trigger height. Neither
+     belongs in shared/firma2-data-grid-chrome.css yet: firma2-project-grid has no
+     Clear all, so this is the first (and so far only) call site.
+
+     Height first. Every control on a grid's filter row renders at one height, and
+     the filter triggers are 40px at the md rung — the same measured number the
+     shared stylesheet already pins the CSV icon button to. The lego's own box is
+     ~26px (4px/8px padding around an 18px icon), which read as a small link
+     dropped beside two full-size controls. It is display:inline-flex with
+     align-items:center already, so the label re-centres in the taller box for
+     free. */
+  .firma2-measure-table :global(.esa-filter-clear-button) {
+    height: 40px;
+  }
+
+  /* Second: make `hidden` actually hide it. The lego's header invites the
+     surrounding container to "toggle it at runtime" via `hidden`, but its own
+     `display: inline-flex` is an AUTHOR rule and the UA's `[hidden] { display:
+     none }` is a user-agent rule — author wins regardless of specificity, so
+     setting the attribute alone does nothing at all, silently. Worth a
+     /request-lego on the hub; until then this one line makes the documented
+     mechanism work, and Clear all can stay out of the row until there is
+     something to clear. */
+  .firma2-measure-table :global(.esa-filter-clear-button[hidden]) {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-filter-dropdown';
+  import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import { mergeDraft, readDraft } from '../../lib/measure-draft';
+  import {
+    DATA_TYPES,
+    MEASURE_STATUS_TONE,
+    REPORTING_FREQUENCIES,
+    measureDisplayName,
+    measureHref,
+  } from '../../data/firma2-performance-measures';
+  import { withBase } from '../../lib/base';
+  import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+  import type { ColDef } from 'ag-grid-community';
+
+  /** What an unanswered optional field shows. An em dash, not a blank cell. */
+  const UNSET = '\u2014';
+
+  /**
+   * Sort a closed vocabulary in the order the vocabulary itself declares, not
+   * alphabetically. Three of this table's columns hold a fixed option list that
+   * the setup drawer offers in a meaningful order — a cadence (Annually →
+   * Quarterly → On completion), a lifecycle (Active → Draft → Retired) — and
+   * alphabetising it throws that order away and interleaves unrelated values.
+   * Anything not in the list sorts last rather than throwing.
+   */
+  const rankBy = (order: readonly string[]) => (a: string, b: string) => {
+    const at = order.indexOf(a);
+    const bt = order.indexOf(b);
+    return (at === -1 ? order.length : at) - (bt === -1 ? order.length : bt);
+  };
+
+  const STATUS_ORDER = Object.keys(MEASURE_STATUS_TONE);
+
+  function initMeasureTable(root: HTMLElement) {
+    // outerHTML of the element itself, not the wrapper's innerHTML: AG Grid's
+    // overlayNoRowsTemplate takes HTML with a SINGLE root element, and innerHTML
+    // would hand it the surrounding whitespace text nodes as well.
+    const emptyState = root.querySelector<HTMLElement>('[data-measures-empty] > *');
+    const programFilter = root.querySelector<HTMLElement>('[data-measures-program-filter]');
+    const statusFilter = root.querySelector<HTMLElement>('[data-measures-status-filter]');
+    const clearButton = root.querySelector<HTMLElement>('[data-esa-filter-clear]');
+
+    // Pre-clone the real esa-pill markup per status (server-rendered with the
+    // design-system scope hash) so grid cells reuse the lego verbatim.
+    const pillHTML = new Map<string, string>();
+    root.querySelectorAll<HTMLElement>('[data-measures-pill-templates] [data-status]').forEach((el) => {
+      pillHTML.set(el.dataset.status ?? '', el.innerHTML);
+    });
+
+    // Dropdown-driven filters, kept out of AG Grid's own column-filter UI so the
+    // esa-filter-dropdowns stay the single filter surface on this screen. Both
+    // are multi-select: an empty array means "no constraint on this dimension",
+    // which is why Retired measures are in the table before anyone touches
+    // Status, and why there is no "All" option to forget to select.
+    let programValues: string[] = [];
+    let statusValues: string[] = [];
+
+    // Quick search covers the NAME and the UNIT — the two dimensions someone
+    // types. Program and Status have dropdowns; data type and reporting
+    // frequency are three- and four-value vocabularies that are faster to spot
+    // in a sorted column than to type. defaultColDef opts every column out of
+    // quick filter; these two opt back in.
+    // LOCAL DRAFTS WIN OVER THE SEED, and the catalog has to honour them or it
+    // contradicts the setup page. Save a name on a measure, come back here, and a
+    // table still showing "Untitled measure" reads as a bug — the record changed,
+    // the list of records did not.
+    //
+    // Rewritten into the JSON payload rather than pushed through the grid after
+    // it mounts: wireDataGrid parses this element itself and owns rowData from
+    // then on, so patching the source is one write instead of a second data path
+    // racing the first. There is no backend — drafts live in this browser only —
+    // which is exactly why the merge belongs on the client and not in the build.
+    const dataNode = root.querySelector<HTMLElement>('[data-measures-data]');
+    if (dataNode?.textContent) {
+      try {
+        const seeded = JSON.parse(dataNode.textContent) as PerformanceMeasureDefinition[];
+        const merged = seeded.map((seed) => mergeDraft(seed, readDraft(seed.slug)));
+        dataNode.textContent = JSON.stringify(merged);
+      } catch {
+        // A malformed payload is a build bug; the grid's own parse will surface
+        // it. Leaving the seed untouched degrades to "drafts not shown", which is
+        // a far better failure than an empty catalog.
+      }
+    }
+
+    const handle = wireDataGrid<PerformanceMeasureDefinition>({
+      root,
+      gridSelector: '[data-measures-grid]',
+      dataSelector: '[data-measures-data]',
+      searchSelector: '[data-measures-search]',
+      countSelector: '[data-measures-count]',
+      csvSelector: '[data-measures-csv]',
+      countNoun: 'measures',
+      csvFileName: 'projectfirma-performance-measures.csv',
+      suppressCellFocus: true,
+      columnDefs: [
+        // Widths are explicit on every fixed column: AG Grid's `minWidth` is only
+        // a floor, and a column without `width` defaults to 200px, which silently
+        // pushes the last column off-screen at 1280.
+        //
+        // The name is the widest column because it is what people scan for, and
+        // It is a LINK to the measure's setup page, the same shape the Project
+        // column uses — escaped through esc() on both href and text, since a
+        // cellRenderer takes a string of HTML and unescaped interpolation here
+        // is an injection point.
+        //
+        // The text is measureDisplayName(), never the raw name. A measure is
+        // created by answering one question and reaches this catalog before it
+        // is named, so an unnamed draft would otherwise render as a blank cell
+        // with a zero-width link in it — unclickable, and indistinguishable
+        // from a rendering fault. The helper falls back to "Untitled measure",
+        // which is the same string the setup page's own heading shows, so the
+        // row you click and the page you land on agree.
+        //
+        // The tooltip is the measure's stored DEFINITION rather than a repeat of
+        // the name: what counts toward a measure and what does not is the fact a
+        // reader is missing at this column, and the cell already shows the name.
+        {
+          headerName: 'Measure', field: 'name', colId: 'name',
+          flex: 2, minWidth: 220, cellClass: 'firma2-grid-name', tooltipField: 'definition',
+          getQuickFilterText: (p) => (p.data ? measureDisplayName(p.data) : ''),
+          cellRenderer: (p: { data?: PerformanceMeasureDefinition }) =>
+            p.data
+              ? `<a class="firma2-grid-link" href="${esc(withBase(measureHref(p.data)))}">${esc(measureDisplayName(p.data))}</a>`
+              : '',
+        },
+        // UNSET IS A REAL STATE, not a missing value. `program` and
+        // `reportingFrequency` are optional on the record because a draft
+        // created from the one-question dialog genuinely has not answered them
+        // yet. An empty cell reads as a rendering fault; an em dash reads as
+        // "not answered", which is the truth. Sorting still groups them
+        // together because AG Grid sorts on the raw undefined, not the dash.
+        {
+          headerName: 'Program', field: 'program', colId: 'program',
+          flex: 1, minWidth: 150, tooltipField: 'program',
+          valueFormatter: (p) => p.value || UNSET,
+        },
+        // Type and unit are ONE fact — "Number · acres" — so they share a column.
+        // Two columns would cost ~120px that the truncating Measure and Program
+        // columns need more, and a unit alone ("acres") never answers a question
+        // its data type has not already framed. Percent and Currency carry their
+        // own unit, so the record stores an empty string and the separator is
+        // dropped rather than left dangling.
+        {
+          headerName: 'Data type', field: 'dataType', colId: 'dataType', width: 165,
+          comparator: rankBy(DATA_TYPES),
+          valueFormatter: (p) =>
+            p.data ? (p.data.unit ? `${p.data.dataType} · ${p.data.unit}` : p.data.dataType) : '',
+          getQuickFilterText: (p) => p.data?.unit ?? '',
+        },
+        {
+          headerName: 'Reporting frequency', field: 'reportingFrequency', colId: 'reportingFrequency', width: 180,
+          headerTooltip: 'How often each project reports a value.',
+          comparator: rankBy(REPORTING_FREQUENCIES),
+          valueFormatter: (p) => p.value || UNSET,
+        },
+        // A count, so it is right-aligned on tabular figures and the header
+        // follows the cells. It reuses the shared `firma2-grid-cost` /
+        // `-cost-header` pair, which is the chrome's right-aligned-numeric
+        // treatment and carries nothing currency-specific — the name is now one
+        // use behind its job and would read better as `firma2-grid-number`.
+        // Renaming it is a change to a file two grids share, so it belongs in a
+        // pass over the shared chrome, not smuggled in here.
+        {
+          headerName: 'Projects', field: 'projectCount', colId: 'projectCount', width: 120,
+          headerTooltip: 'Projects currently reporting this measure.',
+          cellClass: 'firma2-grid-cost', headerClass: 'firma2-grid-cost-header',
+        },
+        // Status is the cloned esa-pill — a badge, never a coloured row edge.
+        // The tooltip is on the HEADER because it explains the vocabulary, not
+        // any one row: Active needs no gloss, and the two that do are the ones a
+        // reader meets rarely.
+        {
+          headerName: 'Status', field: 'status', colId: 'status', width: 135,
+          headerTooltip: 'Draft measures are not collecting values yet. Retired measures keep past values but take no new ones.',
+          comparator: rankBy(STATUS_ORDER),
+          cellRenderer: (p: { value: string }) =>
+            `<span class="firma2-grid-status">${pillHTML.get(p.value) ?? esc(p.value)}</span>`,
+        },
+      ] satisfies ColDef[],
+      gridOptions: {
+        // The server-rendered esa-empty-state, reused verbatim — same reason the
+        // Status pills are cloned rather than re-built: it keeps the lego (and
+        // its scoped styles) as the single source. A JS overlayComponent would
+        // mean re-authoring the lego's markup by hand.
+        overlayNoRowsTemplate: emptyState?.outerHTML,
+        isExternalFilterPresent: () => programValues.length > 0 || statusValues.length > 0,
+        doesExternalFilterPass: (node) =>
+          (programValues.length === 0 || programValues.includes(node.data?.program ?? '')) &&
+          (statusValues.length === 0 || statusValues.includes(node.data?.status ?? '')),
+      },
+    });
+    if (!handle) return;
+    const { gridApi } = handle;
+
+    // Clear all is only in the row when there is something to clear — a control
+    // that does nothing is one more thing to read past on the way to the table.
+    const syncClearVisibility = () => {
+      if (clearButton) clearButton.hidden = programValues.length === 0 && statusValues.length === 0;
+    };
+    syncClearVisibility();
+
+    // `selection-change` carries the whole selection (an array, because these are
+    // `multiple`), so each handler replaces its dimension's list wholesale — the
+    // dropdown owns the state, this only mirrors it into the grid.
+    const onSelection = (apply: (values: string[]) => void) => (event: Event) => {
+      apply((event as CustomEvent<{ value?: string[] }>).detail?.value ?? []);
+      gridApi.onFilterChanged();
+      syncClearVisibility();
+    };
+    programFilter?.addEventListener('selection-change', onSelection((v) => { programValues = v; }));
+    statusFilter?.addEventListener('selection-change', onSelection((v) => { statusValues = v; }));
+
+    // esa-filter-clear-button is presentational: it emits a bubbling
+    // `esa-filter-clear` and expects whoever owns the filter state to act. That
+    // owner is this component.
+    //
+    // Emptying a dropdown means writing its `_selected` state directly. The lego
+    // has a private clear() bound to a link inside its own panel and no public
+    // value setter or clear() method, so an external Clear all has no supported
+    // way in — worth a /request-lego. Writing the reactive property still
+    // re-renders correctly (it is a declared Lit state accessor), but it does NOT
+    // emit selection-change, so the local arrays are reset here rather than being
+    // waited on.
+    root.addEventListener('esa-filter-clear', () => {
+      [programFilter, statusFilter].forEach((el) => {
+        const dropdown = el as (HTMLElement & { _selected?: string[] }) | null;
+        if (dropdown) dropdown._selected = [];
+      });
+      programValues = [];
+      statusValues = [];
+      gridApi.onFilterChanged();
+      syncClearVisibility();
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-table').forEach(initMeasureTable);
+</script>

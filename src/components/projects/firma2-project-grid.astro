@@ -184,8 +184,9 @@ const programOptions = programs.map((p) => ({ value: p, label: p }));
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-filter-dropdown';
   import { escGridHtml as esc, gridCurrencyFormatter as money, wireDataGrid } from '../shared/grid-chrome';
-  import { STAGE_ORDER } from '../../data/firma2-projects';
+  import { STAGE_ORDER, projectHref } from '../../data/firma2-projects';
   import type { Project } from '../../data/firma2-projects';
+  import { withBase } from '../../lib/base';
   import type { ColDef } from 'ag-grid-community';
 
   /** Lifecycle position, so the Stage column sorts Proposal → Deferred rather than alphabetically. */
@@ -232,10 +233,25 @@ const programOptions = programs.map((p) => ({ value: p, label: p }));
         // Widths are explicit on every fixed column: AG Grid's `minWidth` is only
         // a floor, and a column without `width` defaults to 200px, which silently
         // pushed the last column off-screen at 1280.
+        // The identifying column is the row's way into the project. It became a
+        // real link once /prototypes/projects/<slug> existed; before that it was
+        // deliberately plain text, because styling a dead link is how a dead link
+        // ships. projectHref and the route's getStaticPaths read the same
+        // projectSlug, so a row can never link at a page the route did not build.
+        //
+        // Escaped through esc() on both the href and the text even though every
+        // project name is a literal in our own data module: the renderer takes a
+        // string of HTML, and the moment this data comes from anywhere else an
+        // unescaped interpolation here is an injection point. Cheap now, load-
+        // bearing later.
         {
           headerName: 'Project', field: 'projectName', colId: 'projectName',
           flex: 2, minWidth: 200, cellClass: 'firma2-grid-name', tooltipField: 'projectName',
           getQuickFilterText: (p) => p.data?.projectName ?? '',
+          cellRenderer: (p: { data?: Project }) =>
+            p.data
+              ? `<a class="firma2-grid-link" href="${esc(withBase(projectHref(p.data)))}">${esc(p.data.projectName)}</a>`
+              : '',
         },
         { headerName: 'Program', field: 'program', colId: 'program', flex: 1, minWidth: 150, tooltipField: 'program' },
         {

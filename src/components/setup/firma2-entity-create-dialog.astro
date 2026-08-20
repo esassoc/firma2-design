@@ -1,0 +1,245 @@
+---
+// firma2-entity-create-dialog — THE reusable "create a new <entity>" surface for
+// this product. It asks exactly ONE question, then hands back a saved draft with
+// a URL of its own. It is not a wizard, and that is the whole design.
+//
+// WHY NOT A WIZARD. A wizard assumes setup happens in one sitting, by one person,
+// with every answer already known. None of that is true here. Setting up a
+// performance measure is part exploration ("what do the other programs use?") and
+// part consulting somebody else ("is this the number the funder actually wants?").
+// A wizard turns both of those into a lost session: close the drawer to go ask,
+// and the answers go with it. So the flow is answer one question -> get a draft ->
+// fill it in over days, from a page you can bookmark and send to a colleague.
+//
+// WHY ONE QUESTION AND NOT ZERO. The single question is the one that decides the
+// SHAPE of everything downstream — the one answer that changes which fields exist,
+// so it cannot be deferred to the draft page without the draft page rearranging
+// itself under the user later. For performance measures that is the data type:
+// Number, Percent or Currency decides whether a unit field applies at all. Ask it
+// once, up front, and the draft page can be built correctly the first time.
+//
+// NOTHING ABOUT ANY ONE ENTITY LIVES IN HERE. Performance measures is the first
+// caller, not the subject. Organizations, Funding Sources and every other entity
+// reuse this with their own one question, their own options and their own
+// destination. The moment a measure-specific word appears below this line the next
+// caller has to fork the file, which is how a pattern dies.
+//
+// WHY esa-dialog AND NOT esa-side-dialog. Size the overlay by its role: a work
+// surface you live in for ten minutes earns the big stable frame at the edge of
+// the screen; a single question you answer in three seconds does not. A drawer
+// here would open a 520px panel, slide it in, and hold it there to house one
+// radio group — the chrome would outweigh the ask. This is confirm scale.
+//
+// THE LEGO OWNS THE OVERLAY. esa-dialog already ships Esc, the close button,
+// light dismiss, the scrim and focus restore. None of it is reimplemented below;
+// the script only ever calls .show() and .close(), reads a value, and navigates.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+
+export interface CreateOption {
+  value: string;
+  label: string;
+  /** What picking this changes downstream. Optional. */
+  description?: string;
+}
+
+interface Props {
+  /** DOM id. Any element with data-opens="<id>" opens this dialog. */
+  id: string;
+  /** Dialog heading — "New performance measure". */
+  heading: string;
+  /** The single question's label — goes on the control, not a loose <p>. */
+  question: string;
+  /** Why this is asked before anything else. Optional. */
+  helpText?: string;
+  options: CreateOption[];
+  /** Primary action label — e.g. "Create draft". */
+  createLabel: string;
+  /** Where Create navigates. The chosen value is appended as ?type=<value>. */
+  destination: string;
+}
+
+const { id, heading, question, helpText, options, createLabel, destination } = Astro.props;
+
+// The caller passes a root-relative route; the site base is this file's job, the
+// same split the rest of the spoke uses for hand-written links.
+const resolvedDestination = withBase(destination);
+
+// esa-radio-group's option type is `{ label, value, disabled? }` — THERE IS NO
+// per-option description field (read the lego, 2026-08-20). So CreateOption's
+// description rides in the label after an em dash rather than being dropped.
+// It is the least-bad of four bad options: the group's `help-text` holds ONE
+// string and cannot carry three; a description rendered outside the group loses
+// its association with the radio it describes; and a live line that swaps as you
+// arrow through the options is exactly wrong for a question whose whole job is
+// letting you COMPARE three answers at once. Folded into the label, the guidance
+// is also part of each radio's accessible name, so a screen-reader user hears
+// what the choice changes at the moment they land on it. Filed as a hub gap:
+// esa-radio-group wants an optional per-option `description`.
+const radioOptions = options.map((option) => ({
+  value: option.value,
+  label: option.description ? `${option.label} — ${option.description}` : option.label,
+}));
+
+// PRESELECT THE FIRST OPTION so Create is never a dead end. A create dialog that
+// opens with nothing chosen makes its own primary button an error waiting to be
+// pressed; there is no neutral answer to "what kind of thing is this", so the
+// first option is the honest default and the user changes it or moves on.
+const initialValue = options[0]?.value ?? '';
+---
+<esa-dialog
+  id={id}
+  class="firma2-entity-create-dialog"
+  heading={heading}
+  size="md"
+  show-close-button
+  data-destination={resolvedDestination}
+  data-initial-value={initialValue}
+>
+  <!-- No .stack wrapper around the body. There is exactly one child, and a
+       spacing primitive with nothing to space is a div pretending to be a
+       decision. When a second body element ever earns its place here, that is
+       the moment to add the stack. -->
+  <esa-radio-group
+    class="firma2-entity-create-dialog__question"
+    label={question}
+    help-text={helpText}
+    size="md"
+    orientation="vertical"
+    name="type"
+    data-options={JSON.stringify(radioOptions)}
+  ></esa-radio-group>
+  <!-- `label` on the group, not a loose <p> above it: the question IS the
+       control's accessible name, and a paragraph that merely sits nearby is not.
+       `name="type"` is the key this value travels under — the query param below
+       and the field a live POST would submit both read it, so the mapping is
+       declared once, here.
+
+       Deliberately NOT `required`. Required renders an asterisk on the legend and
+       arms a validation path that can never fire, because an option is always
+       preselected. Marking a question the user cannot fail is decoration. -->
+
+  <!-- HOUSE ORDER: the action group is right-aligned (esa-dialog's footer is
+       already flex-end) with the PRIMARY LEFT OF CANCEL inside it. So Create
+       reads first in both directions — first in the DOM for anyone tabbing in,
+       and leftmost in the group where the eye lands after reading the question.
+       The gap matches the footer's own 0.5rem so the group looks native rather
+       than like something dropped into a slot. -->
+  <div class="firma2-entity-create-dialog__actions cluster" data-gap="xs" slot="footer">
+    <EsaButton variant="primary" size="md" data-create>{createLabel}</EsaButton>
+    <EsaButton variant="ghost" size="md" data-cancel>Cancel</EsaButton>
+  </div>
+</esa-dialog>
+
+<!-- No <style> block, on purpose. This component introduces no new visual idea —
+     it is an esa-dialog holding an esa-radio-group over two esa-buttons, and
+     every measurement in it (the dialog's 480px, the footer's alignment, the
+     radio's spacing) already belongs to a lego. CSS here would only be this file
+     disagreeing with the kit. -->
+
+<script>
+  // Registering the two custom elements. Esc, the close button, light dismiss,
+  // focus restore and the whole radio keyboard model arrive with these imports;
+  // nothing below reimplements any of it.
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-radio-group';
+
+  /** The slice of esa-dialog this file touches. */
+  interface DialogElement extends HTMLElement {
+    show(): void;
+    close(): void;
+    updateComplete: Promise<unknown>;
+  }
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+    updateComplete: Promise<unknown>;
+  }
+
+  const DIALOG = '.firma2-entity-create-dialog';
+
+  interface DialogController {
+    /** Preselect the first option and hand focus to the question. */
+    prime(): Promise<void>;
+  }
+
+  const controllers = new WeakMap<Element, DialogController>();
+
+  document.querySelectorAll<HTMLElement>(DIALOG).forEach((element) => {
+    const dialog = element as DialogElement;
+    const group = element.querySelector('esa-radio-group') as RadioGroupElement | null;
+    const createButton = element.querySelector<HTMLElement>('[data-create]');
+    const cancelButton = element.querySelector<HTMLElement>('[data-cancel]');
+    const initialValue = element.dataset.initialValue || null;
+
+    // OPTIONS ARE A PROPERTY, NOT AN ATTRIBUTE. The lego will parse a JSON string
+    // if one arrives as an attribute, but that fallback exists for hand-written
+    // HTML; assigning the property is the typed path and it cannot be defeated by
+    // a label containing a quote. whenDefined gates it so the assignment is not
+    // overwritten by the element's own constructor defaults.
+    const ready = customElements.whenDefined('esa-radio-group').then(() => {
+      if (!group) return;
+      group.options = JSON.parse(group.dataset.options ?? '[]');
+      group.value = initialValue;
+    });
+
+    controllers.set(element, {
+      async prime() {
+        await ready;
+        // RESET ON OPEN, NOT ON CLOSE. Reopening a create dialog is a fresh
+        // create, not a resumed one — the draft you started last time already
+        // has a page of its own. Doing it on open also means nothing is ever
+        // seen to change while the dialog is still on screen.
+        if (group) group.value = initialValue;
+        dialog.show();
+        // showModal() runs inside the dialog's own update, and the UA parks
+        // initial focus on the first focusable it finds — the close button. So
+        // the focus move has to wait for BOTH elements to settle, or it lands on
+        // a radio that has not rendered its selected state yet and gets undone.
+        await dialog.updateComplete;
+        await group?.updateComplete;
+        // esa-radio-group forwards .focus() to the selected radio, so this puts
+        // the caret exactly where the arrow keys work.
+        group?.focus();
+      },
+    });
+
+    createButton?.addEventListener('click', () => {
+      const value = group?.value ?? initialValue;
+      if (!value) return;
+      // A LIVE BUILD WOULD POST AND REDIRECT to the new record's own id —
+      // /performance-measures/4187/edit or similar — because the point of this
+      // flow is a saved draft with a bookmarkable, shareable URL. The prototype
+      // has no server to hand one back, so the destination page reads the answer
+      // off the query string instead. `?type=` is the stand-in, not the design.
+      window.location.assign(
+        `${element.dataset.destination ?? ''}?type=${encodeURIComponent(value)}`,
+      );
+    });
+
+    // Cancel just closes. No confirm-before-discard: nothing has been created
+    // yet and one radio is not work worth guarding.
+    cancelButton?.addEventListener('click', () => dialog.close());
+  });
+
+  // THE GENERIC TRIGGER SEAM. Anything, anywhere in the document, carrying
+  // data-opens="<dialog id>" opens that dialog — a page-header button, a row
+  // action, an empty state's call to action. Delegated from `document` so a
+  // trigger rendered after this module ran still works, and so a caller never
+  // writes a line of JavaScript to use this component.
+  document.addEventListener('click', (event) => {
+    const target = event.target as Element | null;
+    const trigger = target?.closest?.('[data-opens]');
+    if (!trigger) return;
+
+    const dialog = document.getElementById(trigger.getAttribute('data-opens') ?? '');
+    // Only OUR dialogs. A data-opens pointing at some other overlay is not ours
+    // to handle, and swallowing its click would break it silently.
+    if (!dialog || !dialog.matches(DIALOG)) return;
+
+    event.preventDefault();
+    void controllers.get(dialog)?.prime();
+  });
+</script>
