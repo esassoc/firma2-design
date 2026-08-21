@@ -83,11 +83,12 @@ const measurePayload = JSON.stringify(measure);
 <!-- "Breakdown preview" — and the old title is worth recording, because it became
      FALSE rather than merely stale. It read "Breakdowns this measure supports",
      which was true of a panel listing every dimension and is a lie about a panel
-     drawing one. The set it named now lives in firma2-dimension-editor.
-     "Preview" is the word that fixes it: it pairs this panel with its sibling's
-     "Entry form preview" (measure-reporter-preview.ts owns that string), so the
-     two read as a matched pair of previews, and it carries the same caveat the
-     note under the chart spells out — nothing here has been reported.
+     drawing one. The set it named now lives in the form editor's report card.
+     "Preview" is the word that fixes it — and this panel is the ONE preview
+     left on the page (the entry-form preview it used to pair with died when
+     the form became the editor): it renders a consequence, not a copy of a
+     control surface, and it carries the caveat the described-by note spells
+     out — nothing here has been reported.
      "Breakdown" rather than "dimension": the data model's word is `dimension`,
      which is internal vocabulary, and the panel is read cold by program staff
      and by client reviewers as often as by the person editing it.
@@ -151,10 +152,15 @@ const measurePayload = JSON.stringify(measure);
            broken by an update, which is exactly the failure mode a rebuilt
            description would have.
 
-           Primary ink, not the secondary grey `body-sm` often wears. A
-           qualification a reader must not skip is not styled as the thing on
-           the page most safely skipped. -->
-      <p id={noteId} class="firma2-measure-split__note typography-body-sm" data-firma2-split-note>
+           VISUALLY HIDDEN NOW, not gone — cut from the visible page on verbal
+           restraint (a provenance caption under a chart is text ABOUT the
+           page, banned by design-principles), kept in the DOM because it is
+           the chart's described-by: an AT user hears the qualification with
+           the chart's name, which is where it always did its real work. The
+           sighted reader gets the same fact twice already — the card is
+           titled "Breakdown preview" and the data table's value column is
+           headed "Illustrative". -->
+      <p id={noteId} class="visually-hidden" data-firma2-split-note>
         Illustrative figures: the split comes from this definition, not from reported entries.
       </p>
 
@@ -249,9 +255,11 @@ const measurePayload = JSON.stringify(measure);
 <script>
   import '@esa/ecology/esa-chart';
   import { MEASURE_CHANGE_EVENT, type MeasureChangeDetail } from '../../lib/measure-draft';
+  import { readLocalVocabularies } from '../../lib/vocabulary-draft';
   import {
     dimensionValues,
     measureDisplayName,
+    primaryAspect,
     type MeasureDimension,
     type PerformanceMeasureDefinition,
   } from '../../data/firma2-performance-measures';
@@ -320,7 +328,7 @@ const measurePayload = JSON.stringify(measure);
    * dataviz skill's own example of a chart that should have been a number.
    */
   const pickDimension = (m: PerformanceMeasureDefinition): MeasureDimension | null => {
-    const candidates = m.dimensions.filter((d) => dimensionValues(d).length >= 2);
+    const candidates = m.dimensions.filter((d) => dimensionValues(d, readLocalVocabularies()).length >= 2);
     return candidates.find((d) => d.source.kind === 'spatial') ?? candidates[0] ?? null;
   };
 
@@ -380,7 +388,7 @@ const measurePayload = JSON.stringify(measure);
   }
 
   const split = (m: PerformanceMeasureDefinition, d: MeasureDimension): SplitRow[] => {
-    const values = dimensionValues(d);
+    const values = dimensionValues(d, readLocalVocabularies());
     // 5..64, so no value ever draws a zero-height bar and no value can be more
     // than ~13× another — a split where one slice is 400× the next reads as a
     // data error rather than as a plausible programme.
@@ -388,8 +396,13 @@ const measurePayload = JSON.stringify(measure);
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
     // A measure with no projects yet would otherwise draw a chart of zeroes,
     // which is a claim (nothing has happened) rather than an illustration.
-    const total = Math.max(m.projectCount, 1) * (UNIT_SCALE[m.unit ?? ''] ?? DEFAULT_SCALE);
-    const factor = 10 ** m.decimalPlaces;
+    // THE FIRST ASPECT SETS THE SCALE — the sanctioned v1 read (see
+    // primaryAspect in the data module). A multi-aspect chart (one series per
+    // aspect, or a series selector) is explicitly punted; when it lands, the
+    // aspect is a parameter here rather than a lookup.
+    const aspect = primaryAspect(m);
+    const total = Math.max(m.projectCount, 1) * (UNIT_SCALE[aspect?.unit ?? ''] ?? DEFAULT_SCALE);
+    const factor = 10 ** (aspect?.decimalPlaces ?? 0);
     return values.map((value, i) => ({
       value,
       // Rounded to the measure's OWN precision: a measure that accepts whole
@@ -465,15 +478,16 @@ const measurePayload = JSON.stringify(measure);
       // is one of the fields being edited. Pinning both bounds to the same value
       // is what stops a derived 0.666… rendering more decimals than the measure
       // would ever accept from a reporter.
+      const aspect = primaryAspect(measure);
+      const decimals = aspect?.decimalPlaces ?? 0;
       const number = new Intl.NumberFormat('en-US', {
-        minimumFractionDigits: measure.decimalPlaces,
-        maximumFractionDigits: measure.decimalPlaces,
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
       });
       // Sentence case: the unit is used as an axis title and a column header,
       // both of which start a phrase. "tons per year" -> "Tons per year".
-      const unitTitle = measure.unit
-        ? measure.unit.charAt(0).toUpperCase() + measure.unit.slice(1)
-        : '';
+      const unit = aspect?.unit ?? '';
+      const unitTitle = unit ? unit.charAt(0).toUpperCase() + unit.slice(1) : '';
 
       /*
        * The chart's accessible name, and it names what the chart SHOWS.
@@ -493,7 +507,7 @@ const measurePayload = JSON.stringify(measure);
       if (caption) caption.textContent = chartLabel;
       if (valueHeader) valueHeader.textContent = dimension.name;
       if (quantityHeader) {
-        quantityHeader.textContent = unitTitle ? `Illustrative (${measure.unit})` : 'Illustrative';
+        quantityHeader.textContent = unitTitle ? `Illustrative (${unit})` : 'Illustrative';
       }
 
       const next = document.createDocumentFragment();
@@ -650,13 +664,8 @@ const measurePayload = JSON.stringify(measure);
     display: none;
   }
 
-  .firma2-measure-split__note {
-    margin: 0;
-    /* Primary ink deliberately — see the NOTE comment in the markup. `body-sm`
-       is the house dense floor, and design-principles' rule for small text is
-       "darken as you shrink", not grey it out. */
-    color: var(--color-content-default, #202020);
-  }
+  /* (The note's visible styling went with its visibility — it is a
+     visually-hidden described-by now; see the markup.) */
 
   /* The chart's box is stable before the chart arrives: esa-chart renders its
      own wrap and canvas with an inline height (320px by default) on its first

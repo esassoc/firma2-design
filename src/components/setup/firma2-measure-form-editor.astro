@@ -1,0 +1,1379 @@
+---
+// firma2-measure-form-editor — THE MEASURE'S STRUCTURE, STATED DIRECTLY.
+//
+// Two cards defining what data the measure collects: the amounts and
+// subcategories reporters enter, and the breakdowns the report gains without
+// asking. Every row STATES its slice of the definition — "Treated extent /
+// acres · summed across entries", "Treatment type / Biomass removal, Thinning,
+// …" — and clicking a row opens its editor in place.
+//
+// IT WAS THE REPORTER'S FORM ONCE — a simulacrum of the entry form, labelled
+// wells holding italic example answers, on the argument that authoring the
+// artifact beats authoring its settings. The abstraction failed the admin
+// test: operating a PICTURE of someone else's UI needs a theory to decode
+// (wells that look like inputs but aren't; example answers a register away
+// from reading as data — and one DID, the invented "1,240"; a label meaning
+// "what the reporter will see" where every sibling page's labels mean "what
+// you set"). An admin asked to define a measure should define the measure. The
+// rows now state facts in the record pages' own label-over-value idiom; what
+// the reporter experiences is derivable from them and no longer the metaphor.
+//
+// THE SHAPE — two cards, the page sections' own chrome:
+//   1. THE ENTRY CARD ("What reporters enter"): amount rows (the aspects,
+//      leading — they are what the measure counts) → subcategory rows (the
+//      reported dimensions) → the frame facts every entry carries on its own
+//      (place / reading date). Two add affordances INSIDE the card, because
+//      what they add costs the reporter: "Add another amount" and "Add a
+//      subcategory".
+//   2. THE REPORT CARD ("Added to the report automatically"): derived rows
+//      the reporter never sees, and the catalog tray of sources not yet used.
+//      Additions here are free, and the pricing is spatial: in the entry card
+//      = costs every entry; in this one = costs nobody. The two cards' row
+//      anatomy is IDENTICAL (name over a values line) — a breakdown reads the
+//      same wherever its data comes from; only the source differs.
+//
+// ROWS AT REST ARE PLAIN MARKUP — a name and a fact line, no live controls.
+// The Lit controls live in each row's HIDDEN editor and are seeded when it
+// opens. That is what makes cloned rows cheap (nothing to upgrade or dress at
+// rest) and confines the 40px height pinning to the moment an editor opens.
+//
+// EDIT CHOREOGRAPHY — the house model, at row scale: click a row (or Enter on
+// it) to open its editor in place; leaving the row commits; Escape abandons;
+// Enter commits and closes; one row open at a time, so opening B commits A.
+// The row's TRUTH lives in its data-* attributes, not in the controls — the
+// editor seeds from the dataset on open and writes back on commit, which is
+// what makes read/restore synchronous and clone-safe.
+//
+// CONTRACTS — consumed by src/lib/measure-editor.ts:
+//   .firma2-measure-form-editor           the root class it queries
+//   readAspects(): MeasureAspect[]        expando; amounts in row order
+//   readDimensions(): MeasureDimension[]  expando; question rows THEN derived
+//                                         rows (see ORDER below)
+//   setAspects(a) / setDimensions(d)      restore from a saved draft
+//   firma2-dimensions-change              bubbling, on every commit/add/remove
+// And one listener: `firma2:measure-focus-request` on document — the claim's
+// blanks name a target ("aspect:0:unit", "dimension:2") and this opens the row
+// and focuses the control.
+//
+// ORDER. The dimensions array's canonical order becomes reported-then-derived:
+// the form shows only reported rows and the report block only derived ones, so
+// an interleave across that boundary has no surface to live on. Every seed is
+// already authored in that order, so a no-op read still diffs to nothing.
+//
+// COMPOSED, NOT BUILT: esa-text-field / esa-select (row editors), esa-button
+// ghost (the two priced adds), ghost/dashed (catalog) and chrome/icon-only
+// (remove), bcn-option-list (ONLY inside "New vocabulary…" — its demoted
+// role), on layout primitives. The catalog tray, the announcer discipline and
+// the focus choreography are ported from the section this replaced.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import '../shared/firma2-card-section.css';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import BcnOptionList from '../shared/bcn-option-list.astro';
+import {
+  COUNTING_RULES,
+  DIMENSION_ARCHETYPES,
+  GEO_LAYERS,
+  HISTORICAL_RULES,
+  RECORD_FIELDS,
+  VOCABULARIES,
+  dimensionValues,
+  measureKind,
+  primaryAspect,
+  reportedDimensions,
+  derivedDimensions,
+  sourceLabel,
+} from '../../data/firma2-performance-measures';
+import type {
+  MeasureAspect,
+  MeasureDimension,
+  PerformanceMeasureDefinition,
+} from '../../data/firma2-performance-measures';
+import { RULE_PHRASE } from '../../lib/measure-claim';
+
+interface Props {
+  measure: PerformanceMeasureDefinition;
+}
+
+const { measure } = Astro.props;
+
+const kind = measureKind(measure.kind);
+const isOutcome = measure.kind === 'outcome';
+const reported = reportedDimensions(measure);
+const derived = derivedDimensions(measure);
+
+// ---------------------------------------------------------------------------
+// The derived-source catalog (ported from the section this replaced)
+// ---------------------------------------------------------------------------
+
+interface SourceEntry {
+  value: string;
+  name: string;
+  kind: 'spatial' | 'historical' | 'record';
+  values: string[];
+}
+
+const SOURCES: SourceEntry[] = [
+  ...GEO_LAYERS.map((layer) => ({
+    value: `spatial:${layer.id}`,
+    name: layer.name,
+    kind: 'spatial' as const,
+    values: layer.values,
+  })),
+  ...HISTORICAL_RULES.map((rule) => ({
+    value: `historical:${rule.id}`,
+    name: rule.name,
+    kind: 'historical' as const,
+    values: [...rule.values],
+  })),
+  ...RECORD_FIELDS.map((field) => ({
+    value: `record:${field.id}`,
+    name: field.name,
+    kind: 'record' as const,
+    values: [] as string[],
+  })),
+];
+
+const sourceValue = (d: MeasureDimension): string => `${d.source.kind}:${d.source.ref ?? ''}`;
+const declared = new Set(derived.map(sourceValue));
+const catalogEmpty = SOURCES.every((s) => declared.has(s.value));
+
+const SOURCE_KIND_LABEL: Record<MeasureDimension['source']['kind'], string> = {
+  reported: 'Reported',
+  spatial: 'Map layer',
+  historical: 'Entry history',
+  record: 'Record field',
+};
+const GROUP_LABEL: Record<SourceEntry['kind'], string> = {
+  spatial: 'Map layers',
+  historical: 'Entry history',
+  record: 'Record fields',
+};
+const GROUP_ORDER: SourceEntry['kind'][] = ['spatial', 'historical', 'record'];
+
+const sourceNote = (d: MeasureDimension): string => {
+  const kindLabel = SOURCE_KIND_LABEL[d.source.kind];
+  const label = sourceLabel(d);
+  return label === kindLabel || label === d.name ? kindLabel : `${kindLabel} · ${label}`;
+};
+
+// ---------------------------------------------------------------------------
+// Copy + example rendering for rows at rest
+// ---------------------------------------------------------------------------
+
+const HEADING = 'What reporters enter';
+const REPORT_HEADING = 'Added to the report automatically';
+const ASK_LABEL = 'Add a subcategory';
+const ADD_AMOUNT_LABEL = 'Add another amount';
+const CATALOG_HEADING = 'Available without asking';
+const NEW_SUBCATEGORY = 'New subcategory';
+const NO_FIXED_LIST = 'No fixed list';
+
+// THE FACT LINES — each row's slice of the definition, stated. No example
+// answers anywhere anymore: the invented figures died with the form-simulacrum
+// (an example a register away from reading as data is a liability the page
+// gets nothing for). The one builder + one renderer discipline holds: these
+// two functions run at build time here and again in the client script on
+// commit, so the resting rows are byte-identical however they were painted.
+// A missing part is SAID, in outstandingFields()' own vocabulary, and marked
+// unset — the fact line is honest about what is not yet decided.
+interface FactLine {
+  text: string;
+  unset: boolean;
+}
+
+const aspectFact = (a: MeasureAspect): FactLine => {
+  const rule = a.countingRule ? RULE_PHRASE[a.countingRule] ?? a.countingRule : '';
+  if (!a.unit && !rule) return { text: 'No unit or counting rule yet', unset: true };
+  if (!a.unit) return { text: `No unit yet · ${rule}`, unset: true };
+  if (!rule) return { text: `${a.unit} · no counting rule yet`, unset: true };
+  return { text: `${a.unit} · ${rule}`, unset: false };
+};
+
+const dimensionFact = (d: MeasureDimension): FactLine => {
+  const options = dimensionValues(d).filter((o) => o.trim());
+  return options.length
+    ? { text: options.join(', '), unset: false }
+    : { text: 'No options yet', unset: true };
+};
+
+// The frame facts the form supplies without asking — the reporter still SEES
+// these fields, so the author must too. An output only carries a place row
+// when something spatial will read it; an outcome is a reading and always
+// carries place + date.
+const frameRows: { label: string; value: string }[] = isOutcome
+  ? [
+      { label: 'Location', value: 'Picked on the map' },
+      { label: 'Reading date', value: 'From the entry' },
+    ]
+  : derived.some((d) => d.source.kind === 'spatial')
+    ? [{ label: 'Location', value: 'Drawn on the map' }]
+    : [];
+
+// Everything the row editors need, serialized once on the root: select
+// vocabularies (units, rules for this kind, archetypes, the SEEDED shared
+// vocabularies) and the counting-rule descriptions for the swapping help line.
+// Browser-local vocabularies are read live from vocabulary-draft at open time.
+const editorConfig = JSON.stringify({
+  kind: measure.kind,
+  ruleHelpUnset: 'How entries combine into one program total.',
+  ruleDescriptions: Object.fromEntries(COUNTING_RULES.map((r) => [r.id, r.description])),
+  archetypes: DIMENSION_ARCHETYPES.map((a) => ({ value: a.id, label: a.question })),
+  sources: SOURCES,
+});
+
+// Server-rendered rows: the real dimensions/aspects plus one hidden prototype
+// of each editable row shape. Real <template>s hold nothing here — the
+// prototypes are rows with `data-prototype`, lifted by the script exactly as
+// the replaced section did (safe: nothing clones THIS component).
+const BLANK_DIMENSION: MeasureDimension = { name: '', source: { kind: 'reported' } };
+const BLANK_ASPECT: MeasureAspect = { id: '', quantity: '', decimalPlaces: 0 };
+
+interface DimRow {
+  d: MeasureDimension;
+  prototype: boolean;
+}
+interface AspectRow {
+  a: MeasureAspect;
+  prototype: boolean;
+}
+const dimensionRows: DimRow[] = [
+  ...reported.map((d) => ({ d, prototype: false })),
+  { d: BLANK_DIMENSION, prototype: true },
+];
+const aspectRows: AspectRow[] = [
+  ...measure.aspects.map((a) => ({ a, prototype: false })),
+  { a: BLANK_ASPECT, prototype: true },
+];
+---
+
+<!-- A DIV ROOT WRAPPING TWO CARDS, not a section of bare surfaces. The two
+     halves — the reporter's form, and what the report gains without asking —
+     are page sections, and page sections on this product are cards with their
+     titles in the header band (the project page's rhythm, at the same xl
+     interval the page stack keeps). The root class and data-editor-config stay
+     on the wrapper: they are the controller's and the script's contract, and
+     both cards share one editor. -->
+<div class="firma2-measure-form-editor stack" data-gap="xl" data-editor-config={editorConfig}>
+  <!-- THE ENTRY CARD. Everything in it costs every reporter on every entry —
+       the title names the price's bearer. Rows are definition rows in the
+       record pages' own idiom (name over a fact line, click to edit), not a
+       mockup of the entry form: the admin defines the measure, and the
+       reporter's form follows from the definition. -->
+  <EsaCard title={HEADING}>
+  <div class="firma2-measure-form-editor__form stack" data-gap="lg">
+    <!-- AMOUNT ROWS LEAD — the aspects are what the measure counts, and the
+         claim's own grammar starts with them. An <ol> on `.grid`, not
+         `.stack`, so the rows flow into columns and the card's width is spent
+         on content; auto-fit fills row-major, so the list still reads
+         first-to-last. -->
+    <ol class="firma2-measure-form-editor__rows grid" data-gap="md" data-zone="amounts">
+      {aspectRows.map(({ a, prototype }) => (
+        <li
+          class="firma2-measure-form-editor__row"
+          data-row="aspect"
+          data-aspect={JSON.stringify(a)}
+          hidden={prototype}
+          data-prototype={prototype ? 'aspect' : undefined}
+        >
+          <!-- bcn-lego-checked: the display is a native <button> that is a
+               display-only variant of the row — name over fact line, quiet
+               until hover — the same argument firma2-editable-field documents
+               for its display. esa-button renders a button box; no lego
+               renders "a definition row at rest". The editor below is legos. -->
+          <button type="button" class="firma2-measure-form-editor__display" data-row-display>
+            <span
+              class:list={[
+                'firma2-measure-form-editor__label',
+                'typography-body-md',
+                !a.quantity.trim() && 'firma2-measure-form-editor__label--unset',
+              ]}
+              data-row-label
+            >
+              {a.quantity.trim() || 'Amount'}
+            </span>
+            <span
+              class:list={[
+                'firma2-measure-form-editor__fact',
+                'typography-body-sm',
+                aspectFact(a).unset && 'firma2-measure-form-editor__fact--unset',
+              ]}
+              data-row-fact
+            >
+              {aspectFact(a).text}
+            </span>
+          </button>
+
+          <div class="firma2-measure-form-editor__editor stack" data-gap="sm" data-row-editor hidden>
+            <!-- Unlabelled and first — the continuity rule: at rest the row's
+                 first words are the quantity's own name ("Treated extent"),
+                 and it must stay the first thing in the row when the editor
+                 opens — not flip to the word "Quantity". The script names it
+                 for AT; the help line does the explaining. -->
+            <esa-text-field
+              class="fe-quantity"
+              required
+              size="md"
+              placeholder="e.g. Treated extent"
+              help-text="What is counted, without its unit."></esa-text-field>
+            <div class="grid" data-gap="sm">
+              <esa-select class="fe-unit" label="Unit" required size="md" placeholder="Select a unit"
+                help-text="Fixed list. Units outside it cannot be totalled across measures."></esa-select>
+              <esa-select class="fe-decimals" label="Decimal places" size="md" placeholder="Select 0 to 3"></esa-select>
+            </div>
+            <esa-select
+              class="fe-rule"
+              label="Counting rule"
+              required
+              size="md"
+              placeholder="Select a counting rule"></esa-select>
+            <div class="cluster" data-gap="sm">
+              <EsaButton
+                class="firma2-measure-form-editor__remove"
+                variant="chrome"
+                size="sm"
+                iconOnly
+                icon="trash-2"
+                label="Remove amount"
+              />
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
+
+    <!-- SUBCATEGORY ROWS — the reported dimensions, in the order reporters
+         will be asked. Same grid, same row anatomy: the name, then the
+         options list it splits entries into. -->
+    <ol class="firma2-measure-form-editor__rows grid" data-gap="md" data-zone="dimensions">
+      {dimensionRows.map(({ d, prototype }) => (
+        <li
+          class="firma2-measure-form-editor__row"
+          data-row="dimension"
+          data-name={d.name}
+          data-vocabulary={d.vocabularyId ?? ''}
+          data-archetype={d.archetype ?? ''}
+          hidden={prototype}
+          data-prototype={prototype ? 'dimension' : undefined}
+        >
+          <button type="button" class="firma2-measure-form-editor__display" data-row-display>
+            <span
+              class:list={[
+                'firma2-measure-form-editor__label',
+                'typography-body-md',
+                !d.name.trim() && 'firma2-measure-form-editor__label--unset',
+              ]}
+              data-row-label
+            >
+              {d.name.trim() || NEW_SUBCATEGORY}
+            </span>
+            <span
+              class:list={[
+                'firma2-measure-form-editor__fact',
+                'typography-body-sm',
+                dimensionFact(d).unset && 'firma2-measure-form-editor__fact--unset',
+              ]}
+              data-row-fact
+            >
+              {dimensionFact(d).text}
+            </span>
+          </button>
+
+          <div class="firma2-measure-form-editor__editor stack" data-gap="sm" data-row-editor hidden>
+            <!-- THE NAME KEEPS ITS PLACE. No visible label on this control,
+                 deliberately: at rest the row's first words ARE the question's
+                 name ("Treatment type"), and an editor that opened with the
+                 word "Subcategory" over the same spot read as the row changing
+                 identity the moment it was clicked. Unlabelled and first, the
+                 name stays the first thing in the row and simply becomes
+                 editable — firma2-editable-field's own continuity rule, at row
+                 scale. The script names the bare control for AT ("Subcategory"
+                 — the word the remove button and announcements already use),
+                 and the help line does the label's explanatory job. -->
+            <esa-text-field
+              class="fe-name"
+              size="md"
+              placeholder="e.g. Treatment type"
+              help-text="What the reporter is asked."></esa-text-field>
+            <div class="switcher" data-gap="sm">
+              <esa-select
+                class="fe-vocab"
+                label="Options"
+                size="md"
+                placeholder="Pick a shared list"
+                help-text="Shared lists keep options identical across measures, so totals can be split the same way everywhere."></esa-select>
+              <esa-select
+                class="fe-archetype"
+                label="What it asks"
+                size="md"
+                placeholder="Pick a question type"
+                help-text="Optional. Lets reports group unlike-named subcategories that ask the same thing."></esa-select>
+            </div>
+            <div class="firma2-measure-form-editor__newvocab stack" data-gap="sm" data-new-vocab hidden>
+              <esa-text-field
+                class="fe-newvocab-name"
+                label="New list’s name"
+                size="md"
+                placeholder="e.g. Treatment phases"></esa-text-field>
+              <BcnOptionList class="fe-newvocab-options" label="Options" placeholder="e.g. Initial" />
+            </div>
+            <div class="cluster" data-gap="sm">
+              <EsaButton
+                class="firma2-measure-form-editor__remove"
+                variant="chrome"
+                size="sm"
+                iconOnly
+                icon="trash-2"
+                label="Remove subcategory"
+              />
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
+
+    <!-- THE FRAME FACTS — fields every entry carries without the admin
+         declaring them (place, reading date). Stated so the definition reads
+         complete; nothing to edit, and no hover says so. -->
+    {frameRows.length > 0 && (
+      <ul class="firma2-measure-form-editor__rows firma2-measure-form-editor__frame grid" data-gap="md">
+        {frameRows.map((row) => (
+          <li class="firma2-measure-form-editor__row">
+            <div class="firma2-measure-form-editor__static">
+              <span class="firma2-measure-form-editor__label typography-body-md">{row.label}</span>
+              <span class="firma2-measure-form-editor__fact typography-body-sm">{row.value}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+
+    <!-- THE PRICED ADDS: both grow what every reporter must enter. Amount
+         first, matching the lists above. No leading icon on either — the
+         labels are verb phrases, and the naked ghost treatment is what
+         separates these from the free catalog below. -->
+    <div class="cluster" data-gap="sm">
+      <EsaButton class="firma2-measure-form-editor__add-amount" variant="ghost" size="md">{ADD_AMOUNT_LABEL}</EsaButton>
+      <EsaButton class="firma2-measure-form-editor__ask" variant="ghost" size="md">{ASK_LABEL}</EsaButton>
+    </div>
+  </div>
+  </EsaCard>
+
+  <!-- THE ANSWERABILITY LINE IS GONE, cut on verbal restraint: it counted the
+       question rows a reader could see directly above it — a summary chip
+       restating the surface beneath it, which design-principles bans by name.
+       The one fact it carried that the form does not show (whether a list
+       includes an escape option) belongs where the list is CHOSEN — the
+       vocabulary picker — not in a caption. answerabilityLine() survives in
+       the data module for that picker to spend. -->
+
+  <!-- THE REPORT CARD — what the program gets without asking anyone. Being a
+       SEPARATE card is the pricing made spatial: adds inside the entry card
+       cost every reporter, adds here cost nobody. -->
+  <EsaCard title={REPORT_HEADING}>
+  <div class="stack" data-gap="lg">
+  <ul class="firma2-measure-form-editor__rows stack" data-gap="md" data-zone="derived">
+    {derived.map((d) => (
+      <li
+        class="firma2-measure-form-editor__derived-row repel"
+        data-gap="sm"
+        data-align="start"
+        data-row="derived"
+        data-source={sourceValue(d)}
+      >
+        <div class="firma2-measure-form-editor__derived stack" data-gap="3xs">
+          <span class="firma2-measure-form-editor__derived-name typography-body-md" data-name>{d.name}</span>
+          <p class="firma2-measure-form-editor__derived-values typography-body-sm" data-values>
+            {dimensionValues(d).join(', ') || NO_FIXED_LIST}
+          </p>
+        </div>
+        <div class="cluster" data-gap="sm">
+          <span class="firma2-measure-form-editor__source typography-label-sm-strong" data-source-label>
+            {sourceNote(d)}
+          </span>
+          <EsaButton
+            class="firma2-measure-form-editor__remove"
+            variant="chrome"
+            size="sm"
+            iconOnly
+            icon="trash-2"
+            label={`Remove ${d.name}`}
+          />
+        </div>
+      </li>
+    ))}
+    <!-- The derived prototype, cloned when a catalog entry is picked. -->
+    <li
+      class="firma2-measure-form-editor__derived-row repel"
+      data-gap="sm"
+      data-align="start"
+      data-row="derived"
+      data-source=""
+      hidden
+      data-prototype="derived"
+    >
+      <div class="firma2-measure-form-editor__derived stack" data-gap="3xs">
+        <span class="firma2-measure-form-editor__derived-name typography-body-md" data-name></span>
+        <p class="firma2-measure-form-editor__derived-values typography-body-sm" data-values></p>
+      </div>
+      <div class="cluster" data-gap="sm">
+        <span class="firma2-measure-form-editor__source typography-label-sm-strong" data-source-label></span>
+        <EsaButton
+          class="firma2-measure-form-editor__remove"
+          variant="chrome"
+          size="sm"
+          iconOnly
+          icon="trash-2"
+          label="Remove breakdown"
+        />
+      </div>
+    </li>
+  </ul>
+
+  <!-- THE FREE CATALOG, on the sunken tray — ported whole from the section
+       this replaced, argument and all: real <button>s (not chip-group — these
+       are actions that remove themselves, and aria-checked-then-gone is
+       incoherent), ghost+dashed (chrome's transparent border deletes the
+       dash), declared entries hidden not omitted so re-adding is an unhide. -->
+  <div class="firma2-measure-form-editor__catalog stack" data-gap="sm" hidden={catalogEmpty} data-catalog>
+    <p class="firma2-measure-form-editor__catalog-heading typography-label-md-strong">{CATALOG_HEADING}</p>
+    {GROUP_ORDER.map((groupKind) => {
+      const entries = SOURCES.filter((s) => s.kind === groupKind);
+      const labelId = `firma2-form-editor-group-${groupKind}`;
+      return (
+        <div
+          class="firma2-measure-form-editor__group stack"
+          data-gap="2xs"
+          data-group={groupKind}
+          hidden={entries.every((e) => declared.has(e.value))}
+        >
+          <p id={labelId} class="firma2-measure-form-editor__group-label typography-label-sm-strong">
+            {GROUP_LABEL[groupKind]}
+          </p>
+          <div class="cluster" data-gap="2xs" role="group" aria-labelledby={labelId}>
+            {entries.map((entry) => (
+              <span
+                class="firma2-measure-form-editor__catalog-entry"
+                data-value={entry.value}
+                hidden={declared.has(entry.value)}
+              >
+                <EsaButton variant="ghost" appearance="dashed" size="md" icon="plus">{entry.name}</EsaButton>
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+  </div>
+  </EsaCard>
+</div>
+
+<style>
+  /* `hidden` HAS TO WIN over the author `display` the layouts set. */
+  .firma2-measure-form-editor [hidden] {
+    display: none;
+  }
+
+  .firma2-measure-form-editor p {
+    margin: 0;
+  }
+
+  /* NO WIDTH CAP ON THE FORM — a deletion with a history. The old sunken
+     surface carried max-inline-size: 40rem, and the box hugged its content;
+     when the card replaced the surface, the cap survived and turned into dead
+     space (content pinned left at 40rem inside a card that grows with the
+     window). The width now goes to the form: rows flow into columns via the
+     grid below, so each FIELD keeps a form-sized box while the card fills. */
+
+  /* 22rem: two columns across the main column's ordinary range, a third only
+     on genuinely wide monitors — a form scattered wider than that stops
+     reading as a form. min() in the primitive keeps one column when narrow. */
+  .firma2-measure-form-editor__form .firma2-measure-form-editor__rows {
+    --grid-min: 22rem;
+  }
+
+  /* THE OPEN ROW TAKES THE WHOLE ROW. At rest a cell is a compact picture of
+     one field; its editor is a working surface (its own grid of controls, the
+     swapping help sentence) and gets the card's full width for the duration —
+     availability for the facts, room for the decisions. Neighbours reflow for
+     the moment the editor is open and settle back on commit. */
+  .firma2-measure-form-editor__form .firma2-measure-form-editor__row[data-editing] {
+    grid-column: 1 / -1;
+  }
+
+  .firma2-measure-form-editor__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* THE DISPLAY — a definition row at rest: name over fact line, the derived
+     rows' own anatomy, wearing firma2-editable-field's display treatment (a
+     transparent border box whose edge colors in on hover) so "click to edit"
+     reads the same here as on every editable row on the record pages. Same
+     geometry in all states — the border is present and transparent at rest,
+     so hover moves nothing. */
+  .firma2-measure-form-editor__display {
+    appearance: none;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-050, 0.125rem);
+    align-items: stretch;
+    inline-size: 100%;
+    padding: var(--spacing-200, 0.5rem) var(--spacing-300, 0.75rem);
+    margin: 0;
+    background: transparent;
+    border: var(--form-border-width, 1px) solid transparent;
+    border-radius: var(--radius-md, 0.5rem);
+    text-align: start;
+    cursor: pointer;
+    font: inherit;
+    transition: border-color 120ms ease;
+  }
+  .firma2-measure-form-editor__display:hover {
+    border-color: var(--form-border-color, #cecece);
+  }
+  .firma2-measure-form-editor__display:focus-visible {
+    border-color: var(--form-border-color, #cecece);
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+  /* The static frame rows share the display's box so every name in the card
+     stands on one x — minus the border and the cursor, because there is
+     nothing to open. */
+  .firma2-measure-form-editor__static {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-050, 0.125rem);
+    padding: var(--spacing-200, 0.5rem) var(--spacing-300, 0.75rem);
+    border: var(--form-border-width, 1px) solid transparent;
+  }
+
+  .firma2-measure-form-editor__label {
+    color: var(--color-content-default, #202020);
+  }
+  /* Unset name ("Amount", "New subcategory") — the placeholder channel every
+     unset state on these pages uses: secondary ink, never a fainter grey. */
+  .firma2-measure-form-editor__label--unset {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* THE FACT LINE — the row's slice of the definition, stated: options for a
+     subcategory, unit · counting rule for an amount. Small text keeps FULL
+     ink (darken as you shrink, never grey); only a fact naming what is not
+     yet decided steps to secondary, the same unset channel as the label. */
+  .firma2-measure-form-editor__fact {
+    color: var(--color-content-default, #202020);
+  }
+  .firma2-measure-form-editor__fact--unset {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* The open editor sits on the raised step so the row visibly becomes a
+     control surface while it is open — the one deliberate geometry change,
+     growing downward like every disclosure on this site. */
+  .firma2-measure-form-editor__editor {
+    margin-block-start: var(--spacing-200, 0.5rem);
+    padding: var(--spacing-300, 0.75rem);
+    background: var(--color-background-elevation-raised, #fcfcfc);
+    border: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-sm, 0.25rem);
+  }
+
+  .firma2-measure-form-editor__editor .grid {
+    --grid-min: 11rem;
+  }
+
+  /* Derived rows: full ink (small text darkens, never greys), marker nowrap. */
+  .firma2-measure-form-editor__derived {
+    flex: 1 1 24rem;
+    min-inline-size: 0;
+  }
+  .firma2-measure-form-editor__derived-name,
+  .firma2-measure-form-editor__derived-values,
+  .firma2-measure-form-editor__source {
+    color: var(--color-content-default, #202020);
+  }
+  .firma2-measure-form-editor__source {
+    white-space: nowrap;
+  }
+
+  /* 40px pin for the icon-only removes — the one control height in this app. */
+  .firma2-measure-form-editor :global(.firma2-measure-form-editor__remove .esa-button__native) {
+    height: 40px;
+    width: 40px;
+  }
+  .firma2-measure-form-editor :global(.firma2-measure-form-editor__remove .esa-button__native:hover),
+  .firma2-measure-form-editor :global(.firma2-measure-form-editor__remove .esa-button__native:focus-visible) {
+    color: var(--color-content-utility-danger, #ce2c31);
+  }
+
+  .firma2-measure-form-editor__catalog-entry {
+    display: inline-flex;
+  }
+  .firma2-measure-form-editor__catalog {
+    padding: var(--spacing-300, 0.75rem);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken, #f5f5f5);
+  }
+  .firma2-measure-form-editor__catalog-heading,
+  .firma2-measure-form-editor__group-label {
+    color: var(--color-content-default, #202020);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
+  import { announce } from '@esa/ecology/announcer';
+  // The page already ships the data module (measure-editor imports it), so
+  // reading vocabularies and units here adds nothing to the payload — unlike
+  // the replaced sections, which predated that fact and serialized everything.
+  import { UNITS, countingRulesFor } from '../../data/firma2-performance-measures';
+  import {
+    allVocabularies,
+    nextLocalVocabularyId,
+    writeLocalVocabulary,
+  } from '../../lib/vocabulary-draft';
+  import { RULE_PHRASE } from '../../lib/measure-claim';
+
+  type SourceKind = 'reported' | 'spatial' | 'historical' | 'record';
+  interface Dimension {
+    name: string;
+    source: { kind: SourceKind; ref?: string };
+    vocabularyId?: string;
+    archetype?: string;
+  }
+  interface Aspect {
+    id: string;
+    quantity: string;
+    unit?: string;
+    decimalPlaces: number;
+    countingRule?: string;
+  }
+  interface SourceEntry {
+    value: string;
+    name: string;
+    kind: 'spatial' | 'historical' | 'record';
+    values: string[];
+  }
+  interface EditorConfig {
+    kind: 'output' | 'outcome';
+    ruleHelpUnset: string;
+    ruleDescriptions: Record<string, string>;
+    archetypes: { value: string; label: string }[];
+    sources: SourceEntry[];
+  }
+
+  type Field = HTMLElement & {
+    value?: unknown;
+    options?: { label: string; value: string }[];
+    helpText?: string;
+    updateComplete?: Promise<unknown>;
+  };
+
+  const NEW_SUBCATEGORY = 'New subcategory';
+  const NO_FIXED_LIST = 'No fixed list';
+  const NEW_VOCAB_VALUE = '__new__';
+
+  const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
+    reported: 'Reported',
+    spatial: 'Map layer',
+    historical: 'Entry history',
+    record: 'Record field',
+  };
+
+  // 40px, measured — AppLayout pins controls present at load; editors cloned
+  // later re-apply with the same guard flag so the passes never double up.
+  const TEXT_FIELD_CSS = `
+    .control { height: 40px; }
+    .input { padding-block: 0; }
+  `;
+  const SELECT_CSS = `
+    .input { height: 40px; padding-block: 0; }
+  `;
+  type Marked = ShadowRoot & { _firma2FieldH?: boolean };
+  function pin(host: Element, css: string): void {
+    const root = host.shadowRoot as Marked | null;
+    if (!root || root._firma2FieldH) return;
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(css);
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+    root._firma2FieldH = true;
+  }
+  const settled = (el: Element): Promise<void> =>
+    Promise.resolve((el as Field).updateComplete).then(() => undefined);
+
+  function init(root: HTMLElement): void {
+    let config: EditorConfig | null = null;
+    try {
+      config = JSON.parse(root.dataset.editorConfig ?? '') as EditorConfig;
+    } catch {
+      return; // No config, no editors — the resting render still stands.
+    }
+    const cfg = config!;
+    const sourceById = new Map(cfg.sources.map((s) => [s.value, s]));
+
+    const zones = {
+      dimensions: root.querySelector<HTMLElement>('[data-zone="dimensions"]')!,
+      amounts: root.querySelector<HTMLElement>('[data-zone="amounts"]')!,
+      derived: root.querySelector<HTMLElement>('[data-zone="derived"]')!,
+    };
+    const catalog = root.querySelector<HTMLElement>('[data-catalog]');
+    const askButton = root.querySelector<HTMLElement>('.firma2-measure-form-editor__ask button');
+    const addAmountButton = root.querySelector<HTMLElement>('.firma2-measure-form-editor__add-amount button');
+    if (!zones.dimensions || !zones.amounts || !zones.derived || !askButton || !addAmountButton) return;
+
+    // Prototypes → templates. outerHTML serializes light DOM only; the row's
+    // Lit controls re-upgrade on every insert, and their values are seeded on
+    // open, never at rest — which is what makes the clone safe.
+    const blanks: Partial<Record<string, HTMLElement>> = {};
+    root.querySelectorAll<HTMLElement>('[data-prototype]').forEach((proto) => {
+      const which = proto.dataset.prototype!;
+      proto.remove();
+      proto.removeAttribute('hidden');
+      proto.removeAttribute('data-prototype');
+      const t = document.createElement('template');
+      t.innerHTML = proto.outerHTML.trim();
+      blanks[which] = (t.content.firstElementChild as HTMLElement) ?? undefined;
+    });
+    const dimensionBlank = blanks.dimension;
+    const aspectBlank = blanks.aspect;
+    const derivedBlank = blanks.derived;
+    if (!dimensionBlank || !aspectBlank || !derivedBlank) return;
+
+    const rows = (zone: HTMLElement): HTMLElement[] =>
+      Array.from(zone.querySelectorAll<HTMLElement>(':scope > li'));
+
+    const q = <T extends Element>(row: HTMLElement, sel: string): T | null =>
+      row.querySelector<T>(sel);
+
+    // ---- reading the truth (datasets, never controls) ----------------------
+
+    const parseAspect = (row: HTMLElement): Aspect => {
+      try {
+        return JSON.parse(row.dataset.aspect ?? '') as Aspect;
+      } catch {
+        return { id: 'a1', quantity: '', decimalPlaces: 0 };
+      }
+    };
+
+    function readAspects(): Aspect[] {
+      return rows(zones.amounts).map(parseAspect);
+    }
+
+    function readDimensions(): Dimension[] {
+      const reported: Dimension[] = rows(zones.dimensions).map((row) => {
+        const d: Dimension = { name: (row.dataset.name ?? '').trim(), source: { kind: 'reported' } };
+        if (row.dataset.vocabulary) d.vocabularyId = row.dataset.vocabulary;
+        if (row.dataset.archetype) d.archetype = row.dataset.archetype;
+        return d;
+      });
+      const derived: Dimension[] = rows(zones.derived).map((row) => {
+        const [kind, ref] = (row.dataset.source ?? '').split(':') as [SourceKind, string | undefined];
+        const name = (q<HTMLElement>(row, '[data-name]')?.textContent ?? '').trim();
+        return { name, source: ref ? { kind, ref } : { kind } };
+      });
+      return [...reported, ...derived];
+    }
+
+    // ---- rendering a row's resting display from its dataset ----------------
+
+    const vocabOptions = (id: string | undefined): string[] =>
+      id ? allVocabularies().find((v) => v.id === id)?.options ?? [] : [];
+
+    // One paint helper for the two lines every row shows: text plus the unset
+    // channel (secondary ink), re-decided on every commit exactly as the
+    // build-time render decided it.
+    const paintLine = (el: HTMLElement | null, cls: string, text: string, unset: boolean): void => {
+      if (!el) return;
+      el.textContent = text;
+      el.classList.toggle(cls, unset);
+    };
+
+    function renderDimensionDisplay(row: HTMLElement): void {
+      const name = (row.dataset.name ?? '').trim();
+      paintLine(
+        q<HTMLElement>(row, '[data-row-label]'),
+        'firma2-measure-form-editor__label--unset',
+        name || NEW_SUBCATEGORY,
+        !name,
+      );
+      const options = vocabOptions(row.dataset.vocabulary).filter((o) => o.trim());
+      paintLine(
+        q<HTMLElement>(row, '[data-row-fact]'),
+        'firma2-measure-form-editor__fact--unset',
+        options.length ? options.join(', ') : 'No options yet',
+        options.length === 0,
+      );
+    }
+
+    function renderAspectDisplay(row: HTMLElement): void {
+      const a = parseAspect(row);
+      paintLine(
+        q<HTMLElement>(row, '[data-row-label]'),
+        'firma2-measure-form-editor__label--unset',
+        a.quantity.trim() || 'Amount',
+        !a.quantity.trim(),
+      );
+      // The same fact grammar the frontmatter's aspectFact() renders — the
+      // participle phrases come from the claim's own RULE_PHRASE, so the fact
+      // line and the sentence above can never spell one rule two ways.
+      const rule = a.countingRule ? RULE_PHRASE[a.countingRule] ?? a.countingRule : '';
+      let text: string;
+      let unset = true;
+      if (!a.unit && !rule) text = 'No unit or counting rule yet';
+      else if (!a.unit) text = `No unit yet · ${rule}`;
+      else if (!rule) text = `${a.unit} · no counting rule yet`;
+      else {
+        text = `${a.unit} · ${rule}`;
+        unset = false;
+      }
+      paintLine(
+        q<HTMLElement>(row, '[data-row-fact]'),
+        'firma2-measure-form-editor__fact--unset',
+        text,
+        unset,
+      );
+    }
+
+    function fillDerived(row: HTMLElement, entry: SourceEntry, name?: string): void {
+      row.dataset.source = entry.value;
+      const nameEl = q<HTMLElement>(row, '[data-name]');
+      const values = q<HTMLElement>(row, '[data-values]');
+      const marker = q<HTMLElement>(row, '[data-source-label]');
+      const shown = name || entry.name;
+      if (nameEl) nameEl.textContent = shown;
+      if (values) values.textContent = entry.values.length ? entry.values.join(', ') : NO_FIXED_LIST;
+      if (marker) {
+        const kindLabel = SOURCE_KIND_LABEL[entry.kind];
+        marker.textContent = entry.name === kindLabel || entry.name === shown ? kindLabel : `${kindLabel} · ${entry.name}`;
+      }
+      const remove = q<HTMLElement>(row, '.firma2-measure-form-editor__remove button');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${shown}`);
+        remove.setAttribute('title', `Remove ${shown}`);
+      }
+    }
+
+    // ---- events ------------------------------------------------------------
+
+    function emitChange(): void {
+      root.dispatchEvent(
+        new CustomEvent('firma2-dimensions-change', {
+          detail: { dimensions: readDimensions() },
+          bubbles: true,
+        }),
+      );
+    }
+
+    // ---- the row editors ---------------------------------------------------
+
+    let openRow: HTMLElement | null = null;
+
+    /** Assign a select's options + value; both are properties, both need the
+        upgraded class — whenDefined + updateComplete guarantee it. */
+    async function seedSelect(
+      el: Field | null,
+      options: { label: string; value: string }[],
+      value: string,
+    ): Promise<void> {
+      if (!el) return;
+      await customElements.whenDefined('esa-select');
+      await settled(el);
+      el.options = options;
+      el.value = value;
+      pin(el, SELECT_CSS);
+    }
+
+    /**
+     * `name` reaches through the open shadow root to aria-label the inner
+     * input, for the two controls that render NO visible label (fe-name,
+     * fe-quantity — the continuity rule in the markup): the lego renders no
+     * <label> when `label` is empty but exposes no hide-label, so a bare
+     * control would announce "edit text, blank". Same technique, same
+     * justification, as firma2-editable-field's naming pass.
+     */
+    async function seedText(el: Field | null, value: string, name?: string): Promise<void> {
+      if (!el) return;
+      await customElements.whenDefined('esa-text-field');
+      await settled(el);
+      el.value = value;
+      if (name) el.shadowRoot?.querySelector('input')?.setAttribute('aria-label', name);
+      pin(el, TEXT_FIELD_CSS);
+    }
+
+    async function openEditor(row: HTMLElement, focusSel?: string): Promise<void> {
+      if (openRow === row) return;
+      if (openRow) commitEditor(openRow);
+      openRow = row;
+      row.dataset.editing = '';
+      const display = q<HTMLElement>(row, '[data-row-display]');
+      const editor = q<HTMLElement>(row, '[data-row-editor]');
+      if (display) display.hidden = true;
+      if (editor) editor.hidden = false;
+
+      if (row.dataset.row === 'dimension') {
+        void seedText(q<Field>(row, '.fe-name'), row.dataset.name ?? '', 'Subcategory');
+        void seedSelect(q<Field>(row, '.fe-archetype'), cfg.archetypes, row.dataset.archetype ?? '');
+        // The vocabulary list is read at OPEN time, so a list authored on the
+        // previous row is already offered on this one — the whole point of
+        // shared vocabularies, honored inside a single session.
+        const vocabField = q<Field>(row, '.fe-vocab');
+        const options = [
+          ...allVocabularies().map((v) => ({
+            label: v.origin === 'imported' && v.standard ? `${v.name} — ${v.standard}` : v.name,
+            value: v.id,
+          })),
+          { label: 'New shared list…', value: NEW_VOCAB_VALUE },
+        ];
+        void seedSelect(vocabField, options, row.dataset.vocabulary ?? '');
+        const newVocab = q<HTMLElement>(row, '[data-new-vocab]');
+        if (newVocab) newVocab.hidden = true;
+      } else {
+        const a = parseAspect(row);
+        void seedText(q<Field>(row, '.fe-quantity'), a.quantity, 'Quantity');
+        void seedSelect(
+          q<Field>(row, '.fe-unit'),
+          (UNITS as readonly string[]).map((u) => ({ label: u, value: u })),
+          a.unit ?? '',
+        );
+        void seedSelect(
+          q<Field>(row, '.fe-decimals'),
+          ['0', '1', '2', '3'].map((v) => ({ label: v, value: v })),
+          String(a.decimalPlaces),
+        );
+        const ruleField = q<Field>(row, '.fe-rule');
+        void seedSelect(
+          ruleField,
+          countingRulesFor(cfg.kind).map((r) => ({ label: r.name, value: r.id })),
+          a.countingRule ?? '',
+        ).then(() => {
+          if (ruleField)
+            ruleField.helpText = a.countingRule
+              ? cfg.ruleDescriptions[a.countingRule] ?? cfg.ruleHelpUnset
+              : cfg.ruleHelpUnset;
+        });
+        // Remove hidden at the 1..n floor: a measure quantifies something by
+        // definition, so the last amount is not removable.
+        const remove = q<HTMLElement>(row, '.firma2-measure-form-editor__remove');
+        if (remove) remove.hidden = rows(zones.amounts).length <= 1;
+      }
+
+      if (focusSel) {
+        const target = q<Field>(row, focusSel);
+        if (target) void settled(target).then(() => target.focus());
+      } else {
+        const first = q<Field>(row, '.fe-name, .fe-quantity');
+        if (first) void settled(first).then(() => first.focus());
+      }
+      row.scrollIntoView({ block: 'nearest' });
+    }
+
+    /** Write the controls back into the dataset and re-render the display. */
+    function commitEditor(row: HTMLElement): void {
+      if (row.dataset.editing === undefined) return;
+
+      if (row.dataset.row === 'dimension') {
+        const name = String(q<Field>(row, '.fe-name')?.value ?? '').trim();
+        const archetype = String(q<Field>(row, '.fe-archetype')?.value ?? '');
+        let vocabulary = String(q<Field>(row, '.fe-vocab')?.value ?? '');
+
+        // "New shared list…": mint the vocabulary through vocabulary-draft so
+        // the NEXT row's picker offers it — created once, referenced forever.
+        if (vocabulary === NEW_VOCAB_VALUE) {
+          const vocabName = String(q<Field>(row, '.fe-newvocab-name')?.value ?? '').trim();
+          const list = q<Field>(row, '.fe-newvocab-options');
+          const options = Array.isArray(list?.value) ? (list!.value as string[]) : [];
+          if (vocabName && options.length > 0) {
+            const id = nextLocalVocabularyId(vocabName);
+            const saved = writeLocalVocabulary({ id, name: vocabName, origin: 'house', options });
+            vocabulary = saved ? id : row.dataset.vocabulary ?? '';
+            if (!saved) announce('Could not save the list. This browser is blocking local storage.');
+          } else {
+            // Half-built new list: keep whatever the row referenced before.
+            vocabulary = row.dataset.vocabulary ?? '';
+          }
+        }
+
+        row.dataset.name = name;
+        row.dataset.archetype = archetype;
+        row.dataset.vocabulary = vocabulary;
+        renderDimensionDisplay(row);
+      } else {
+        const prev = parseAspect(row);
+        const unit = String(q<Field>(row, '.fe-unit')?.value ?? '');
+        const rule = String(q<Field>(row, '.fe-rule')?.value ?? '');
+        const decimals = Number.parseInt(String(q<Field>(row, '.fe-decimals')?.value ?? ''), 10);
+        const next: Aspect = {
+          id: prev.id,
+          quantity: String(q<Field>(row, '.fe-quantity')?.value ?? '').trim(),
+          decimalPlaces: Number.isNaN(decimals) ? prev.decimalPlaces : decimals,
+        };
+        if (unit) next.unit = unit;
+        if (rule) next.countingRule = rule;
+        row.dataset.aspect = JSON.stringify(next);
+        renderAspectDisplay(row);
+      }
+
+      closeEditor(row);
+      emitChange();
+    }
+
+    /** Close without writing — Escape's half. Controls re-seed on next open. */
+    function closeEditor(row: HTMLElement): void {
+      delete row.dataset.editing;
+      const display = q<HTMLElement>(row, '[data-row-display]');
+      const editor = q<HTMLElement>(row, '[data-row-editor]');
+      if (editor) editor.hidden = true;
+      if (display) display.hidden = false;
+      if (openRow === row) openRow = null;
+    }
+
+    // ---- add / remove ------------------------------------------------------
+
+    function addDimension(): void {
+      const row = dimensionBlank!.cloneNode(true) as HTMLElement;
+      row.dataset.name = '';
+      row.dataset.vocabulary = '';
+      row.dataset.archetype = '';
+      renderDimensionDisplay(row);
+      zones.dimensions.appendChild(row);
+      emitChange();
+      void openEditor(row);
+    }
+
+    function nextAspectId(): string {
+      const taken = new Set(readAspects().map((a) => a.id));
+      let n = taken.size + 1;
+      let id = `a${n}`;
+      while (taken.has(id)) id = `a${++n}`;
+      return id;
+    }
+
+    function addAspect(): void {
+      const row = aspectBlank!.cloneNode(true) as HTMLElement;
+      row.dataset.aspect = JSON.stringify({ id: nextAspectId(), quantity: '', decimalPlaces: 0 });
+      renderAspectDisplay(row);
+      zones.amounts.appendChild(row);
+      emitChange();
+      void openEditor(row);
+    }
+
+    function addDerived(wrapper: HTMLElement): void {
+      const entry = sourceById.get(wrapper.dataset.value ?? '');
+      if (!entry) return;
+      const row = derivedBlank!.cloneNode(true) as HTMLElement;
+      fillDerived(row, entry);
+      zones.derived.appendChild(row);
+      syncCatalog();
+      emitChange();
+      const all = Array.from(root.querySelectorAll<HTMLElement>('.firma2-measure-form-editor__catalog-entry'));
+      const index = all.indexOf(wrapper);
+      const visible = all.filter((w) => !w.hidden);
+      const next = visible.find((w) => all.indexOf(w) > index) ?? visible[visible.length - 1];
+      next?.querySelector('button')?.focus();
+      announce(`${entry.name} added. ${visible.length} still available.`);
+    }
+
+    function removeRow(row: HTMLElement): void {
+      const kind = row.dataset.row;
+      const value = row.dataset.source ?? '';
+      const name =
+        kind === 'aspect'
+          ? parseAspect(row).quantity || 'Amount'
+          : kind === 'dimension'
+            ? row.dataset.name || 'Subcategory'
+            : (q<HTMLElement>(row, '[data-name]')?.textContent ?? '').trim() || 'Breakdown';
+      const zone = kind === 'aspect' ? zones.amounts : kind === 'dimension' ? zones.dimensions : zones.derived;
+      const index = rows(zone).indexOf(row);
+      if (openRow === row) openRow = null;
+      row.remove();
+      syncCatalog();
+      emitChange();
+
+      // Focus lands where the undo is: the restored catalog entry for a
+      // derived row; otherwise the row that slid into this position, then the
+      // zone's add affordance.
+      if (kind === 'derived') {
+        const restored = root.querySelector<HTMLElement>(
+          `.firma2-measure-form-editor__catalog-entry[data-value="${value}"]`,
+        );
+        const target =
+          (restored && !restored.hidden && restored.querySelector<HTMLElement>('button')) || askButton;
+        target?.focus();
+      } else {
+        const remaining = rows(zone);
+        const next = remaining[index] ?? remaining[remaining.length - 1];
+        if (next) q<HTMLElement>(next, '[data-row-display]')?.focus();
+        else (kind === 'aspect' ? addAmountButton : askButton)!.focus();
+      }
+      announce(`${name} removed.`);
+    }
+
+    function syncCatalog(): void {
+      if (!catalog) return;
+      const taken = new Set(rows(zones.derived).map((row) => row.dataset.source ?? ''));
+      root.querySelectorAll<HTMLElement>('.firma2-measure-form-editor__catalog-entry').forEach((w) => {
+        w.hidden = taken.has(w.dataset.value ?? '');
+      });
+      let anyGroup = false;
+      root.querySelectorAll<HTMLElement>('[data-group]').forEach((group) => {
+        const remaining = Array.from(
+          group.querySelectorAll<HTMLElement>('.firma2-measure-form-editor__catalog-entry'),
+        ).some((w) => !w.hidden);
+        group.hidden = !remaining;
+        if (remaining) anyGroup = true;
+      });
+      catalog.hidden = !anyGroup;
+    }
+
+    // ---- restore (drafts) --------------------------------------------------
+
+    function setAspects(next: Aspect[]): void {
+      rows(zones.amounts).forEach((row) => row.remove());
+      for (const aspect of next) {
+        const row = aspectBlank!.cloneNode(true) as HTMLElement;
+        row.dataset.aspect = JSON.stringify(aspect);
+        renderAspectDisplay(row);
+        zones.amounts.appendChild(row);
+      }
+      emitChange();
+    }
+
+    function setDimensions(next: Dimension[]): void {
+      rows(zones.dimensions).forEach((row) => row.remove());
+      rows(zones.derived).forEach((row) => row.remove());
+      for (const dimension of next) {
+        if (dimension.source.kind === 'reported') {
+          const row = dimensionBlank!.cloneNode(true) as HTMLElement;
+          row.dataset.name = dimension.name;
+          row.dataset.vocabulary = dimension.vocabularyId ?? '';
+          row.dataset.archetype = dimension.archetype ?? '';
+          renderDimensionDisplay(row);
+          zones.dimensions.appendChild(row);
+        } else {
+          const row = derivedBlank!.cloneNode(true) as HTMLElement;
+          const value = `${dimension.source.kind}:${dimension.source.ref ?? ''}`;
+          const entry = sourceById.get(value) ?? {
+            value,
+            name: dimension.name || value,
+            kind: dimension.source.kind as SourceEntry['kind'],
+            values: [],
+          };
+          fillDerived(row, entry, dimension.name || undefined);
+          zones.derived.appendChild(row);
+        }
+      }
+      syncCatalog();
+      emitChange();
+    }
+
+    // ---- wiring ------------------------------------------------------------
+
+    root.addEventListener('click', (event) => {
+      const el = event.target as Element;
+      const removeTrigger = el.closest('.firma2-measure-form-editor__remove');
+      if (removeTrigger) {
+        const row = removeTrigger.closest<HTMLElement>('[data-row]');
+        if (row) removeRow(row);
+        return;
+      }
+      const display = el.closest<HTMLElement>('[data-row-display]');
+      if (display) {
+        const row = display.closest<HTMLElement>('[data-row]');
+        if (row) void openEditor(row);
+        return;
+      }
+      const catalogEntry = el.closest<HTMLElement>('.firma2-measure-form-editor__catalog-entry');
+      if (catalogEntry) addDerived(catalogEntry);
+    });
+
+    askButton.addEventListener('click', addDimension);
+    addAmountButton.addEventListener('click', addAspect);
+
+    // The vocabulary picker's "New shared list…" reveal — delegated `change`.
+    root.addEventListener('change', (event) => {
+      const vocab = (event.target as Element).closest<Field>('.fe-vocab');
+      if (!vocab) return;
+      const row = vocab.closest<HTMLElement>('[data-row]');
+      const reveal = row && q<HTMLElement>(row, '[data-new-vocab]');
+      if (reveal) reveal.hidden = String(vocab.value ?? '') !== NEW_VOCAB_VALUE;
+    });
+
+    // The counting rule's swapping help, inside whatever row is open.
+    root.addEventListener('change', (event) => {
+      const rule = (event.target as Element).closest<Field>('.fe-rule');
+      if (!rule) return;
+      const value = String(rule.value ?? '');
+      rule.helpText = value ? cfg.ruleDescriptions[value] ?? cfg.ruleHelpUnset : cfg.ruleHelpUnset;
+    });
+
+    // Commit on leaving the row; Escape abandons; Enter commits. focusout
+    // fires before the next element takes focus, hence the tick.
+    root.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (!openRow) return;
+        if (openRow.contains(document.activeElement)) return;
+        commitEditor(openRow);
+      }, 0);
+    });
+    root.addEventListener('keydown', (event) => {
+      if (!openRow) return;
+      const inEditor = (event.target as Element).closest('[data-row-editor]');
+      if (!inEditor) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        const row = openRow;
+        closeEditor(row);
+        q<HTMLElement>(row, '[data-row-display]')?.focus();
+      } else if (event.key === 'Enter' && (event.target as Element).closest('.fe-name, .fe-quantity, .fe-newvocab-name')) {
+        // Enter only from the text fields — selects use Enter to pick, and
+        // bcn-option-list spends Enter moving between its own rows.
+        event.preventDefault();
+        const row = openRow;
+        commitEditor(row);
+        q<HTMLElement>(row, '[data-row-display]')?.focus();
+      }
+    });
+
+    // THE CLAIM'S DOORS land here: parse the target, open the row, focus the
+    // control the blank named.
+    document.addEventListener('firma2:measure-focus-request', (event) => {
+      const target = (event as CustomEvent<{ target?: string }>).detail?.target ?? '';
+      const [what, indexRaw, part] = target.split(':');
+      const index = Number.parseInt(indexRaw ?? '', 10);
+      if (Number.isNaN(index)) return;
+      if (what === 'aspect') {
+        const row = rows(zones.amounts)[index];
+        if (row)
+          void openEditor(
+            row,
+            part === 'unit' ? '.fe-unit' : part === 'rule' ? '.fe-rule' : '.fe-quantity',
+          );
+      } else if (what === 'dimension') {
+        const row = rows(zones.dimensions)[index];
+        if (row) void openEditor(row, '.fe-name');
+      }
+    });
+
+    // No record listener here: guidance and the prose fields live in the About
+    // card and paint themselves through the editable-field save/set contract;
+    // this component's rows repaint from their own commits.
+
+    // ---- expandos ----------------------------------------------------------
+
+    (root as HTMLElement & {
+      readAspects?: () => Aspect[];
+      readDimensions?: () => Dimension[];
+      setAspects?: (a: Aspect[]) => void;
+      setDimensions?: (d: Dimension[]) => void;
+    }).readAspects = readAspects;
+    (root as HTMLElement & { readDimensions?: () => Dimension[] }).readDimensions = readDimensions;
+    (root as HTMLElement & { setAspects?: (a: Aspect[]) => void }).setAspects = setAspects;
+    (root as HTMLElement & { setDimensions?: (d: Dimension[]) => void }).setDimensions = setDimensions;
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-form-editor').forEach(init);
+</script>

@@ -20,8 +20,7 @@ they are about *how*.
 > **§0 is GROUNDED**: the purpose chain and what a performance measure *is* come
 > from the client directly. Treat it as settled and reason from it.
 > **§4 is EARNED**: each principle was paid for by a decision on a screen that
-> exists, and the screen is named — except the one marked "adopted, not yet
-> proved".
+> exists, and the screen is named.
 > **§1 is INFERRED**: the four readers come from the domain and from our own
 > decisions, not from research. Everything unvalidated is marked. See
 > [Open questions](#open-questions) for what to ask the client, and do not let an
@@ -74,6 +73,14 @@ both:
 - **A tax.** Somebody answers it on every entry for the life of the program.
 - **An asset.** It is what the portfolio will be able to *say* — to a funder, to
   a partner, to a model looking for the watershed nobody has touched.
+
+**The structure of the question is now evidence-grounded, not asserted** — five
+production tenant catalogs (152 measures, 1,047 options) reduce to one grammar:
+*"we accomplished [quantity] [unit] of [concept] — [qualifier], [qualifier]…"*,
+with ~10 qualifier archetypes, shared vocabularies, and multi-aspect concepts.
+The full model, its evidence, and the rules it imposes live in
+[`docs/measure-model.md`](./measure-model.md); the detailed tenant analysis is
+private and not in this repository.
 
 ### The compliance loop — the failure nobody sees at authoring time
 
@@ -326,13 +333,11 @@ owns its column outright and neither component has to know the other exists.
 *Proved on: project detail. This is the most transferable lesson in this list —
 prefer a boundary over a negotiation.*
 
-### Author the artifact, not its settings
+### State the record; price the burden; never simulate someone else's UI
 
-**The pattern every admin and customization screen should follow.** It is written
-here rather than in one component because measure setup is a *pattern exercise
-first* — measures are configured once and rarely touched, so the investment is
-justified by what the shape teaches the screens that come after it, not by how
-often anyone visits this one.
+*(Revised 2026-08-20 — this principle was "Author the artifact, not its
+settings" until the artifact conceit was built and failed. The revision keeps
+what the original got right and names what it got wrong.)*
 
 Every admin screen in this product configures something **a different person
 meets later**:
@@ -344,29 +349,36 @@ meets later**:
 | an organization | a record someone picks from and reports on behalf of |
 | a custom page | a page someone reads |
 
-So: **edit the thing as it will be encountered, and show the downstream burden
-beside it.** Not "a form for the settings of X" — which is what all four of those
-will default to unless we decide otherwise.
+What the original principle got RIGHT, and this one keeps:
 
-Two reasons this is the right default:
+1. **Lead with the claim.** The author starts from "I need to tell my funder
+   X", not from a schema — so the page opens with the sentence the measure
+   will let the program say, blanks marking the undecided parts.
+2. **Price the downstream burden where it is incurred.** The person
+   configuring never pays the cost (§0's compliance loop), so the split
+   between "costs every reporter" and "costs nobody" is card structure, not a
+   footnote.
 
-1. **The person configuring never pays the cost.** See the compliance loop in
-   §0 — the admin's own goal fails silently when the ask is too heavy or too
-   unclear, and nothing in a settings form tells them that.
-2. **A settings form makes you author a schema; the artifact makes you author an
-   experience.** The measure setup page spent five restructures re-filing fields
-   into differently-labelled boxes, which changed nothing, because the fields
-   were never the problem — being a form was.
+What it got WRONG: it concluded the admin should edit a **mockup of the thing
+the other person meets**. Measure setup built that — labelled wells shaped
+like the reporter's inputs, italic example answers inside them — and the
+simulacrum failed the admin test: operating a picture of someone else's UI
+needs a theory to decode (wells that look like inputs but take no input;
+example answers one register away from reading as stored data, and one did —
+the invented "1,240" survived two reviews before a reader asked where it came
+from; labels meaning "what the reporter will see" on a site where every other
+label means "what you set"). An admin asked to define a measure should
+**define the measure**: rows that state facts — "Treated extent / acres ·
+summed across entries", "Treatment type / Biomass removal, Thinning, …" — in
+the same click-to-edit idiom as every record page. The other person's
+experience is *derivable* from a stated definition; it does not need to be
+impersonated by it.
 
-The corollary for the author's own head: they start from the **claim** ("I need
-to tell my funder X"), not from the ask. So lead with what they will be able to
-say, and make the ask the thing they edit to get there. Claim, then artifact,
-then answerability.
-
-*Status: ADOPTED, NOT YET PROVED. This is the one entry in this section written
-before the screen that pays for it — the measure setup rebuild is the first test.
-If it does not survive that, rewrite it here rather than quietly working around
-it.*
+*Proved on: measure setup, both directions — the artifact version was built,
+shipped its own counter-evidence (the "1,240" incident was the abstraction
+leaking, not a copy bug), and was replaced by direct definition rows
+2026-08-20. The claim-first lede and the priced two-card split are what
+survived; they were the load-bearing part all along.*
 
 ### Setup is not a wizard
 
@@ -456,6 +468,39 @@ statement — and it tells a reviewer the wrong thing about the design.
 
 *Applies to: every prototype in this spoke.*
 
+*Tested and bounded (2026-08-20): the claim `disabled` makes is false for an
+unwired control — and true for a genuinely gated one. Publish on measure setup
+is disabled while required fields are empty, with the readiness count rendered
+beside it saying exactly why. The rule is not "never disabled"; it is "disabled
+must be telling the truth, with the reason in view."*
+
+### The sibling record page is the spec — for idioms, not floor plans
+
+What transfers between record pages is the **idioms**: editable title in the
+header, click-to-edit rows quiet at rest, card sections at one rhythm, the
+lifecycle in the actions cluster. A screen visited *rarely* — measure setup is
+the proof — leans on these hardest, because its users run entirely on what the
+daily screens taught them; every bespoke control is a dialect they must
+re-learn on each visit.
+
+What does NOT transfer is the **floor plan**. The project page's facts-rail-
+beside-cards anatomy is right because its record arrives mostly filled: the
+rail is an index beside the numbers. Measure setup copied that anatomy
+(2026-08-20, first pass) and walking a first-time setup through it was the
+indictment: on a page where everything starts empty, the "index card" held
+three of the seven required settings, and the admin's path ran header → main
+column → rail → header. The fix was not more consistency but the right kind:
+the setup page is now one column in authoring order (claim → what it means →
+the reporter's form, guidance authored where it displays → the automatic
+additions → the payoff chart), built entirely from the shared idioms.
+
+Ask which job the anatomy was priced for before copying it: **reading a
+record** and **filling one in** are different jobs with different floor plans,
+sharing one set of idioms.
+
+*Proved on: measure setup — folded into the project anatomy and then walked as
+a first-time setup, both 2026-08-20. The walk won.*
+
 ### A collection gets "Add"; a scalar gets a per-field affordance
 
 A set has no single field to hover — you add to it, remove from it, reorder it —
@@ -485,8 +530,10 @@ header — that is where the next person will look.
    Everything recoverable gets a band it can be scanned in without opening.
 5. **What can be cut?** Name at least one thing. If nothing can be cut, the
    screen has not been looked at hard enough yet.
-6. **If this configures something: what is the artifact?** Edit that, not its
-   settings — see "Author the artifact, not its settings".
+6. **If this configures something: who meets it later, and what do they pay?**
+   State the record directly and price that burden on screen — never build a
+   mockup of the other person's UI as the editor. See "State the record; price
+   the burden; never simulate someone else's UI".
 
 **The tiebreaker when two options are genuinely close:** which one gets a truer
 report to a stakeholder, sooner? That is what the product is for (§0).
@@ -518,11 +565,23 @@ about **reading a record**, the measure pages about **setting one up**. Most
 unbuilt screens are a variant of one or the other, which is the main reason this
 brief is worth keeping.
 
-**Measure setup is being rebuilt** (agreed 2026-08-20). It has been restructured
-five times without improving, because every restructure re-filed fields and the
-fields were never the problem — see "Author the artifact, not its settings". The
-next shape is claim → editable reporter form → answerability. The four unbuilt
-Manage screens are waiting on what that teaches.
+**Measure setup is REBUILT** (2026-08-20) on claim → editable reporter form →
+payoff chart, over an evidence-grounded model (`docs/measure-model.md`):
+aspects 1..n per concept, shared vocabularies referenced never copied, no
+primary slot, all dimensions optional, library-first creation from ~15 standard
+themes. The same day it was folded into the project page's rail anatomy, then
+restructured again when a step-by-step walk of a first-time setup exposed the
+borrowed floor plan (see "The sibling record page is the spec — for idioms,
+not floor plans"), then stripped of its form-simulacrum when the artifact
+conceit failed the admin test (see "State the record; price the burden; never
+simulate someone else's UI"). It is now **one column in authoring order** —
+claim, an About card (kind, classifications, definition, reporter guidance),
+a "What reporters enter" card of direct definition rows, the automatic
+additions, the chart — with the record's lifecycle in the header: Publish
+gated by the readiness count, Retire-never-delete for anything projects have
+filed against, Delete only for drafts. The four unbuilt Manage screens now
+have their pattern: state the record, price the downstream burden beside it,
+in the shared idioms, with the floor plan chosen by the job.
 
 **Nothing at the END of the chain exists yet.** Progress Dashboard and Funding
 Status are the reports §0 says the product is *for*, and both are unbuilt. Worth

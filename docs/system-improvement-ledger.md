@@ -134,6 +134,19 @@ Raised via `/request-lego` unless noted otherwise.
   listbox" from "abandon the edit". *Fix:* only preventDefault when open. Minor —
   fold into any select ticket.
 
+- **`esa-button` has no usable rung between `md` and `sm`.** The size ramp
+  couples box and type: `md` is 12px padding + a `microcopy-md` (15px) label,
+  measuring 41px tall; the next rung down, `sm`, drops the label to
+  `microcopy-xs` — **12px**, under the floor design-principles sets for
+  interface text — so it cannot be used. *Bit:* every button in this spoke is
+  therefore `md`, including page-header actions, which want to be visibly
+  lighter than a form control and cannot be. It also lands 41px against the
+  40px that `AppLayout`'s `CONTROL_PINS` pin fields to, so a button beside a
+  field is 1px taller. *Fix:* decouple the axes — let `sm` keep a legible
+  label (`microcopy-sm`, 14px) and take its reduction in padding alone; or add
+  a `compact` rung sized for chrome. Related: add `esa-button` to the pinned
+  set once the rung exists, so buttons and fields share one height.
+
 - **`esa-popover` has no block/full-width anchor mode.** Its host and shadow
   `.esa-popover-anchor` are both `inline-block`, so a slotted trigger that
   needs `width: 100%` (an editable-field's display box) collapses to

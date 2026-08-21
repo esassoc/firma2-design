@@ -1,0 +1,289 @@
+---
+// firma2-prose-field — a rail row holding a PARAGRAPH of authored prose:
+// label, a three-line clamped display, a measured "Show more", and the house
+// edit-in-place choreography behind all of it. It is the generalisation of the
+// project page's Description row, extracted when the measure page's Key facts
+// needed the identical shape for Definition and Reporter guidance — one clamp,
+// one measurer, one toggle, three rows across two record pages.
+// firma2-project-description remains the project-specific wrapper (it owns the
+// render-nothing-when-empty guard and the argument for the row's position);
+// this component owns everything that was never project-specific.
+//
+// THREE LINES, THEN A CHOICE. Prose runs as long as its author wanted and a
+// rail is ~22rem wide — unclamped, one long paragraph makes the index card
+// taller than the sections it annotates. Clamped, it spends a fixed three
+// lines and hands the rest to a reader who asks. The toggle is MEASURED, not
+// assumed: a paragraph that never overflows renders no button at all.
+//
+// AN EMPTY FIELD IS A REAL STATE here, unlike the description (whose wrapper
+// hides the row entirely): a drafted measure has no definition YET, and the
+// row must stand as the place to add one. `placeholder` flows through to
+// firma2-editable-field, which renders it in unset ink and keeps the editor
+// opening empty.
+//
+// bcn-lego-checked: ported whole from firma2-project-description, whose header
+// carries the original argument — no esa- lego clamps text (esa-collapsible is
+// a titled disclosure PANEL, a different object from a paragraph showing its
+// own first three lines); the value is a firma2-editable-field and the toggle
+// is an esa-button in the quiet chrome register. Beacon is not cloned on this
+// machine. This shared home replaces a second copy of the machinery, which is
+// the opposite of a one-off.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2EditableField from './firma2-editable-field.astro';
+
+interface Props {
+  /** Stable record key, e.g. "definition" — lands on the field row. */
+  field: string;
+  /** The row's visible label — the record's own field name. */
+  label: string;
+  /** The stored prose. May be empty; pair with `placeholder` when it can be. */
+  value: string;
+  /** Unset-ink invitation shown while the field is empty ("Add a definition"). */
+  placeholder?: string;
+}
+
+const { field, label, value, placeholder } = Astro.props;
+---
+<!-- data-collapsed is the STATE, and it starts on: three lines is the resting
+     shape, and a reader who wants the rest asks for it. The script only ever
+     adds and removes this one attribute; every visual difference between the
+     two states is CSS reading it. -->
+<div class="firma2-prose-field stack" data-gap="2xs" data-prose-field data-collapsed>
+  <!-- as="block", NOT "dl-pair": this row carries a third child (the toggle),
+       and a <dl> grouping <div> may contain only <dt> and <dd> — so it sits
+       beside a <dl>, not inside one. The label/value shape is class-driven and
+       matches the dl rows to the pixel. -->
+  <Firma2EditableField
+    field={field}
+    label={label}
+    as="block"
+    control="textarea"
+    value={value}
+    placeholder={placeholder}
+  />
+
+  <!-- HIDDEN UNTIL MEASURED. The button ships `hidden` and the script reveals
+       it only for prose that actually overflows three lines — a "Show more"
+       over text that is already whole is a control that does nothing, and a
+       reader cannot tell that by looking.
+
+       The chevron is `iconRight` because it says where the action GOES, and it
+       is the same glyph in both states: CSS rotates it rather than the script
+       swapping icons, so there is no second markup path to keep in step. -->
+  <div class="firma2-prose-field__more" hidden>
+    <EsaButton
+      variant="chrome"
+      size="sm"
+      iconRight="chevron-down"
+      data-prose-toggle
+      aria-expanded="false"
+    >
+      Show more
+    </EsaButton>
+  </div>
+</div>
+
+<style>
+  /* text-wrap: pretty rebalances the last line so the paragraph does not end on
+     a single-word orphan. A hint, not a requirement — browsers without it get
+     the normal greedy wrap and lose nothing.
+
+     Scoped through :global() because the paragraph is rendered by the child
+     component, and Astro's scoped selectors do not reach a child's root. The
+     :global is contained by the ancestor class, so it cannot leak to sibling
+     rows sharing a card. */
+  .firma2-prose-field :global(.firma2-editable-field__value) {
+    text-wrap: pretty;
+  }
+
+  /* THE CLAMP. `-webkit-box` is still the interoperable way to clamp to a line
+     count — the unprefixed `line-clamp` is declared alongside it so this file
+     needs no edit the day the standard property is everywhere.
+
+     It lands on the VALUE span, not on the display button that wraps it:
+     firma2-editable-field hides the BUTTON while the row is being edited, and a
+     clamp on the button would be a `display` declaration fighting that
+     component's own `[hidden] { display: none }` guard.
+
+     [data-measuring] is the script's escape hatch — see the script for why the
+     clamp has to come off to be measured at all. It swaps the clamp for a plain
+     block rather than simply dropping it: the value is a <span>, so with no
+     clamp it is INLINE, and an inline box does not report its own full height
+     the way a block one does. Measuring it inline is what made every
+     description look like it fit. */
+  .firma2-prose-field[data-measuring] :global(.firma2-editable-field__value) {
+    display: block;
+  }
+  .firma2-prose-field[data-collapsed]:not([data-measuring])
+    :global(.firma2-editable-field__value) {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+  }
+
+  /* The glyph points the way the text will move. 180deg, not a different icon:
+     one element, one attribute, and nothing for a script to author. */
+  .firma2-prose-field :global([data-prose-toggle] .esa-icon) {
+    transition: transform 120ms ease;
+  }
+  .firma2-prose-field:not([data-collapsed]) :global([data-prose-toggle] .esa-icon) {
+    transform: rotate(180deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-prose-field :global([data-prose-toggle] .esa-icon) {
+      transition: none;
+    }
+  }
+
+  /* GONE WHILE THE ROW IS BEING EDITED. The textarea already holds the whole
+     paragraph, so "Show more" would offer to reveal what is on screen. Removed
+     rather than disabled: there is nothing to explain and nothing to mis-click.
+     :has() on the state the field already sets — a second flag kept in step
+     with it is a second thing to get wrong. */
+  .firma2-prose-field:has([data-editing]) .firma2-prose-field__more {
+    display: none;
+  }
+
+  /* The button's own box sits flush with the paragraph's left edge; esa-button
+     brings its own padding, so this pulls the label back onto the text column
+     rather than indenting the toggle a step in from everything above it. */
+  .firma2-prose-field__more {
+    margin-inline-start: calc(var(--spacing-200, 0.5rem) * -1);
+  }
+  .firma2-prose-field__more[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  // WHETHER THE TOGGLE EXISTS IS A MEASUREMENT, NOT A GUESS. There is no
+  // character count that predicts three rendered lines — the same 260
+  // characters clamps at 400px and does not at 464, and the fonts that decide
+  // it are not loaded when the markup is written. So the test is the rendered
+  // one.
+  //
+  // AND IT CANNOT BE scrollHeight vs clientHeight. A `-webkit-box` clamp
+  // CLIPS: the lines past the third are not laid out, so the element reports
+  // scrollHeight === clientHeight and every paragraph looks like it fits. (It
+  // does not: the ellipsis on screen is the proof.) The honest measurement is
+  // to take the clamp OFF for the read — [data-measuring] does exactly that —
+  // and compare the text's full height against three of its own lines. The
+  // attribute goes on and comes off inside one synchronous block, so the
+  // browser never paints the unclamped state.
+  //
+  // It re-runs on three things: the width changing (a re-wrap can cross the
+  // threshold in either direction), the fonts finishing (a fallback face wraps
+  // differently from the real one), and the field being SAVED — an edited
+  // paragraph is a different length, and the component that owns the edit
+  // already announces both a commit and a controller restore with
+  // `firma2:field-save`, so nothing new is invented here to hear about it.
+  const ROOT = '[data-prose-field]';
+
+  // The VALUE node, not the display button around it: the button is what
+  // firma2-editable-field hides while editing, the span is what holds the text
+  // and survives a save (the field writes into it).
+  const displayOf = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('[data-field-value]') ??
+    root.querySelector<HTMLElement>('[data-field-display]');
+  const toggleBoxOf = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('.firma2-prose-field__more');
+  const toggleOf = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('[data-prose-toggle]');
+
+  const LINES = 3;
+
+  const measure = (root: HTMLElement): void => {
+    const display = displayOf(root);
+    const box = toggleBoxOf(root);
+    if (!display || !box) return;
+    // NOT WHILE THE ROW IS OPEN. firma2-editable-field hides the display for
+    // the duration of an edit, and a hidden element measures zero — which
+    // reads as "this fits in three lines" and takes the toggle away. Every
+    // path back into this function re-fires once the row closes (the
+    // ResizeObserver alone does it, when the display comes back and its box
+    // changes), so skipping here costs nothing and is self-healing.
+    if (root.querySelector('[data-editing]')) return;
+
+    root.setAttribute('data-measuring', '');
+    // getBoundingClientRect, not scrollHeight: the value is a <span>, and only
+    // the [data-measuring] rule above makes it a block for this read.
+    const full = display.getBoundingClientRect().height;
+    const lineHeight = parseFloat(getComputedStyle(display).lineHeight);
+    root.removeAttribute('data-measuring');
+
+    // 1px of slack: sub-pixel line heights make a paragraph that fills its
+    // three lines exactly report a fraction more than three times one of them.
+    const overflows =
+      Number.isFinite(lineHeight) && lineHeight > 0 && full > lineHeight * LINES + 1;
+    box.hidden = !overflows;
+    // A paragraph that no longer overflows — shortened by an edit — must not
+    // be left EXPANDED with no control to collapse it. It reads identically
+    // either way at this length, so the resting state is the honest return.
+    if (!overflows) setExpanded(root, false);
+  };
+
+  const setExpanded = (root: HTMLElement, expanded: boolean): void => {
+    const toggle = toggleOf(root);
+    if (expanded) root.removeAttribute('data-collapsed');
+    else root.setAttribute('data-collapsed', '');
+    if (!toggle) return;
+    toggle.setAttribute('aria-expanded', String(expanded));
+    // The LABEL changes and the icon does not — the chevron is rotated by CSS.
+    // Written as text into the label esa-button already rendered; no markup is
+    // built here.
+    const label = toggle.querySelector('.esa-button__label');
+    if (label) label.textContent = expanded ? 'Show less' : 'Show more';
+  };
+
+  const hydrate = (root: ParentNode = document): void => {
+    root.querySelectorAll<HTMLElement>(ROOT).forEach((el) => {
+      if (el.dataset.f2Prose !== undefined) return;
+      el.dataset.f2Prose = '';
+
+      // aria-controls is wired here rather than in the markup because the
+      // element it points at is rendered by firma2-editable-field, which takes
+      // no id. Unique per instance: the field key is unique per page, so it is
+      // the honest id ingredient.
+      const display = displayOf(el);
+      const toggle = toggleOf(el);
+      if (display && toggle) {
+        const field = el.querySelector<HTMLElement>('[data-field]')?.dataset.field ?? 'prose';
+        const id = display.id || `firma2-prose-${field}`;
+        display.id = id;
+        toggle.setAttribute('aria-controls', id);
+      }
+
+      measure(el);
+      if (display) new ResizeObserver(() => measure(el)).observe(display);
+      // A FRAME LATER, deliberately: the field announces a save while the row
+      // is still open (it closes on the next statement), so measuring on the
+      // event itself would measure a hidden display. One frame puts it after
+      // the close.
+      el.addEventListener('firma2:field-save', () =>
+        requestAnimationFrame(() => measure(el))
+      );
+      document.fonts?.ready.then(() => measure(el));
+    });
+  };
+
+  const onClick = (event: MouseEvent): void => {
+    const target = event.target as Element | null;
+    const toggle = target?.closest<HTMLElement>('[data-prose-toggle]');
+    const root = toggle?.closest<HTMLElement>(ROOT);
+    if (!root) return;
+    setExpanded(root, root.hasAttribute('data-collapsed'));
+  };
+
+  // ONE delegated listener however many rows render, and a flag so a second
+  // evaluation of this module is a no-op rather than a double-fire that would
+  // expand and immediately re-collapse.
+  const w = window as Window & { __firma2ProseField?: boolean };
+  if (!w.__firma2ProseField) {
+    w.__firma2ProseField = true;
+    document.addEventListener('click', onClick);
+    document.addEventListener('astro:page-load', () => hydrate());
+  }
+  hydrate();
+</script>

@@ -20,11 +20,15 @@
 //
 // VERSIONED KEY. The stored shape is tied to KEY_VERSION. Bump it when the
 // patch shape changes and every old entry is ignored rather than parsed into
-// something that throws at render.
+// something that throws at render. v1 → v2 on 2026-08-20, when the flat
+// quantity/unit/decimalPlaces/countingRule fields became `aspects` and
+// dimensions lost their inline options — v1 drafts are DISCARDED, not
+// migrated, which is the versioned-key contract working as designed in a
+// prototype whose drafts are demo state, not user data.
 
 import type { PerformanceMeasureDefinition } from '../data/firma2-performance-measures';
 
-const KEY_VERSION = 'v1';
+const KEY_VERSION = 'v2';
 const KEY_PREFIX = `firma2:measure-draft:${KEY_VERSION}:`;
 
 /** The subset of a measure the setup screen can edit. */
@@ -34,12 +38,15 @@ export type MeasureDraft = Partial<
     | 'name'
     | 'definition'
     | 'classifications'
-    | 'quantity'
-    | 'unit'
-    | 'decimalPlaces'
-    | 'countingRule'
+    | 'aspects'
     | 'dimensions'
     | 'reporterGuidance'
+    // Lifecycle — Publish/Retire/Reactivate write it; the catalog's rows and
+    // this page's pill both read it back through the same merge as any field.
+    | 'status'
+    // Library provenance — written by the create flow, never edited on the page.
+    | 'conceptId'
+    | 'theme'
   >
 >;
 

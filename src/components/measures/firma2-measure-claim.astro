@@ -1,0 +1,153 @@
+---
+// firma2-measure-claim — the measure, stated as the sentence it will let the
+// program say. The page's first panel and its readiness checklist in one.
+//
+// WHY A SENTENCE LEADS AN AUTHORING PAGE. The admin does not come here wanting
+// a schema; they come from "I need to tell my funder X" (product brief §0). So
+// the page opens with X — "Each project entry reports acres of treated
+// extent, summed across entries — qualified by treatment type…" — assembled
+// live from what has been decided, with a visible blank for every part that
+// has not. No invented total in the sentence (see measure-claim.ts): a figure
+// here read as stored data, and the example numbers belong in the wells,
+// where the placeholder register marks them as examples. The blanks carry outstandingFields()' own labels, so the claim IS
+// the readiness list, in place, instead of a count in the header pointing at
+// fields somewhere below.
+//
+// EVERY BLANK IS A DOOR. Clicking one dispatches firma2:measure-focus-request
+// with the blank's target; the form editor below listens and opens the matching
+// row's editor with focus in the matching control. An event on `document`
+// rather than an expando call, for the same decoupling reason every panel on
+// this page communicates through events: the claim knows WHAT needs deciding,
+// never WHERE the deciding control lives in someone else's DOM.
+//
+// LIVE BY THE SAME CONTRACT AS EVERY PANEL: server-renders from the seed, then
+// re-renders on MEASURE_CHANGE_EVENT (slug-filtered) through the same
+// builder+renderer pair the build used — src/lib/measure-claim.ts, one copy,
+// two callers, byte-identical output.
+import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+import { buildClaimModel, renderClaim } from '../../lib/measure-claim';
+
+interface Props {
+  measure: PerformanceMeasureDefinition;
+}
+
+const { measure } = Astro.props;
+
+const html = renderClaim(buildClaimModel(measure));
+---
+
+<section class="firma2-measure-claim" aria-labelledby="firma2-measure-claim-heading">
+  <!-- NAMED FOR THE ROTOR, silent on screen — same call as the sections below:
+       the sentence is self-describing and a visible caption over it would be
+       text about the page. -->
+  <h2 id="firma2-measure-claim-heading" class="visually-hidden">What this measure will say</h2>
+
+  <!-- title-md, not a body role: this is the page's thesis line, read before
+       anything else, and it has to hold its own directly under the h1 band.
+       The type composite is on the <p>; the blanks inherit it, which is what
+       keeps a button mid-sentence from breaking the line's rhythm. -->
+  <p
+    class="firma2-measure-claim__sentence typography-title-md"
+    data-firma2-measure-claim={measure.slug}
+    set:html={html}
+  />
+</section>
+
+<style>
+  .firma2-measure-claim__sentence {
+    margin: 0;
+    color: var(--color-content-default, #202020);
+    /* A sentence, so it gets a MEASURE — the one width rule on this page. At
+       the full column a 3-clause claim would run ~200 characters on one line,
+       which nobody can re-find their place in. */
+    max-inline-size: 46rem;
+  }
+
+  /* THE BLANK, both states: a text fragment first, an affordance second. It
+     inherits the sentence's own type (font/size/weight ride through `inherit`,
+     which a UA button otherwise resets), sits on the baseline, and carries the
+     quiet-field convention this spoke already uses for click-to-edit text: an
+     invisible box at rest, chrome on hover/focus. :global() because the markup
+     is built by renderClaim() at runtime and never carries Astro's scope
+     attribute.
+
+     A DECIDED PART WEARS NOTHING AT REST. It used to carry semibold plus a
+     dotted underline, which made a three-clause claim read as eight marked
+     phrases in three lines — decoration outshouting the sentence it was
+     supposed to be. The house rule for click-to-edit text is an invisible box
+     until hover (firma2-editable-field's display), and the claim now keeps it:
+     the decided parts are just the sentence's words, and mousing anywhere near
+     the line reveals which of them answer to you. */
+  .firma2-measure-claim :global(.firma2-measure-claim__blank) {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0 var(--spacing-050, 0.125rem);
+    margin: 0;
+    border-radius: var(--radius-xs, 0.125rem);
+    cursor: pointer;
+  }
+
+  .firma2-measure-claim :global(.firma2-measure-claim__blank:hover),
+  .firma2-measure-claim :global(.firma2-measure-claim__blank:focus-visible) {
+    text-decoration: underline dotted var(--color-content-default, #202020);
+    text-underline-offset: 0.2em;
+    background: var(--color-background-default-hover, #f0f0f0);
+  }
+
+  /* UNDECIDED: the outstandingFields() label, in unset ink with a dashed
+     underline it keeps AT REST — the blanks are the readiness checklist, and a
+     checklist has to be visible without a mouse over it. Two channels (value
+     step + line style), never hue alone. */
+  .firma2-measure-claim :global(.firma2-measure-claim__blank--unset) {
+    color: var(--color-content-default-secondary, #646464);
+    text-decoration: underline dashed var(--color-border-default, #cecece);
+    text-underline-offset: 0.2em;
+  }
+  .firma2-measure-claim :global(.firma2-measure-claim__blank--unset:hover),
+  .firma2-measure-claim :global(.firma2-measure-claim__blank--unset:focus-visible) {
+    text-decoration-color: var(--color-content-default-secondary, #646464);
+  }
+</style>
+
+<script>
+  import { MEASURE_CHANGE_EVENT, type MeasureChangeDetail } from '../../lib/measure-draft';
+  import { buildClaimModel, renderClaim } from '../../lib/measure-claim';
+
+  // Same listener shape as the split chart: slug-filtered, debounced a beat so
+  // a keystroke burst repaints once, registered at module eval so a restored
+  // draft's first publish is never missed.
+  const SETTLE_MS = 100;
+  const timers = new WeakMap<Element, number>();
+
+  document.addEventListener(MEASURE_CHANGE_EVENT, (event) => {
+    const { measure } = (event as CustomEvent<MeasureChangeDetail>).detail ?? {};
+    if (!measure) return;
+    const host = document.querySelector<HTMLElement>(
+      `[data-firma2-measure-claim="${measure.slug}"]`,
+    );
+    if (!host) return;
+    window.clearTimeout(timers.get(host));
+    timers.set(
+      host,
+      window.setTimeout(() => {
+        host.innerHTML = renderClaim(buildClaimModel(measure));
+      }, SETTLE_MS),
+    );
+  });
+
+  // EVERY BLANK IS A DOOR — delegated, because the sentence's nodes are
+  // replaced wholesale on each repaint and per-node listeners would die with
+  // them. The form editor owns the other end.
+  document.addEventListener('click', (event) => {
+    const blank = (event.target as Element | null)?.closest<HTMLElement>('[data-claim-target]');
+    if (!blank) return;
+    document.dispatchEvent(
+      new CustomEvent('firma2:measure-focus-request', {
+        detail: { target: blank.dataset.claimTarget },
+      }),
+    );
+  });
+</script>

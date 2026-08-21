@@ -1,51 +1,205 @@
-// Performance measures, modelled as a QUANTITY plus a set of DIMENSIONS, where
-// every dimension declares WHERE ITS VALUE COMES FROM.
+// Performance measures, modelled on THE GRAMMAR OF A REPORTED RESULT:
 //
-// THIS IS A PROPOSAL, NOT A PORT. ProjectFirma today stores a measure's
-// breakdowns as per-measure subcategories that a reporter fills in by hand,
-// every time. That has two costs the model below is built to remove:
+//   "On this project, in this period, we accomplished [quantity] [unit] of
+//    [concept] — [qualifier], [qualifier], …"
 //
-//   1. THE SAME VOCABULARY IS RE-DECLARED PER MEASURE. Three measures that care
-//      about land ownership each define their own option list, independently,
-//      and they drift — one says Federal/State/Private/Tribal, the next says
-//      Public/Private — so nothing can be grouped across them.
-//   2. THE REPORTER IS ASKED FOR THINGS THE SYSTEM ALREADY KNOWS. If a
-//      treatment's extent is mapped, whether it fell inside critical habitat is
-//      a spatial question, not a question for the person who did the work.
+// A measure IS that sentence, declared once: a result concept, quantified by
+// one or more ASPECTS (unit + precision + counting rule each), qualified by
+// zero or more DIMENSIONS whose options come from SHARED VOCABULARIES. The
+// grammar is not asserted — it is what five production tenant catalogs of the
+// predecessor product reduce to (152 measures, 222 subcategories, 1,047
+// options). The model, its evidence and its rules live in
+// docs/measure-model.md; the constraints that shape this file:
 //
-// So a dimension carries a SOURCE. Four kinds, and the difference between them
-// is who pays:
+//   1. ASPECTS ARE 1..n. The old one-unit-per-measure shape is why tenants
+//      ship "(area)/(length)" clone families of one concept. The counting rule
+//      lives ON the aspect, because an area can union where a count can only
+//      sum.
+//   2. VOCABULARIES ARE SHARED, REFERENCED, NEVER COPIED. The observed
+//      catalogs paste the same option list onto up to 11 measures by hand and
+//      the copies drift by typo — which silently splits roll-up buckets. A
+//      reported dimension carries a vocabularyId, not its own options array.
+//   3. THERE IS NO PRIMARY DIMENSION. There was, on the argument that "you
+//      cannot report 20 acres without saying what you did" — but that job
+//      belongs to the CONCEPT ("20 acres of fuels reduction" is already a
+//      complete statement), and a forced dimension slot is exactly how 20% of
+//      observed subcategory rows came to be Default/Default filler. Every
+//      dimension is an optional qualifier.
+//
+// A dimension still carries a SOURCE — the one idea here that goes beyond the
+// evidence (whose catalogs are 100% hand-reported). Four kinds, and the
+// difference is who pays:
 //
 //   reported    — the person entering the record picks it.       COST: one choice
 //   spatial     — a geospatial layer answers it, via the place.  COST: none
 //   historical  — prior records on the same place answer it.     COST: none
 //   record      — the project or the entry itself answers it.    COST: none
 //
-// Defining a measure is therefore: name the quantity, then for each dimension,
-// name its source. Everything downstream — how heavy the reporting form is, what
-// the program can slice by — falls out of that one set of declarations.
+// Derived sources are the answer to the tension optionality creates: if
+// tagging is optional and expensive, nobody tags and the portfolio cannot be
+// sliced. So the system tags what it already knows, and humans are asked only
+// what only humans know.
 //
-// A SPATIALLY DERIVED DIMENSION IS A SPLIT, NOT A LABEL. Twenty acres of biomass
-// removal is not "in critical habitat" or "not" — it is 18 acres inside and 2
-// outside. A reported dimension always resolves to exactly one value; a spatial
-// one resolves to an allocation. That is strictly better than asking a human,
-// who has to pick one and rounds to whichever is bigger.
+// A SPATIALLY DERIVED DIMENSION IS A SPLIT, NOT A LABEL. Twenty acres of
+// biomass removal is not "in critical habitat" or "not" — it is 18 acres
+// inside and 2 outside. A reported dimension resolves to one value; a spatial
+// one resolves to an allocation.
 //
-// PRIMARY vs SUPPORTING. One reported dimension is primary: it is the thing that
-// makes an entry an entry. You cannot report "20 acres" without saying what you
-// did. The rest qualify it. This is not decoration — it decides the shape of the
-// reporting form, where the primary is the row you add and the supporting ones
-// are fields on that row.
+// INVENTED CONTENT. Every measure, layer, vocabulary and option below is
+// fabricated. Vocabulary is drawn from public fuels-and-restoration practice;
+// the "imported standard" entries imitate the SHAPE of public standards
+// (practice-code lists, species lists) with fabricated content. Nothing is
+// copied from a client system or any ProjectFirma tenant. This repo and its
+// site are public.
 //
-// INVENTED CONTENT. Every measure, layer and option below is fabricated. The
-// VOCABULARY is drawn from public fuels-and-restoration practice (treatment
-// phases, critical zones, HUC watersheds); nothing is copied from a client
-// system or any ProjectFirma tenant. This repo and its site are public.
-//
-// DETERMINISTIC — a literal array, no Math.random(), no Date.now().
+// DETERMINISTIC — literal arrays, no Math.random(), no Date.now().
 
-import { projects, classifications } from './firma2-projects';
+import { classifications } from './firma2-projects';
 import type { Classification } from './firma2-projects';
+
+// ---------------------------------------------------------------------------
+// Shared vocabularies — the option lists dimensions REFERENCE
+// ---------------------------------------------------------------------------
+
+/**
+ * One tenant-level option list. `house` lists are authored by this tenant and
+ * reused across measures; `imported` lists mirror an external standard, whose
+ * name rides in `standard` so an author can tell "our words" from "the
+ * state's words". Referenced by MeasureDimension.vocabularyId — never copied
+ * onto a measure, which is what makes cross-measure rollups by the same axis
+ * possible and kills the observed copy-drift failure.
+ */
+export interface Vocabulary {
+  id: string;
+  name: string;
+  origin: 'house' | 'imported';
+  /** The external standard an imported list mirrors. Absent on house lists. */
+  standard?: string;
+  options: string[];
+}
+
+export const VOCABULARIES: Vocabulary[] = [
+  {
+    id: 'fuels-treatment-types',
+    name: 'Fuels treatment types',
+    origin: 'house',
+    options: ['Biomass removal', 'Broadcast burning', 'Pile burning', 'Mastication', 'Hand thinning'],
+  },
+  {
+    id: 'treatment-phases',
+    name: 'Treatment phases',
+    origin: 'house',
+    options: ['Planning', 'Initial', 'Maintenance', 'Completed', 'Unspecified'],
+  },
+  {
+    id: 'riparian-treatments',
+    name: 'Riparian treatments',
+    origin: 'house',
+    options: ['Planting', 'Invasive removal', 'Natural recruitment'],
+  },
+  {
+    id: 'volunteer-activities',
+    name: 'Volunteer activities',
+    origin: 'house',
+    options: ['Planting', 'Monitoring', 'Site preparation', 'Outreach event'],
+  },
+  {
+    id: 'barrier-types',
+    name: 'Barrier types',
+    origin: 'house',
+    options: ['Culvert', 'Dam', 'Weir', 'Push-up dam', 'Flashboard'],
+  },
+  {
+    id: 'survey-intervals',
+    name: 'Survey intervals',
+    origin: 'house',
+    options: ['Year 1', 'Year 3', 'Year 5'],
+  },
+  {
+    id: 'restoration-actions',
+    name: 'Restoration actions',
+    origin: 'house',
+    options: ['Created', 'Enhanced', 'Restored'],
+  },
+  {
+    // The SHAPE of a practice-code standard — numbered entries an agency
+    // publishes — with fabricated numbers and names, per the confidentiality
+    // rule in the module header.
+    id: 'conservation-practices',
+    name: 'Conservation practice codes',
+    origin: 'imported',
+    standard: 'State conservation practice catalog',
+    options: [
+      '210 Brush management',
+      '218 Prescribed burning',
+      '341 Riparian planting',
+      '355 Streambank protection',
+      '362 In-channel structure',
+      '410 Access control',
+      '447 Tree and shrub establishment',
+    ],
+  },
+  {
+    // Public species names; the list itself is invented.
+    id: 'focal-species',
+    name: 'Focal species',
+    origin: 'imported',
+    standard: 'State special-status species list',
+    options: [
+      'Chinook salmon',
+      'Steelhead',
+      'Coho salmon',
+      'Willow flycatcher',
+      'Foothill yellow-legged frog',
+      'Western pond turtle',
+    ],
+  },
+];
+
+/** Resolve a vocabulary id against the seeds plus any browser-local lists. */
+export const getVocabulary = (id: string, extra: Vocabulary[] = []): Vocabulary | undefined =>
+  VOCABULARIES.find((v) => v.id === id) ?? extra.find((v) => v.id === id);
+
+// ---------------------------------------------------------------------------
+// Dimension archetypes — the ~10 qualifier questions
+// ---------------------------------------------------------------------------
+
+/**
+ * Every observed subcategory name (83 distinct, 222 uses) codes into one of
+ * these questions. The archetype is CLASSIFICATION, not behaviour — it exists
+ * so an author picking a new dimension is choosing from a closed set of
+ * questions rather than inventing a taxonomy, and so future rollup surfaces
+ * can group unlike-named dimensions that ask the same thing.
+ */
+export type DimensionArchetype =
+  | 'object-kind'
+  | 'activity-method'
+  | 'land-tenure'
+  | 'action-verb'
+  | 'place-context'
+  | 'species'
+  | 'status-phase'
+  | 'purpose'
+  | 'regulatory-status'
+  | 'audience';
+
+export const DIMENSION_ARCHETYPES: {
+  id: DimensionArchetype;
+  /** The qualifier question, stated as the author would ask it. */
+  question: string;
+  example: string;
+}[] = [
+  { id: 'object-kind', question: 'What kind of thing?', example: 'habitat type, barrier type' },
+  { id: 'activity-method', question: 'Done how, by what practice?', example: 'treatment type, practice code' },
+  { id: 'land-tenure', question: 'On what kind of land?', example: 'ownership, land use' },
+  { id: 'action-verb', question: 'What was done to it?', example: 'created / enhanced / restored' },
+  { id: 'place-context', question: 'Where?', example: 'watershed, side of stream' },
+  { id: 'species', question: 'For which species?', example: 'focal species' },
+  { id: 'status-phase', question: 'At what stage?', example: 'treatment phase, survey year' },
+  { id: 'purpose', question: 'Why?', example: 'project objective' },
+  { id: 'regulatory-status', question: 'Under what legal status?', example: 'listing status' },
+  { id: 'audience', question: 'For whom?', example: 'participant type' },
+];
 
 // ---------------------------------------------------------------------------
 // Dimension sources
@@ -127,19 +281,20 @@ export interface DimensionSource {
 export interface MeasureDimension {
   /** What the dimension is called on the form and in the report. */
   name: string;
+  /**
+   * Which qualifier question this answers — see DIMENSION_ARCHETYPES.
+   * Optional: derived dimensions get their meaning from their source, and a
+   * draft dimension may not have declared one yet.
+   */
+  archetype?: DimensionArchetype;
   source: DimensionSource;
   /**
-   * The vocabulary. Authored ONLY for `reported` dimensions — every other kind
-   * takes its values from the source it names, which is the point of naming one.
+   * For `reported` dimensions: the SHARED vocabulary the reporter picks from.
+   * A reference, never a copy — see rule 2 in the module header. Every other
+   * source kind takes its values from the source it names.
    */
-  options?: string[];
-  /**
-   * The dimension that makes an entry an entry. Exactly one per measure, and it
-   * must be `reported` — the system cannot derive what someone chose to do.
-   */
-  primary?: boolean;
+  vocabularyId?: string;
 }
-
 
 // ---------------------------------------------------------------------------
 // The fork: what KIND of statement a measure makes
@@ -148,21 +303,14 @@ export interface MeasureDimension {
 /**
  * An OUTPUT records what someone did. An OUTCOME records what is true.
  *
- * These are not two flavours of one thing, and the difference is not cosmetic —
- * it changes who reports, what a record must carry, and which counting rules
- * are even meaningful:
- *
- *   - An output has an actor and a primary reported dimension: you cannot report
- *     "20 acres" without saying what you did to them. Outputs sum, and mapped
- *     outputs can be unioned.
- *   - An outcome has no actor. Nobody "did" a water temperature. There is no
- *     "what did you do" to ask, summing readings is meaningless, and the record
- *     belongs to a PLACE and a monitoring effort rather than to a project — a
- *     fish count in a watershed is not caused by one grant.
- *
- * This is why the two are forked at creation rather than distinguished by a
- * checkbox on one form: they need different fields, so they get different
- * shapes.
+ * KEPT, KNOWINGLY, AGAINST THE GRAIN OF THE EVIDENCE. The grammar this module
+ * is built on is output-shaped ("we accomplished…"), and the sampled exports
+ * lacked the action/outcome field — so outcomes are the evidence's blind spot,
+ * not its refutation. The fork still changes who reports, what a record must
+ * carry, and which counting rules are meaningful: nobody "did" a water
+ * temperature, summing readings is meaningless, and the record belongs to a
+ * PLACE and a monitoring effort rather than to one grant. An outcome's
+ * sentence reads "we measured", not "we accomplished".
  */
 export type MeasureKind = 'output' | 'outcome';
 
@@ -173,29 +321,25 @@ export const MEASURE_KINDS: {
   description: string;
   /** Who files the record. */
   reportedBy: string;
-  /** Whether a primary reported dimension is required. */
-  requiresPrimaryDimension: boolean;
 }[] = [
   {
     id: 'output',
     name: 'Output',
     description: 'work someone did — acres treated, barriers removed, hours contributed',
     reportedBy: 'the project',
-    requiresPrimaryDimension: true,
   },
   {
     id: 'outcome',
     name: 'Outcome',
     description: 'a condition someone measured — survival rate, water temperature, fish density',
     reportedBy: 'a monitoring effort, about a place',
-    requiresPrimaryDimension: false,
   },
 ];
 
 export const measureKind = (id: MeasureKind) => MEASURE_KINDS.find((k) => k.id === id)!;
 
 // ---------------------------------------------------------------------------
-// The measure
+// Aspects — how a concept is quantified
 // ---------------------------------------------------------------------------
 
 /** How entries combine. Replaces a summable/not-summable flag, which is too coarse. */
@@ -273,6 +417,27 @@ export const UNITS = [
 ] as const;
 export type MeasureUnit = (typeof UNITS)[number];
 
+/**
+ * ONE way a concept is quantified. A measure carries 1..n of these — acres AND
+ * linear feet AND a count of the same practice are one concept, not three
+ * suffix-named clones. The counting rule is here rather than on the measure
+ * because it is a property of the QUANTITY: a mapped area can be unioned, a
+ * count of barriers can only be summed or de-duplicated by place.
+ *
+ * `unit` and `countingRule` are optional because a blank draft's first aspect
+ * is legitimately empty — the same reasoning that made the old flat `unit`
+ * optional. outstandingFields() is what makes emptiness cost something.
+ */
+export interface MeasureAspect {
+  /** Stable within the measure; used by drafts and (later) by targets. */
+  id: string;
+  /** What is being counted, in words. "Treated extent", "Hours worked". */
+  quantity: string;
+  unit?: MeasureUnit;
+  decimalPlaces: number;
+  countingRule?: CountingRule;
+}
+
 export type MeasureStatus = 'Active' | 'Draft' | 'Retired';
 
 export const MEASURE_STATUS_TONE: Record<MeasureStatus, 'default' | 'info' | 'primary' | 'success' | 'warning'> = {
@@ -296,25 +461,22 @@ export interface PerformanceMeasureDefinition {
    * A SET, NOT ONE BRANCH, and that is the whole reason it replaced `program`.
    * A program is where a project FILES; a classification is what it is FOR, and
    * one measure serves several at once — acres of riparian planting counts
-   * toward habitat and toward water quality without being two measures. The old
-   * single `program` forced a choice that the portfolio's real roll-up axis does
-   * not ask for, and made "what did we buy toward salmon recovery" answerable
-   * only by hand.
+   * toward habitat and toward water quality without being two measures.
    *
-   * Empty is a real state on a draft, and the one outstandingFields() flags.
+   * Empty is a real state on a draft, and one outstandingFields() flags.
    */
   classifications: Classification[];
-  /** What is being counted, in words. "Treated extent", "Hours worked". */
-  quantity: string;
-  unit?: MeasureUnit;
-  decimalPlaces: number;
-  countingRule?: CountingRule;
-  /** Every dimension, reported and derived alike, in reporting-form order. */
+  /** How the concept is quantified — 1..n. See MeasureAspect. */
+  aspects: MeasureAspect[];
+  /** Every dimension, reported and derived alike, in reporting-form order. ALL optional at entry. */
   dimensions: MeasureDimension[];
   /** Instruction shown at the moment a value is entered. */
   reporterGuidance: string;
   status: MeasureStatus;
   projectCount: number;
+  /** Library provenance, when the measure was created from the concept library. */
+  conceptId?: string;
+  theme?: string;
 }
 
 export const measures: PerformanceMeasureDefinition[] = [
@@ -327,16 +489,31 @@ export const measures: PerformanceMeasureDefinition[] = [
     definition:
       'Acres where surface or ladder fuels were removed, rearranged, or consumed under an approved prescription. Measured as the extent actually treated, not the unit planned.',
     classifications: ['Wildfire resilience'],
-    quantity: 'Treated extent',
-    unit: 'acres',
-    decimalPlaces: 0,
-    countingRule: 'sum',
+    // TWO ASPECTS — the catalog's standing proof of the 1..n rule: one
+    // concept, measured as ground covered AND material removed, where the old
+    // model would have shipped "(area)/(tons)" clone measures.
+    aspects: [
+      {
+        id: 'treated-extent',
+        quantity: 'Treated extent',
+        unit: 'acres',
+        decimalPlaces: 0,
+        countingRule: 'sum',
+      },
+      {
+        id: 'biomass-removed',
+        quantity: 'Biomass removed',
+        unit: 'tons',
+        decimalPlaces: 0,
+        countingRule: 'sum',
+      },
+    ],
     dimensions: [
       {
         name: 'Treatment type',
+        archetype: 'activity-method',
         source: { kind: 'reported' },
-        primary: true,
-        options: ['Biomass removal', 'Broadcast burning', 'Pile burning', 'Mastication', 'Hand thinning'],
+        vocabularyId: 'fuels-treatment-types',
       },
       {
         // REPORTED, and it is the interesting one: Initial vs Maintenance is
@@ -345,8 +522,9 @@ export const measures: PerformanceMeasureDefinition[] = [
         // reported, and the form offers the derived answer as a prompt rather
         // than filling it in — see the reporting-form preview.
         name: 'Treatment phase',
+        archetype: 'status-phase',
         source: { kind: 'reported' },
-        options: ['Planning', 'Initial', 'Maintenance', 'Completed', 'Unspecified'],
+        vocabularyId: 'treatment-phases',
       },
       { name: 'Critical zone', source: { kind: 'spatial', ref: 'critical-zone' } },
       { name: 'Land ownership', source: { kind: 'spatial', ref: 'land-ownership' } },
@@ -365,16 +543,21 @@ export const measures: PerformanceMeasureDefinition[] = [
     definition:
       'Acres within the streamside corridor where native vegetation was planted or released and the site has passed its first survival check.',
     classifications: ['Riparian & wetland habitat', 'Water quality'],
-    quantity: 'Restored extent',
-    unit: 'acres',
-    decimalPlaces: 1,
-    countingRule: 'spatial-union',
+    aspects: [
+      {
+        id: 'restored-extent',
+        quantity: 'Restored extent',
+        unit: 'acres',
+        decimalPlaces: 1,
+        countingRule: 'spatial-union',
+      },
+    ],
     dimensions: [
       {
         name: 'Treatment type',
+        archetype: 'activity-method',
         source: { kind: 'reported' },
-        primary: true,
-        options: ['Planting', 'Invasive removal', 'Natural recruitment'],
+        vocabularyId: 'riparian-treatments',
       },
       { name: 'Critical zone', source: { kind: 'spatial', ref: 'critical-zone' } },
       { name: 'Watershed', source: { kind: 'spatial', ref: 'watershed' } },
@@ -394,16 +577,21 @@ export const measures: PerformanceMeasureDefinition[] = [
     name: 'Volunteer hours contributed',
     definition: 'Hours worked on site by unpaid participants, from the signed field log for each work day.',
     classifications: ['Riparian & wetland habitat', 'Public access & recreation'],
-    quantity: 'Hours worked',
-    unit: 'hours',
-    decimalPlaces: 0,
-    countingRule: 'sum',
+    aspects: [
+      {
+        id: 'hours-worked',
+        quantity: 'Hours worked',
+        unit: 'hours',
+        decimalPlaces: 0,
+        countingRule: 'sum',
+      },
+    ],
     dimensions: [
       {
         name: 'Activity',
+        archetype: 'activity-method',
         source: { kind: 'reported' },
-        primary: true,
-        options: ['Planting', 'Monitoring', 'Site preparation', 'Outreach event'],
+        vocabularyId: 'volunteer-activities',
       },
       { name: 'Reporting year', source: { kind: 'record', ref: 'reporting-year' } },
     ],
@@ -418,16 +606,21 @@ export const measures: PerformanceMeasureDefinition[] = [
     definition:
       'Structures no longer impeding passage at any life stage, confirmed by a post-construction passage assessment.',
     classifications: ['Salmon & steelhead recovery'],
-    quantity: 'Barriers cleared',
-    unit: 'each',
-    decimalPlaces: 0,
-    countingRule: 'distinct-places',
+    aspects: [
+      {
+        id: 'barriers-cleared',
+        quantity: 'Barriers cleared',
+        unit: 'each',
+        decimalPlaces: 0,
+        countingRule: 'distinct-places',
+      },
+    ],
     dimensions: [
       {
         name: 'Barrier type',
+        archetype: 'object-kind',
         source: { kind: 'reported' },
-        primary: true,
-        options: ['Culvert', 'Dam', 'Weir', 'Push-up dam', 'Flashboard'],
+        vocabularyId: 'barrier-types',
       },
       { name: 'Watershed', source: { kind: 'spatial', ref: 'watershed' } },
       { name: 'Reporting year', source: { kind: 'record', ref: 'reporting-year' } },
@@ -438,27 +631,32 @@ export const measures: PerformanceMeasureDefinition[] = [
     projectCount: 9,
   },
   {
-    // THE OUTCOME. Here to prove the fork is real rather than a label: it has no
-    // primary dimension and no "what did you do", because nobody DID a survival
-    // rate — it was measured. Its counting rule is one no output can use, and
-    // its dimensions are conditions of the reading, not choices by an actor.
+    // THE OUTCOME. Here to prove the fork is real rather than a label: it has
+    // no "what did you do", because nobody DID a survival rate — it was
+    // measured. Its counting rule is one no output can use, and its dimensions
+    // are conditions of the reading, not choices by an actor.
     slug: 'plant-survival-rate',
     kind: 'outcome',
     name: 'Plant survival rate',
     definition:
       'Share of installed plants alive at the survey, against the count installed on the same unit.',
     classifications: ['Riparian & wetland habitat'],
-    quantity: 'Survival at survey',
-    unit: 'percent',
-    decimalPlaces: 0,
-    countingRule: 'latest-per-place',
+    aspects: [
+      {
+        id: 'survival-at-survey',
+        quantity: 'Survival at survey',
+        unit: 'percent',
+        decimalPlaces: 0,
+        countingRule: 'latest-per-place',
+      },
+    ],
     dimensions: [
       {
-        // Reported, but NOT primary — it qualifies a reading rather than naming
-        // an action. An outcome has no primary dimension at all.
+        // Reported — it qualifies a reading rather than naming an action.
         name: 'Years since planting',
+        archetype: 'status-phase',
         source: { kind: 'reported' },
-        options: ['Year 1', 'Year 3', 'Year 5'],
+        vocabularyId: 'survey-intervals',
       },
       { name: 'Critical zone', source: { kind: 'spatial', ref: 'critical-zone' } },
       { name: 'Watershed', source: { kind: 'spatial', ref: 'watershed' } },
@@ -479,11 +677,14 @@ export const measures: PerformanceMeasureDefinition[] = [
     name: '',
     definition: '',
     // Empty, like every other field on a fresh draft — and empty is what
-    // outstandingFields() flags, so a new measure starts one item short of
-    // publishable rather than silently classified.
+    // outstandingFields() flags, so a new measure starts short of publishable
+    // rather than silently classified.
     classifications: [],
-    quantity: '',
-    decimalPlaces: 0,
+    // ONE BLANK ASPECT, NOT ZERO. A measure quantifies something by
+    // definition (aspects are 1..n), so the empty state is an aspect with
+    // nothing decided — which outstandingFields() flags field by field —
+    // rather than the absence of the slot itself.
+    aspects: [{ id: 'a1', quantity: '', decimalPlaces: 0 }],
     dimensions: [],
     reporterGuidance: '',
     status: 'Draft',
@@ -495,8 +696,7 @@ export const measures: PerformanceMeasureDefinition[] = [
     name: '',
     definition: '',
     classifications: [],
-    quantity: '',
-    decimalPlaces: 0,
+    aspects: [{ id: 'a1', quantity: '', decimalPlaces: 0 }],
     dimensions: [],
     reporterGuidance: '',
     status: 'Draft',
@@ -525,6 +725,17 @@ export const measureDisplayName = (m: PerformanceMeasureDefinition): string =>
 export const getMeasure = (slug: string): PerformanceMeasureDefinition | undefined =>
   measures.find((m) => m.slug === slug);
 
+/**
+ * THE ONE SANCTIONED `aspects[0]`. Several surfaces genuinely need a single
+ * scale — the split chart's axis, the catalog's counting-rule column, the
+ * preview's illustrative total — and v1 gives them the first aspect. Routing
+ * every such read through this function keeps "which aspect is the headline"
+ * one grep-able decision instead of a dozen inlined `[0]`s, and is where a
+ * real "featured aspect" flag would land if one is ever needed.
+ */
+export const primaryAspect = (m: PerformanceMeasureDefinition): MeasureAspect | undefined =>
+  m.aspects[0];
+
 /** Dimensions the reporter has to answer. The measure's real cost. */
 export const reportedDimensions = (m: PerformanceMeasureDefinition): MeasureDimension[] =>
   m.dimensions.filter((d) => d.source.kind === 'reported');
@@ -533,12 +744,14 @@ export const reportedDimensions = (m: PerformanceMeasureDefinition): MeasureDime
 export const derivedDimensions = (m: PerformanceMeasureDefinition): MeasureDimension[] =>
   m.dimensions.filter((d) => d.source.kind !== 'reported');
 
-export const primaryDimension = (m: PerformanceMeasureDefinition): MeasureDimension | undefined =>
-  m.dimensions.find((d) => d.primary);
-
-/** Values a dimension can take, wherever they come from. */
-export const dimensionValues = (d: MeasureDimension): string[] => {
-  if (d.source.kind === 'reported') return d.options ?? [];
+/**
+ * Values a dimension can take, wherever they come from. `extra` carries
+ * browser-local vocabularies (see src/lib/vocabulary-draft.ts) — the server
+ * render never has any, the client may.
+ */
+export const dimensionValues = (d: MeasureDimension, extra: Vocabulary[] = []): string[] => {
+  if (d.source.kind === 'reported')
+    return d.vocabularyId ? getVocabulary(d.vocabularyId, extra)?.options ?? [] : [];
   if (d.source.kind === 'spatial') return GEO_LAYERS.find((l) => l.id === d.source.ref)?.values ?? [];
   if (d.source.kind === 'historical')
     return [...(HISTORICAL_RULES.find((r) => r.id === d.source.ref)?.values ?? [])];
@@ -563,24 +776,32 @@ export interface OutstandingField {
   label: string;
 }
 
-/** What still stands between this measure and being publishable. */
+/**
+ * What still stands between this measure and being publishable.
+ *
+ * PER-ASPECT, AND NOTHING ABOUT DIMENSIONS. Each aspect owes a quantity, a
+ * unit and a counting rule; with more than one aspect the label says which,
+ * because "Unit" alone would send the author to the wrong row. Dimensions are
+ * deliberately absent: they are optional qualifiers now, and a gate that
+ * demanded one is exactly the forcing function that filled the observed
+ * catalogs with Default/Default filler (docs/measure-model.md, PM2). The old
+ * "Primary subcategory" requirement is retired with the primary itself.
+ */
 export const outstandingFields = (m: PerformanceMeasureDefinition): OutstandingField[] => {
+  // Page order — name, the About card (classifications, definition), then the
+  // form card (guidance preamble, per-aspect fields) — so any rendering of
+  // this list walks the column top to bottom.
   const missing: OutstandingField[] = [];
   if (!m.name.trim()) missing.push({ label: 'Measure name' });
-  if (!m.definition.trim()) missing.push({ label: 'Definition' });
   if (m.classifications.length === 0) missing.push({ label: 'Classifications' });
-  if (!m.quantity.trim()) missing.push({ label: 'Quantity' });
-  if (!m.unit) missing.push({ label: 'Unit' });
-  if (!m.countingRule) missing.push({ label: 'Counting rule' });
-  // Only an OUTPUT needs one. An outcome has no actor to name, so demanding a
-  // subcategory would block every outcome measure from ever publishing. The
-  // label is the record section's own word for it, verbatim — the UI's one
-  // noun for this concept is "subcategory"; "dimension" stays a data-model
-  // term and "category" is retired.
-  if (measureKind(m.kind).requiresPrimaryDimension && !primaryDimension(m)) {
-    missing.push({ label: 'Primary subcategory' });
-  }
+  if (!m.definition.trim()) missing.push({ label: 'Definition' });
   if (!m.reporterGuidance.trim()) missing.push({ label: 'Reporter guidance' });
+  m.aspects.forEach((aspect, index) => {
+    const at = m.aspects.length > 1 ? ` (amount ${index + 1})` : '';
+    if (!aspect.quantity.trim()) missing.push({ label: `Quantity${at}` });
+    if (!aspect.unit) missing.push({ label: `Unit${at}` });
+    if (!aspect.countingRule) missing.push({ label: `Counting rule${at}` });
+  });
   return missing;
 };
 
@@ -588,9 +809,57 @@ export const isReadyToPublish = (m: PerformanceMeasureDefinition): boolean =>
   outstandingFields(m).length === 0;
 
 /**
- * The readiness line rendered beside Save. ONE copy, shared by the page's
- * server render and the controller's live updates — two copies of this sentence
- * would drift, and the drifted one is always the one a reviewer reads.
+ * THE ANSWERABILITY LINE — what this measure costs a reporter and whether the
+ * questions can actually be answered, as one quiet sentence of facts.
+ *
+ * This is the compliance loop (product brief §0) made visible at authoring
+ * time: the admin's goal fails silently when the ask is heavy or unanswerable,
+ * so the form editor keeps this line under the form. FACTS, not verdicts — no
+ * score, no red ink. Two of the checks come straight from the evidence
+ * (docs/measure-model.md): a question whose vocabulary has fewer than two real
+ * options is the Default/Default filler pattern (PM2), and an escape option is
+ * the forced-choice artifact (PM7) — reported as information, since 41% of
+ * observed lists carry one and it is often the right call.
+ *
+ * `extra` carries browser-local vocabularies; the server render passes none.
+ */
+export const answerabilityLine = (
+  m: PerformanceMeasureDefinition,
+  extra: Vocabulary[] = [],
+): string => {
+  const asked = reportedDimensions(m);
+  const free = derivedDimensions(m).length;
+  const parts: string[] = [];
+
+  parts.push(
+    asked.length === 0
+      ? 'Asks the reporter nothing beyond the amounts'
+      : `Asks ${asked.length} question${asked.length === 1 ? '' : 's'} per entry`,
+  );
+  if (free > 0) parts.push(`${free} split${free === 1 ? '' : 's'} arrive free`);
+
+  const unanswerable = asked.filter((d) => dimensionValues(d, extra).filter((o) => o.trim()).length < 2).length;
+  if (unanswerable > 0)
+    parts.push(`${unanswerable} question${unanswerable === 1 ? '' : 's'} without answerable options yet`);
+
+  const ESCAPES = new Set(['unspecified', 'other', 'unknown', 'not applicable', 'n/a']);
+  const withEscape = asked.filter((d) =>
+    dimensionValues(d, extra).some((o) => ESCAPES.has(o.trim().toLowerCase())),
+  ).length;
+  if (withEscape > 0)
+    parts.push(
+      `${withEscape} list${withEscape === 1 ? '' : 's'} include${withEscape === 1 ? 's' : ''} an escape option`,
+    );
+
+  if (!m.reporterGuidance.trim()) parts.push('no reporter guidance yet');
+
+  return `${parts.join(' · ')}.`;
+};
+
+/**
+ * The readiness line rendered in the page header. ONE copy, shared by the
+ * page's server render and the controller's live updates — two copies of this
+ * sentence would drift, and the drifted one is always the one a reviewer reads.
  */
 export const outstandingLine = (n: number): string =>
   n === 0 ? 'Ready to publish' : `${n} setting${n === 1 ? '' : 's'} needed before publishing`;

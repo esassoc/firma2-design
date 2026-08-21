@@ -308,6 +308,7 @@ const kindOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
     MEASURE_STATUS_TONE,
     measureDisplayName,
     measureHref,
+    primaryAspect,
     reportedDimensions,
   } from '../../data/firma2-performance-measures';
   import { withBase } from '../../lib/base';
@@ -505,10 +506,10 @@ const kindOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
           valueFormatter: (p) => (p.value ? KIND_NAME.get(p.value) ?? p.value : UNSET),
         },
         // UNSET IS A REAL STATE, not a missing value. `classifications` is
-        // empty and `unit` and `countingRule` are undefined on a measure
-        // created from the one-question dialog, because it genuinely has not
-        // answered them yet. So a draft row carries an em dash in FOUR columns
-        // — Classifications,
+        // empty, and the first aspect's `unit` and `countingRule` are undefined
+        // on a measure created from the one-question dialog, because it
+        // genuinely has not answered them yet. So a draft row carries an em
+        // dash in FOUR columns — Classifications,
         // Quantity, Counting rule, Dimensions — and that is the point: it is a
         // measure someone started, and the row says exactly how far they got.
         // An empty cell would read as a rendering fault; an em dash reads as
@@ -541,11 +542,23 @@ const kindOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
         // does not say of what, "Treated extent" does not say measured how. The
         // separator is dropped rather than left dangling when either half is
         // missing, which is the unnamed draft's case — it has neither.
+        // EVERY aspect in one cell — "Treated extent (acres) · Biomass
+        // removed (tons)". One column rather than N: the catalog's realistic
+        // 1–2 aspects scan fine joined, and a second column would tax every
+        // single-aspect row for the multi-aspect few. The counting-rule column
+        // beside it still reads the FIRST aspect (primaryAspect) — the one
+        // sanctioned headline read.
         {
-          headerName: 'Quantity', field: 'quantity', colId: 'quantity', width: 175,
-          valueFormatter: (p) =>
-            [p.data?.quantity, p.data?.unit].filter(Boolean).join(' · ') || UNSET,
-          getQuickFilterText: (p) => `${p.data?.quantity ?? ''} ${p.data?.unit ?? ''}`.trim(),
+          headerName: 'Quantity', colId: 'quantity', width: 200,
+          valueGetter: (p) =>
+            (p.data?.aspects ?? [])
+              .map((a) => (a.quantity && a.unit ? `${a.quantity} (${a.unit})` : a.quantity || a.unit || ''))
+              .filter(Boolean)
+              .join(' · '),
+          valueFormatter: (p) => p.value || UNSET,
+          tooltipValueGetter: (p) => p.value || undefined,
+          getQuickFilterText: (p) =>
+            (p.data?.aspects ?? []).map((a) => `${a.quantity ?? ''} ${a.unit ?? ''}`).join(' '),
         },
         // The counting rule decides what a total MEANS, so the cell spends the
         // rule's whole name ("Union the mapped extent") rather than its stored
@@ -564,8 +577,9 @@ const kindOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
         // for everyone else, and it fails entirely on a draft, which has a kind
         // and no rule at all.
         {
-          headerName: 'Counting rule', field: 'countingRule', colId: 'countingRule', width: 180,
+          headerName: 'Counting rule', colId: 'countingRule', width: 180,
           headerTooltip: 'How entries combine into a total. Outputs sum or union; outcome readings supersede or average.',
+          valueGetter: (p) => (p.data ? primaryAspect(p.data)?.countingRule ?? '' : ''),
           comparator: rankBy(COUNTING_RULE_ORDER),
           valueFormatter: (p) => (p.value ? COUNTING_RULE_NAME.get(p.value) ?? p.value : UNSET),
         },

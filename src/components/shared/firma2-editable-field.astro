@@ -151,6 +151,16 @@ interface Props {
    * worse than none.
    */
   href?: string;
+  /**
+   * What the display shows, in unset ink, while the field holds NO value — an
+   * invitation ("Add a definition"), not data. A drafted record's empty field
+   * is a real state the rail has to render without red asterisks or an empty
+   * 40px box a reader cannot see. The word rides on the row (data-placeholder)
+   * so a commit that empties the field re-paints it, and the editor still
+   * opens EMPTY — the placeholder is never the value. Omit on fields where
+   * blank should simply read blank (the project rows all omit it).
+   */
+  placeholder?: string;
 }
 
 const {
@@ -168,7 +178,13 @@ const {
   labelHidden = false,
   required = false,
   href,
+  placeholder,
 } = Astro.props;
+
+// The display's unset state, decided the same way the script re-decides it on
+// commit: no scalar value AND no set members. `value` may legitimately be
+// whitespace on a drafted record, so trim before judging.
+const showsPlaceholder = Boolean(placeholder) && !value.trim() && values.length === 0;
 
 // `dl-pair` is the shape firma2-project-facts already renders — a <div> grouping a
 // <dt> and a <dd>, which is the spec's own grouping form for a <dl> and what makes
@@ -234,6 +250,7 @@ const hintId = `f2-edit-hint-${field}`;
   data-required={required ? '' : undefined}
   data-link={href ? '' : undefined}
   data-member-cards={Object.keys(memberCards).length ? JSON.stringify(memberCards) : undefined}
+  data-placeholder={placeholder || undefined}
   data-label-hidden={labelHidden ? '' : undefined}
   data-adopt-display={adopts ? '' : undefined}
   hidden={adopts || undefined}
@@ -325,12 +342,18 @@ const hintId = `f2-edit-hint-${field}`;
         data-field-display
         aria-describedby={hintId}
       >
-        <span class="firma2-editable-field__value" data-field-value>
+        <span
+          class:list={[
+            'firma2-editable-field__value',
+            showsPlaceholder && 'firma2-editable-field__value--unset',
+          ]}
+          data-field-value
+        >
           {yearParts ? (
             <Fragment>
               {yearParts[0]}<span aria-hidden="true">–</span><span class="visually-hidden"> to </span>{yearParts[1]}
             </Fragment>
-          ) : value}
+          ) : showsPlaceholder ? placeholder : value}
         </span>
       </button>
     )}
@@ -596,6 +619,13 @@ const hintId = `f2-edit-hint-${field}`;
   .firma2-editable-field__display [data-field-value] {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  /* UNSET — the row is showing its placeholder, not a value. Secondary ink,
+     the same channel every unset state on these pages uses (never hue alone,
+     and never a fainter grey than the 4.5:1 secondary step). The class rides
+     the value span and the script re-decides it on every commit. */
+  .firma2-editable-field__value--unset {
+    color: var(--color-content-default-secondary, #646464);
   }
   /* A textarea row's display is a PARAGRAPH, not a line: the box it quotes is
      the textarea's — same edge padding on all sides, height from the text
@@ -1009,6 +1039,21 @@ const hintId = `f2-edit-hint-${field}`;
   };
 
   /**
+   * Re-render a committed scalar into the display, honouring the row's
+   * placeholder: an emptied field shows its invitation in unset ink rather
+   * than a blank 40px box, and a filled one drops the unset class. One
+   * function, three callers (text commit, the empty-set case, field-set), so
+   * the build-time render and every later repaint agree about what "empty"
+   * looks like.
+   */
+  const paintText = (row: HTMLElement, display: HTMLElement, next: string): void => {
+    const placeholder = row.dataset.placeholder ?? '';
+    const unset = !next && Boolean(placeholder);
+    display.textContent = unset ? placeholder : next;
+    display.classList.toggle('firma2-editable-field__value--unset', unset);
+  };
+
+  /**
    * Re-render a committed year range into the display.
    *
    * Built from nodes rather than a string of HTML — there is no escaping to get
@@ -1224,6 +1269,12 @@ const hintId = `f2-edit-hint-${field}`;
       const changed = nextRaw !== row.dataset.raw;
       row.dataset.raw = nextRaw;
       paintMembers(row, display, sorted);
+      // A set edited down to nothing shows its placeholder like a scalar would
+      // — paintMembers has just blanked the box, and a blank box beside a
+      // label is a row a reader cannot tell is editable. Growing back clears
+      // the unset ink paintText may have left on the box.
+      if (sorted.length === 0) paintText(row, display, '');
+      else display.classList.remove('firma2-editable-field__value--unset');
       // An EMPTY set commits like a blank county: a record whose goals have not
       // been entered yet is a real state, not an error.
       if (changed) announceSave(row, sorted.join(', '));
@@ -1253,9 +1304,63 @@ const hintId = `f2-edit-hint-${field}`;
 
     const changed = next !== row.dataset.raw;
     row.dataset.raw = next;
-    display.textContent = next;
+    paintText(row, display, next);
     if (changed) announceSave(row, next);
     closeEdit(row, refocus);
+  };
+
+  /**
+   * SET FROM OUTSIDE — `firma2:field-set` on document, {field, raw}. The one
+   * write path a CONTROLLER gets: a page restoring a stored draft has values
+   * the server-rendered rows never saw, and reaching into this component's DOM
+   * to repaint them would duplicate every format branch above. This routes the
+   * value through the same paints a commit uses — and announces through the
+   * same firma2:field-save when the value actually changed, so the mirrors a
+   * commit updates (breadcrumb, tab title, the page's own listeners) update
+   * here too. An OPEN row is left alone: a restore must never re-seed a field
+   * out from under whatever is being typed into it.
+   */
+  const setField = (field: string, raw: string): void => {
+    const row = document.querySelector<HTMLElement>(
+      `[data-editable-field][data-field="${CSS.escape(field)}"]`,
+    );
+    if (!row || isEditing(row)) return;
+    const display = valueOf(row);
+    if (!display) return;
+    const changed = raw !== row.dataset.raw;
+    row.dataset.raw = raw;
+    const control = row.dataset.control ?? 'text';
+    if (control === 'year-range') {
+      const [start = '', end = ''] = raw.split(',').map((s) => s.trim());
+      paintYearRange(display, start, end);
+      if (changed) announceSave(row, `${start}–${end}`);
+    } else if (control === 'multi-select') {
+      let members: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed)) members = parsed.map(String);
+      } catch {
+        members = [];
+      }
+      paintMembers(row, display, members);
+      if (members.length === 0) paintText(row, display, '');
+      else display.classList.remove('firma2-editable-field__value--unset');
+      if (changed) announceSave(row, members.join(', '));
+    } else if (row.dataset.format === 'currency') {
+      const amount = Number(raw);
+      display.textContent = Number.isFinite(amount) ? currencyFormatter.format(amount) : raw;
+      if (changed) announceSave(row, display.textContent ?? '');
+    } else {
+      paintText(row, display, raw);
+      if (changed) announceSave(row, raw);
+    }
+  };
+
+  const onFieldSet = (event: Event): void => {
+    const detail = (event as CustomEvent<{ field?: unknown; raw?: unknown }>).detail ?? {};
+    if (typeof detail.field === 'string' && typeof detail.raw === 'string') {
+      setField(detail.field, detail.raw);
+    }
   };
 
   /**
@@ -1546,6 +1651,7 @@ const hintId = `f2-edit-hint-${field}`;
     document.addEventListener('change', onChange);
     document.addEventListener('click', onClick);
     document.addEventListener('keydown', onKeydown, true);
+    document.addEventListener('firma2:field-set', onFieldSet);
     document.addEventListener('astro:page-load', () => hydrate());
   }
   hydrate();
