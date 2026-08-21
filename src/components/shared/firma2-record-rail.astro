@@ -1,0 +1,186 @@
+---
+// firma2-record-rail — the record rail: a real full-height sidebar pinned to the
+// trailing edge of the content pane, holding whatever a reader needs kept in
+// reach for the whole page. Shared by every record screen in this spoke.
+//
+// TWO PAGES, TWO CONTENTS, ONE JOB. The project detail page puts the record's
+// index card in here — the scalars a reader cannot read the numbers without. The
+// measure setup page puts WHAT EACH ENTRY RECORDS in here — the block being
+// built, which every other zone on that page is defined against. Different
+// content, same argument: it is the thing you keep looking back at, so it stops
+// scrolling away. What goes in is the page's business; this file owns only the
+// pinning, the surface and the width arithmetic.
+//
+// IT TAKES A SLOT AND NOTHING ELSE, which is what makes that sharing honest. The
+// project page slots firma2-rail-section blocks; the measure page slots a form.
+// Neither had to be taught about the other.
+//
+// WHAT IT REPLACED, AND WHY THAT MATTERS. On the project page this content had
+// been in three places: a column of cards inside the `.sidebar` primitive, then a
+// panel floating over the full-bleed map, and now a rail. The floating panel is
+// the one worth writing down, because it looked right and was wrong for a reason
+// that is easy to talk yourself out of: a panel over a map COVERS MAP, so the map
+// had to be told to frame its shapes around the panel, and the panel had to be
+// told to stop at the map's bottom edge. Two components negotiating where the
+// content is allowed to be is a layout that will keep costing, and it bought
+// nothing the reader could name. A rail owns its column outright.
+//
+// IT HOLDS THE FOLD. `position: sticky` with `top: 0` and an explicit 100dvh —
+// the same construction, for the same reason, that AppLayout uses on the app's
+// nav rail. Both halves are load-bearing: stretched to a grid or flex area as
+// tall as the page a sticky box has nowhere to travel and never appears to
+// stick, so `align-self: start` takes it out of the stretch and the explicit
+// viewport height is what fills the column it just gave up.
+//
+// SO THE RECORD IS NEVER MORE THAN A GLANCE AWAY. That is the whole argument for
+// pinning it. This page runs four sections and several screens; a reader looking
+// at the expenditure table two screens down is reading numbers that mean nothing
+// without the estimated total cost, and until now that number scrolled away with
+// the first screen. The rail is where the numbers a reader needs to READ the page
+// live, so it stays for as long as the page does.
+//
+// WHAT BELONGS IN IT: scalars — facts that can be corrected but have no history
+// worth reading. What does not: anything with a series behind it. Measures,
+// expenditures and milestones stay in the main column because their account over
+// time is the reason the page exists, and a 22rem column cannot hold a table
+// with four columns and a chart.
+//
+// bcn-lego-checked: no esa- lego is a page-level rail. Walked the catalog
+// (`ls node_modules/@esa/ecology/src/components/`): esa-sidebar-nav is the APP's
+// navigation rail — it takes a nav model, renders links, owns a collapse state
+// and a brand slot, and AppLayout already renders one on the other edge of this
+// screen; esa-side-dialog is a transient overlay that opens and closes over the
+// page rather than a surface the page is laid out around; esa-card is what goes
+// IN here, not what this is. The `.sidebar` layout primitive is the right lego
+// for the two-column arrangement and the page uses it — but it is a LAYOUT, not
+// a surface: it sizes tracks and exposes no alignment knob (already filed in the
+// improvement ledger), so the pinning and the surface have to live on the aside
+// itself. Beacon is not cloned on this machine. This file is the reusable home
+// for the pattern; a second record page with a rail composes it rather than
+// restating these rules.
+---
+<!-- An <aside>, so a screen reader announces a complementary landmark and offers
+     to skip past it in a keystroke. No aria-label: the region is immediately
+     followed by its own "Key facts" heading and there is only one complementary
+     region in the page's content, so a name here would be that heading said
+     twice. -->
+<aside class="firma2-record-rail">
+  <!-- THE STACK IS INSIDE, NOT ON THE ASIDE. The aside is the scroll container —
+       it has to be, because it is the box with the fixed height — and a scroll
+       container that is also the flex column would put its padding INSIDE the
+       scrolled area, so the last card's bottom padding would only appear once
+       you had scrolled to it. An inner stack keeps the padding on the frame and
+       the rhythm on the content.
+
+       `xl` matches the card-to-card rhythm the main column keeps, so the two
+       columns read at one interval rather than each at its own. -->
+  <div class="firma2-record-rail__inner stack" data-gap="xl">
+    <slot />
+  </div>
+</aside>
+
+<style>
+  .firma2-record-rail {
+    /* The content pane's own padding, which this rail has to reach through on
+       two edges to sit flush in the corner of the app frame. It is the shell's
+       literal (esa-app-shell.astro `padding: var(--spacing-500)`), not a hook the
+       pane exposes — the same value firma2-page-header restates for the same
+       reason, and the same /request-lego would retire both. */
+    --_bleed: var(--spacing-500, 1.5rem);
+
+    /* HOLDS THE FOLD. See the module header: both declarations are required, and
+       `align-self` is the one that is easy to drop and hard to debug — without
+       it the flex parent stretches this to the full page height and a sticky box
+       with nowhere to travel simply never sticks. */
+    position: sticky;
+    top: 0;
+    align-self: start;
+    block-size: 100dvh;
+
+    /* ABOVE THE MAP, UNDER THE HEADER BAND. --z-sidebar is the role, and it is
+       the correct one twice over: this IS a sidebar, and the app's own nav rail
+       on the opposite edge sits at the same rung. Nothing on the page needs to
+       be painted over: the map and the band each bleed one step past their
+       column, which is exactly the layout's gutter, so both stop ON this edge
+       rather than under it. The rung is claimed so that a future full-bleed
+       neighbour lands the right way round without a second argument about it. */
+    z-index: var(--z-sidebar, 100);
+
+    /* REACHES THROUGH THE PANE'S PADDING on the two edges that meet the frame:
+       up to the top of the viewport, out to the window's right edge. The block
+       axis only needs the start — the rail is 100dvh and sticky, so its end
+       lands on the fold on its own. */
+    margin-block-start: calc(var(--_bleed) * -1);
+    margin-inline-end: calc(var(--_bleed) * -1);
+    padding: var(--_bleed);
+
+    /* THE CARDS INSIDE COME OUT AT 22rem, which is what they were written for
+       and what they measured in every previous arrangement. The arithmetic is
+       worth stating because it is the reason the page passes --sidebar-width:
+       25rem for a 22rem rail — and because the obvious version of it is wrong.
+       A negative margin does NOT widen a box; it lets the box overflow its
+       track. So the bleed contributes nothing to the width and the whole of the
+       padding comes out of the track: 25rem − 3rem of padding − 1px of border
+       lands the cards at 351px, which is 22rem to within a rounding step. */
+    box-sizing: border-box;
+
+    /* THE RECORD CAN BE TALLER THAN THE FOLD, and a rail that simply overran
+       would push its last card off the bottom of the screen with no way to reach
+       it. overscroll-behavior stops that scroll from chaining into the document
+       once it bottoms out — on a screen whose main column is a map, a scroll
+       that escapes the rail takes the reader somewhere they did not ask to go. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    /* A SURFACE, NOT A GUTTER — this is what makes it read as a rail rather than
+       as a column of cards that happen to be on the right. The hairline goes on
+       the one edge that faces content; nothing on the outer three, which meet
+       the window rather than the page.
+
+       ONE STEP OFF THE PAGE, NOT TWO — AND IT IS A TIER-1 READ, KNOWINGLY. This
+       started at `elevation-raised` (gray-1), which is the CANVAS value, so the
+       rail was invisible; it then went to `elevation-sunken` (gray-3), which was
+       a surface but a heavy one, sized for a well with cards floating in it. The
+       sections in here are no longer cards, so there is nothing to float and
+       gray-3 reads as a grey slab beside a pale map.
+       gray-2 is the step between, and there is NO SEMANTIC ROLE ON IT: the
+       background ramp runs raised/floating at gray-1 and sunken at gray-3, and
+       nothing in @esa/tokens resolves to gray-2. So this reaches past tier 2 to
+       the primitive, which is normally the wrong move and is the wrong move here
+       too — the right fix is a fourth rung on the elevation axis for chrome that
+       sits beside content rather than under it (a rail, a toolbar, a sidebar),
+       and it is worth a /request-lego. Until that lands, the choice is a raw
+       ramp step or a wrong role, and a documented tier-1 read is the more honest
+       of the two. Re-point this the day the rung exists. */
+    background: var(--color-gray-2, #f9f9f9);
+    border-inline-start: var(--border-width-default, 1px) solid
+      var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  /* WHEN THE PRIMITIVE WRAPS, THE RAIL STOPS BEING A RAIL. `.sidebar` drops its
+     aside below the content on its own once the main column cannot hold
+     --sidebar-content-min, and a 100dvh sticky box that has just become
+     full-width would eat an entire screen on its way past. So the pinning, the
+     height and the surface all come off and it goes back to being what it is at
+     that width: two cards under the page.
+
+     A VIEWPORT QUERY IS AN APPROXIMATION OF A CONTAINER ONE, and knowingly so:
+     the primitive wraps on ITS width, not the window's, and the app's nav rail
+     between them can be collapsed. 64rem is the window width at which the page
+     sets the wrap going with the rail's own track and the nav expanded — the
+     conservative end. A container query is the correct tool and needs
+     `container-type: inline-size` on the `.sidebar` element, which belongs to
+     the primitive in the hub rather than to this file. */
+  @media (max-width: 64rem) {
+    .firma2-record-rail {
+      position: static;
+      block-size: auto;
+      margin-block-start: 0;
+      margin-inline-end: 0;
+      padding: 0;
+      overflow: visible;
+      background: none;
+      border-inline-start: none;
+    }
+  }
+</style>

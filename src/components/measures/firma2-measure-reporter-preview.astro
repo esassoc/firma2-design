@@ -1,113 +1,159 @@
 ---
 // firma2-measure-reporter-preview — the ARTIFACT panel of a performance
-// measure's setup page: the data-entry form a project will see when it reports
-// this measure, rendered from the definition above it.
+// measure's setup page: the form somebody will actually fill in to report this
+// measure, and, beside it, what the system fills in unasked.
+//
+// SOMEBODY, not "the project", because that depends on the measure's KIND. An
+// output is filed by the project that did the work; an outcome is filed by a
+// monitoring effort about a place, and saying otherwise on this panel would
+// teach an admin the wrong model of their own data.
 //
 // WHY AN ARTIFACT PANEL AT ALL. Every other section on this page collects the
-// DEFINITION — name, unit, aggregation, subcategories. None of them shows what
-// the definition PRODUCES. In ProjectFirma what a measure definition produces
-// is a reporting form, and the admin authoring the definition never sees it.
-// This panel is the only place they do.
+// DEFINITION — name, quantity, counting rule, dimensions. None of them shows
+// what the definition PRODUCES. What a measure definition produces is a form
+// somebody has to fill in, several times a season, and the admin authoring the
+// definition never sees it. This panel is the only place they do.
 //
-// THE SUBCATEGORY MULTIPLICATION IS THE WHOLE REASON THIS EXISTS. Subcategories
-// are collected one at a time, as a list of names, each with its own option
-// list — a shape that reads as additive. It is not: the options MULTIPLY. Add
-// "Burn type" (4 options), then add "Ownership" (4 options), and you have not
-// asked for eight numbers, you have asked for sixteen, every quarter, from
-// every project reporting the measure. Nothing in the product says so until
-// reporters complain, months later, to someone who is not the person who
-// clicked Add. The cell count below is that fact, delivered at authoring time.
+// WHAT IT USED TO SHOW, AND WHY THAT WAS WRONG. The previous version crossed
+// every subcategory with every other and drew the cartesian product as a filled
+// matrix — "16 values per reporting period", with an alert box when the grid got
+// big. Reporting is not a filled grid. It is SPARSE ROWS: a project that only
+// ran broadcast burns on federal ground files ONE entry, and the fifteen other
+// cells never existed. The matrix took a cheap feature and made it look
+// punishing, so it is gone — product, cell count, alarm and all.
+//
+// WHAT IT SHOWS NOW IS A CONTRAST, and the contrast IS the design argument. A
+// dimension declares a SOURCE (see the data module's header): `reported` means a
+// person picks it, `spatial` / `historical` / `record` mean the system derives
+// it for free. So the panel is two blocks with a rule between them — the
+// questions a reporter is asked, then what arrives without being asked — drawn
+// as opposites so the difference survives a glance: entry answers sit in sunken
+// wells (a slot someone fills), derived answers are plain text (already known).
+// Below them both, once, the trade as a datum: questions per entry against
+// dimensions on the report.
+//
+// THE FORM IT DRAWS FORKS WITH THE MEASURE'S KIND, which is the point of having
+// a preview at all — an admin who picked "outcome" in the create dialog finds
+// out here what that answer bought them. An OUTPUT opens with "what did you
+// do": the primary reported dimension, then the place, the amount, and the
+// dimensions that qualify it. An OUTCOME has no such question, because nobody
+// DID a survival rate; it is a reading, so it opens with WHERE and WHEN and its
+// reported dimensions qualify the reading instead. The lower block forks with
+// it: an output's spatial rows ALLOCATE the quantity (18 acres inside, 2
+// outside), an outcome's classify the monitoring location and carry no amounts,
+// because a rate is not made of parts. The two forms are visibly different
+// objects, which is what makes the fork something an admin can trust rather
+// than a flag on a record. All of that shape lives in the renderer (see below);
+// this file frames it and never decides it.
 //
 // AND IT IS DELIVERED WHILE THE ADMIN IS STILL DECIDING. This panel was a pure
-// build-time render until it wasn't: the admin added a subcategory in the config
-// rail and the grid, the count and the large-grid note all stayed on the
-// previous answer. A preview that reports the state of the record as of the last
-// deploy is worse than no preview, because it is confidently wrong at exactly
-// the moment it is being consulted. It now re-renders from the working record on
-// MEASURE_CHANGE_EVENT (see the script at the foot of the file).
+// build-time render until it wasn't: the admin changed a dimension's source in
+// the config rail and the panel stayed on the previous answer. A preview that
+// reports the state of the record as of the last deploy is worse than no
+// preview, because it is confidently wrong at exactly the moment it is being
+// consulted. It re-renders from the working record on MEASURE_CHANGE_EVENT (see
+// the script at the foot of the file).
 //
 // THE MARKUP IS NOT IN THIS FILE. It is in ../../lib/measure-reporter-preview.ts,
 // with the model that feeds it, and both this component and the client script
-// call the SAME renderer. Writing the table twice — once in the template for the
+// call the SAME renderer. Writing the panel twice — once in the template for the
 // server render, once in a script for the update — is the one failure mode a
 // change like this has, and it is silent: the copies stay identical until the
 // first fix lands in one of them. Read that module's header for the rest of the
-// reasoning; everything below is the frame around its output.
+// reasoning, including why the spatial split is drawn as an allocation and how
+// its numbers are derived rather than rolled; everything below is the frame
+// around its output.
 //
-// SUBTRACTIVE. This panel shows only what a REPORTER would see: the measure's
-// name, the period, the guidance, the value slots, the roll-up. It does not
-// restate the definition, the program, the data type, the required flag or the
-// project count — sibling cards own all of those, and a second copy here would
-// be the same fact twice on one screen.
+// SUBTRACTIVE. This panel shows only what a REPORTER would meet: the measure's
+// name, the guidance, the questions, the derived values. It does not restate the
+// definition, the program, the counting rule, the status or the project count —
+// sibling cards own all of those, and a second copy here would be the same fact
+// twice on one screen.
 //
-// bcn-lego-checked: the value slots and the matrix are hand-built, and both
-// needed the lookup.
-//   (1) THE TABLE. Ecology has no table/data-grid lego — checked the full
-//       node_modules/@esa/ecology/src/components catalog; esa-grid is a
-//       documentation page for Beacon's Angular AG Grid wrapper with no .astro
-//       or .ts to import. The spoke's established tabular surface is AG Grid
-//       (see firma2-project-grid's own bcn-lego-checked), and it is the wrong
-//       tool here: this is a fixed matrix of at most a few dozen static cells
-//       with no sorting, filtering, virtualisation or selection, and shipping a
-//       grid runtime to draw it would cost more than the page it decorates. A
-//       semantic <table> with token-driven CSS is the correct primitive — it is
-//       genuinely tabular data (two subcategories crossed), and it is the only
-//       construction that gives a screen-reader user the row AND column heading
-//       with each cell.
-//   (2) THE VALUE SLOTS ARE NOT esa-text-field, ON PURPOSE. esa-text-field is
-//       the right lego for a field a person types in. Nothing here is. See the
-//       INERT note below — a preview made of real (even disabled) inputs is a
-//       preview that lies about itself and litters the tab order.
+// bcn-lego-checked: the value cells, the two label/value lists and the
+// allocation list are hand-built, and each needed the lookup.
+//   (1) THE VALUE CELLS ARE NOT esa-text-field / esa-select, ON PURPOSE.
+//       Those are the right legos for a field a person operates. Nothing here is
+//       one. See the INERT note below — a preview made of real (even disabled)
+//       controls is a preview that lies about itself and litters the tab order.
+//   (2) NO TABLE, AND NO GRID LEGO EITHER. Checked the full
+//       node_modules/@esa/ecology/src/components catalog: there is no
+//       table/description-list lego, and esa-grid is a documentation page for
+//       Beacon's Angular AG Grid wrapper with no .astro or .ts to import. AG
+//       Grid — this spoke's established tabular surface — is the wrong tool
+//       twice over: this is not tabular data any more (the matrix is what got
+//       deleted), it is a handful of label/value pairs, and shipping a grid
+//       runtime to draw eight rows would cost more than the page it decorates.
+//       A <dl> is the correct primitive: these ARE terms and their values, and
+//       a two-column CSS grid over dt/dd is the standard way to align one. It
+//       is not a reinvented layout primitive — layouts.css's `.grid` is a
+//       responsive auto-fit card track, a different job — and the primitives
+//       that DO fit are used as-is: `.stack` for the blocks, `.cluster` for the
+//       allocation parts and the cost line.
 //   (3) THE MARKUP IS BUILT AS A STRING, which the component-first rule treats
-//       with the same suspicion as bespoke CSS, and correctly. The two legos
-//       this panel does use are still legos: esa-collapsible frames it and
-//       esa-alert-box carries the large-grid note, and neither is reproduced in
-//       a template literal — the alert box is rendered once, here, and the
-//       script toggles that instance rather than emitting a copy of its chrome.
-//       What the string renderer draws is only the <table> and the wells from
-//       (1) and (2), which have no lego to reinvent.
+//       with the same suspicion as bespoke CSS, and correctly. The one lego this
+//       panel uses is still a lego, and is NOT reproduced in a template literal:
+//       esa-collapsible frames the panel here, in the template, and the renderer
+//       only ever writes inside it.
+//   (4) esa-alert-box IS GONE, not replaced. It carried the large-grid alarm,
+//       and the alarm was the misrepresentation this rewrite removes. Nothing
+//       about a measure's shape warrants an alert now: a measure with six
+//       dimensions and two questions is the GOOD case.
 // Beacon is not cloned on this machine, so tier 2 is unavailable.
 //
-// THE FIELDS ARE INERT BY CONSTRUCTION, NOT BY ATTRIBUTE — the single most
-// important call in this file. Three mechanisms were on the table:
-//   - `disabled` inputs. Removed from the tab order, but they render in the
+// THE FIELDS ARE INERT BY CONSTRUCTION, NOT BY ATTRIBUTE — still the single most
+// important call in this file, and the rewrite does not get to erode it. Three
+// mechanisms were on the table:
+//   - `disabled` controls. Removed from the tab order, but they render in the
 //     disabled palette, which in this design system means "this control is
 //     unavailable to you right now" — a temporary, fixable state. That is a
 //     different claim from "this is a picture of somebody else's form", and it
 //     also collides with the house rule against greying dense text out.
-//   - `inert` on a wrapper of real esa-text-fields. Correct semantics, but it
-//     boots a Lit custom element per cell (up to a few dozen) purely as
-//     decoration, and an `inert` subtree is invisible to assistive tech — a
-//     screen-reader user would be told the panel is empty, when in fact its
-//     shape is exactly the information they came for.
-//   - What is built here: NON-INTERACTIVE CELLS THAT SHOW THE FORMAT MASK.
-//     Each slot is a <td> holding the value notation the definition produces
-//     ("0.0", "0%", "$0.00" — derived from dataType and decimalPlaces), drawn
-//     in a sunken well rather than a field's raised fill. Zero tab stops, zero
-//     controls, nothing to submit — and every cell still reads to a screen
-//     reader as real content inside a properly headed table, so the shape of
-//     the form survives non-visually. The format mask is not fabricated data:
-//     it IS the admin's decimalPlaces choice, made visible.
-//   Live re-rendering does not get to erode this. The update path replaces the
-//   same wells with the same wells; it never grows an editable cell.
+//   - `inert` on a wrapper of real esa-text-fields and esa-selects. Correct
+//     semantics, but it boots a Lit custom element per row purely as decoration,
+//     and an `inert` subtree is invisible to assistive tech — a screen-reader
+//     user would be told the panel is empty, when in fact its shape is exactly
+//     the information they came for.
+//   - What is built here: NON-INTERACTIVE CELLS. Each answer is a <span> in a
+//     sunken well rather than a control's raised fill. Zero tab stops, zero
+//     controls, nothing to submit, no caret glyph borrowed from a select — and
+//     every cell still reads to a screen reader as real content inside a
+//     properly associated <dl>, so the shape of the form survives non-visually.
+//   The panel now has NO tab stop at all (the old horizontal scroller went with
+//   the matrix), which is why the update path below needs no focus restoration:
+//   there is nothing inside it focus can be sitting on.
 //
-// DEGRADES ON A BLANK DRAFT, DELIBERATELY. `draft-untitled-number-measure` has
-// no name, no unit, no subcategories and no guidance. It renders as a titled
-// form with one value slot and one line of meta — because that IS the honest
-// preview of a Number measure with nothing else set, and because a measure you
-// have not finished is the normal state of this page, not an error. No empty
-// state, no "complete the definition first" gate. The readiness card next door
-// already owns what is outstanding; this panel just shows the current answer.
-// That is now doubly true: on the blank draft this panel is the surface the
-// admin watches fill in as they type, so the degraded render is the FIRST thing
-// they see, not an edge case.
+// THE WORKED NUMBERS ARE LABELLED AS SUCH. Showing an allocation requires a
+// quantity to allocate, so this preview carries example values where the old one
+// carried format masks. That is a real risk the old design did not have — an
+// admin reading "Federal 20 acres" as a figure from a live project has been
+// misled — so the renderer prints one short line saying it is an example, and
+// that same line names who files the real one ("the project", or "a monitoring
+// effort, about a place", read straight off measureKind()). The numbers
+// themselves are deterministic and derived from the record (see the module
+// header): no Math.random(), no clock, identical on every build.
+//
+// DEGRADES ON A BLANK DRAFT, DELIBERATELY — AND THE TWO BLANKS DIFFER. There is
+// one empty draft per kind, because the create dialog routes on the fork, and
+// they do not render alike:
+//   - `draft-untitled-output` has nothing decided and therefore asks nothing.
+//     A titled panel, the cost line reading zero, and NOTHING under it: no
+//     heading over an empty list, no empty state, no "complete the definition
+//     first" gate.
+//   - `draft-untitled-outcome` still asks WHERE and WHEN, under "Add reading",
+//     and its cost line reads two questions against zero dimensions. Those two
+//     are not authored dimensions the draft is missing — they are the frame of
+//     any reading, so an outcome has them before its author has typed a word.
+// Both are honest previews of a measure with nothing decided, and both look
+// deliberate rather than broken. A measure you have not finished is the normal
+// state of this page rather than an error; the readiness card next door already
+// owns what is outstanding.
 import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
-import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
 import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
 import {
   buildReporterPreviewModel,
-  renderReporterPreviewBody,
-  renderReporterPreviewHead,
+  renderReporterPreview,
+  PREVIEW_COUNT_ATTR,
   PREVIEW_PANEL_TITLE,
   PREVIEW_ROOT_ATTR,
 } from '../../lib/measure-reporter-preview';
@@ -119,11 +165,10 @@ interface Props {
 
 const { measure } = Astro.props;
 
-// The build-time render. The client script calls these same three lines on every
+// The build-time render. The client script calls these same two lines on every
 // change; nothing about the shape is decided here.
 const model = buildReporterPreviewModel(measure);
-const headHtml = renderReporterPreviewHead(model);
-const bodyHtml = renderReporterPreviewBody(model);
+const bodyHtml = renderReporterPreview(model);
 ---
 
 {/*
@@ -131,63 +176,38 @@ const bodyHtml = renderReporterPreviewBody(model);
   in-page navigation can reach the panel, and stays role=generic on purpose:
   this page already stacks several named card sections, and one more landmark
   whose name repeats the disclosure summary two lines below it adds a stop to
-  the landmark list without adding a destination. (Same reasoning, same shape, as
-  firma2-measure-subcategories.)
+  the landmark list without adding a destination.
 */}
 <section id="reporter-preview">
   {/*
     Bordered, not `flush`. The flush variant exists for stacked drawer sections
     separated by the host's own dividers; this panel sits on the setup page
-    beside the esa-card sections, and an unframed block among framed ones reads as
-    something that failed to load. `open` because a preview nobody opens is a
-    preview nobody reads — the entire value of this panel is that the cell count
-    is on screen before the admin leaves the page.
+    beside the esa-card sections, and an unframed block among framed ones reads
+    as something that failed to load. `open` because a preview nobody opens is a
+    preview nobody reads — the whole value of this panel is that the trade is on
+    screen before the admin leaves the page.
 
     THE DISCLOSURE IS NEVER RE-RENDERED. esa-collapsible is a native
     <details open>, so its open/closed state is an attribute on an element the
-    update path does not touch: the script writes into the two containers INSIDE
-    the body and nothing above them. A panel the admin collapsed stays collapsed
-    while they keep editing, and one they opened does not snap shut on the next
+    update path does not touch: the script writes into the container INSIDE the
+    body and nothing above it. A panel the admin collapsed stays collapsed while
+    they keep editing, and one they opened does not snap shut on the next
     keystroke — which is what re-rendering the whole panel would have done.
   */}
   <EsaCollapsible title={PREVIEW_PANEL_TITLE} icon="file-text" open>
+    {/*
+      ONE container, which is both the styling root and the write target. The
+      previous version needed three (head, alert, body) so an esa-alert-box
+      instance could survive between them; with the alarm deleted there is no
+      lego inside the render area, so there is nothing an innerHTML swap can
+      destroy — and one container is one place for a future reader to look.
+    */}
     <div
       class="firma2-reporter-preview stack"
       data-gap="md"
-      {...{ [PREVIEW_ROOT_ATTR]: measure.slug }}
-      data-cell-count={String(model.cellCount)}
-    >
-      {/*
-        Three children, not one, because the esa-alert-box between them is a lego
-        instance that has to survive the update rather than be regenerated. Head
-        and body are the renderer's output; the alert is rendered once and
-        toggled. Each wrapper is its own `stack` at the same gap, so the seams are
-        invisible: the spacing is identical to one flat stack, and a hidden alert
-        contributes no gap because `.stack` spaces with `gap`, not margins.
-      */}
-      <div class="stack" data-gap="md" data-firma2-preview-head set:html={headHtml} />
-
-      {/*
-        Above the grid, not below it. The box elaborates the count line it
-        follows, and a sixteen-cell table pushes anything underneath it off the
-        bottom of the panel — a note about the size of a thing has to arrive
-        before the thing, or it arrives after the reader has stopped looking.
-
-        Present-but-hidden rather than conditionally rendered, so the update path
-        has one instance of the lego to reveal instead of a second copy of its
-        chrome to emit. `live` stays off (its default): the box is in the initial
-        HTML, so there is no injection for a live region to report, and the one
-        thing here worth announcing is announced once, deliberately, in the
-        script below — not by four separate regions competing.
-      */}
-      <div data-firma2-preview-alert hidden={model.largeGridNote === null}>
-        <EsaAlertBox variant="info" title="Large grid">
-          <span data-firma2-preview-alert-text>{model.largeGridNote}</span>
-        </EsaAlertBox>
-      </div>
-
-      <div class="stack" data-gap="md" data-firma2-preview-body set:html={bodyHtml} />
-    </div>
+      {...{ [PREVIEW_ROOT_ATTR]: measure.slug, [PREVIEW_COUNT_ATTR]: String(model.questionCount) }}
+      set:html={bodyHtml}
+    />
   </EsaCollapsible>
 </section>
 
@@ -196,23 +216,23 @@ const bodyHtml = renderReporterPreviewBody(model);
   import { MEASURE_CHANGE_EVENT, type MeasureChangeDetail } from '../../lib/measure-draft';
   import {
     buildReporterPreviewModel,
-    renderReporterPreviewBody,
-    renderReporterPreviewHead,
-    PREVIEW_ALERT_SELECTOR,
-    PREVIEW_ALERT_TEXT_SELECTOR,
-    PREVIEW_BODY_SELECTOR,
-    PREVIEW_HEAD_SELECTOR,
+    renderReporterPreview,
+    PREVIEW_COUNT_ATTR,
     PREVIEW_PANEL_TITLE,
     PREVIEW_ROOT_ATTR,
     PREVIEW_ROOT_SELECTOR,
-    PREVIEW_SCROLLER_SELECTOR,
   } from '../../lib/measure-reporter-preview';
 
-  // THE SECOND CALLER. Everything this script draws comes out of the same two
-  // render functions the frontmatter above used; the only thing it owns is WHEN
-  // and WHERE, plus the three questions a re-render raises that a build does not:
-  // what happens to focus, what happens to the scroll position, and what a screen
+  // THE SECOND CALLER. Everything this script draws comes out of the same render
+  // function the frontmatter above used; the only thing it owns is WHEN and
+  // WHERE, plus the questions a re-render raises that a build does not: what
+  // happens to focus, what happens to the scroll position, and what a screen
   // reader user who is nowhere near this panel is told.
+  //
+  // The first two answer themselves here. The panel contains no focusable
+  // element and no scroller, so an innerHTML swap cannot drop focus to <body>
+  // and cannot lose a scroll offset. Nothing in this script moves focus or
+  // scrolls: the user is typing in the config rail and stays there.
 
   // Queried by attribute rather than by id: nothing stops a screen from stacking
   // two of these panels, and an id would make the second one silently inert.
@@ -220,103 +240,80 @@ const bodyHtml = renderReporterPreviewBody(model);
   const roots = () => document.querySelectorAll<HTMLElement>(PREVIEW_ROOT_SELECTOR);
 
   // ------------------------------------------------------------------
-  // SC 4.1.3 — why this announces the count and nothing else
+  // SC 4.1.3 — why this announces the trade and nothing else
   // ------------------------------------------------------------------
   //
   // The panel changes while the user's focus is in the config rail, so this is a
   // status change, not a change of context. Working the accessibility skill's
   // order top-down:
   //
-  //   1. An instructional cue. The right primary mechanism, and it belongs on the
-  //      controls that CAUSE the change — "adding a subcategory multiplies the
-  //      values a reporter enters" as an aria-describedby in the rail. This
-  //      component does not own the rail, so it cannot place it; see the note at
-  //      the foot of this file. A cue would reduce what follows, not replace it:
-  //      it sets an expectation, it does not report the resulting number.
+  //   1. An instructional cue. The right primary mechanism, and it belongs on
+  //      the controls that CAUSE the change — "a reported dimension adds a
+  //      question to every entry; a derived one does not" as an aria-describedby
+  //      in the rail. This component does not own the rail, so it cannot place
+  //      it; see the note at the foot of this file. A cue would reduce what
+  //      follows, not replace it: it sets an expectation, it does not report the
+  //      resulting number.
   //   2. Moving focus. Rejected outright. Yanking focus out of a text field
-  //      mid-word to show someone a table is a worse bug than the one being
-  //      fixed, and the user did not ask to go anywhere.
-  //   3. An ARIA state property. There is none. No attribute expresses "this grid
-  //      is now four by four", and aria-busy would be a lie — nothing is loading.
+  //      mid-word to show someone a form preview is a worse bug than the one
+  //      being fixed, and the user did not ask to go anywhere.
+  //   3. An ARIA state property. There is none. No attribute expresses "this
+  //      entry now asks four questions", and aria-busy would be a lie — nothing
+  //      is loading.
   //   4. So: the announcer, under three hard guards.
   //
-  // The guards are the whole design, because the failure mode here is not silence
-  // — it is a region that reads a sixteen-cell table back on every keystroke of
-  // the guidance textarea until the user turns speech off.
+  // The guards are the whole design, because the failure mode here is not
+  // silence — it is a region that reads the entire form back on every keystroke
+  // of the guidance textarea until the user turns speech off.
   //
-  //   GUARD 1 — ONE FACT. Only the count line is announced, never the grid. The
-  //     count is the fact this panel exists to deliver and the one that cannot be
-  //     read off any other surface; the grid's shape is content, and content is
-  //     reviewable at the panel (which is why it is a real table with a caption
-  //     and headers, and not a live region).
-  //   GUARD 2 — TRANSITIONS ONLY. Nothing is said unless the number actually
-  //     changed from the last thing said. Typing a name, a unit, guidance, or
-  //     switching aggregation redraws the panel in total silence. Naming a
-  //     subcategory that has no options yet is also silent, because it has not
-  //     changed the count. Adding the fourth option to a 4x4 does speak.
+  //   GUARD 1 — ONE FACT. Only the cost line is announced, never the form. Under
+  //     the new model that line is "N questions per entry, M dimensions on the
+  //     report": the trade this panel exists to deliver, and the one thing that
+  //     cannot be read off any other surface on the page. The fields and the
+  //     derived values are content, and content is reviewable at the panel —
+  //     which is why it is a real <dl> with real labels, and not a live region.
+  //   GUARD 2 — TRANSITIONS ONLY. Nothing is said unless the sentence actually
+  //     changed from the last thing said. Typing a name, a quantity word or
+  //     guidance, or switching the counting rule, redraws the panel in total
+  //     silence. Naming a dimension that has no source yet is also silent.
+  //     Changing a dimension's source from reported to spatial does speak — it
+  //     moves a question off the form, which is the entire point of the model.
   //   GUARD 3 — QUIET PERIOD. Nine hundred milliseconds after the last change,
-  //     not on each one. Typing four options into a fresh subcategory walks the
-  //     count 1 → 2 → 3 → 4; the user hears the answer, once, not the working.
+  //     not on each one. Adding three dimensions in a row walks the count; the
+  //     user hears the answer, once, not the working.
   //
   // Polite, never assertive: nothing was rejected and nothing failed, so this
-  // waits for a pause instead of stopping a sentence the user is in the middle of
-  // hearing. The message names the panel with the same string the disclosure
+  // waits for a pause instead of stopping a sentence the user is in the middle
+  // of hearing. The message names the panel with the same string the disclosure
   // shows, so it arrives with a referent and points at somewhere real.
   const ANNOUNCE_QUIET_MS = 900;
 
-  // Renders coalesce too, at a shorter delay. Not for CPU — the DOM here is a few
-  // dozen nodes — but because each render swaps a subtree out from under the
+  // Renders coalesce too, at a shorter delay. Not for CPU — the DOM here is a
+  // few dozen nodes — but because each render swaps a subtree out from under the
   // screen reader's virtual buffer, and doing that on every keystroke churns it
   // for no benefit. A tenth of a second still reads as instant to the eye.
   const RENDER_DEBOUNCE_MS = 100;
 
-  const announcedCounts = new WeakMap<HTMLElement, number>();
+  const announced = new WeakMap<HTMLElement, string>();
   const renderTimers = new WeakMap<HTMLElement, number>();
   const announceTimers = new WeakMap<HTMLElement, number>();
 
   const render = (root: HTMLElement, measure: MeasureChangeDetail['measure']): void => {
     const model = buildReporterPreviewModel(measure);
 
-    // The scrollable region is this panel's only tab stop, and it is a real one.
-    // If a keyboard user is parked on it when the record changes, replacing the
-    // subtree would drop focus to <body> and lose their place — so it is handed
-    // back, along with how far they had panned. `preventScroll` because restoring
-    // focus must not jump the page: the user is looking at the rail.
-    const oldScroller = root.querySelector<HTMLElement>(PREVIEW_SCROLLER_SELECTOR);
-    const hadFocus = oldScroller !== null && oldScroller.contains(document.activeElement);
-    const scrollLeft = oldScroller?.scrollLeft ?? 0;
+    root.innerHTML = renderReporterPreview(model);
+    root.setAttribute(PREVIEW_COUNT_ATTR, String(model.questionCount));
 
-    const head = root.querySelector<HTMLElement>(PREVIEW_HEAD_SELECTOR);
-    const body = root.querySelector<HTMLElement>(PREVIEW_BODY_SELECTOR);
-    if (head) head.innerHTML = renderReporterPreviewHead(model);
-    if (body) body.innerHTML = renderReporterPreviewBody(model);
-
-    // The lego is toggled, not rebuilt. `hidden` takes it out of the accessibility
-    // tree as well as the layout, which is what conditional rendering did before.
-    const alert = root.querySelector<HTMLElement>(PREVIEW_ALERT_SELECTOR);
-    const alertText = root.querySelector<HTMLElement>(PREVIEW_ALERT_TEXT_SELECTOR);
-    if (alert) alert.hidden = model.largeGridNote === null;
-    if (alertText && model.largeGridNote) alertText.textContent = model.largeGridNote;
-
-    const newScroller = root.querySelector<HTMLElement>(PREVIEW_SCROLLER_SELECTOR);
-    if (newScroller) {
-      newScroller.scrollLeft = scrollLeft;
-      if (hadFocus && newScroller.tabIndex >= 0) newScroller.focus({ preventScroll: true });
-    }
-
-    root.dataset.cellCount = String(model.cellCount);
-
-    // GUARD 2 + GUARD 3. The baseline is whatever the build rendered, read off the
-    // root the first time through, so the initial state never announces itself.
-    if (!announcedCounts.has(root)) announcedCounts.set(root, model.cellCount);
+    // GUARD 2 + GUARD 3. The baseline is whatever the build rendered, captured
+    // the first time through, so the initial state never announces itself.
+    if (!announced.has(root)) announced.set(root, model.costSummary);
     window.clearTimeout(announceTimers.get(root));
     announceTimers.set(
       root,
       window.setTimeout(() => {
-        const spoken = announcedCounts.get(root);
-        if (spoken === model.cellCount) return;
-        announcedCounts.set(root, model.cellCount);
-        announce(`${PREVIEW_PANEL_TITLE}: ${model.countText}`);
+        if (announced.get(root) === model.costSummary) return;
+        announced.set(root, model.costSummary);
+        announce(`${PREVIEW_PANEL_TITLE}: ${model.costSummary}`);
       }, ANNOUNCE_QUIET_MS),
     );
   };
@@ -336,12 +333,13 @@ const bodyHtml = renderReporterPreviewBody(model);
 
   // NOTE FOR WHOEVER OWNS THE CONFIG RAIL. The one mechanism above this in the
   // status-message order that this file cannot reach is the instructional cue,
-  // because it hangs off the control that causes the change: the subcategory
-  // repeater. A visually-hidden line wired with aria-describedby — that the
-  // reporting form preview below updates as subcategories are added — would tell
-  // a screen-reader user once, up front, what a sighted user infers from watching
-  // the grid grow. It is additive to the announcement, not a replacement: the cue
-  // says the panel moves, the announcement says where it landed.
+  // because it hangs off the control that causes the change: the dimension
+  // editor. A visually-hidden line wired with aria-describedby — that a reported
+  // dimension adds a question to the entry form preview below, and a derived one
+  // does not — would tell a screen-reader user once, up front, what a sighted
+  // user infers from watching the two blocks trade rows. It is additive to the
+  // announcement, not a replacement: the cue says the panel moves, the
+  // announcement says where it landed.
 </script>
 
 <style is:global>
@@ -350,7 +348,7 @@ const bodyHtml = renderReporterPreviewBody(model);
      TEMPLATE — and markup delivered through `set:html`, or written by the script
      above, never gets stamped. Scoped rules would therefore match the build-time
      render and silently stop matching the moment the panel updated: an unstyled
-     table appearing on the first edit, with nothing in the console. Every
+     list appearing on the first edit, with nothing in the console. Every
      selector below is namespaced `firma2-reporter-preview*`, which is the
      containment this trades the scoper for. */
 
@@ -362,37 +360,47 @@ const bodyHtml = renderReporterPreviewBody(model);
     color: var(--color-content-default, #202020);
   }
 
-  .firma2-reporter-preview__note,
-  .firma2-reporter-preview__fallback,
-  .firma2-reporter-preview__truncation {
+  .firma2-reporter-preview__note {
     margin: 0;
     color: var(--color-content-default-secondary, #646464);
   }
 
-  /* The hidden alert wrapper is a flex child of a `.stack`. `hidden` is a UA
-     `display: none`, which any later display declaration would beat, so it is
-     restated here at a specificity nothing in this panel can lose to. */
-  .firma2-reporter-preview [hidden] {
-    display: none;
-  }
-
-  .firma2-reporter-preview__meta {
+  .firma2-reporter-preview__cost {
     margin: 0;
-    /* The cluster's own knob rather than an align-items override: the count is
-       set in a strong label role and the period beside it in body, so centring
+    /* The cluster's own knob rather than an align-items override: the cost is
+       set in a strong label role and the yield beside it in body, so centring
        them would float the smaller one off the shared baseline. */
     --align: baseline;
   }
 
-  /* The count is the panel's headline figure and reads at full content colour;
-     the period beside it qualifies it and steps back one. */
-  .firma2-reporter-preview__count {
+  /* The cost is what an author is trading away and reads at full content colour;
+     the yield beside it is what they get, and steps back one so the pair reads
+     as one line rather than two competing figures. */
+  .firma2-reporter-preview__cost-figure {
     color: var(--color-content-default, #202020);
     font-variant-numeric: tabular-nums;
   }
-  .firma2-reporter-preview__meta > .typography-body-sm,
+  .firma2-reporter-preview__cost-yield,
   .firma2-reporter-preview__sep {
     color: var(--color-content-default-secondary, #646464);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Both blocks are section-level labels inside the panel: normal case, 16px,
+     full content colour. Not an eyebrow, not letter-spaced, not uppercase. */
+  .firma2-reporter-preview__block-title {
+    margin: 0;
+    color: var(--color-content-default, #202020);
+  }
+
+  /* THE RULE BETWEEN THE TWO BLOCKS — a hairline across the panel, because the
+     whole argument is the contrast either side of it. A border, not a colour
+     wash or a tinted panel: the container stays neutral and the difference is
+     carried by the CONTENT (wells above, plain text below). */
+  .firma2-reporter-preview__block--derived {
+    border-block-start: var(--border-width-default, 1px) solid
+      var(--color-border-default-subtle, #e4e4e4);
+    padding-block-start: var(--spacing-400, 1rem);
   }
 
   /* Guidance is the only prose a reporter reads before typing, so it holds the
@@ -403,111 +411,137 @@ const bodyHtml = renderReporterPreviewBody(model);
     color: var(--color-content-default, #202020);
   }
 
-  .firma2-reporter-preview__scroller {
-    /* min-width:0 so the scroller can actually be narrower than its table
-       inside the flex column esa-collapsible's body establishes. */
-    min-width: 0;
-  }
-  .firma2-reporter-preview__scroller--pannable {
-    overflow-x: auto;
-  }
-  /* Never removed, only placed: the scroller is a real tab stop, so it needs a
-     visible ring when a keyboard user lands on it — including when the script
-     above hands focus back to a freshly rendered one. */
-  .firma2-reporter-preview__scroller--pannable:focus-visible {
-    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
-    outline-offset: var(--focus-ring-offset, 2px);
-    border-radius: var(--radius-sm, 0.25rem);
+  /* THE LABEL/VALUE GRID. Two columns over the <dl>'s own dt/dd children — no
+     wrapper divs, no display:contents — so every row aligns on one label column
+     without a table. fit-content caps that column at 12rem: a long dimension
+     name wraps inside it instead of squeezing the answers off the right. */
+  .firma2-reporter-preview__rows {
+    display: grid;
+    grid-template-columns: fit-content(12rem) minmax(0, 1fr);
+    column-gap: var(--spacing-400, 1rem);
+    row-gap: var(--spacing-200, 0.5rem);
+    align-items: baseline;
+    margin: 0;
   }
 
-  .firma2-reporter-preview__table {
-    width: 100%;
-    /* Separate, not collapse, with a spacing gap: the cells are wells with
-       their own radius, and collapsed borders would fuse them into a ruled
-       ledger — the look of a report, not of a form. The same border-spacing
-       insets the table's outer edge by one step, which is what keeps the first
-       column of wells off the row labels. */
-    border-collapse: separate;
-    border-spacing: var(--spacing-100, 0.25rem);
-  }
-
-  .firma2-reporter-preview__caption {
-    caption-side: top;
-    text-align: start;
-    color: var(--color-content-default-secondary, #646464);
-    padding-block-end: var(--spacing-100, 0.25rem);
-  }
-
-  .firma2-reporter-preview__corner {
-    border: none;
-    padding: 0;
-  }
-
-  .firma2-reporter-preview__col-head {
-    /* 8rem ≈ 128px: measured against the widest mask this component can draw
-       ("$0.00" at the 14px dense role) plus the slot's two 0.5rem paddings, with
-       room left for a two-word option label like "Push-up dam" before it wraps.
-       It is a hint, not a lock — the browser widens columns when the labels
-       need it and gives the row-header column whatever is left. */
-    width: 8rem;
-    text-align: start;
-    /* DARKENED, NOT GREYED. These sit at the 14px dense floor, so they take the
-       full content colour rather than the secondary the caption uses — the rule
-       is that text gets darker as it gets smaller, never lighter. */
+  /* DARKENED, NOT GREYED. Labels sit at the 14px dense floor, so they take the
+     full content colour — the rule is that text gets darker as it gets smaller,
+     never lighter. The well beside them, not a colour step, is what separates a
+     label from its answer. */
+  .firma2-reporter-preview__label {
+    margin: 0;
     color: var(--color-content-default, #202020);
-    padding: 0 var(--spacing-200, 0.5rem) var(--spacing-100, 0.25rem);
-    vertical-align: bottom;
   }
 
-  .firma2-reporter-preview__row-head {
-    text-align: start;
-    font-weight: inherit;
+  .firma2-reporter-preview__value {
+    margin: 0;
     color: var(--color-content-default, #202020);
-    padding-inline-end: var(--spacing-300, 0.75rem);
-    /* The row label is the real content in its row and gets the space; the
-       value columns are capped above. */
-    width: auto;
-    min-width: 8rem;
+    /* The unit sits beside the well on the same baseline, and an allocation
+       wraps part by part rather than clipping. */
+    --align: baseline;
   }
 
-  .firma2-reporter-preview__cell {
-    padding: 0;
-  }
-
-  /* THE WELL. This is what a value slot looks like when it is not a control:
+  /* THE WELL. This is what an answer looks like when it is not a control:
      sunken rather than the raised fill esa-text-field paints, no caret, no
-     hover, no focus ring, nothing to click. It reads unmistakably as "a number
-     goes here" and equally unmistakably as "not by you". */
-  .firma2-reporter-preview__slot {
-    display: block;
-    padding: var(--spacing-200, 0.5rem);
+     hover, no focus ring, nothing to click, no dropdown chevron borrowed from a
+     select. It reads unmistakably as "an answer goes here" and equally
+     unmistakably as "not by you". */
+  .firma2-reporter-preview__well {
+    display: inline-block;
+    min-width: 9rem;
+    padding: var(--spacing-150, 0.375rem) var(--spacing-200, 0.5rem);
     border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #e4e4e4);
     border-radius: var(--radius-sm, 0.25rem);
     background: var(--color-background-elevation-sunken, #f4f4f4);
-    /* The mask is notation, not data — it names the format the definition
-       produces. Secondary keeps it subordinate to the row and column labels,
-       which are the content a reader is actually here to compare. */
-    color: var(--color-content-default-secondary, #646464);
-    text-align: end;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  /* The single-value shape. Capped rather than run full-bleed: a value slot the
-     width of the panel would read as a text area, and this measure takes one
-     number. 16rem holds the longest mask plus a unit word ("0.00 tons per
-     year") without wrapping. */
-  .firma2-reporter-preview__single {
-    max-width: 16rem;
-  }
-
-  /* Computed, so: no well, no border, no fill. Aligned with the slots above it
-     and set in the same tabular figures so the digits line up. */
-  .firma2-reporter-preview__rollup {
-    text-align: end;
-    padding: var(--spacing-200, 0.5rem);
     color: var(--color-content-default, #202020);
+  }
+
+  /* The quantity is the one answer that is a number, so its well is sized for
+     one — a nine-rem slot around "20" would read as a text box for a sentence.
+     4rem holds five figures at the dense role. */
+  .firma2-reporter-preview__well--quantity {
+    min-width: 4rem;
+    text-align: end;
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  }
+
+  /* The unit is printed ON the form, not typed into it, so it sits outside the
+     well — the same place it sits on a real entry row. */
+  .firma2-reporter-preview__unit {
+    color: var(--color-content-default, #202020);
+  }
+
+  /* DERIVED VALUES ARE PLAIN TEXT. No well, no border, no fill: there is no slot
+     to fill because the answer is already in. That absence is the panel's whole
+     argument, drawn rather than narrated. */
+  .firma2-reporter-preview__parts {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-reporter-preview__part {
+    display: inline-flex;
+    gap: var(--spacing-100, 0.25rem);
+    align-items: baseline;
+  }
+
+  /* AN ALLOCATION IS SEPARATED, NOT PUNCTUATED. The middot is generated, so it
+     never lands in the text a screen reader reads back — the <li> boundaries
+     already say where one share ends and the next begins. */
+  .firma2-reporter-preview__part + .firma2-reporter-preview__part::before {
+    content: '·';
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* The share of the quantity that fell in this value. Tabular figures so two
+     shares line up as a pair of numbers, which is what makes the row read as a
+     split of one total rather than two unrelated facts. */
+  .firma2-reporter-preview__part-amount {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* NARROW PANEL — the two-column grid leaves neither column usable below about
+     26rem, so the label stacks over its answer, which is how a real form would
+     fold anyway.
+
+     A CONTAINER QUERY, NOT A MEDIA QUERY, AND THE DIFFERENCE IS A REAL BUG THIS
+     FIXES. This used to be `@media (max-width: 30rem)`, which asks about the
+     VIEWPORT. That was accidentally fine while this panel took the page's wide
+     column: a 30rem viewport meant a 30rem panel. It stopped being fine the day
+     the setup page moved the panel into a 24rem rail — the viewport is 1440px
+     there, so the query never fires, and the grid stays two-column inside a box
+     too narrow to hold it. `fit-content(12rem)` plus the well's own `min-width:
+     9rem` comes to more than 22rem of usable rail, and `minmax(0, 1fr)` zeroes
+     the track's automatic minimum, so the well OVERFLOWS its panel rather than
+     wrapping. A container query asks about the box the rule is actually about.
+
+     26rem rather than 30rem because the box is now the panel itself rather than
+     the whole window, so the threshold no longer has to leave room for a rail
+     beside it. */
+  .firma2-reporter-preview {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 26rem) {
+    /* THE COST LINE'S SEPARATOR GOES WHEN THE LINE WRAPS. The two facts are
+       separate spans in a `.cluster` precisely so the yield can drop under the
+       cost in a narrow rail — that part works. What the markup could not know is
+       that the `·` is its own flex item, so it stays on line one and strands
+       there: "4 questions per entry ·" over "6 breakdowns on the report". A
+       separator with nothing after it reads as truncation. It is decoration and
+       already aria-hidden, so once the two facts are on separate lines the line
+       break IS the separation and the glyph has no job left. */
+    .firma2-reporter-preview__sep {
+      display: none;
+    }
+
+    .firma2-reporter-preview__rows {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: var(--spacing-100, 0.25rem);
+    }
+    .firma2-reporter-preview__value {
+      margin-block-end: var(--spacing-200, 0.5rem);
+    }
   }
 </style>

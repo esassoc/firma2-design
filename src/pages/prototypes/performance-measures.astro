@@ -30,33 +30,44 @@ import Firma2PageHeader from '../../components/shared/firma2-page-header.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import Firma2MeasureTable from '../../components/measures/firma2-measure-table.astro';
 import Firma2EntityCreateDialog from '../../components/setup/firma2-entity-create-dialog.astro';
-import { DATA_TYPES } from '../../data/firma2-performance-measures';
+import { MEASURE_KINDS } from '../../data/firma2-performance-measures';
 
 const CREATE_DIALOG_ID = 'new-measure';
 
-// What each data type means for the person about to pick one, in terms of the
-// value a reporter will eventually type. The dialog folds these onto the option
-// label (esa-radio-group has no per-option description field — a filed gap), so
-// they stay short enough to read as one line.
-const TYPE_DESCRIPTIONS: Record<(typeof DATA_TYPES)[number], string> = {
-  Number: 'a count with a unit, like acres or barriers',
-  Percent: 'a share out of 100, like a survival rate',
-  Currency: 'an amount in dollars, like cost per acre',
-};
-
-const typeOptions = DATA_TYPES.map((value) => ({
-  value,
-  label: value,
-  description: TYPE_DESCRIPTIONS[value],
+// THE ONE QUESTION IS WHAT KIND OF STATEMENT THE MEASURE MAKES.
+//
+// It was the UNIT, and that failed on its own terms. The test for a one-question
+// modal is that the answer changes what happens next; the unit changed nothing —
+// same rail, same fields — so it was a field with ceremony around it, asked
+// before the name and defaulting silently to acres. Its options were also drawn
+// from this spoke's mock data rather than the domain, so it had no answer for a
+// cost, water-quality or outreach measure.
+//
+// Output vs outcome passes that test. An output has an actor and needs a primary
+// reported dimension; an outcome has none, because nobody DID a water
+// temperature. They take different counting rules — summing readings is
+// meaningless — and an outcome is reported by a monitoring effort about a PLACE
+// rather than by the project. Different required fields means a different form,
+// and that is what earns the fork.
+//
+// Options come from MEASURE_KINDS so this dialog cannot drift from the
+// vocabulary the setup page and outstandingFields() read.
+const kindOptions = MEASURE_KINDS.map(({ id, name, description }) => ({
+  value: id,
+  label: name,
+  description,
 }));
 
 // WHERE "Create draft" LANDS. A live build would POST the answer and redirect to
-// the new record's own id. This spoke is statically built, so the dialog carries
-// the answer as ?type= to the one genuinely empty draft in the catalog — the
-// record that exists precisely to show what a measure looks like the moment
-// after it is created. The setup page reads that parameter and preselects the
-// data type, so the answer given here is the answer shown there.
-const DRAFT_ROUTE = '/prototypes/measures/draft-untitled-number-measure';
+// the new record's own id. This spoke is statically built, so there is one empty
+// draft PER KIND and the dialog routes to the one matching the answer. That is
+// what makes the fork visible rather than decorative: answer differently and you
+// arrive at a different shape, which is the whole claim the question makes.
+const DRAFT_ROUTES: Record<string, string> = {
+  output: '/prototypes/measures/draft-untitled-output',
+  outcome: '/prototypes/measures/draft-untitled-outcome',
+};
+
 ---
 <!-- manifest:
   layout: stack(2xl)
@@ -81,11 +92,11 @@ const DRAFT_ROUTE = '/prototypes/measures/draft-untitled-number-measure';
     <Firma2EntityCreateDialog
       id={CREATE_DIALOG_ID}
       heading="New performance measure"
-      question="What kind of value does this measure record?"
-      helpText="This sets whether the measure needs a unit, and it cannot change once projects start reporting."
-      options={typeOptions}
+      question="What does this measure record?"
+      helpText="Decides what a record must carry and who files it. Not changeable later."
+      options={kindOptions}
       createLabel="Create draft"
-      destination={DRAFT_ROUTE}
+      destinations={DRAFT_ROUTES}
     />
   </div>
 </AppLayout>

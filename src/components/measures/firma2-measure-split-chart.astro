@@ -1,0 +1,728 @@
+---
+// firma2-measure-split-chart — ONE worked breakdown of a performance measure,
+// drawn as the quantity allocated across one dimension's values.
+//
+// WHAT THIS USED TO BE, AND WHY IT SHRANK. This file was the "report slices"
+// panel: two counted lists — "2 asked of the reporter" over "4 with no question
+// asked" — followed by this chart. The lists were the right content in the wrong
+// component. They are a read-only rendering of exactly the set the author edits
+// next door in firma2-dimension-editor, so the screen printed the same list
+// twice, once editable and once not, and the edit was never beside the payoff it
+// bought. The editor absorbed them. What is left here is the thing the editor
+// genuinely cannot show: a list of vocabularies is abstract, and one dimension
+// drawn as a split is not.
+//
+// THE FIGURES ARE ILLUSTRATIVE AND THE PANEL SAYS SO. They come from this
+// DEFINITION, not from reported entries — nothing has been reported, this is a
+// setup screen. See NOTE below and split() in the script; the caveat is wired to
+// the chart as its description rather than merely sitting near it.
+//
+// THE DIMENSION IS CHOSEN, NOT ASKED FOR. pickDimension() prefers a spatial one
+// — that is the free one, and the argument the model is making — and falls back
+// to a reported one so a measure with no place still draws something.
+//
+// TWO STATES, and the second is not a fault:
+//   1. Something to chart.  acres-forest-fuels-reduction-treatment splits five
+//      ways across the Critical zone layer. volunteer-hours-contributed has no
+//      place at all and falls back to its reported Activity dimension — thin,
+//      correct, and it must look small rather than broken.
+//   2. Nothing to chart.  Either no dimensions at all, or only open-ended ones
+//      (a lone "Reporting year" has a real vocabulary of no fixed values).
+//      esa-empty-state, phrased as a beginning rather than a failure.
+//
+// BOTH STATES ARE ALWAYS RENDERED, one of them `hidden`. Moving between them is
+// an attribute flip, not a subtree build: the note, the table shell and the
+// chart element survive as the same nodes with new text, the esa-collapsible
+// frame is never touched, and a reader who opened "View as data" is still
+// looking at it after the next edit.
+//
+// IT IS LIVE — the page's whole claim is that the previews answer as you define
+// the measure. It repaints from the WHOLE record on MEASURE_CHANGE_EVENT rather
+// than from a hand-picked field list, because a dependency list maintained by
+// hand is a second copy of the render and it starts lying the day someone
+// extends the draft shape.
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import {
+  type PerformanceMeasureDefinition,
+} from '../../data/firma2-performance-measures';
+
+interface Props {
+  /**
+   * The measure being previewed — the SEED record. After load the panel follows
+   * the working record off MEASURE_CHANGE_EVENT instead; this prop is the answer
+   * before the first event, and the answer for a reader with no JavaScript.
+   * Every field may be unset: this is a draft.
+   */
+  measure: PerformanceMeasureDefinition;
+}
+
+const { measure } = Astro.props;
+
+// The build-time approximation of "is there anything to chart". The real answer
+// is pickDimension()'s, and it lives in the script because the figures do; this
+// is only the initial state of the empty view, corrected on the first paint. A
+// measure with no dimensions at all definitely has nothing to chart, which is
+// the one case worth getting right before JavaScript runs.
+const hasDimensions = measure.dimensions.length > 0;
+
+// Scoped to the measure so two panels on one screen never collide on an IDREF —
+// esa-chart resolves the note's id in the light DOM. Slugs are already URL-safe
+// and are not an editable field.
+const noteId = `firma2-split-note-${measure.slug}`;
+
+// THE SEED RECORD, SERIALIZED — not a precomputed view of it. The lists and the
+// figures are a function of a record the user is still editing, so the browser
+// recomputes them from the same helpers this frontmatter uses. Serialized on the
+// element rather than passed through `define:vars`, which forces `is:inline` and
+// would leave the bare specifiers in the script below unresolvable by the
+// browser.
+const measurePayload = JSON.stringify(measure);
+---
+
+<!-- "Breakdown preview" — and the old title is worth recording, because it became
+     FALSE rather than merely stale. It read "Breakdowns this measure supports",
+     which was true of a panel listing every dimension and is a lie about a panel
+     drawing one. The set it named now lives in firma2-dimension-editor.
+     "Preview" is the word that fixes it: it pairs this panel with its sibling's
+     "Entry form preview" (measure-reporter-preview.ts owns that string), so the
+     two read as a matched pair of previews, and it carries the same caveat the
+     note under the chart spells out — nothing here has been reported.
+     "Breakdown" rather than "dimension": the data model's word is `dimension`,
+     which is internal vocabulary, and the panel is read cold by program staff
+     and by client reviewers as often as by the person editing it.
+
+     `layout-dashboard` is the one glyph in esa-icon's registry that means what
+     this panel means — a rectangle divided into parts is a breakdown; the
+     registry ships no bar-chart. The sibling preview carries an icon, so an
+     unmarked summary next to it would read as a panel that failed to load.
+
+     THE COLLAPSIBLE IS NEVER RE-RENDERED. It is a native <details>, so its
+     open/closed state is DOM state on this element, and every update below
+     happens strictly inside it on nodes that already exist. Nothing this
+     component does can collapse the panel or move the scroll position. -->
+<EsaCollapsible title="Breakdown preview" icon="layout-dashboard" open>
+  <!-- The panel root the script binds to. `data-firma2-split-slug` is the
+       address: MEASURE_CHANGE_EVENT is dispatched on `document` and carries ONE
+       record, so a screen stacking two of these panels would otherwise repaint
+       both from whichever measure was edited. -->
+  <div
+    class="firma2-measure-split"
+    data-firma2-split-panel
+    data-firma2-split-slug={measure.slug}
+    data-firma2-split-measure={measurePayload}
+  >
+    <!-- STATE 1 — something to chart. Hidden at build time, always, and revealed
+         by the first paint: everything in this block (the chart, its column
+         headers, its caption, its rows) is computed by the script, because the
+         figures are, and a server-rendered copy would be a second implementation
+         of split() that could disagree with the first.
+
+         The honest consequence, stated rather than hidden: a reader with no
+         JavaScript sees the empty state below instead of a chart. That used to
+         be softened by two server-rendered lists in this panel; those moved into
+         the dimension editor, which still renders them without JavaScript, so
+         the fact the lists carried is not lost from the page — only from here. -->
+    <div class="stack" data-gap="sm" data-firma2-split-chart-block hidden>
+      <!-- The <esa-chart> element is minted into this slot on first need and
+           then kept forever; see ensureChart() for the 353 KB reason it is not
+           in the markup and the AG Charts reason it is never removed again. -->
+      <div class="firma2-measure-split__chart" data-firma2-split-chart></div>
+
+      <!-- NOTE — the provenance of the figures, stated once, plainly, and
+           immediately under the marks it qualifies.
+
+           This is not narration about the page, which design-principles bans:
+           it does not tell the reader what the chart shows or how to read it.
+           It is a statement about how these particular numbers came to exist,
+           and without it the chart makes a claim the data cannot support — a
+           bar per value reads as a reported total per value, and there are no
+           reported totals here at all. A reader who takes these as reported
+           has been misled by the rendering, so the correction belongs at the
+           rendering.
+
+           It is wired to the chart with `described-by`: esa-chart resolves the
+           IDREF in the light DOM and applies it by element reflection, which
+           is the one association that crosses a shadow boundary. So the caveat
+           is announced WITH the figure rather than merely sitting near it. The
+           sentence is invariant across measures — the figures are illustrative
+           whatever the record says — so the script never rewrites it and the
+           id it is wired by never changes. The association therefore cannot be
+           broken by an update, which is exactly the failure mode a rebuilt
+           description would have.
+
+           Primary ink, not the secondary grey `body-sm` often wears. A
+           qualification a reader must not skip is not styled as the thing on
+           the page most safely skipped. -->
+      <p id={noteId} class="firma2-measure-split__note typography-body-sm" data-firma2-split-note>
+        Illustrative figures: the split comes from this definition, not from reported entries.
+      </p>
+
+      <!-- THE TABLE IS THE CHART'S TEXT ALTERNATIVE, and it is not optional.
+           AG Charts ships no table, no figcaption and no offscreen text — the
+           hub's own component doc scores that a straight FAIL and says the fix
+           is a composition, not a prop, because a paired disclosure gives a
+           sighted keyboard user a real affordance instead of an offscreen
+           table only a screen reader can find. There is a second reason in the
+           hub's notes: several slots of the categorical palette sit under 3:1
+           against a light surface and the validator passes them only WITH
+           relief — visible labels or a table view. This is that relief.
+
+           SO IT IS PAINTED IN THE SAME PASS AS THE CHART. A text alternative
+           that lags the figure it duplicates is not a weaker alternative, it
+           is a false one — and it is false only for the reader who cannot
+           check it against the canvas.
+
+           `flush` so it reads as a quiet row inside this panel rather than a
+           second card boxed inside the first. Its open/closed state is native
+           <details> state on an element nothing below replaces. "View as data"
+           is the hub's own string for this pairing, kept verbatim — an
+           approved pattern is canon, and a reader who has met it on one chart
+           should meet it on all. -->
+      <EsaCollapsible title="View as data" flush>
+        <!-- bcn-lego-checked: no esa- lego renders a table. Walked the catalog
+             at node_modules/@esa/ecology/src/components/ — there is no
+             esa-table; esa-grid is a documentation page for Beacon's Angular
+             AG Grid wrapper with no .astro or .ts to import; esa-stat holds
+             one figure and esa-chart is the thing this exists to make
+             readable. AG Grid is this spoke's tabular precedent and is the
+             wrong tool for five rows of derived figures with nothing to sort,
+             filter or export. Beacon is not cloned on this machine, so tier 2
+             was skipped. A native <table> with real <th scope> IS the semantic
+             primitive here — that association is the entire point of rendering
+             it — so the honest answer is markup. It stays a one-off rather
+             than a bcn- component for the same reason firma2-project-funding's
+             does: a reusable table is a hub concern. -->
+        <table class="firma2-measure-split__table">
+          <!-- Named for the chart it duplicates, so the two are recognisably
+               the same data — which means it carries the measure name, and so
+               it is repainted with everything else. Hidden because printing it
+               under a disclosure row that already says "View as data" would be
+               the same words twice. -->
+          <caption class="visually-hidden" data-firma2-split-caption></caption>
+          <thead>
+            <tr>
+              <!-- Both headers are placeholders until the first paint names
+                   the dimension and the unit. They are never seen — the block
+                   around them is `hidden` until that paint — but an empty <th>
+                   in the shipped HTML is a hole for anything reading the
+                   document without running it. -->
+              <th scope="col" data-firma2-split-value-header>Value</th>
+              <th scope="col" class="firma2-measure-split__num" data-firma2-split-quantity-header>Illustrative</th>
+            </tr>
+          </thead>
+          <tbody data-firma2-split-rows></tbody>
+        </table>
+      </EsaCollapsible>
+    </div>
+
+    <!-- STATE 2 — nothing to chart. The condition WIDENED when the lists left,
+         and the old copy did not survive it. "No breakdowns yet" was true only
+         of a measure with no dimensions; this state now also covers a measure
+         whose dimensions are all open-ended — a lone "Reporting year" has a real
+         vocabulary of no fixed values — where "no breakdowns" would be a plain
+         lie about a record that visibly has one.
+
+         "Nothing to chart yet" is true of both. "yet" is doing real work: without
+         it the same sentence reads as a fault rather than as the state every
+         measure starts in. The description is the one recovery action, imperative
+         and short, per esa-empty-state's contract, and it points at the CONTROLS
+         by the names those zones actually use — the category and question option
+         fields, and the map-layer catalog — because sending a reader to a control
+         by a name it does not wear is the one thing an empty state must not do.
+         (A name alone is not enough for the chart; it needs values to split
+         across, which is exactly what each of the three named acts supplies.)
+
+         `sm` matches every other empty state in this spoke's card sections.
+         The wrapper carries `hidden`: esa-empty-state is an .astro component and
+         does not forward arbitrary attributes to its root. -->
+    <div data-firma2-split-view="empty" hidden={hasDimensions}>
+      <EsaEmptyState
+        title="Nothing to chart yet"
+        description="Add options to the category or a question, or pick a map layer."
+        size="sm"
+      />
+    </div>
+  </div>
+</EsaCollapsible>
+
+<script>
+  import '@esa/ecology/esa-chart';
+  import { MEASURE_CHANGE_EVENT, type MeasureChangeDetail } from '../../lib/measure-draft';
+  import {
+    dimensionValues,
+    measureDisplayName,
+    type MeasureDimension,
+    type PerformanceMeasureDefinition,
+  } from '../../data/firma2-performance-measures';
+
+  /*
+   * WHAT THIS SCRIPT IS FOR: keeping the panel equal to the record the user is
+   * editing. It listens; it never dispatches. The config rail owns the record
+   * and owns MEASURE_CHANGE_EVENT, and a preview that wrote back to the thing it
+   * previews would be a loop with no obvious end.
+   *
+   * THE ACCESSIBILITY OF THE UPDATE ITSELF, decided rather than defaulted.
+   * This panel changes while focus is in a field somewhere else, which is the
+   * shape of a status message (SC 4.1.3). The accessibility skill's
+   * STATUS-MESSAGE contract is explicit that a live region is the LAST of four
+   * options, and it is the wrong one here — re-derived for THIS panel rather
+   * than inherited from the one it replaced, because the reasoning is not the
+   * same:
+   *
+   *   - Nothing here is transient. Every word this panel can say stays on the
+   *     screen inside a named disclosure, re-readable at any time, which is
+   *     precisely what an announcement is not. There is nothing to catch in
+   *     flight.
+   *   - What actually moves on a keystroke is the FIGURES, not the lists. The
+   *     fields that reach this panel today are `unit` and `decimalPlaces`;
+   *     announcing a repainted chart would read a table of illustrative numbers
+   *     into someone's ear while they are still choosing a unit. That is the
+   *     skill's filtering anti-pattern verbatim — wrapping results in aria-live
+   *     so every keystroke reads the list back.
+   *   - The empty state is not an error and needs no correction. Unlike the
+   *     roll-up panel, where empty was a state a rename passed THROUGH, here it
+   *     is where a measure legitimately STARTS: draft-untitled-measure loads
+   *     into it. Announcing "no breakdowns yet" to a user who has not declared
+   *     one yet reports a fact they already own.
+   *
+   * So option 1 in the contract is the fit: an instructional cue, set once, on
+   * the control the user is operating — which by construction lives on the
+   * rail's fields, not in this file. What this file owes the same reader instead
+   * is that the panel is never STALE when they arrive at it: the chart's
+   * accessible name tracks the measure name currently being typed, and the table
+   * is repainted in the same synchronous pass as the chart. A panel that is
+   * always right when read is the thing an announcement would only approximate.
+   */
+
+  /** esa-chart's element class is not imported for typing — the module is
+   *  imported for its REGISTRATION side effect, which is all a custom element
+   *  needs to exist in the document. */
+  type ChartElement = HTMLElement & Record<string, unknown>;
+
+  /*
+   * DEBOUNCE. Long enough to sit out a fast typist's inter-keystroke interval
+   * (~120–200ms), short enough that the panel still reads as a response to the
+   * edit rather than a page that reloaded. It is not a performance hedge — the
+   * work below is a few dozen string operations — it is a STABILITY one: the
+   * illustrative total is scaled by unit and rounded by precision, so an
+   * undebounced panel would redraw every bar on every keystroke in the precision
+   * field. Settling once per pause is the difference between a preview and a
+   * strobe.
+   */
+  const SETTLE_MS = 250;
+
+  /*
+   * WHICH DIMENSION GETS CHARTED. A spatial one wherever the measure has one,
+   * because that is the one the author never paid for and therefore the one
+   * worth demonstrating; otherwise the first dimension with a vocabulary at all.
+   * Two values is the floor: a one-value "split" is a single bar, which is the
+   * dataviz skill's own example of a chart that should have been a number.
+   */
+  const pickDimension = (m: PerformanceMeasureDefinition): MeasureDimension | null => {
+    const candidates = m.dimensions.filter((d) => dimensionValues(d).length >= 2);
+    return candidates.find((d) => d.source.kind === 'spatial') ?? candidates[0] ?? null;
+  };
+
+  /*
+   * THE FIGURES ARE INVENTED, AND THEREFORE THEY ARE DETERMINISTIC. Nothing in
+   * the catalog stores a per-value breakdown — that is the point of the panel,
+   * the breakdown does not exist until the measure is published and reported
+   * against — so the chart needs numbers from somewhere. design-principles bans
+   * Math.random() in anything a client will watch, and for a better reason than
+   * tidiness: a demo that reshuffles its own bars between two clicks teaches a
+   * reviewer that the whole screen is a mock-up.
+   *
+   * So the weights are a hash (FNV-1a, 32-bit) of a key built from the RECORD:
+   * the measure slug, the dimension name and the value. Every one of those is
+   * stable while the author types — the slug is not an editable field — so the
+   * bars hold still through a rename and only change when the split itself
+   * changes. Two panels of the same measure draw the same chart; so does the
+   * same measure tomorrow.
+   *
+   * The MAGNITUDE comes from the record too: projectCount × a per-project figure
+   * for the unit. A unit is a claim about scale — 180 acres a project is
+   * plausible for fuels work and 320 hours is plausible for volunteers, while
+   * 180 hours per project and 320 acres per project both read as somebody's
+   * placeholder. The map is invented (see the module header's INVENTED CONTENT
+   * note) and drawn from public fuels-and-restoration practice, not from any
+   * tenant's data.
+   */
+  const hash = (input: string): number => {
+    let h = 2166136261;
+    for (let i = 0; i < input.length; i += 1) {
+      h ^= input.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  };
+
+  /** Per-project magnitude by unit. Invented, deterministic, domain-plausible. */
+  const UNIT_SCALE: Record<string, number> = {
+    acres: 180,
+    miles: 4,
+    'square feet': 12000,
+    'linear feet': 900,
+    each: 3,
+    plants: 1400,
+    pounds: 2600,
+    tons: 45,
+    'tons per year': 12,
+    hours: 320,
+    dollars: 48000,
+    percent: 12,
+  };
+  const DEFAULT_SCALE = 100;
+
+  interface SplitRow {
+    value: string;
+    amount: number;
+  }
+
+  const split = (m: PerformanceMeasureDefinition, d: MeasureDimension): SplitRow[] => {
+    const values = dimensionValues(d);
+    // 5..64, so no value ever draws a zero-height bar and no value can be more
+    // than ~13× another — a split where one slice is 400× the next reads as a
+    // data error rather than as a plausible programme.
+    const weights = values.map((value) => 5 + (hash(`${m.slug}|${d.name}|${value}`) % 60));
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    // A measure with no projects yet would otherwise draw a chart of zeroes,
+    // which is a claim (nothing has happened) rather than an illustration.
+    const total = Math.max(m.projectCount, 1) * (UNIT_SCALE[m.unit ?? ''] ?? DEFAULT_SCALE);
+    const factor = 10 ** m.decimalPlaces;
+    return values.map((value, i) => ({
+      value,
+      // Rounded to the measure's OWN precision: a measure that accepts whole
+      // acres must not be illustrated with 312.4 of them.
+      amount: Math.round(((total * weights[i]) / totalWeight) * factor) / factor,
+    }));
+  };
+
+  const setUp = (panel: HTMLElement): void => {
+    const slug = panel.dataset.firma2SplitSlug ?? '';
+    const seedJson = panel.dataset.firma2SplitMeasure;
+    if (!seedJson) return;
+
+    const emptyView = panel.querySelector<HTMLElement>('[data-firma2-split-view="empty"]');
+    const chartBlock = panel.querySelector<HTMLElement>('[data-firma2-split-chart-block]');
+    const chartSlot = panel.querySelector<HTMLElement>('[data-firma2-split-chart]');
+    const caption = panel.querySelector<HTMLElement>('[data-firma2-split-caption]');
+    const valueHeader = panel.querySelector<HTMLElement>('[data-firma2-split-value-header]');
+    const quantityHeader = panel.querySelector<HTMLElement>('[data-firma2-split-quantity-header]');
+    const rows = panel.querySelector<HTMLElement>('[data-firma2-split-rows]');
+    const noteId = panel.querySelector<HTMLElement>('[data-firma2-split-note]')?.id ?? '';
+
+    if (!emptyView || !chartBlock || !chartSlot || !rows) return;
+
+    /*
+     * ONE CHART INSTANCE, EVER. Minted on first need — esa-chart dynamically
+     * imports ag-charts-community from firstUpdated(), so an element that exists
+     * downloads 353 KB gzipped and an element that does not, does not; a measure
+     * with nothing chartable must not pay for a chart it never shows. Then
+     * retained for the life of the page: removal is not a neutral act here,
+     * because esa-chart destroys its AG Charts instance in disconnectedCallback,
+     * so an edit that bounced through the empty state would tear down and
+     * rebuild the whole chart. Hidden with its block and reused, it stays
+     * connected, keeps its instance, and comes back on a property assignment.
+     */
+    let chart: ChartElement | null = null;
+    const ensureChart = (): ChartElement => {
+      if (chart) return chart;
+      const el = document.createElement('esa-chart') as ChartElement;
+      // An attribute, not a property, and set once: esa-chart observes
+      // `described-by`, and the note's id never changes.
+      if (noteId) el.setAttribute('described-by', noteId);
+      chartSlot.appendChild(el);
+      chart = el;
+      return el;
+    };
+
+    const paint = (measure: PerformanceMeasureDefinition): void => {
+      /*
+       * ONE CONDITION, NOT TWO — and this is the behaviour change the split
+       * brought with it. While this panel carried the lists there were three
+       * states: no dimensions (empty), dimensions but nothing chartable (lists,
+       * chart hidden), and something to chart (lists + chart). With the lists
+       * gone the middle state has no content left to show, so a measure whose
+       * only dimension is open-ended would have rendered an empty panel below a
+       * heading promising a breakdown. The two collapse into the only question
+       * this panel can still answer: is there a dimension to draw?
+       *
+       * VISIBILITY FIRST, then content. The chart is created and measured inside
+       * chartBlock; a `display: none` ancestor makes its box 0×0 and AG Charts
+       * would lay out against that. Flipping `hidden` before any chart work
+       * means the box has its real width by the time Lit's update runs.
+       */
+      const dimension = pickDimension(measure);
+      chartBlock.hidden = dimension === null;
+      emptyView.hidden = dimension !== null;
+      if (!dimension) return;
+
+      const data = split(measure, dimension);
+
+      // A LOCAL Intl.NumberFormat, rebuilt per paint, and the one case
+      // src/lib/format.ts does not cover: the precision comes off the RECORD and
+      // is one of the fields being edited. Pinning both bounds to the same value
+      // is what stops a derived 0.666… rendering more decimals than the measure
+      // would ever accept from a reporter.
+      const number = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: measure.decimalPlaces,
+        maximumFractionDigits: measure.decimalPlaces,
+      });
+      // Sentence case: the unit is used as an axis title and a column header,
+      // both of which start a phrase. "tons per year" -> "Tons per year".
+      const unitTitle = measure.unit
+        ? measure.unit.charAt(0).toUpperCase() + measure.unit.slice(1)
+        : '';
+
+      /*
+       * The chart's accessible name, and it names what the chart SHOWS.
+       * esa-chart warns when `label` is absent because AG Charts then generates
+       * "chart, 1 series" — a name for the shape of the object and nothing about
+       * its subject. measureDisplayName() covers the draft whose name is still
+       * empty, so the name degrades to "Untitled measure by Critical zone"
+       * rather than to " by Critical zone".
+       */
+      const chartLabel = `${measureDisplayName(measure)} by ${dimension.name}`;
+
+      // THE TEXT ALTERNATIVE, in the same synchronous pass as the chart. The
+      // value column is headed by the dimension, so the table names the split
+      // that the chart only draws; the figure column carries the unit once
+      // rather than repeating it down every row, and carries "Illustrative" so
+      // the column is not mistaken for reported data when read on its own.
+      if (caption) caption.textContent = chartLabel;
+      if (valueHeader) valueHeader.textContent = dimension.name;
+      if (quantityHeader) {
+        quantityHeader.textContent = unitTitle ? `Illustrative (${measure.unit})` : 'Illustrative';
+      }
+
+      const next = document.createDocumentFragment();
+      for (const row of data) {
+        const tr = document.createElement('tr');
+        // The value names the row, so it is a row header: it is what a screen
+        // reader reads back to place you when you arrow across into the figure.
+        const th = document.createElement('th');
+        th.scope = 'row';
+        th.textContent = row.value;
+        const td = document.createElement('td');
+        td.className = 'firma2-measure-split__num';
+        td.textContent = number.format(row.amount);
+        tr.append(th, td);
+        next.append(tr);
+      }
+      rows.replaceChildren(next);
+
+      /*
+       * THE CHART IS UPDATED, NOT REBUILT. `data`, `series` and `options` are
+       * PROPERTIES on esa-chart — assigning them marks the element dirty, and
+       * esa-chart's updated() routes a change in any of them to chart.update(),
+       * which is AG Charts' in-place update. Nothing is destroyed and nothing
+       * re-initialises. Reassigning on the way back from a hidden state is not
+       * redundant even when the numbers are identical: the container was 0×0
+       * while hidden, and the assignment is what asks AG Charts to lay out again
+       * now that it is not.
+       *
+       * `label` goes through setAttribute, which esa-chart routes to applyAria()
+       * instead of a redraw — the accessible name follows the name the user is
+       * typing without repainting the canvas for it.
+       */
+      const el = ensureChart();
+      el.setAttribute('label', chartLabel);
+      el.data = data.map((row) => ({ value: row.value, amount: row.amount }));
+
+      /*
+       * HORIZONTAL BARS, one series, and the form came from the dataviz skill's
+       * job table rather than from habit. The reader's job is comparing the
+       * magnitude of discrete named categories, which is the bar row; horizontal
+       * because these categories carry real names ("Critical headwater
+       * resources", "Middle Fork Feather") and a vertical column chart either
+       * truncates them or rotates them 45°. A pie was the other candidate and is
+       * wrong for the same reason it usually is: five slices of similar size
+       * cannot be ranked by eye, and the split is not a whole worth closing.
+       *
+       * THE BARS ARE NOT SORTED, and that is deliberate. They keep the layer's
+       * own vocabulary order — the same order the list above prints — so the two
+       * readings line up. Sorting them would rank them, and a ranking of
+       * illustrative figures is a claim about the programme that the definition
+       * cannot support.
+       *
+       * ONE SERIES, so no legend (esa-chart only enables one past a single
+       * series) and no direct labels: "a number on every data point" is in the
+       * skill's anti-pattern list, and the table below carries the figures
+       * exactly. COLOUR is the categorical family's slot 1, esa-chart's default,
+       * resolved from --color-background-dataviz-categorical-1 in JS because a
+       * canvas cannot read a custom property. Slot 1 is the only correct answer
+       * for a single series: a sequential ramp would encode magnitude in
+       * lightness when bar length already carries it — the skill names that
+       * "a value-ramp on nominal categories".
+       */
+      el.series = [
+        {
+          type: 'bar',
+          direction: 'horizontal',
+          xKey: 'value',
+          yKey: 'amount',
+          // Names the quantity in the tooltip. Falls back to the qualifier when
+          // the measure carries no unit yet, so the tooltip never reads
+          // ": 312" with nothing in front of the colon.
+          yName: unitTitle || 'Illustrative',
+          // Both numbers are the dataviz skill's fixed mark spec, not taste: a
+          // 4px rounded data-end, and bars capped at 24px so a five-value split
+          // does not render five slabs filling their whole bands.
+          cornerRadius: 4,
+          width: 24,
+        },
+      ];
+
+      // The axis titles replace the legend a single series does not get: the
+      // category axis names the dimension being split by, the value axis names
+      // the unit. The value axis title is built conditionally rather than set to
+      // `undefined`, so a measure with no unit yet hands AG Charts an axis with
+      // no `title` key at all instead of a present key holding nothing.
+      const valueAxis: Record<string, unknown> = { type: 'number', position: 'bottom' };
+      if (unitTitle) valueAxis.title = { enabled: true, text: unitTitle };
+
+      // Only `axes` is overridden. esa-chart merges this object OVER everything
+      // it computes, so the token-resolved mark colours, the theme params, the
+      // forced-colors repaint and the reduced-motion decision all survive.
+      el.options = {
+        axes: [
+          { type: 'category', position: 'left', title: { enabled: true, text: dimension.name } },
+          valueAxis,
+        ],
+      };
+    };
+
+    /*
+     * `data`, `series` and `options` are PROPERTIES, not attributes — assigning
+     * them before the class is registered would write plain expandos onto an
+     * HTMLUnknownElement, which Lit's upgrade does not reclaim, so the chart
+     * would come up empty with nothing in the console. whenDefined is the gate,
+     * and every paint goes through it rather than only the first: it resolves
+     * once and then costs a microtask.
+     */
+    const ready = customElements.whenDefined('esa-chart');
+
+    /*
+     * `latest` rather than a captured argument, so a change that lands while the
+     * first paint is still queued cannot be overwritten by it. The listener is
+     * registered SYNCHRONOUSLY at module evaluation — deferred module scripts
+     * all run before DOMContentLoaded, so a controller that dispatches its
+     * initial (draft-merged) event on DOMContentLoaded is guaranteed to find
+     * this listener already attached. That ordering is the contract.
+     */
+    let latest = JSON.parse(seedJson) as PerformanceMeasureDefinition;
+    let timer = 0;
+
+    document.addEventListener(MEASURE_CHANGE_EVENT, (event: Event) => {
+      const detail = (event as CustomEvent<MeasureChangeDetail>).detail;
+      // Addressed by slug: the event is document-scoped and carries one record,
+      // and nothing stops a screen from stacking two of these panels.
+      if (!detail?.measure || (slug && detail.measure.slug !== slug)) return;
+      latest = detail.measure;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void ready.then(() => paint(latest)), SETTLE_MS);
+    });
+
+    /*
+     * First paint, undebounced, through the SAME function every later paint
+     * uses. The server already rendered the two lists, so this looks redundant
+     * for them — it is not. It makes the client path the only live answer, so
+     * the two copies of the row helpers cannot drift into showing two different
+     * things; it mints and wires the chart, which the server cannot; and it
+     * means the panel is correct even if the controller never dispatches.
+     */
+    void ready.then(() => paint(latest));
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-firma2-split-panel]').forEach(setUp);
+</script>
+
+<style>
+  /* `hidden` has to win. The UA stylesheet's [hidden] { display: none } is the
+     weakest rule in the cascade, and `.stack` sets display: flex from an author
+     stylesheet — so without this the chart block would stay visible in its
+     hidden state. Two classes' worth of
+     specificity, scoped to this panel, rather than an !important that anything
+     nested here later would inherit. Every element this rule has to reach is a
+     build-time node, so Astro's scoping attribute is on all of them. */
+  .firma2-measure-split [hidden] {
+    display: none;
+  }
+
+  .firma2-measure-split__note {
+    margin: 0;
+    /* Primary ink deliberately — see the NOTE comment in the markup. `body-sm`
+       is the house dense floor, and design-principles' rule for small text is
+       "darken as you shrink", not grey it out. */
+    color: var(--color-content-default, #202020);
+  }
+
+  /* The chart's box is stable before the chart arrives: esa-chart renders its
+     own wrap and canvas with an inline height (320px by default) on its first
+     Lit update, so the slot is at full height a microtask after the element is
+     appended — well before ag-charts-community finishes its dynamic import.
+     Nothing here reserves a height because nothing needs to. */
+
+  /* THE TABLE'S RULES ARE :global(), AND THAT IS NOT A SHORTCUT.
+     Its rows are rebuilt from JavaScript on every paint, and Astro's scoping is
+     a COMPILE-TIME `data-astro-cid-*` attribute stamped onto nodes in the
+     template. A <tr> made by document.createElement never receives it, so a
+     scoped rule simply would not match — the table would lose its padding the
+     first time the panel updated, and only then. Declaring them global is the
+     honest fix; the `firma2-measure-split__` prefix is what keeps them from
+     reaching anything else on the page. (The typography classes these nodes also
+     wear are global by origin, from @esa/tokens via BaseLayout, which is exactly
+     why the rows are built out of them rather than out of bespoke CSS.) */
+  :global(.firma2-measure-split__table) {
+    width: 100%;
+    /* Collapsed so rows are separated by ONE hairline rather than a pair of
+       adjacent borders, which reads as a heavier band than the token intends. */
+    border-collapse: collapse;
+  }
+
+  :global(.firma2-measure-split__table th),
+  :global(.firma2-measure-split__table td) {
+    text-align: start;
+    vertical-align: baseline;
+    padding-block: var(--spacing-200, 0.5rem);
+    padding-inline: var(--spacing-300, 0.75rem);
+  }
+
+  /* Outer columns drop their outer padding so the table's text aligns with the
+     disclosure row above it rather than sitting visibly inset from it. */
+  :global(.firma2-measure-split__table th:first-child),
+  :global(.firma2-measure-split__table td:first-child) { padding-inline-start: 0; }
+  :global(.firma2-measure-split__table th:last-child),
+  :global(.firma2-measure-split__table td:last-child) { padding-inline-end: 0; }
+
+  :global(.firma2-measure-split__table thead th) {
+    color: var(--color-content-default-secondary, #646464);
+    font-weight: var(--font-weight-semibold, 600);
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  /* A row header labels its row; it does not shout over it. Same weight as the
+     figure beside it, so the row reads as one line. */
+  :global(.firma2-measure-split__table tbody th) {
+    font-weight: inherit;
+  }
+
+  :global(.firma2-measure-split__table tbody tr + tr th),
+  :global(.firma2-measure-split__table tbody tr + tr td) {
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  /* Right-aligned with tabular figures so place values stack — 1,260 lines up
+     under 312 digit for digit. This is the case the dataviz skill reserves
+     tabular-nums for (columns that must align vertically). */
+  :global(.firma2-measure-split__num) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    /* Shrink-to-fit under `table-layout: auto` — the standard idiom for "take
+       only what the content needs", handing the leftover width to the value
+       column so neither ever wraps. */
+    width: 1%;
+  }
+</style>

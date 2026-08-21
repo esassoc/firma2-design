@@ -1,0 +1,167 @@
+---
+// bcn-progress-ring — a circular completion meter: one arc for the fraction
+// complete, a lighter track for the remainder. The radial counterpart to
+// esa-progress-bar, for the one spot on this page where the reader's eye
+// wants a shape to glance at rather than a percentage to read.
+//
+// bcn-lego-checked: no esa- component renders a radial/circular meter — walked
+// node_modules/@esa/ecology/src/components/ (esa-progress-bar is linear only,
+// checked its own source for a `shape` prop; none exists). Beacon is not
+// cloned on this machine, so tier 2 is unavailable. The hub's own dataviz
+// skill lists a circular meter as a real, sanctioned form ("a single ratio
+// against a limit -> Meter") while separately deprioritizing a literal
+// donut/pie chart — so this is built as a METER bent into a ring, not a pie:
+// one continuous arc against its own track, no legend, no slice semantics.
+// bcn-progress-ring is the reusable home; component.md's own worked example
+// for this escape hatch is literally named "bcn-progress-ring".
+//
+// WHY NOT esa-chart's `donut` TYPE. esa-chart already renders a donut
+// primitive, and this page already pays for the AG Charts import via
+// firma2-project-expenditures — so reuse would be free in bytes. It is still
+// the wrong tool: a donut series is built for SLICES (named categories, a
+// legend, `fills` plural), and coercing a two-slice "value + remainder" pair
+// into it fights the primitive to get a shape it does not have an opinion
+// about. It also means paying a full canvas + proxy-DOM instance per row (one
+// per measure) for something with no legend, no tooltip and no interaction —
+// exactly the "chart library for a shape that needs none" the dataviz skill's
+// own form table warns against. A dozen lines of SVG native circles read
+// correctly in forced-colors without esa-chart's JS colour bridge (a <canvas>
+// is a bitmap invisible to forced-colors; native SVG stroke color is not),
+// and sizes to its box with plain CSS instead of a fixed pixel `height`.
+//
+// COLOUR MATCHES esa-progress-bar EXACTLY, not a "lighter step of the same
+// ramp" the dataviz skill's generic Meter spec would default to: fill reads
+// --color-background-brand, track reads --color-background-elevation-sunken —
+// the identical two tokens the linear bar next to this one on the page
+// already uses. design-principles is explicit that an approved pattern is
+// canon and a component does not get to quietly diverge from its sibling's
+// established colours just because its own shape changed.
+//
+// NO SEVERITY GRADING. Same call firma2-project-measures already makes for
+// the bar it replaces: under-delivery on a measure is not an alarm, so there
+// is no variant prop that turns the ring amber or red at some threshold — one
+// fill colour, every value, the same is-not-a-verdict stance the linear bar
+// held.
+import '@esa/tokens/typography.css';
+
+interface Props {
+  /** 0-100. Clamped, same contract as esa-progress-bar's `value`. */
+  value: number;
+  /**
+   * The accessible name for the ratio this ring draws — pass the same string
+   * an adjacent esa-progress-bar would take in `label` (e.g. the measure
+   * name). Read ONLY when `decorative` is false.
+   */
+  label?: string;
+  /**
+   * True when the exact ratio is already stated as text right next to the
+   * ring (this page's own case: an esa-stat showing "34.1 of 62 acres" sits
+   * beside it). A screen reader that read both would hear the measure's name
+   * twice in a row — once as this ring's accessible name, once as the stat's
+   * own label text — for a percentage the stat's two numbers already state
+   * more precisely than a rounded arc could. Decorative-by-default matches
+   * that: nothing is lost by hiding a shape that duplicates adjacent text,
+   * and `role="img"` only applies when `decorative` is explicitly turned off
+   * for a caller with no such adjacent text.
+   */
+  decorative?: boolean;
+  /** Rendered diameter. `md` is this page's own size; `sm` for a denser row. */
+  size?: 'sm' | 'md';
+}
+
+const { value, label = '', decorative = true, size = 'md' } = Astro.props;
+
+const clamped = Math.max(0, Math.min(100, value));
+
+// A fixed 0-100 viewBox regardless of rendered size — `size` scales the
+// element in CSS, not the geometry, so the stroke stays crisp at either rung
+// instead of two hand-tuned radii drifting apart.
+const RADIUS = 42;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+const offset = CIRCUMFERENCE * (1 - clamped / 100);
+
+const cls = ['bcn-progress-ring', `bcn-progress-ring--${size}`].join(' ');
+---
+
+<svg
+  class={cls}
+  viewBox="0 0 100 100"
+  role={decorative ? undefined : 'img'}
+  aria-hidden={decorative ? 'true' : undefined}
+  aria-label={decorative ? undefined : label || 'Progress'}
+>
+  <circle
+    class="bcn-progress-ring__track"
+    cx="50"
+    cy="50"
+    r={RADIUS}
+    fill="none"
+  ></circle>
+  <!-- Rotated -90deg so the arc starts at 12 o'clock rather than 3 o'clock —
+       the reading direction a clock-face meter is expected to start from.
+       stroke-dasharray/dashoffset is the standard SVG technique for a partial
+       ring: the circle's own circumference is the dash length, and the
+       offset hides the un-filled remainder. stroke-linecap: round gives the
+       arc's leading edge the same rounded data-end the bar chart's bars use,
+       rather than a squared-off cut mid-stroke. -->
+  <circle
+    class="bcn-progress-ring__fill"
+    cx="50"
+    cy="50"
+    r={RADIUS}
+    fill="none"
+    stroke-dasharray={CIRCUMFERENCE}
+    stroke-dashoffset={offset}
+    transform="rotate(-90 50 50)"
+  ></circle>
+</svg>
+
+<style>
+  .bcn-progress-ring {
+    --_ring-track: var(--color-background-elevation-sunken, #f0f0f0);
+    --_ring-fill: var(--color-background-brand, #46a758);
+    --_ring-stroke-width: 12;
+
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .bcn-progress-ring--md {
+    inline-size: 3.5rem;
+    block-size: 3.5rem;
+  }
+
+  .bcn-progress-ring--sm {
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
+  }
+
+  .bcn-progress-ring__track,
+  .bcn-progress-ring__fill {
+    stroke-width: var(--_ring-stroke-width);
+  }
+
+  .bcn-progress-ring__track {
+    stroke: var(--_ring-track);
+  }
+
+  .bcn-progress-ring__fill {
+    stroke: var(--_ring-fill);
+    stroke-linecap: round;
+  }
+
+  /* FORCED COLORS — matching esa-progress-bar's own treatment token for
+     token: a bordered Canvas track, a Highlight fill. Declared explicitly
+     rather than left to the browser's own SVG auto-adjustment, so the two
+     rings read identically under Windows High Contrast Mode regardless of
+     engine. */
+  @media (forced-colors: active) {
+    .bcn-progress-ring__track {
+      stroke: CanvasText;
+      opacity: 0.5;
+    }
+    .bcn-progress-ring__fill {
+      stroke: Highlight;
+    }
+  }
+</style>

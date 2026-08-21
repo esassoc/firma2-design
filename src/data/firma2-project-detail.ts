@@ -65,6 +65,19 @@ export interface WorkArea {
   extentUnit: 'acres' | 'miles';
 }
 
+/**
+ * One year of a measure's reported value — ProjectFirma reports a measure
+ * per REPORTING PERIOD, not as a single running total, and this is that
+ * period made real data rather than a display-time guess. Same shape and
+ * same reading as an `ExpenditureYear`'s `status`.
+ */
+export interface MeasureYear {
+  year: number;
+  /** In the measure's own `unit`. 0 for a year that has not been reported yet. */
+  value: number;
+  status: 'complete' | 'current' | 'upcoming';
+}
+
 /** A ProjectFirma performance measure: what was promised, and what has been reported. */
 export interface PerformanceMeasure {
   /** The measure's name. "Acres of riparian habitat restored". */
@@ -73,8 +86,11 @@ export interface PerformanceMeasure {
   unit: string;
   /** The target the project committed to. */
   expected: number;
-  /** What the project has reported to date. */
+  /** What the project has reported to date — equals the sum of `series`. */
   reported: number;
+  /** Reported value by year, oldest first. Real per-year data: `reported`
+   *  is derived FROM this, not the other way around. */
+  series: MeasureYear[];
 }
 
 /** One funder's contribution to a project's estimated total cost. */
@@ -89,6 +105,17 @@ export interface FundingSource {
   share: number;
 }
 
+/**
+ * Where one step of a project's life sits relative to today.
+ *
+ * `halted` is the fourth state and the reason this is a named type rather than
+ * an inline union: a deferred project is not "between" two events, it STOPPED at
+ * one, and a timeline that renders the stop as `upcoming` says nothing happened
+ * yet when what actually happened is that the project quit. That is a different
+ * claim, and it needs its own value to be drawn differently.
+ */
+export type LifecycleStatus = 'complete' | 'current' | 'upcoming' | 'halted';
+
 /** A dated event on the project timeline. */
 export interface Milestone {
   /** Rendered label — "March 2024". Stored formatted; see the note on determinism above. */
@@ -96,6 +123,24 @@ export interface Milestone {
   /** What happened. A short noun phrase, never a sentence. */
   title: string;
   /** Where the milestone sits relative to today's position in the project's life. */
+  status: LifecycleStatus;
+}
+
+/**
+ * One year of the project's spend against its plan — the accrual half of the
+ * funding commitment `FundingSource` records the promise of. `budgeted` is
+ * this year's slice of `estimatedTotalCost`; `spent` is what the project has
+ * actually drawn down, which is 0 for a year that has not arrived yet and the
+ * full `budgeted` figure only once spending has caught up to the plan.
+ */
+export interface ExpenditureYear {
+  year: number;
+  /** Whole dollars. Summed across every year, equals `estimatedTotalCost`. */
+  budgeted: number;
+  /** Whole dollars. Never exceeds the project's cumulative spend to date. */
+  spent: number;
+  /** Same reading as a Milestone's status — where this year sits relative to
+   *  today's position in the project's life. */
   status: 'complete' | 'current' | 'upcoming';
 }
 
@@ -114,6 +159,7 @@ export interface ProjectDetail {
   workAreas: WorkArea[];
   measures: PerformanceMeasure[];
   funding: FundingSource[];
+  expenditures: ExpenditureYear[];
   milestones: Milestone[];
 }
 
@@ -262,14 +308,101 @@ const buildMilestones = (project: Project): Milestone[] => {
   if (!template) {
     throw new Error(`No milestone template for program "${project.program}"`);
   }
+
+  // A DEFERRED PROJECT'S STATUSES ARE DECIDED HERE, NOT BY milestoneStatus().
+  //
+  // A halt happens at ONE point on a sequence, and "the first event that has not
+  // happened" is positional — milestoneStatus() reads a single year with no idea
+  // what came before it, so it cannot express that. Left to it, a deferred
+  // project's `year <= PRESENT_YEAR` branch marks the current year's milestone
+  // COMPLETE: Pescadero Marsh rendered "Treatment features online, 2026" as done
+  // on a project that has not moved. A milestone is an event — it happened or it
+  // did not — and a stalled project's next event has not.
+  //
+  // So: everything genuinely in the past stands, the NEXT event is where the
+  // project stopped, and the rest are upcoming. Nothing is ever `current`,
+  // because nothing is in progress.
+  //
+  // This deliberately does NOT change milestoneStatus() itself, which Measures
+  // and Expenditures also call. For those two the old reading is the correct
+  // one: a deferred project's PRESENT_YEAR is still an ELAPSED year — money
+  // could be drawn and values reported right up to the halt — and an accrual
+  // asks "could this year have received any?", not "did this event occur?".
+  // Same word, two questions, and only the event question has a wrong answer.
+  const isDeferred = project.stage === 'Deferred';
+  let haltMarked = false;
+
   return template.map((entry, i) => {
     const year = resolveMilestoneYear(project, entry.anchor);
+
+    let status: LifecycleStatus;
+    if (!isDeferred) {
+      status = milestoneStatus(year, project.stage);
+    } else if (year < PRESENT_YEAR) {
+      status = 'complete';
+    } else if (!haltMarked) {
+      haltMarked = true;
+      status = 'halted';
+    } else {
+      status = 'upcoming';
+    }
+
     return {
       date: `${MILESTONE_MONTHS[i % MILESTONE_MONTHS.length]} ${year}`,
       title: entry.title,
-      status: milestoneStatus(year, project.stage),
+      status,
     };
   });
+};
+
+// ---------------------------------------------------------------------------
+// Shared accrual curve — used by Measures below AND by Expenditures further
+// down, so both series accrue on the same shape rather than two hand-tuned
+// curves that happen to agree today and drift the first time one changes.
+// ---------------------------------------------------------------------------
+
+// The accrual shape, computed rather than authored: low at mobilization and
+// closeout, highest mid-project, for every project regardless of length.
+// sin() is positive across the whole (0, π) span for any window, so an
+// n-year project always gets n positive weights with no per-length table to
+// hand-type and no risk of a zero or negative share. Reads equally well as
+// "how a project spends money" and "how a project delivers physical work" —
+// both ramp up once mobilized and taper as the work closes out.
+const accrualWeights = (yearCount: number): number[] => {
+  const raw = Array.from({ length: yearCount }, (_, i) =>
+    Math.sin((Math.PI * (i + 0.5)) / yearCount),
+  );
+  const total = raw.reduce((sum, w) => sum + w, 0);
+  return raw.map((w) => w / total);
+};
+
+/**
+ * Spread `total` across the years that have actually happened — a year whose
+ * `status` is 'upcoming' gets none of it — proportional to each elapsed
+ * year's own accrual weight, so a total running ahead of or behind an even
+ * pace still tracks the plan's shape rather than a flat average. The last
+ * elapsed year absorbs the rounding remainder, via the caller's own `round`,
+ * so the spread always sums to `total` exactly. `weights` and `statuses` are
+ * parallel arrays, one entry per year.
+ */
+const spreadAcrossElapsedYears = (
+  total: number,
+  weights: number[],
+  statuses: ('complete' | 'current' | 'upcoming')[],
+  round: (n: number) => number,
+): number[] => {
+  const values = weights.map(() => 0);
+  const elapsedIndices = weights.map((_, i) => i).filter((i) => statuses[i] !== 'upcoming');
+  if (elapsedIndices.length === 0 || total <= 0) return values;
+  const elapsedWeightSum = elapsedIndices.reduce((sum, i) => sum + weights[i], 0);
+  let allocated = 0;
+  elapsedIndices.forEach((i, position) => {
+    const last = position === elapsedIndices.length - 1;
+    const amount = last ? total - allocated : round((total * weights[i]) / elapsedWeightSum);
+    allocated += amount;
+    values[i] = amount;
+  });
+  return values;
 };
 
 // ---------------------------------------------------------------------------
@@ -313,17 +446,39 @@ const buildMeasures = (
   progress: number,
 ): PerformanceMeasure[] => {
   const base = stageCompletion(project.stage, progress);
+  const { implementationStartYear: start, completionYear: end, stage } = project;
+  const years: number[] = [];
+  for (let year = start; year <= end; year += 1) years.push(year);
+  const weights = accrualWeights(years.length);
+  const statuses = years.map((year) => milestoneStatus(year, stage));
+
   return authored.map(([name, unit, expected], i) => {
     const fraction = Math.min(1, base * MEASURE_SKEW[i % MEASURE_SKEW.length]);
     const raw = expected * fraction;
     // A decimal on a continuous unit, but only while the number is small enough
     // for the tenth to mean anything — "3,100 acre-feet" does not want ".4".
     const decimal = CONTINUOUS_UNITS.has(unit) && expected < 1000;
+    const round = (n: number) => (decimal ? Number(n.toFixed(1)) : Math.round(n));
+    const reported = round(raw);
+
+    // REPORTED BY YEAR — the reporting period ProjectFirma actually stores,
+    // not a single running total re-guessed at render time. Spread across
+    // the years work could have reached, on the same accrual curve
+    // buildExpenditures uses, so a measure's per-year shape agrees with the
+    // project's own spend curve rather than telling a separate story.
+    const spread = spreadAcrossElapsedYears(reported, weights, statuses, round);
+    const series: MeasureYear[] = years.map((year, yi) => ({
+      year,
+      value: spread[yi],
+      status: statuses[yi],
+    }));
+
     return {
       name,
       unit,
       expected,
-      reported: decimal ? Number(raw.toFixed(1)) : Math.round(raw),
+      reported,
+      series,
     };
   });
 };
@@ -376,6 +531,54 @@ const buildFunding = (
       share: amount / total,
     };
   });
+};
+
+// ---------------------------------------------------------------------------
+// Expenditures
+// ---------------------------------------------------------------------------
+
+const buildExpenditures = (project: Project, progress: number): ExpenditureYear[] => {
+  const { implementationStartYear: start, completionYear: end, estimatedTotalCost: total, stage } = project;
+  const years: number[] = [];
+  for (let year = start; year <= end; year += 1) years.push(year);
+
+  const weights = accrualWeights(years.length);
+  const statuses = years.map((year) => milestoneStatus(year, stage));
+
+  // BUDGETED — the plan. Every year but the last rounds to the nearest $500;
+  // the last absorbs the remainder, so the column sums to estimatedTotalCost
+  // to the dollar. Same rounding buildFunding uses, for the same reason: the
+  // two totals — what was promised in funding, what is planned to be spent —
+  // have to agree exactly, not to the nearest rounding error.
+  const budgeted: number[] = [];
+  {
+    let allocated = 0;
+    weights.forEach((weight, i) => {
+      const last = i === weights.length - 1;
+      const amount = last ? total - allocated : Math.round((total * weight) / 500) * 500;
+      allocated += amount;
+      budgeted.push(amount);
+    });
+  }
+
+  // SPENT — the accrual. Total spent to date is the SAME completion fraction
+  // the measures section reports against (stageCompletion, above): a project
+  // that has delivered 55% of its measures has spent 55% of its budget, not a
+  // second figure that could disagree with the one already on screen.
+  //
+  // Spread across the years that have actually happened, on the same shared
+  // curve buildMeasures uses for its own per-year series — see
+  // spreadAcrossElapsedYears above. $500 steps, matching buildFunding's and
+  // this function's own BUDGETED rounding.
+  const totalSpent = Math.round(total * stageCompletion(stage, progress));
+  const spent = spreadAcrossElapsedYears(totalSpent, weights, statuses, (n) => Math.round(n / 500) * 500);
+
+  return years.map((year, i) => ({
+    year,
+    budgeted: budgeted[i],
+    spent: spent[i],
+    status: statuses[i],
+  }));
 };
 
 // ---------------------------------------------------------------------------
@@ -950,6 +1153,7 @@ const buildDetail = (project: Project): ProjectDetail => {
     })),
     measures: buildMeasures(project, authored.measures, authored.progress),
     funding: buildFunding(project, authored.funders),
+    expenditures: buildExpenditures(project, authored.progress),
     milestones: buildMilestones(project),
   };
 };

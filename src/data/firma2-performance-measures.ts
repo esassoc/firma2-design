@@ -1,308 +1,503 @@
-// The tenant's performance-measure catalog — the records behind the Performance
-// Measures index, and the vocabulary the setup drawer collects.
+// Performance measures, modelled as a QUANTITY plus a set of DIMENSIONS, where
+// every dimension declares WHERE ITS VALUE COMES FROM.
 //
-// INVENTED CONTENT. Every measure, definition, guidance string and count below
-// is fabricated. Nothing is copied, derived, or sanitized from a client system
-// or any ProjectFirma tenant — this repo and its deployed site are public.
+// THIS IS A PROPOSAL, NOT A PORT. ProjectFirma today stores a measure's
+// breakdowns as per-measure subcategories that a reporter fills in by hand,
+// every time. That has two costs the model below is built to remove:
 //
-// What IS borrowed is the ProjectFirma data model for a performance measure:
-// a measure has a data type and a unit, values roll up across projects by a
-// declared aggregation, a measure may be split into SUBCATEGORIES, each carrying its own
-// option list, and reporting is governed by
-// a frequency and a required flag. That is the shape the setup drawer walks a
-// user through, one step per group.
+//   1. THE SAME VOCABULARY IS RE-DECLARED PER MEASURE. Three measures that care
+//      about land ownership each define their own option list, independently,
+//      and they drift — one says Federal/State/Private/Tribal, the next says
+//      Public/Private — so nothing can be grouped across them.
+//   2. THE REPORTER IS ASKED FOR THINGS THE SYSTEM ALREADY KNOWS. If a
+//      treatment's extent is mapped, whether it fell inside critical habitat is
+//      a spatial question, not a question for the person who did the work.
 //
-// DETERMINISM. design-principles requires mock data to render identically on
-// every run: this is a literal array with no Math.random() and no Date.now().
+// So a dimension carries a SOURCE. Four kinds, and the difference between them
+// is who pays:
 //
-// `projectCount` is AUTHORED rather than derived from firma2-project-detail.
-// Derivation would have to match measures by NAME across two files, and a
-// near-miss ("Acres treated" vs "Acres treated with prescribed fire") would
-// silently report zero rather than fail loudly. An authored int cannot drift
-// into a wrong answer the way a fragile join can.
+//   reported    — the person entering the record picks it.       COST: one choice
+//   spatial     — a geospatial layer answers it, via the place.  COST: none
+//   historical  — prior records on the same place answer it.     COST: none
+//   record      — the project or the entry itself answers it.    COST: none
+//
+// Defining a measure is therefore: name the quantity, then for each dimension,
+// name its source. Everything downstream — how heavy the reporting form is, what
+// the program can slice by — falls out of that one set of declarations.
+//
+// A SPATIALLY DERIVED DIMENSION IS A SPLIT, NOT A LABEL. Twenty acres of biomass
+// removal is not "in critical habitat" or "not" — it is 18 acres inside and 2
+// outside. A reported dimension always resolves to exactly one value; a spatial
+// one resolves to an allocation. That is strictly better than asking a human,
+// who has to pick one and rounds to whichever is bigger.
+//
+// PRIMARY vs SUPPORTING. One reported dimension is primary: it is the thing that
+// makes an entry an entry. You cannot report "20 acres" without saying what you
+// did. The rest qualify it. This is not decoration — it decides the shape of the
+// reporting form, where the primary is the row you add and the supporting ones
+// are fields on that row.
+//
+// INVENTED CONTENT. Every measure, layer and option below is fabricated. The
+// VOCABULARY is drawn from public fuels-and-restoration practice (treatment
+// phases, critical zones, HUC watersheds); nothing is copied from a client
+// system or any ProjectFirma tenant. This repo and its site are public.
+//
+// DETERMINISTIC — a literal array, no Math.random(), no Date.now().
 
-import { projects } from './firma2-projects';
+import { projects, classifications } from './firma2-projects';
+import type { Classification } from './firma2-projects';
 
-/** How a measure's values are typed. Drives the unit field and the value input. */
-export type MeasureDataType = 'Number' | 'Percent' | 'Currency';
+// ---------------------------------------------------------------------------
+// Dimension sources
+// ---------------------------------------------------------------------------
 
-/** How values from many projects combine into a program-level total. */
-export type MeasureAggregation = 'Sum' | 'Average' | 'Most recent';
+/**
+ * The geospatial layers this tenant has loaded. A spatial dimension names one
+ * of these; the layer supplies the option vocabulary, so the measure author
+ * never retypes it and two measures reading the same layer cannot disagree.
+ */
+export interface GeoLayer {
+  id: string;
+  name: string;
+  /** The values the layer can return. Includes the outside-every-polygon case. */
+  values: string[];
+  /** What the layer actually is, for an author choosing between two similar ones. */
+  description: string;
+}
 
-/** How often a project is expected to report the measure. */
-export type ReportingFrequency = 'Annually' | 'Quarterly' | 'On completion';
+export const GEO_LAYERS: GeoLayer[] = [
+  {
+    id: 'critical-zone',
+    name: 'Critical zone',
+    values: ['Critical habitat', 'Critical headwater resources', 'Recreation area', 'Unspecified', 'None'],
+    description: 'Designations the program treats as priority ground.',
+  },
+  {
+    id: 'land-ownership',
+    name: 'Land ownership',
+    values: ['Federal', 'State', 'Private', 'Tribal', 'Unknown'],
+    description: 'Surface ownership from the statewide parcel layer.',
+  },
+  {
+    id: 'watershed',
+    name: 'Watershed',
+    values: ['North Yuba', 'Middle Fork Feather', 'Upper Butte', 'Deer Creek', 'Battle Creek'],
+    description: 'HUC-12 subwatershed containing the treated extent.',
+  },
+  {
+    id: 'county',
+    name: 'County',
+    values: ['Butte', 'Nevada', 'Plumas', 'Sierra', 'Tehama', 'Yuba'],
+    description: 'County boundary containing the treated extent.',
+  },
+];
 
-/** Where a measure sits in its own lifecycle. */
+/** Fields the entry or its project already carries. No layer, no lookup. */
+export const RECORD_FIELDS = [
+  { id: 'reporting-year', name: 'Reporting year', description: "The entry's own date." },
+  { id: 'project', name: 'Project', description: 'The project the entry belongs to.' },
+  { id: 'lead-organization', name: 'Lead organization', description: "The project's lead organization." },
+  { id: 'program', name: 'Program', description: 'The taxonomy branch the project rolls up into.' },
+] as const;
+
+/** Questions answered by looking at earlier entries on the same place. */
+export const HISTORICAL_RULES = [
+  {
+    id: 'treatment-phase',
+    name: 'Initial vs maintenance',
+    description: 'First entry on a place is Initial; a re-entry inside the program window is Maintenance.',
+    values: ['Initial', 'Maintenance'],
+  },
+  {
+    id: 'first-treatment-year',
+    name: 'First treated',
+    description: 'The year this place first appeared in any entry.',
+    values: [],
+  },
+] as const;
+
+export type DimensionSourceKind = 'reported' | 'spatial' | 'historical' | 'record';
+
+export interface DimensionSource {
+  kind: DimensionSourceKind;
+  /** GEO_LAYERS id for `spatial`, HISTORICAL_RULES id for `historical`, RECORD_FIELDS id for `record`. */
+  ref?: string;
+}
+
+export interface MeasureDimension {
+  /** What the dimension is called on the form and in the report. */
+  name: string;
+  source: DimensionSource;
+  /**
+   * The vocabulary. Authored ONLY for `reported` dimensions — every other kind
+   * takes its values from the source it names, which is the point of naming one.
+   */
+  options?: string[];
+  /**
+   * The dimension that makes an entry an entry. Exactly one per measure, and it
+   * must be `reported` — the system cannot derive what someone chose to do.
+   */
+  primary?: boolean;
+}
+
+
+// ---------------------------------------------------------------------------
+// The fork: what KIND of statement a measure makes
+// ---------------------------------------------------------------------------
+
+/**
+ * An OUTPUT records what someone did. An OUTCOME records what is true.
+ *
+ * These are not two flavours of one thing, and the difference is not cosmetic —
+ * it changes who reports, what a record must carry, and which counting rules
+ * are even meaningful:
+ *
+ *   - An output has an actor and a primary reported dimension: you cannot report
+ *     "20 acres" without saying what you did to them. Outputs sum, and mapped
+ *     outputs can be unioned.
+ *   - An outcome has no actor. Nobody "did" a water temperature. There is no
+ *     "what did you do" to ask, summing readings is meaningless, and the record
+ *     belongs to a PLACE and a monitoring effort rather than to a project — a
+ *     fish count in a watershed is not caused by one grant.
+ *
+ * This is why the two are forked at creation rather than distinguished by a
+ * checkbox on one form: they need different fields, so they get different
+ * shapes.
+ */
+export type MeasureKind = 'output' | 'outcome';
+
+export const MEASURE_KINDS: {
+  id: MeasureKind;
+  name: string;
+  /** What the measure records, in the author's terms. */
+  description: string;
+  /** Who files the record. */
+  reportedBy: string;
+  /** Whether a primary reported dimension is required. */
+  requiresPrimaryDimension: boolean;
+}[] = [
+  {
+    id: 'output',
+    name: 'Output',
+    description: 'work someone did — acres treated, barriers removed, hours contributed',
+    reportedBy: 'the project',
+    requiresPrimaryDimension: true,
+  },
+  {
+    id: 'outcome',
+    name: 'Outcome',
+    description: 'a condition someone measured — survival rate, water temperature, fish density',
+    reportedBy: 'a monitoring effort, about a place',
+    requiresPrimaryDimension: false,
+  },
+];
+
+export const measureKind = (id: MeasureKind) => MEASURE_KINDS.find((k) => k.id === id)!;
+
+// ---------------------------------------------------------------------------
+// The measure
+// ---------------------------------------------------------------------------
+
+/** How entries combine. Replaces a summable/not-summable flag, which is too coarse. */
+export type CountingRule =
+  | 'sum'
+  | 'spatial-union'
+  | 'distinct-places'
+  | 'latest-per-place'
+  | 'average-per-place';
+
+export const COUNTING_RULES: {
+  id: CountingRule;
+  name: string;
+  description: string;
+  /** Which kinds of measure this rule is meaningful for. */
+  appliesTo: MeasureKind[];
+}[] = [
+  {
+    id: 'sum',
+    name: 'Sum every entry',
+    description: 'Work delivered. Ground treated twice counts twice — correct for effort and cost.',
+    appliesTo: ['output'],
+  },
+  {
+    id: 'spatial-union',
+    name: 'Union the mapped extent',
+    description: 'Ground in a treated condition. Treating the same acre twice counts once.',
+    appliesTo: ['output'],
+  },
+  {
+    id: 'distinct-places',
+    name: 'Count distinct places',
+    description: 'How many sites were reached, regardless of how much was done at each.',
+    appliesTo: ['output'],
+  },
+  {
+    id: 'latest-per-place',
+    name: 'Most recent reading per place',
+    description: 'The current condition. An older reading is superseded, never added to.',
+    appliesTo: ['outcome'],
+  },
+  {
+    id: 'average-per-place',
+    name: 'Average across places',
+    description: 'A typical condition over the places measured. Unweighted, so compare like sites.',
+    appliesTo: ['outcome'],
+  },
+];
+
+/** The rules worth offering for a given kind. Summing temperatures is not a choice. */
+export const countingRulesFor = (kind: MeasureKind) =>
+  COUNTING_RULES.filter((r) => r.appliesTo.includes(kind));
+
+/**
+ * Every unit a quantity can carry. CLOSED, because an open list cannot be
+ * aggregated — `acres`, `Acres` and `ac` do not total.
+ *
+ * It has to be COMPLETE, though, and an earlier five-item shortlist was not: it
+ * covered mapped restoration work and nothing else, so a water-quality, cost or
+ * outreach measure hit a wall on the first question anyone asked. Anything this
+ * list omits is a measure the product cannot express, so the bar for leaving
+ * something out is high.
+ */
+export const UNITS = [
+  // extent and length
+  'acres', 'square feet', 'miles', 'linear feet',
+  // counts
+  'each', 'plants', 'people', 'events',
+  // mass and load
+  'pounds', 'tons', 'tons per year',
+  // effort and money
+  'hours', 'dollars',
+  // condition readings — outcome measures live here
+  'percent', 'degrees Celsius', 'cubic feet per second', 'parts per million',
+] as const;
+export type MeasureUnit = (typeof UNITS)[number];
+
 export type MeasureStatus = 'Active' | 'Draft' | 'Retired';
 
-/**
- * A subcategory: one dimension a measure can be split along, plus the closed
- * list of values that dimension accepts. "Habitat type" -> Riparian / Wetland /
- * Upland. A measure with no subcategories is reported as a single number.
- */
-export interface MeasureSubcategory {
-  /** The dimension's name, as a reporter sees it above the option list. */
-  name: string;
-  /** The closed vocabulary. Order is the order reporters see. */
-  options: string[];
-}
-
-export interface PerformanceMeasureDefinition {
-  /** URL-safe id. */
-  slug: string;
-  /**
-   * The measure's name. EMPTY until the author names it: creating a measure asks
-   * only for its data type, so the record exists — and is shareable — before it
-   * has a name. Render it through measureDisplayName(), never raw.
-   */
-  name: string;
-  /** What counts toward this measure, and what does not. Stored on the record. */
-  definition: string;
-  /** Taxonomy branch the measure rolls up into. Matches a project `program`. */
-  program?: string;
-  dataType: MeasureDataType;
-  /** Unit of the reported value. Empty for Percent and Currency, which carry their own. */
-  unit: string;
-  /** Decimal places the value input accepts. */
-  decimalPlaces: number;
-  aggregation?: MeasureAggregation;
-  subcategories: MeasureSubcategory[];
-  reportingFrequency?: ReportingFrequency;
-  /** Whether a project in this program must report the measure to close a period. */
-  required: boolean;
-  /** Instruction shown to the reporter at the moment they enter a value. */
-  reporterGuidance: string;
-  status: MeasureStatus;
-  /** Projects currently reporting this measure. */
-  projectCount: number;
-}
-
-/**
- * esa-pill variant per status. Draft takes `info` (unfinished, not wrong) and
- * Retired takes `default` — a retired measure is quiet, not alarming, because
- * nothing is broken about it.
- */
 export const MEASURE_STATUS_TONE: Record<MeasureStatus, 'default' | 'info' | 'primary' | 'success' | 'warning'> = {
   Active: 'success',
   Draft: 'info',
   Retired: 'default',
 };
 
+export interface PerformanceMeasureDefinition {
+  slug: string;
+  /** Output (work done) or outcome (a condition measured). Set at creation. */
+  kind: MeasureKind;
+  /** Empty until named — a measure exists before it is finished. */
+  name: string;
+  /** What counts toward this measure and what does not. */
+  definition: string;
+  /**
+   * The plan goals this measure reports toward — ProjectFirma's classification
+   * vocabulary, the same one projects associate with.
+   *
+   * A SET, NOT ONE BRANCH, and that is the whole reason it replaced `program`.
+   * A program is where a project FILES; a classification is what it is FOR, and
+   * one measure serves several at once — acres of riparian planting counts
+   * toward habitat and toward water quality without being two measures. The old
+   * single `program` forced a choice that the portfolio's real roll-up axis does
+   * not ask for, and made "what did we buy toward salmon recovery" answerable
+   * only by hand.
+   *
+   * Empty is a real state on a draft, and the one outstandingFields() flags.
+   */
+  classifications: Classification[];
+  /** What is being counted, in words. "Treated extent", "Hours worked". */
+  quantity: string;
+  unit?: MeasureUnit;
+  decimalPlaces: number;
+  countingRule?: CountingRule;
+  /** Every dimension, reported and derived alike, in reporting-form order. */
+  dimensions: MeasureDimension[];
+  /** Instruction shown at the moment a value is entered. */
+  reporterGuidance: string;
+  status: MeasureStatus;
+  projectCount: number;
+}
+
 export const measures: PerformanceMeasureDefinition[] = [
   {
+    // THE WORKED EXAMPLE. Two reported dimensions, four derived — so a reporter
+    // answers three questions and the program can slice six ways.
+    slug: 'acres-forest-fuels-reduction-treatment',
+    kind: 'output',
+    name: 'Acres of forest fuels reduction treatment',
+    definition:
+      'Acres where surface or ladder fuels were removed, rearranged, or consumed under an approved prescription. Measured as the extent actually treated, not the unit planned.',
+    classifications: ['Wildfire resilience'],
+    quantity: 'Treated extent',
+    unit: 'acres',
+    decimalPlaces: 0,
+    countingRule: 'sum',
+    dimensions: [
+      {
+        name: 'Treatment type',
+        source: { kind: 'reported' },
+        primary: true,
+        options: ['Biomass removal', 'Broadcast burning', 'Pile burning', 'Mastication', 'Hand thinning'],
+      },
+      {
+        // REPORTED, and it is the interesting one: Initial vs Maintenance is
+        // derivable from the place's own history, but Planning and Completed are
+        // programme judgements no record can supply. So the whole dimension stays
+        // reported, and the form offers the derived answer as a prompt rather
+        // than filling it in — see the reporting-form preview.
+        name: 'Treatment phase',
+        source: { kind: 'reported' },
+        options: ['Planning', 'Initial', 'Maintenance', 'Completed', 'Unspecified'],
+      },
+      { name: 'Critical zone', source: { kind: 'spatial', ref: 'critical-zone' } },
+      { name: 'Land ownership', source: { kind: 'spatial', ref: 'land-ownership' } },
+      { name: 'Watershed', source: { kind: 'spatial', ref: 'watershed' } },
+      { name: 'Reporting year', source: { kind: 'record', ref: 'reporting-year' } },
+    ],
+    reporterGuidance:
+      'Report the extent that was actually treated, not the unit planned. A unit re-entered in a later season is a new entry for that season.',
+    status: 'Active',
+    projectCount: 7,
+  },
+  {
     slug: 'acres-riparian-habitat-restored',
+    kind: 'output',
     name: 'Acres of riparian habitat restored',
     definition:
-      'Acres within the streamside corridor where native vegetation has been planted or released and the site has passed its first survival check.',
-    program: 'Riparian Revegetation',
-    dataType: 'Number',
+      'Acres within the streamside corridor where native vegetation was planted or released and the site has passed its first survival check.',
+    classifications: ['Riparian & wetland habitat', 'Water quality'],
+    quantity: 'Restored extent',
     unit: 'acres',
     decimalPlaces: 1,
-    aggregation: 'Sum',
-    subcategories: [
-      { name: 'Treatment', options: ['Planting', 'Invasive removal', 'Natural recruitment'] },
-      { name: 'Bank', options: ['Left bank', 'Right bank', 'Both banks'] },
+    countingRule: 'spatial-union',
+    dimensions: [
+      {
+        name: 'Treatment type',
+        source: { kind: 'reported' },
+        primary: true,
+        options: ['Planting', 'Invasive removal', 'Natural recruitment'],
+      },
+      { name: 'Critical zone', source: { kind: 'spatial', ref: 'critical-zone' } },
+      { name: 'Watershed', source: { kind: 'spatial', ref: 'watershed' } },
+      { name: 'Reporting year', source: { kind: 'record', ref: 'reporting-year' } },
     ],
-    reportingFrequency: 'Annually',
-    required: true,
     reporterGuidance:
       'Count acres where planting is complete and the first survival check has passed. Do not count acres prepared but not yet planted.',
     status: 'Active',
     projectCount: 14,
   },
   {
-    slug: 'fish-passage-barriers-removed',
-    name: 'Fish passage barriers removed',
-    definition:
-      'Structures no longer impeding upstream or downstream passage at any life stage, confirmed by a post-construction passage assessment.',
-    program: 'Fish Passage',
-    dataType: 'Number',
-    unit: 'barriers',
+    // THE COUNTER-EXAMPLE, and it is here on purpose: no place, so nothing
+    // derives. Every dimension is reported and there are only two. A model that
+    // only works for mapped ground is not a model.
+    slug: 'volunteer-hours-contributed',
+    kind: 'output',
+    name: 'Volunteer hours contributed',
+    definition: 'Hours worked on site by unpaid participants, from the signed field log for each work day.',
+    classifications: ['Riparian & wetland habitat', 'Public access & recreation'],
+    quantity: 'Hours worked',
+    unit: 'hours',
     decimalPlaces: 0,
-    aggregation: 'Sum',
-    subcategories: [
-      { name: 'Barrier type', options: ['Culvert', 'Dam', 'Weir', 'Push-up dam', 'Flashboard'] },
+    countingRule: 'sum',
+    dimensions: [
+      {
+        name: 'Activity',
+        source: { kind: 'reported' },
+        primary: true,
+        options: ['Planting', 'Monitoring', 'Site preparation', 'Outreach event'],
+      },
+      { name: 'Reporting year', source: { kind: 'record', ref: 'reporting-year' } },
     ],
-    reportingFrequency: 'On completion',
-    required: true,
-    reporterGuidance:
-      'Report a barrier once its passage assessment is signed. A barrier replaced with a passable structure counts; one modified but still rated impassable does not.',
-    status: 'Active',
-    projectCount: 9,
-  },
-  {
-    slug: 'stream-miles-habitat-restored',
-    name: 'Stream miles of habitat restored',
-    definition:
-      'Channel length where instream structure, gradient, or substrate has been altered to restore rearing or spawning function.',
-    program: 'Aquatic Habitat Restoration',
-    dataType: 'Number',
-    unit: 'miles',
-    decimalPlaces: 2,
-    aggregation: 'Sum',
-    subcategories: [
-      { name: 'Habitat function', options: ['Spawning', 'Rearing', 'Holding', 'Migration'] },
-    ],
-    reportingFrequency: 'Annually',
-    required: true,
-    reporterGuidance:
-      'Measure along the channel centerline, not bank to bank. Where treated reaches overlap, report the union once rather than each reach separately.',
-    status: 'Active',
-    projectCount: 11,
-  },
-  {
-    slug: 'acres-treated-prescribed-fire',
-    name: 'Acres treated with prescribed fire',
-    definition:
-      'Acres carried by an ignition under an approved burn plan, measured from the perimeter actually burned rather than the unit planned.',
-    program: 'Forest Health & Fuels',
-    dataType: 'Number',
-    unit: 'acres',
-    decimalPlaces: 0,
-    aggregation: 'Sum',
-    subcategories: [
-      { name: 'Burn type', options: ['Broadcast', 'Pile', 'Understory', 'Jackpot'] },
-      { name: 'Ownership', options: ['Federal', 'State', 'Private', 'Tribal'] },
-    ],
-    reportingFrequency: 'Quarterly',
-    required: true,
-    reporterGuidance:
-      'Report the perimeter that carried fire, not the unit planned. A unit re-entered in a later season is reported again for that season.',
-    status: 'Active',
-    projectCount: 7,
-  },
-  {
-    slug: 'native-trees-planted',
-    name: 'Native trees and shrubs planted',
-    definition:
-      'Individual native woody plants installed, counted at installation and not adjusted for later mortality.',
-    program: 'Riparian Revegetation',
-    dataType: 'Number',
-    unit: 'plants',
-    decimalPlaces: 0,
-    aggregation: 'Sum',
-    subcategories: [
-      { name: 'Growth form', options: ['Tree', 'Shrub', 'Cutting'] },
-      { name: 'Stock', options: ['Container', 'Bare root', 'Live stake', 'Seed'] },
-    ],
-    reportingFrequency: 'Annually',
-    required: false,
-    reporterGuidance:
-      'Count plants installed, not plants ordered. Mortality is tracked by the survival measure, so do not reduce this count after a die-off.',
+    reporterGuidance: 'Count hours on site from the signed field log. Travel and training time are not reported here.',
     status: 'Active',
     projectCount: 12,
   },
   {
+    slug: 'fish-passage-barriers-removed',
+    kind: 'output',
+    name: 'Fish passage barriers removed',
+    definition:
+      'Structures no longer impeding passage at any life stage, confirmed by a post-construction passage assessment.',
+    classifications: ['Salmon & steelhead recovery'],
+    quantity: 'Barriers cleared',
+    unit: 'each',
+    decimalPlaces: 0,
+    countingRule: 'distinct-places',
+    dimensions: [
+      {
+        name: 'Barrier type',
+        source: { kind: 'reported' },
+        primary: true,
+        options: ['Culvert', 'Dam', 'Weir', 'Push-up dam', 'Flashboard'],
+      },
+      { name: 'Watershed', source: { kind: 'spatial', ref: 'watershed' } },
+      { name: 'Reporting year', source: { kind: 'record', ref: 'reporting-year' } },
+    ],
+    reporterGuidance:
+      'Report a barrier once its passage assessment is signed. A barrier modified but still rated impassable does not count.',
+    status: 'Active',
+    projectCount: 9,
+  },
+  {
+    // THE OUTCOME. Here to prove the fork is real rather than a label: it has no
+    // primary dimension and no "what did you do", because nobody DID a survival
+    // rate — it was measured. Its counting rule is one no output can use, and
+    // its dimensions are conditions of the reading, not choices by an actor.
     slug: 'plant-survival-rate',
+    kind: 'outcome',
     name: 'Plant survival rate',
     definition:
       'Share of installed plants alive at the survey, against the count installed on the same unit.',
-    program: 'Riparian Revegetation',
-    dataType: 'Percent',
-    unit: '',
+    classifications: ['Riparian & wetland habitat'],
+    quantity: 'Survival at survey',
+    unit: 'percent',
     decimalPlaces: 0,
-    aggregation: 'Average',
-    subcategories: [
-      { name: 'Years since planting', options: ['Year 1', 'Year 3', 'Year 5'] },
+    countingRule: 'latest-per-place',
+    dimensions: [
+      {
+        // Reported, but NOT primary — it qualifies a reading rather than naming
+        // an action. An outcome has no primary dimension at all.
+        name: 'Years since planting',
+        source: { kind: 'reported' },
+        options: ['Year 1', 'Year 3', 'Year 5'],
+      },
+      { name: 'Critical zone', source: { kind: 'spatial', ref: 'critical-zone' } },
+      { name: 'Watershed', source: { kind: 'spatial', ref: 'watershed' } },
+      { name: 'Reporting year', source: { kind: 'record', ref: 'reporting-year' } },
     ],
-    reportingFrequency: 'Annually',
-    required: false,
     reporterGuidance:
       'Survey the same units each year so the series stays comparable. Report the plot average, not a whole-site estimate.',
     status: 'Active',
     projectCount: 8,
   },
   {
-    slug: 'acres-tidal-marsh-restored',
-    name: 'Acres of tidal marsh restored',
-    definition:
-      'Acres reconnected to tidal exchange and holding marsh plain elevation, measured after the first full tidal year.',
-    program: 'Meadow & Wetland Restoration',
-    dataType: 'Number',
-    unit: 'acres',
-    decimalPlaces: 1,
-    aggregation: 'Sum',
-    subcategories: [
-      { name: 'Marsh zone', options: ['Low marsh', 'Mid marsh', 'High marsh', 'Transition'] },
-    ],
-    reportingFrequency: 'Annually',
-    required: true,
-    reporterGuidance:
-      'Report acres after the first full tidal year, so subsided ground that has not yet accreted is not counted as marsh.',
-    status: 'Active',
-    projectCount: 6,
-  },
-  {
-    slug: 'sediment-load-reduced',
-    name: 'Sediment load reduced',
-    definition:
-      'Annual sediment delivery avoided at the treated site, from the road or bank assessment protocol used at design.',
-    program: 'Stormwater & Water Quality',
-    dataType: 'Number',
-    unit: 'tons per year',
+    // TWO DRAFTS, ONE PER KIND. The create dialog routes to the one matching the
+    // answer, so the fork is something you can SEE — you land on a different
+    // shape depending on what you said. A single shared draft would have made
+    // the question decorative, which is exactly the fault it replaced.
+    slug: 'draft-untitled-output',
+    kind: 'output',
+    name: '',
+    definition: '',
+    // Empty, like every other field on a fresh draft — and empty is what
+    // outstandingFields() flags, so a new measure starts one item short of
+    // publishable rather than silently classified.
+    classifications: [],
+    quantity: '',
     decimalPlaces: 0,
-    aggregation: 'Sum',
-    subcategories: [
-      { name: 'Source', options: ['Road surface', 'Streambank', 'Gully', 'Landslide'] },
-    ],
-    reportingFrequency: 'On completion',
-    required: true,
-    reporterGuidance:
-      'Use the same protocol the design estimate used, so the reported reduction can be compared against what was promised.',
-    status: 'Active',
-    projectCount: 5,
-  },
-  {
-    slug: 'cost-per-acre-treated',
-    name: 'Cost per acre treated',
-    definition:
-      'Delivered cost divided by acres treated, including implementation labor and materials but excluding planning and permitting.',
-    program: 'Forest Health & Fuels',
-    dataType: 'Currency',
-    unit: '',
-    decimalPlaces: 2,
-    aggregation: 'Average',
-    subcategories: [],
-    reportingFrequency: 'Annually',
-    required: false,
-    reporterGuidance:
-      'Exclude planning and permitting so the figure compares across projects that scoped those phases differently.',
+    dimensions: [],
+    reporterGuidance: '',
     status: 'Draft',
     projectCount: 0,
   },
   {
-    slug: 'volunteer-hours-contributed',
-    name: 'Volunteer hours contributed',
-    definition:
-      'Hours worked on site by unpaid participants, from the signed field log for each work day.',
-    program: 'Riparian Revegetation',
-    dataType: 'Number',
-    unit: 'hours',
-    decimalPlaces: 0,
-    aggregation: 'Sum',
-    subcategories: [],
-    reportingFrequency: 'Quarterly',
-    required: false,
-    reporterGuidance:
-      'Count hours on site from the signed field log. Travel and training time are not reported here.',
-    status: 'Retired',
-    projectCount: 3,
-  },
-  {
-    // THE HALF-FINISHED DRAFT. Everything except `dataType` is unset, because
-    // creating a measure asks ONE question and this is the record that answer
-    // produces. It sits in the catalog unnamed and incomplete on purpose: the
-    // setup model assumes you leave, consult someone, and come back, so the
-    // list has to be able to show you a measure you have not finished. Delete
-    // this row and the empty-draft state has no specimen on any screen.
-    slug: 'draft-untitled-number-measure',
+    slug: 'draft-untitled-outcome',
+    kind: 'outcome',
     name: '',
     definition: '',
-    dataType: 'Number',
-    unit: '',
+    classifications: [],
+    quantity: '',
     decimalPlaces: 0,
-    subcategories: [],
-    required: false,
+    dimensions: [],
     reporterGuidance: '',
     status: 'Draft',
     projectCount: 0,
@@ -310,96 +505,95 @@ export const measures: PerformanceMeasureDefinition[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Option vocabularies — one source for the index filters AND the setup drawer,
-// so a value the table can show is always a value the form can produce.
+// Derived helpers
 // ---------------------------------------------------------------------------
-
-export const DATA_TYPES: MeasureDataType[] = ['Number', 'Percent', 'Currency'];
-
-export const AGGREGATIONS: MeasureAggregation[] = ['Sum', 'Average', 'Most recent'];
-
-export const REPORTING_FREQUENCIES: ReportingFrequency[] = ['Annually', 'Quarterly', 'On completion'];
 
 /**
- * The taxonomy branches a measure can roll up into, taken from the project
- * portfolio rather than typed again — a program with no projects is not a
- * program a measure should be able to pick.
+ * The classification vocabulary, re-exported from the projects module rather
+ * than rebuilt: a measure and a project must offer the SAME list, or a roll-up
+ * across the two silently splits a bucket. It replaced PROGRAMS, which was
+ * derived the same way from `p.program`.
  */
-export const PROGRAMS: string[] = [...new Set(projects.map((p) => p.program))].sort();
+export const CLASSIFICATIONS: Classification[] = [...classifications];
 
-/**
- * Units already in use across the catalog, offered as suggestions rather than a
- * closed list: a new measure may legitimately need a unit no existing measure
- * uses, and forcing it through an admin request to add one is the kind of
- * friction that gets worked around with a wrong pick.
- */
-export const UNIT_SUGGESTIONS: string[] = [
-  ...new Set(measures.map((m) => m.unit).filter(Boolean)),
-].sort();
-
-/** Newest-authored first is meaningless for a catalog; measures read alphabetically. */
-export const measuresByName = (): PerformanceMeasureDefinition[] =>
-  [...measures].sort((a, b) => a.name.localeCompare(b.name));
-
-// ---------------------------------------------------------------------------
-// Record access and readiness
-// ---------------------------------------------------------------------------
-
-/** Route for one measure's setup page. Base-less; wrap with withBase() at render. */
 export const measureHref = (m: PerformanceMeasureDefinition): string =>
   `/prototypes/measures/${m.slug}`;
 
-/**
- * What to SHOW for a measure's name. A measure is created by answering one
- * question — its data type — so it reaches the catalog before it is named, and
- * every surface that lists measures has to render that honestly rather than as
- * a blank cell. "Untitled measure" is the same string the setup page's own
- * heading falls back to, so the row you clicked and the page you land on agree.
- */
 export const measureDisplayName = (m: PerformanceMeasureDefinition): string =>
   m.name.trim() || 'Untitled measure';
 
 export const getMeasure = (slug: string): PerformanceMeasureDefinition | undefined =>
   measures.find((m) => m.slug === slug);
 
-/** A required value the measure does not have yet. */
+/** Dimensions the reporter has to answer. The measure's real cost. */
+export const reportedDimensions = (m: PerformanceMeasureDefinition): MeasureDimension[] =>
+  m.dimensions.filter((d) => d.source.kind === 'reported');
+
+/** Dimensions the system fills in. The measure's leverage. */
+export const derivedDimensions = (m: PerformanceMeasureDefinition): MeasureDimension[] =>
+  m.dimensions.filter((d) => d.source.kind !== 'reported');
+
+export const primaryDimension = (m: PerformanceMeasureDefinition): MeasureDimension | undefined =>
+  m.dimensions.find((d) => d.primary);
+
+/** Values a dimension can take, wherever they come from. */
+export const dimensionValues = (d: MeasureDimension): string[] => {
+  if (d.source.kind === 'reported') return d.options ?? [];
+  if (d.source.kind === 'spatial') return GEO_LAYERS.find((l) => l.id === d.source.ref)?.values ?? [];
+  if (d.source.kind === 'historical')
+    return [...(HISTORICAL_RULES.find((r) => r.id === d.source.ref)?.values ?? [])];
+  return [];
+};
+
+/** Human label for where a dimension's value comes from. */
+export const sourceLabel = (d: MeasureDimension): string => {
+  switch (d.source.kind) {
+    case 'reported':
+      return 'Reported';
+    case 'spatial':
+      return GEO_LAYERS.find((l) => l.id === d.source.ref)?.name ?? 'Map layer';
+    case 'historical':
+      return HISTORICAL_RULES.find((r) => r.id === d.source.ref)?.name ?? 'Entry history';
+    case 'record':
+      return RECORD_FIELDS.find((f) => f.id === d.source.ref)?.name ?? 'Record';
+  }
+};
+
 export interface OutstandingField {
-  /**
-   * The field's name, WORD FOR WORD as its label reads on the setup page. Same
-   * datum, same word, in both places — a reader told "Reporter guidance" is
-   * missing must not then have to work out which differently-named field that is.
-   */
   label: string;
-  /** id of the setup section that collects it, so the readiness list can link to it. */
-  section: 'identity' | 'measurement' | 'reporting';
 }
 
-/**
- * What still stands between this measure and being publishable.
- *
- * THE SETUP MODEL DEPENDS ON THIS FUNCTION. Setup is not a sitting — it is a
- * draft you leave, ask a colleague about, and come back to. What makes that
- * survivable is that the record can always tell you what it is still waiting
- * for, so returning after a week costs no re-reading. An empty list means ready
- * to publish.
- *
- * Subcategories are deliberately absent: a measure with no subcategories is
- * reported as a single number, which is a complete and common answer, not a
- * gap. Unit is conditional for the same reason — percent and currency carry
- * their own, so demanding one would be demanding a value that does not exist.
- */
+/** What still stands between this measure and being publishable. */
 export const outstandingFields = (m: PerformanceMeasureDefinition): OutstandingField[] => {
   const missing: OutstandingField[] = [];
-  if (!m.name.trim()) missing.push({ label: 'Measure name', section: 'identity' });
-  if (!m.definition.trim()) missing.push({ label: 'Definition', section: 'identity' });
-  if (!m.program) missing.push({ label: 'Program', section: 'identity' });
-  if (m.dataType === 'Number' && !m.unit.trim()) missing.push({ label: 'Unit', section: 'measurement' });
-  if (!m.aggregation) missing.push({ label: 'Aggregation', section: 'measurement' });
-  if (!m.reportingFrequency) missing.push({ label: 'Reporting frequency', section: 'reporting' });
-  if (!m.reporterGuidance.trim()) missing.push({ label: 'Reporter guidance', section: 'reporting' });
+  if (!m.name.trim()) missing.push({ label: 'Measure name' });
+  if (!m.definition.trim()) missing.push({ label: 'Definition' });
+  if (m.classifications.length === 0) missing.push({ label: 'Classifications' });
+  if (!m.quantity.trim()) missing.push({ label: 'Quantity' });
+  if (!m.unit) missing.push({ label: 'Unit' });
+  if (!m.countingRule) missing.push({ label: 'Counting rule' });
+  // Only an OUTPUT needs one. An outcome has no actor to name, so demanding a
+  // subcategory would block every outcome measure from ever publishing. The
+  // label is the record section's own word for it, verbatim — the UI's one
+  // noun for this concept is "subcategory"; "dimension" stays a data-model
+  // term and "category" is retired.
+  if (measureKind(m.kind).requiresPrimaryDimension && !primaryDimension(m)) {
+    missing.push({ label: 'Primary subcategory' });
+  }
+  if (!m.reporterGuidance.trim()) missing.push({ label: 'Reporter guidance' });
   return missing;
 };
 
-/** A measure with nothing outstanding can be published. */
 export const isReadyToPublish = (m: PerformanceMeasureDefinition): boolean =>
   outstandingFields(m).length === 0;
+
+/**
+ * The readiness line rendered beside Save. ONE copy, shared by the page's
+ * server render and the controller's live updates — two copies of this sentence
+ * would drift, and the drifted one is always the one a reviewer reads.
+ */
+export const outstandingLine = (n: number): string =>
+  n === 0 ? 'Ready to publish' : `${n} setting${n === 1 ? '' : 's'} needed before publishing`;
+
+export const measuresByName = (): PerformanceMeasureDefinition[] =>
+  [...measures].sort((a, b) => a.name.localeCompare(b.name));

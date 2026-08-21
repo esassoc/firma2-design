@@ -1,0 +1,594 @@
+# Product brief — who we build for, and what we optimize
+
+The standing brief for ProjectFirma 2.0 prototypes in this spoke. Read it before
+designing a new screen; update it when a screen teaches us something the brief
+did not already say.
+
+**What this document is for.** Every screen we build makes the same handful of
+judgment calls — who is this for, what do they want first, what gets the room,
+what gets cut. Those calls have been getting made well and getting written down
+*in the file where they were made*, which means the next screen has to rediscover
+them. This is where they live once.
+
+**What it is not.** It does not cover visual style, tokens, or component choice —
+those are the `spoke-kit:design-principles` and `spoke-kit:component-first` skills.
+It does not cover interface wording — that is the repo-local `microcopy` skill.
+This document is one level up from all three: it is about *who* and *why*, and
+they are about *how*.
+
+> **Status, by section — they are not equally solid.**
+> **§0 is GROUNDED**: the purpose chain and what a performance measure *is* come
+> from the client directly. Treat it as settled and reason from it.
+> **§4 is EARNED**: each principle was paid for by a decision on a screen that
+> exists, and the screen is named — except the one marked "adopted, not yet
+> proved".
+> **§1 is INFERRED**: the four readers come from the domain and from our own
+> decisions, not from research. Everything unvalidated is marked. See
+> [Open questions](#open-questions) for what to ask the client, and do not let an
+> inference in here harden into a finding.
+
+> **Confidentiality.** This repo and its deployed site are PUBLIC. Nothing
+> client-specific — named agencies, real programs, real numbers, meeting notes —
+> goes in this file. It belongs in `docs/private/`, which is gitignored. Mock
+> data stays invented.
+
+---
+
+## 0. Why the product exists
+
+Everything below is downstream of this. When a screen decision is genuinely
+close, this is the tiebreaker.
+
+**The chain, asked "why" until it stops:**
+
+> Track your projects → so you can track their **actions and outcomes** → so you
+> can see the **health and progress** of your work → so you can **report to your
+> stakeholders** → so they know what has been done, what still needs doing, and
+> what became of the money they granted → so that two things become possible.
+
+Those two things are the point, and they are different in kind:
+
+1. **Trust with partners.** A funder who can see what their money bought funds
+   you again. This is why an aggregate has to be *true* — a total that
+   double-counts, or a bucket split in two by a spelling, is not a small data
+   defect. It is a claim to a stakeholder that turns out to be wrong.
+2. **Understanding the landscape — and acting on it.** With enough consistent
+   history you can characterise ground ("heavily treated", "low risk"), find the
+   gaps ("nothing here for three years"), and decide where projects and grant
+   applications should go next. This is why a vocabulary has to be *closed* and
+   why a question you failed to ask is an analysis you can never run.
+
+**So: the reports are not an output of the product. They are the reason for it,**
+and every screen either feeds them or reads them.
+
+### What this makes a performance measure
+
+Not a settings object. **A performance measure is a question you ask of every
+project, forever:** *tell me X about this project.* Setting them up is how an
+organization decides what it wants to learn — and what it will be able to answer
+later.
+
+That makes every measure two things at once, and a good authoring screen prices
+both:
+
+- **A tax.** Somebody answers it on every entry for the life of the program.
+- **An asset.** It is what the portfolio will be able to *say* — to a funder, to
+  a partner, to a model looking for the watershed nobody has touched.
+
+### The compliance loop — the failure nobody sees at authoring time
+
+The admin's goal is gated by an experience the admin never has:
+
+> The admin can only tell the funder X **if** reporters answer.
+> Reporters do not answer when it is **cumbersome**, or when they do not
+> **understand** what is being asked of them.
+
+And the failure is silent and slow. You write a demanding measure, feel fine
+about it, and discover eighteen months later that the field is empty — or worse,
+full of confident garbage because nobody knew what the question meant.
+
+**Design consequence: an admin screen must make the author feel the downstream
+burden at the moment they are deciding to impose it.** Clarity of the ask is not
+polish here; it is the mechanism by which the data exists at all. Reporter
+guidance, plain question wording, and an escape hatch in a vocabulary
+("Unspecified", so a reporter is never cornered into a wrong answer) are
+load-bearing product features, not nice-to-haves.
+
+### Where data governance fits
+
+The closed unit list, the controlled classification vocabulary, options rather
+than free text — these read as bureaucratic constraints and they are not. They
+are the *only* thing that makes the asset aggregable. Without them the numbers
+still exist, nothing rolls up, and the report at the end of the chain cannot be
+written. Governance is not a separate concern from the ask; it is what makes an
+answer worth collecting.
+
+*Grounded: this is the client's own account of the product's purpose, given
+2026-08-20. It is the least speculative section in this document — treat the
+chain as settled and everything in §1 as still inferred.*
+
+---
+
+## 1. Who we build for
+
+Four readers land on these screens. Most of them are not the person the software
+was written for, and that is the whole difficulty: **the same screen has to serve
+someone who lives in it daily and someone who arrived from a link.**
+
+| Reader | What they bring | What they want in the first five seconds |
+|---|---|---|
+| **Sponsor / reporter** — the person accountable for a project record | Deep knowledge of *their* project, patchy knowledge of the system | "What is being asked of me, and is my record in good shape?" |
+| **Program staff** — grant, restoration, and program officers | Daily fluency in the vocabulary and the workflow | "Show me the numbers, let me correct what is wrong, don't make me navigate." |
+| **Executive / decision-maker** — a director reading across a portfolio | Program knowledge, not tooling knowledge | "Is this on track against what it promised?" |
+| **Public / partner** — arrived from an index, a link, or a report | Little shared vocabulary, no task and no training | "What is this, where is it, and is it real?" |
+
+Three consequences we keep hitting:
+
+1. **Read-first, edit-second — but never read-only.** Most sessions are reading.
+   Editing is the minority case, which is why we do not put screens into an "edit
+   mode": the affordance is on the field, revealed on hover and on focus, and the
+   page never changes shape. See `firma2-editable-field.astro`.
+2. **Domain terms stay; the reader gets a way in.** *Reach*, *BMP*, *treatment*,
+   *obligation* are the precise words and plain-washing them costs the fluent
+   reader accuracy. The trigger for an explanatory affordance is set by the
+   *widest* reader, not the fluent one. (This rule is the `microcopy` skill's; it
+   is repeated here because it is an audience decision before it is a wording one.)
+3. **A screen read cold has to make sense.** Client reviews and public visitors
+   both read these pages with no task in mind. Headings front-load. Nothing
+   depends on knowing what the previous screen was.
+
+*Not yet validated: the four readers, their relative frequency, and whether the
+public is a real audience for these screens or an assumption we inherited.*
+
+---
+
+## 2. What they are trying to do
+
+Stated as jobs, because a job survives a redesign and a feature list does not.
+
+- **Judge delivery.** "Is this project doing what it said it would?" — promised
+  against delivered, budgeted against spent, planned against reached. This is the
+  question the project detail page is organized around, and the one an executive
+  and a member of the public turn out to share.
+- **Place a record.** "Whose is this, under what program, where, over what
+  years?" Nobody comes for these facts, and nobody can read the numbers without
+  them.
+- **Correct what is wrong.** A record is only as good as the last person willing
+  to fix a field in it. Every step between noticing an error and fixing it is a
+  step where the error survives.
+- **Decide what the organization will be able to learn.** Defining a measure is
+  authoring a question asked of every project forever (§0) — part exploration,
+  part consulting other people, rarely finished in one sitting. The same job
+  underneath every admin screen: adding a funding source, onboarding an
+  organization, publishing a custom page.
+- **Answer what is being asked of me.** The reporter's job, and the one nobody
+  configuring the product ever performs. It is not on a screen we have built yet,
+  which is precisely why the authoring screens have to carry it — see the
+  compliance loop in §0.
+- **Find the way back to work in progress.** The reason Recently viewed sits
+  above the table on the Projects index rather than beside or below it.
+
+---
+
+## 3. What we optimize for
+
+**In this order.** When two of these conflict, the higher one wins, and the
+decision gets written down where it was made.
+
+1. **Answer the page's question first.** Every screen owes one question an answer
+   above the fold. Everything else on it is support. If you cannot say the
+   question in one sentence, the screen is not designed yet.
+2. **Availability of context over prominence of context.** Facts a reader needs
+   in order to *read* the page must be reachable at the moment they are reading —
+   which is not the same as being emphasized. The pinned record rail on the
+   project detail page exists for exactly this distinction.
+3. **Reversibility, honestly signalled.** Decisions that can be corrected later
+   get a small, quiet affordance. Decisions that cannot — a counting rule, a
+   dimension that can never be backfilled — get the room, the explanation, and
+   the friction. See `pages/prototypes/measures/[measure].astro`.
+4. **Always editable, always saved.** This is the stance the whole site takes,
+   not a feature of one screen. There is no view mode and no edit mode; there is
+   no Save. Every screen is a live record you are already inside.
+
+   **The challenge we set ourselves: see something you want to change, and change
+   it with the least friction possible.** Count the steps between noticing and
+   fixing — a mode to enter, a pencil to find, a dialog to open, a button to
+   press afterward — and take them out. Click the value, change it, leave. That
+   is the whole gesture, and leaving is what commits.
+
+   Two consequences worth stating, because they are the price:
+   - **Nothing may move when a field opens.** A layout that reflows on edit puts
+     friction back in at the moment we just removed it. The display state is a
+     display-only variant of the control's own box, so the swap changes chrome
+     and never geometry.
+   - **If everything saves, we owe an undo.** Removing Save removes the moment
+     where a user could decline. Per-field abandon (Escape) covers the common
+     case; a bulk undo does not exist yet and is the outstanding debt of this
+     stance. See [Open questions](#open-questions).
+5. **One stable footprint.** A section should not change size as the window does
+   or as its content loads. Sizes are stated once and measured, not left to
+   resolve from a ratio.
+6. **Subtraction over addition.** A border the container already implies, a
+   divider under a title, a second route to the same act, a label the heading
+   already said — all get cut. "Polish is subtractive" is used as a test, not a
+   slogan.
+
+**What we deliberately do NOT optimize for:** density for its own sake, feature
+parity with ProjectFirma 1.x, screens that only make sense to someone trained on
+them, or first-render cleverness that costs legibility.
+
+---
+
+## 4. Principles we have earned
+
+Each of these was paid for on a real screen. The screen is named so the reasoning
+can be read in full where it was written.
+
+### Sort content by whether it has a history
+
+A **series** has an account over time worth reading — what was delivered against
+what was expected, spent against budgeted, reached against planned. A **scalar**
+is a fact that can be corrected but has no interesting history: lead
+organization, program, county, the description.
+
+Series lead. Scalars go in the rail — present, because the numbers cannot be read
+without them; not prominent, because they are not why anyone opened the page.
+
+*Proved on: project detail. Tested twice — the description moved out of the rail
+and came back (the argument was about reading ORDER but the position bought
+PROMINENCE), and funding sources moved out and stayed out.*
+
+### The rail's test is scalar AND short AND narrow
+
+Being a scalar is necessary and not sufficient. A rail row has to be readable at
+a glance and has to live at 22rem. Funding sources is a set of scalars by the
+definition above and still failed: a four-column table needed 434px in a 352px
+column and the rail answered with a horizontal scrollbar. It also separated "who
+committed the budget" from "what has been spent of it" — two halves of one
+question, a screen apart.
+
+"Scalar" here really means *no series*: a small fixed SET passes too, when each
+member is one short label. Classifications — one or two goal chips per project —
+joined the Key facts panel as its one set-valued pair. A set is added to and
+removed from rather than retyped, so its editor is the multi-select combobox
+(vocabulary-locked, like Program's select), and a pick does not commit the row
+the way a select choice does — one member of a set is not "done", so the set
+commits at the boundary like a text row.
+
+*Proved on: project detail.*
+
+### An entity chip is a door; its field still edits from the box
+
+"Click the value to edit it" is the right default for a scalar, where
+correction is the only thing a click could mean. An ENTITY value — a
+classification, an organization, a person — inverts the odds: it cannot be
+typo-fixed (it is picked from a vocabulary or a registry), and the act a
+reader wants from it is overwhelmingly "take me to it". So an entity chip is
+a real `<a>`: click navigates, with the browser's whole link grammar for
+free, and hovering it raises a context card (esa-popover, `trigger="hover"`)
+with the one fact that makes the hover worth it — for a classification, how
+much of the portfolio shares the goal. Editing does not disappear; it moves
+to the field's box: the line's empty space opens the editor, and a
+hidden-until-focused Edit button after the last chip is the keyboard's path
+(a container of links must not itself be a button). This is a deliberate,
+scoped exception to "click the value, change it" — it applies to entity
+chips, never to scalar text.
+
+*Proved on: project detail, classifications row. The Lead organization row
+still wants the same treatment (link + hover card) and is blocked on an
+`esa-popover` gap — no block-level anchor mode — filed in the system
+improvement ledger.*
+
+### Room and position are different currencies
+
+This is the one to internalise, because we have now paid for it three times on
+the same screen and every time it looked like a different problem.
+
+A section can argue convincingly that it deserves more ROOM — it is a surface
+rather than a block of text, it improves with every pixel, a reader cannot use it
+small. That argument is often right and says nothing at all about where the
+section goes. Giving it the top of the page is a *second*, unearned grant, and it
+is the expensive one: position is bounded by the fold, and whatever leads spends
+the only screen the page is guaranteed to get.
+
+**Give room freely. Make position argue separately, against optimization #1.**
+
+Three cases, same shape:
+
+| Section | Asked for | Got, wrongly | Where it landed |
+|---|---|---|---|
+| Description | reading order — "what IS this project" comes before any number | a band under the page title | last row of Key facts |
+| Funding sources | proximity to the money it explains | a slot in the rail | directly after Expenditures |
+| Work areas map | room — it is a surface, not text | the whole first screen | last in the column, still full width and a screenful tall |
+
+The map is the cleanest illustration. Leading the column it put **zero pixels of
+tracked data above the fold** — the page's actual question went unanswered until
+a scroll. Moving it last cost it nothing it had asked for: it still has the full
+width, still has no card, still fills the screen when you reach it. Only the
+prominence went, and prominence was never the thing that made it good.
+
+Halving its width was the other candidate fix and is worth recording as rejected:
+at 1512px the content column is ~783px, so half is ~390px — the same width as the
+rail. It would have narrowed every tracked section permanently (Expenditures'
+chart from 757px to ~390px, the funding table to ~37px of slack over its measured
+minimum) to buy one screen, and left the map in a portrait frame that suits
+neither reaches nor polygons.
+
+*Proved on: project detail, three times.*
+
+### Do not put two components in charge of the same space
+
+There was a version where the record floated *over* the map, and the map framed
+its shapes around the panel. It looked right. It was two components negotiating
+where content is allowed to be, and it bought nothing a reader could name. A rail
+owns its column outright and neither component has to know the other exists.
+
+*Proved on: project detail. This is the most transferable lesson in this list —
+prefer a boundary over a negotiation.*
+
+### Author the artifact, not its settings
+
+**The pattern every admin and customization screen should follow.** It is written
+here rather than in one component because measure setup is a *pattern exercise
+first* — measures are configured once and rarely touched, so the investment is
+justified by what the shape teaches the screens that come after it, not by how
+often anyone visits this one.
+
+Every admin screen in this product configures something **a different person
+meets later**:
+
+| You configure | Someone else meets |
+|---|---|
+| a performance measure | a form a reporter fills, on every entry, forever |
+| a funding source | an option in someone's dropdown |
+| an organization | a record someone picks from and reports on behalf of |
+| a custom page | a page someone reads |
+
+So: **edit the thing as it will be encountered, and show the downstream burden
+beside it.** Not "a form for the settings of X" — which is what all four of those
+will default to unless we decide otherwise.
+
+Two reasons this is the right default:
+
+1. **The person configuring never pays the cost.** See the compliance loop in
+   §0 — the admin's own goal fails silently when the ask is too heavy or too
+   unclear, and nothing in a settings form tells them that.
+2. **A settings form makes you author a schema; the artifact makes you author an
+   experience.** The measure setup page spent five restructures re-filing fields
+   into differently-labelled boxes, which changed nothing, because the fields
+   were never the problem — being a form was.
+
+The corollary for the author's own head: they start from the **claim** ("I need
+to tell my funder X"), not from the ask. So lead with what they will be able to
+say, and make the ask the thing they edit to get there. Claim, then artifact,
+then answerability.
+
+*Status: ADOPTED, NOT YET PROVED. This is the one entry in this section written
+before the screen that pays for it — the measure setup rebuild is the first test.
+If it does not survive that, rewrite it here rather than quietly working around
+it.*
+
+### Setup is not a wizard
+
+A wizard encodes an assumption that does not hold: that the user finishes in one
+sitting. Creating a measure asks exactly ONE question — the one that changes what
+every other field means — and hands back a saved draft with its own URL, to be
+filled in over days from a link you can bookmark and send to a colleague. Drafts
+appear in the catalog alongside finished records, unnamed ones included; a list
+that hid your half-finished work would defeat the point.
+
+*Proved on: performance measures + measure setup. The entity-create dialog knows
+nothing about measures and is meant to be reused unchanged for Organizations,
+Funding Sources and Users.*
+
+### Sort fields by what survives being wrong
+
+Fill-in-the-blank fields can be corrected a year in and nothing breaks.
+Irreversible ones change the meaning of history silently. Lay the page out by
+that axis, not by which fields feel related.
+
+*Proved on: measure setup.*
+
+### A commit bar is friction wearing a safety costume
+
+Removing Save and Cancel from the measure setup page is the clearest version of
+optimization #4, and it is worth recording because the buttons had a defensible
+reason to exist and were still wrong.
+
+The argument for them: this page holds irreversible decisions (a counting rule, a
+dimension), and a deliberate commit is how you signal that weight. The reason it
+does not hold: **the commit bar does not gate the irreversible fields, it gates
+all of them.** It taxed renaming a measure exactly as much as changing what its
+number means. Weight belongs on the field that carries it — in the copy, the
+layout, the room it gets — not on a button every field has to walk past.
+
+It also suited *this* screen worst. The page's whole argument is that a measure
+is defined over days, from a bookmarked URL, in consultation with other people. A
+commit bar is the one control that punishes leaving.
+
+And it asked authors to hold two models of one product: correct a project by
+leaving the field, correct a measure by leaving the field *and then finding a
+button*.
+
+What replaced it was not new machinery. The editor already listened to every
+control on the record to keep its previews live; it now writes the draft on that
+same signal — on `change`, not `input`, so a paragraph is one write and not three
+hundred, and so the save boundary is the same "crossing the field's edge" the
+rest of the spoke uses. Silent on success, and it speaks once if the browser is
+blocking storage — the one failure the author cannot see.
+
+*Proved on: measure setup. Cost: Cancel's bulk discard is gone and nothing
+replaces it yet.*
+
+### One kind of data, one list — behavior can differ by row
+
+The measure setup page presented reported subcategories ("Also asked of the
+reporter") and derived ones ("Filled in automatically") as two sections — two
+different kinds of thing. The data model never agreed: both are one shape with a
+`source` field. The sections were the invention, and they cost real things: the
+authored order of the list was silently re-sorted, and the author had to
+pre-classify an attribute before naming it.
+
+The mental model we build to (stated by the user, and now the page): **a measure
+is the thing it measures — quantity, unit, counting rule, and the primary
+subcategory — plus attributes recorded about each entry. Where an attribute's
+answer comes from is a property of the attribute, not a different species.**
+
+Merging did not flatten the difference, because the difference is real — a
+reported subcategory taxes every reporter forever and cannot be backfilled; a
+derived one is free. The signal moved from section membership to the two places
+it operates: **the fork at the add moment** (a priced "Ask the reporter
+something else" against a free "Available without asking" tray) and **a source
+marker on every row**, with reported rows visibly forms and derived rows visibly
+facts.
+
+The rename came with it: one noun, *subcategory* ("Primary subcategory" /
+"Other subcategories"), retiring "Category", "Question", and the UI use of
+"dimension" — three names for one concept was a naming bug, not a copy choice.
+
+*Proved on: measure setup.*
+
+### Inert, not disabled
+
+An unwired control in a prototype stays a real, enabled button. `disabled` claims
+the action is unavailable to *this user*, which is a different and false
+statement — and it tells a reviewer the wrong thing about the design.
+
+*Applies to: every prototype in this spoke.*
+
+### A collection gets "Add"; a scalar gets a per-field affordance
+
+A set has no single field to hover — you add to it, remove from it, reorder it —
+so it keeps one header control that names the act it performs. A section of
+scalars has no such act, so its header control goes away entirely and each field
+carries its own.
+
+*Applies to: every section on the project detail page.*
+
+---
+
+## 5. How to open a new screen
+
+Answer these five before opening an editor. Put the answers in the page's module
+header — that is where the next person will look.
+
+1. **What is the one question this screen answers?** One sentence. If there are
+   two, there are probably two screens.
+2. **Which of the four readers lands here, and which one is hardest to serve?**
+   Design for the hardest one; the fluent reader is rarely the one who fails.
+   **And on an admin screen, ask who is NOT here** — every configuration screen
+   imposes something on somebody absent (§0). Name them, and put their burden on
+   screen.
+3. **What is series and what is scalar?** Series leads, scalars support. Then
+   apply the rail test — short and narrow, or it does not go in a rail.
+4. **What is irreversible here?** That gets the room and the explanation.
+   Everything recoverable gets a band it can be scanned in without opening.
+5. **What can be cut?** Name at least one thing. If nothing can be cut, the
+   screen has not been looked at hard enough yet.
+6. **If this configures something: what is the artifact?** Edit that, not its
+   settings — see "Author the artifact, not its settings".
+
+**The tiebreaker when two options are genuinely close:** which one gets a truer
+report to a stakeholder, sooner? That is what the product is for (§0).
+
+Then: `/new-prototype` for the interview-and-compose flow, `/design-qa` for the
+quality pass, `/ship` to deploy.
+
+---
+
+## 6. Screens, built and unbuilt
+
+The nav model in `src/data/firma2-nav.ts` shows the whole app; routes we have not
+built carry no `href` and render dimmed, which is an accurate picture rather than
+a styling problem.
+
+| Group | Screen | Status |
+|---|---|---|
+| Explore | Project Finder, Map | not built |
+| Track | **Projects index** | built |
+| Track | **Project detail** | built — the reference screen for this brief |
+| Track | Organizations, Funding Sources | not built |
+| Report | **Performance measures** catalog | built |
+| Report | **Measure setup** (one per measure) | built |
+| Report | Progress Dashboard, Funding Status | not built |
+| Manage | Users, Manage Organizations, Manage Funding Sources, Custom Pages | not built |
+
+The two built areas are deliberately different exercises: the project pages are
+about **reading a record**, the measure pages about **setting one up**. Most
+unbuilt screens are a variant of one or the other, which is the main reason this
+brief is worth keeping.
+
+**Measure setup is being rebuilt** (agreed 2026-08-20). It has been restructured
+five times without improving, because every restructure re-filed fields and the
+fields were never the problem — see "Author the artifact, not its settings". The
+next shape is claim → editable reporter form → answerability. The four unbuilt
+Manage screens are waiting on what that teaches.
+
+**Nothing at the END of the chain exists yet.** Progress Dashboard and Funding
+Status are the reports §0 says the product is *for*, and both are unbuilt. Worth
+holding in mind: every screen we have built so far feeds a screen nobody has
+specified.
+
+---
+
+## 7. Open questions
+
+Answer these with the client rather than in here. Each one is currently carried
+as an assumption by at least one screen.
+
+**Settled 2026-08-20**, moved out of this list and into §0: why the product
+exists (the purpose chain), what a performance measure fundamentally is, and that
+measures are configured **once** — so the measure setup screen is a pattern
+exercise whose value is what it teaches the other admin screens, not its own
+traffic. Also settled: the admin thinks **claim-first** ("I need to tell my
+funder X"), not ask-first.
+
+- **Is the public a real reader of these screens, or an inherited assumption?**
+  It changes how much a page has to explain itself.
+- **Who actually corrects records — the sponsor, or program staff on their
+  behalf?** The whole per-field editing model is built on the answer.
+- **What does a reporter's session actually look like?** Frequency, device,
+  whether they arrive from an email link, how much of the record they touch.
+- **What does an executive do with the answer** once they know a project is off
+  track? The next action is the thing we have not designed.
+- **Which numbers are actually looked at**, and which exist because ProjectFirma
+  1.x had a column for them?
+- **What does a reporter actually abandon on?** The compliance loop in §0 says
+  cumbersome-or-unclear kills the data, but not where the line is: how many
+  questions per entry is too many, which wordings get misread, whether the
+  failure is more often "gave up" or "guessed". Until we know, the authoring
+  screen can only show the burden honestly, not score it.
+- **What is the report at the end of the chain?** §0 says the reports are the
+  reason the product exists, and we have not designed one — Progress Dashboard
+  and Funding Status are both unbuilt. Everything we are building feeds a screen
+  nobody has specified.
+- **What is the real breakpoint floor?** Everything is currently reasoned about
+  and verified at desktop widths.
+- **What does undo look like when nothing is ever "saved"?** This is the open
+  debt of optimization #4 and the one thing we have taken away without replacing.
+  Escape abandons a field mid-edit; there is no way to take back a change already
+  committed, and no history of who changed what. Candidates: a per-field revert on
+  the row, an undo toast on commit, a record-level change log. Worth asking
+  authors which failure they actually fear — the typo, or the decision they want
+  back a week later — because those want different answers.
+
+---
+
+## 8. Keeping this current
+
+- One decision, one entry. Add to
+  [Principles we have earned](#principles-we-have-earned) only when a screen has
+  actually paid for it — this document is a record of what we learned, not a list
+  of what we intend.
+- Name the screen that proved it. A principle with no screen behind it is a
+  preference.
+- When a principle gets *tested and reversed*, say so and keep both sides. The
+  description and funding-sources entries are the model: knowing what we tried
+  and why it failed is worth more than the conclusion alone.
+- Move anything client-specific to `docs/private/`.
+- §0 is the exception to "one decision, one entry": it is not a record of what a
+  screen taught us, it is the frame everything else is judged against. Change it
+  only when the client's account of the product changes.
+- Related: `docs/system-improvement-ledger.md` records gaps in the hub's
+  components. Different document, different job — that one is about the toolkit,
+  this one is about the product.

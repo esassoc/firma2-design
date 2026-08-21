@@ -1,0 +1,333 @@
+---
+// firma2-project-expenditures — the accrual half of the project's funding
+// commitment: what has actually been drawn down against the plan, by year.
+// firma2-project-funding answers "who is paying and how much did they
+// promise"; this section answers the question a promise cannot answer on its
+// own — "is the money actually moving, and does it track the plan". The two
+// totals agree exactly (both sum to `estimatedTotalCost`), because they are
+// two views of the same commitment, not two competing numbers.
+//
+// A SERIES, NOT A SET. Funding sources, measures and milestones are each a
+// COLLECTION a steward adds to, edits and removes from — that is why they
+// carry an "Add" affordance in their card header. A year of spend is not
+// something anyone adds; it accrues as reporting periods close. The correct
+// action here is "Report", scoped to a period, and that workflow does not
+// exist in this prototype yet — so this card carries NO header action rather
+// than a mislabeled "Add expenditure" that would claim a different act than
+// the one this data actually represents. Key facts and Description make the same
+// call for the same reason: a control with no honest verb is worse than none.
+//
+// DERIVED, NOT AUTHORED. firma2-project-detail.ts computes both budgeted and
+// spent from data that already exists on the record — estimatedTotalCost, the
+// implementation window, and the SAME completion fraction the performance
+// measures section reports against — rather than a second hand-typed number
+// that could quietly disagree with the measures already on this page. See
+// that module's "Expenditures" section for the derivation.
+//
+// COLUMNS, chosen from the dataviz skill's form table: the reader's job is
+// comparing two discrete magnitudes (planned, actual) per year, which is
+// exactly the grouped-bar job. TWO SERIES, so esa-chart enables its legend
+// automatically (`series.length > 1`) and resolves each series' fill from the
+// categorical ramp in FIXED order — Budgeted first (slot 1), Spent second
+// (slot 2) — so colour reads as identity, never rank, and never repaints if a
+// project's data changes. No direct labels: the axis and the paired table
+// below already carry the exact figures.
+//
+// NEUTRAL, NOT AN ALARM. Same call firma2-project-measures makes: spending
+// that lags or leads its own plan is not flagged red or amber here. The two
+// bars are the finding; colouring one of them would be this component
+// editorialising about a budget it knows nothing about.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import '../shared/firma2-card-section.css';
+import EsaStat from '@esa/ecology/esa-stat.astro';
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import type { ExpenditureYear } from '../../data/firma2-project-detail';
+import { currencyFormatter as currency } from '../../lib/format';
+
+interface Props {
+  /** The project's spend, oldest year first — buildExpenditures()'s order. */
+  expenditures: ExpenditureYear[];
+  /**
+   * The project's estimated total cost. Equals the sum of `expenditures`
+   * budgeted figures by construction — passed in rather than re-summed here,
+   * the same call firma2-project-funding makes for the same reason: a second
+   * summation is a second answer that can drift from the first.
+   */
+  estimatedTotalCost: number;
+}
+
+const { expenditures, estimatedTotalCost } = Astro.props;
+
+const totalSpent = expenditures.reduce((sum, year) => sum + year.spent, 0);
+
+// Exactly one instance of this section ever renders on a page (one project
+// detail page, one Expenditures card), unlike firma2-measure-rollup-preview,
+// which can stack several panels on one setup screen — so a static id carries
+// no collision risk and needs no per-project scoping.
+const noteId = 'firma2-expenditures-note';
+const chartLabel = 'Expenditures by year';
+---
+
+<EsaCard title="Expenditures">
+  <div class="stack" data-gap="lg">
+    <!-- The headline figure, above the chart — the dataviz skill's rule that a
+         single answerable number belongs in a stat tile rather than read off a
+         bar. `sub` carries the denominator, the same "value carries the figure,
+         sub carries what it is measured against" split firma2-measure-rollup-
+         preview uses for its own reported/expected pair. -->
+    <EsaStat
+      value={currency.format(totalSpent)}
+      label="Spent to date"
+      sub={`of ${currency.format(estimatedTotalCost)} budgeted`}
+    />
+
+    <!-- THE <esa-chart> ELEMENT IS NOT HERE AT BUILD TIME. Minted by the script
+         below on load, for the same 353 KB gzipped reason firma2-measure-
+         rollup-preview defers it: esa-chart dynamically imports
+         ag-charts-community from firstUpdated(), so only a page that actually
+         renders a chart element pays for the library. Unlike that panel this
+         section is never empty (every project has an implementation window,
+         so buildExpenditures() always returns at least one year) — so there is
+         no conditional empty state to gate the mount on, only the mount
+         itself. -->
+    <div
+      class="firma2-project-expenditures__chart"
+      data-firma2-expenditures-chart
+      data-firma2-expenditures-payload={JSON.stringify(
+        expenditures.map((year) => ({
+          // Years travel as STRINGS. A category axis given the integer 2023
+          // formats it with a thousands separator ("2,023") under the bar,
+          // which reads as a data bug — the same fix firma2-measure-rollup-
+          // preview's chart uses for the same axis type.
+          year: String(year.year),
+          budgeted: year.budgeted,
+          spent: year.spent,
+        })),
+      )}
+    ></div>
+
+    <!-- NOTE — the provenance of the split, stated once and wired to the chart
+         with `described-by` so the caveat is announced with the figure rather
+         than only sitting near it. Same reasoning and same mechanism as
+         firma2-measure-rollup-preview's note: a bar per year reads as that
+         year's own reported actual, and for "spent" it is not — it is one
+         project total, distributed across the years spending could have
+         reached. Primary ink, not the secondary grey body-sm usually wears:
+         a qualification a reader must not skip should not be styled as the
+         thing most safely skipped. -->
+    <p id={noteId} class="firma2-project-expenditures__note typography-body-sm">
+      Yearly figures are estimated: budgeted is each year&rsquo;s planned share of the
+      project&rsquo;s estimated total cost; spent is the project&rsquo;s overall
+      completion to date, spread across the years spending could have reached.
+    </p>
+
+    <!-- THE TABLE IS THE CHART'S TEXT ALTERNATIVE, and it is not optional —
+         same rule, same reason as firma2-measure-rollup-preview: AG Charts
+         ships no table, figcaption or offscreen text on its own. Rendered
+         statically rather than built from a client script: this page has no
+         live-editing draft to track, so the server already has the final
+         numbers and there is nothing a script would do here that markup does
+         not do for free — real HTML for a reader with no JavaScript, and one
+         less runtime path to keep in sync with the chart. -->
+    <EsaCollapsible title="View as data" flush>
+      <!-- bcn-lego-checked: no esa- lego renders a table (checked
+           node_modules/@esa/ecology/src/components/ — no esa-table; esa-stat
+           holds one figure, esa-chart is the thing this exists to make
+           readable). Same call firma2-project-funding and firma2-measure-
+           rollup-preview already made for their own tables: AG Grid is this
+           spoke's tabular precedent but is scoped to the portfolio table, and
+           chrome around 3-6 rows of derived figures buys nothing. A native
+           <table> with real <th scope> is the semantic primitive here. -->
+      <table class="firma2-project-expenditures__table">
+        <caption class="visually-hidden">{chartLabel}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Year</th>
+            <th scope="col" class="firma2-project-expenditures__num">Budgeted</th>
+            <th scope="col" class="firma2-project-expenditures__num">Spent</th>
+          </tr>
+        </thead>
+        <tbody>
+          {expenditures.map((year) => (
+            <tr>
+              <!-- The year names the row, so it is a row header: what a screen
+                   reader reads back to place you when you arrow into a figure. -->
+              <th scope="row">{year.year}</th>
+              <td class="firma2-project-expenditures__num">{currency.format(year.budgeted)}</td>
+              <td class="firma2-project-expenditures__num">{currency.format(year.spent)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </EsaCollapsible>
+  </div>
+</EsaCard>
+
+<script>
+  import '@esa/ecology/esa-chart';
+  import { currencyFormatter as currency } from '../../lib/format';
+
+  /** esa-chart's element class is not imported for typing — the module is
+   *  imported for its REGISTRATION side effect, which is all a custom element
+   *  needs to exist in the document. Same convention as firma2-measure-
+   *  rollup-preview's script. */
+  type ChartElement = HTMLElement & Record<string, unknown>;
+
+  interface YearDatum {
+    year: string;
+    budgeted: number;
+    spent: number;
+  }
+
+  // Axis ticks want a SHORT figure ("$1.2M"); the tooltip and the paired
+  // table want the EXACT one ("$1,240,000") — the same split
+  // firma2-measure-rollup-preview draws between its axis ticks and its data
+  // table, just for currency instead of a bare count.
+  const compactCurrency = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  });
+
+  const mount = (slot: HTMLElement): void => {
+    const raw = slot.dataset.firma2ExpendituresPayload;
+    if (!raw) return;
+    const data = JSON.parse(raw) as YearDatum[];
+
+    void customElements.whenDefined('esa-chart').then(() => {
+      const el = document.createElement('esa-chart') as ChartElement;
+      el.setAttribute('label', 'Expenditures by year');
+      el.setAttribute('described-by', 'firma2-expenditures-note');
+      el.data = data;
+      el.series = [
+        {
+          type: 'bar',
+          xKey: 'year',
+          yKey: 'budgeted',
+          yName: 'Budgeted',
+          // Both numbers are the dataviz skill's fixed mark spec: a 4px
+          // rounded data-end, and bars capped at 24px so a six-year series
+          // does not render slabs filling their whole band — the same values
+          // firma2-measure-rollup-preview's chart uses.
+          cornerRadius: 4,
+          width: 24,
+          tooltip: {
+            renderer: (params: { title?: string; yName?: string; yKey: string; datum: YearDatum }) => ({
+              title: params.title,
+              data: [
+                {
+                  label: params.yName ?? 'Budgeted',
+                  value: currency.format(Number(params.datum[params.yKey as keyof YearDatum])),
+                },
+              ],
+            }),
+          },
+        },
+        {
+          type: 'bar',
+          xKey: 'year',
+          yKey: 'spent',
+          yName: 'Spent',
+          cornerRadius: 4,
+          width: 24,
+          tooltip: {
+            renderer: (params: { title?: string; yName?: string; yKey: string; datum: YearDatum }) => ({
+              title: params.title,
+              data: [
+                {
+                  label: params.yName ?? 'Spent',
+                  value: currency.format(Number(params.datum[params.yKey as keyof YearDatum])),
+                },
+              ],
+            }),
+          },
+        },
+      ];
+      // Only `axes` is overridden — esa-chart merges this OVER what it
+      // computes, so the token-resolved mark colours, forced-colors repaint
+      // and reduced-motion handling all survive. The value axis gets no
+      // `title`: "Budgeted" and "Spent" are already named in the legend, and
+      // repeating "Dollars" on the axis would be the unit stated twice.
+      //
+      // AXES IS A DICTIONARY, NOT AN ARRAY, on the installed ag-charts-community
+      // (14.1.0): `AgCartesianAxesOptions` is `Record<string, AgCartesianAxisOptions>`
+      // keyed `x` / `y`, not the array-of-axis-objects shape the library's
+      // OLDER docs (and firma2-measure-rollup-preview's chart, checked against
+      // this same version) both assume. An array here does not error — AG
+      // Charts logs "Option `axes` cannot be set to […]; expecting an object,
+      // ignoring" to the console and silently falls back to its own inferred
+      // default axes, which is why it took reading the console, not just the
+      // chart, to catch. Keyed correctly below.
+      el.options = {
+        axes: {
+          x: { type: 'category', position: 'bottom' },
+          y: {
+            type: 'number',
+            position: 'left',
+            label: {
+              formatter: (params: { value: unknown }) => compactCurrency.format(Number(params.value)),
+            },
+          },
+        },
+      };
+      slot.replaceChildren(el);
+    });
+  };
+
+  document
+    .querySelectorAll<HTMLElement>('[data-firma2-expenditures-chart]')
+    .forEach(mount);
+</script>
+
+<style>
+  .firma2-project-expenditures__note {
+    margin: 0;
+    /* Primary ink deliberately — see the NOTE comment in the markup. body-sm
+       is 14px, the house dense floor; design-principles' rule for small text
+       is "darken as you shrink", not grey it out. */
+    color: var(--color-content-default, #202020);
+  }
+
+  .firma2-project-expenditures__table {
+    width: 100%;
+    /* Collapsed so rows are separated by ONE hairline rather than a doubled
+       one — same call, same reason, as firma2-project-funding's table. */
+    border-collapse: collapse;
+  }
+
+  .firma2-project-expenditures__table th,
+  .firma2-project-expenditures__table td {
+    text-align: start;
+    vertical-align: baseline;
+    padding-block: var(--spacing-200, 0.5rem);
+    padding-inline: var(--spacing-300, 0.75rem);
+  }
+
+  .firma2-project-expenditures__table th:first-child,
+  .firma2-project-expenditures__table td:first-child { padding-inline-start: 0; }
+  .firma2-project-expenditures__table th:last-child,
+  .firma2-project-expenditures__table td:last-child { padding-inline-end: 0; }
+
+  .firma2-project-expenditures__table thead th {
+    color: var(--color-content-default-secondary, #646464);
+    font-weight: var(--font-weight-semibold, 600);
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  .firma2-project-expenditures__table tbody th {
+    font-weight: inherit;
+  }
+
+  .firma2-project-expenditures__table tbody tr + tr th,
+  .firma2-project-expenditures__table tbody tr + tr td {
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  .firma2-project-expenditures__num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    width: 1%;
+  }
+</style>

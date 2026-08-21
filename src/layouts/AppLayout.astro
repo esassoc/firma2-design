@@ -111,16 +111,22 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   // everywhere and 40px is the height, taken from esa-filter-dropdown because it
   // is the one control here with no height hook to pin at all.
   //
-  // The two payloads differ because the two legos hang their box on different
+  // The payloads differ because the legos hang their box on different
   // elements: esa-text-field draws border/height on a `.control` wrapper around
   // `.input`, while esa-select's trigger IS `.input` and there is no `.control`.
-  // Pinning the wrong one is a no-op that looks like a fix.
+  // Pinning the wrong one is a no-op that looks like a fix. esa-combobox takes
+  // esa-select's payload: its box is likewise the `.input` itself (in multi
+  // mode the chips render OUTSIDE the box, above it, so a fixed input height
+  // stays correct however many members are picked).
   const CONTROL_PINS: Record<string, string> = {
     'esa-text-field': `
       .control { height: 40px; }
       .input { padding-block: 0; }
     `,
     'esa-select': `
+      .input { height: 40px; padding-block: 0; }
+    `,
+    'esa-combobox': `
       .input { height: 40px; padding-block: 0; }
     `,
   };
@@ -154,97 +160,135 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     });
   }
 
-  // THE ACCOUNT MENU BELONGS AT THE FOOT OF THE RAIL, not in the bar's corner.
+  // THE RAIL OWNS THE APP'S CHROME. THERE IS NO TOP BAR.
   //
-  // esa-app-shell bakes in the other house decision — the profile dropdown is
-  // the bar's `end` slot — and exposes no prop to move it. The hub's arrangement
-  // is a house choice, and this spoke makes the opposite one. Two reasons it is
-  // the right one here. The bar no longer stays on screen (AppLayout scrolls the document,
-  // so the bar scrolls away with the page), which would leave the account
-  // control reachable only from the top of a long record. And the rail already
-  // IS the app's persistent surface — who you are signed in as sits with the
-  // rest of the app-level navigation rather than across the page from it.
+  // esa-app-shell's house arrangement is a bar across the top holding the
+  // collapse toggle, the omnibox and the profile menu, above a rail that holds
+  // only navigation. This spoke makes the opposite choice, and the reason is the
+  // scroll model directly above: the document scrolls, so the bar does not stay
+  // on screen. Every control left in it — search, collapse, account — is one you
+  // reach for at any moment, and a control you can only reach by scrolling back
+  // to the top of a six-section record is not available. The rail is the surface
+  // that persists, so the persistent controls live there:
   //
-  // MOVED, not rebuilt. The node keeps its id, its wiring and its items — the
-  // shell's own script finds it by id from the JSON island and does not care
-  // where in the document it sits, so nothing has to be re-implemented and the
-  // Profile / Settings / Sign out items keep working. `above-start` because a
-  // menu anchored at the bottom of the viewport has to open upward; the panel's
-  // four placements are a reflected attribute, so setting it before or after
-  // upgrade both land.
+  //     head   brand · search          (identity, then the way to anything)
+  //     body   navigation              (the rail's own job)
+  //     foot   account · collapse      (who you are, how wide this is)
   //
-  // No flash on load: the stylesheet hides the bar's `end` group outright, so
-  // the menu is never painted in the corner it is about to leave.
-  function moveAccountMenuIntoRail(): void {
+  // That empties the bar completely, so the stylesheet drops it — see the
+  // `display: none` rule, which also means none of this is ever painted in the
+  // corner it is about to leave.
+  //
+  // MOVED, NOT REBUILT — all three. Each node keeps its id, its data attribute
+  // and its listeners, and the shell wires all of them from the document rather
+  // than from inside the bar (`document.querySelector('[data-shell-toggle=…]')`,
+  // `[data-shell-search=…]`, `getElementById(menuId)`), so relocation cannot
+  // break the wiring and the order of the two module scripts does not matter.
+  // Nothing here re-implements a control.
+  function moveChromeIntoRail(): void {
     document.querySelectorAll<HTMLElement>('.esa-app-shell').forEach((shell) => {
+      // ---- head: the omnibox trigger, directly under the wordmark ----
+      // Slotted into the rail's `header` alongside the brand, which is the only
+      // slot esa-sidebar-nav exposes. Both land in its `.rail-head`, a flex ROW
+      // by default — the companion shadow stylesheet turns it into a column so
+      // the search sits UNDER the wordmark rather than beside it.
+      //
+      // The rail styles slotted header content with `::slotted([slot='header'])`
+      // — `display: block` and its own padding — which would flatten the search
+      // button's internal flex row. It does not, and that is the shadow-DOM
+      // cascade rather than luck: for a slotted element the OUTER tree's
+      // declarations win over the inner tree's ::slotted rules, so the shell's
+      // own `.esa-app-shell__search` display/padding/height hold. Measured to
+      // confirm rather than taken on faith.
+      const brand = shell.querySelector<HTMLElement>('.esa-app-shell__brand');
+      const search = shell.querySelector<HTMLElement>('.esa-app-shell__search');
+      if (brand && search) {
+        search.setAttribute('slot', 'header');
+        brand.insertAdjacentElement('afterend', search);
+      }
+
+      // ---- foot: the account menu and the collapse toggle ----
       const menu = shell.querySelector<HTMLElement>('.esa-app-shell__bar esa-dropdown-menu');
       if (!menu) return;
+      // A menu anchored at the bottom of the viewport has to open upward. The
+      // four placements are a reflected attribute, so setting it before or after
+      // upgrade both land.
       menu.setAttribute('position', 'above-start');
 
-      // A plain container, not a component: it holds one lego and its only job
+      // A plain container, not a component: it holds two legos and its only job
       // is to be the grid item the stylesheet places at the foot of column 1.
       const foot = document.createElement('div');
       foot.className = 'firma2-app-frame__account';
       foot.appendChild(menu);
-      // Appended to the SHELL, not to the rail. esa-sidebar-nav has a `header`
-      // slot and no footer slot, and its host clips (`overflow: hidden`), which
-      // would cut the menu panel off at the rail's edge. As a sibling grid item
-      // laid over the rail's foot it needs no shadow-DOM surgery and the panel
-      // opens unclipped. Worth a /request-lego: the rail should own a footer
-      // slot, and then this whole function goes away.
+
+      const toggle = shell.querySelector<HTMLElement>('.esa-app-shell__toggle');
+      if (toggle) foot.appendChild(toggle);
+
+      // Appended to the SHELL, not to the rail. esa-sidebar-nav has no footer
+      // slot, and its host clips (`overflow: hidden`), which would cut the menu
+      // panel off at the rail's edge. As a sibling grid item laid over the
+      // rail's foot it needs no shadow-DOM surgery and the panel opens
+      // unclipped. This is the third override against the same two missing
+      // slots — worth a /request-lego for `header` room and a `footer` on the
+      // rail, and then most of this function goes away.
       shell.appendChild(foot);
     });
   }
 
-  moveAccountMenuIntoRail();
+  moveChromeIntoRail();
 
-  // Send focus back to the OMNIBOX TRIGGER when the omnibox closes.
+  // The rail's head is a ROW (brand beside toggle) and this spoke needs a COLUMN
+  // (brand above search). esa-sidebar-nav already writes exactly this rule for
+  // its own collapsed state — `:host([collapsed]) .rail-head { flex-direction:
+  // column }` — but exposes no hook to ask for it at full width, so it is
+  // adopted onto the shadow root instead. A stylesheet rather than rewritten
+  // markup because Lit re-renders that subtree whenever `collapsed` flips and
+  // would wipe anything injected as nodes; an adopted sheet survives.
   //
-  // The accessibility contract for a modal is "Esc closes it and focus returns
-  // to the trigger". The shell's omnibox opens on the `/` hotkey as well as on
-  // its button, and `showModal()` restores focus to whatever happened to hold it
-  // before the dialog opened — which, after a click on any dead space in the
-  // content region, is esa-app-shell's own `<main tabindex="0">` content pane
-  // (still a tab stop even though this spoke scrolls the document, not the pane).
-  //
-  // That restore is PROGRAMMATIC, so Chrome grants it `:focus-visible`, and
-  // @esa/tokens/focus.css then applies its `[tabindex]:focus-visible` rule: a 2px
-  // ring at 2px offset around the ENTIRE content pane. Click empty space, press
-  // `/`, press Escape, and the whole screen is outlined in brand green. It reads
-  // as a rendering fault rather than as a focus indicator, which is precisely
-  // what a focus indicator must never do.
-  //
-  // THE RING IS NOT THE BUG and is deliberately left alone — a keyboard user who
-  // genuinely Tabs to the scroll pane has to be able to see where they are, and
-  // suppressing that indicator is the failure mode check-a11y exists to block.
-  // What is wrong is where focus LANDS, so this corrects the destination.
-  //
-  // Guarded on the restore having actually landed on the pane: opening the
-  // omnibox by clicking its button already returns focus to that button, and
-  // this must not stomp on it.
-  //
-  // TEMPORARY: esa-entity-search should own this in its own close path so every
-  // spoke gets it, rather than each spoke re-deriving it. File as a lego request
-  // and delete this once the hub ships it.
-  function wireOmniboxFocusReturn(): void {
-    document.querySelectorAll<HTMLElement>('esa-entity-search').forEach((omnibox) => {
-      const shell = omnibox.closest('.esa-app-shell');
-      const trigger = shell?.querySelector<HTMLElement>('.esa-app-shell__search');
-      const pane = shell?.querySelector<HTMLElement>('.esa-app-shell__content');
-      if (!trigger || !pane) return;
+  // `align-items: stretch` is the load-bearing half. The row centres its items,
+  // which in a column means both the wordmark and the search shrink-wrap to
+  // their content instead of spanning the rail.
+  const RAIL_HEAD_CSS = `
+    .rail-head { flex-direction: column; align-items: stretch; }
+  `;
 
-      // `open` is a reflected Lit property, so the attribute IS the close signal.
-      new MutationObserver(() => {
-        if (omnibox.hasAttribute('open')) return;
-        // The dialog's native restore runs first; correct it a frame later.
-        requestAnimationFrame(() => {
-          if (document.activeElement === pane) trigger.focus();
-        });
-      }).observe(omnibox, { attributes: true, attributeFilter: ['open'] });
+  function stackRailHead(): void {
+    document.querySelectorAll('esa-sidebar-nav').forEach((nav) => {
+      const root = nav.shadowRoot as (ShadowRoot & { _firma2Head?: boolean }) | null;
+      if (!root || root._firma2Head) return;
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(RAIL_HEAD_CSS);
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      root._firma2Head = true;
     });
   }
 
-  customElements.whenDefined('esa-entity-search').then(wireOmniboxFocusReturn);
+  customElements.whenDefined('esa-sidebar-nav').then(() => {
+    requestAnimationFrame(stackRailHead);
+  });
+
+  // THE CONTENT PANE IS NOT A SCROLL REGION HERE, so it must not be a tab stop.
+  //
+  // esa-app-shell ships `<main tabindex="0">` and is right to: upstream that pane
+  // IS the app's scroll container (`overflow-y: auto`), and a scrollable region
+  // holding no focusable element cannot be scrolled by keyboard unless it is
+  // itself focusable — WCAG 2.1.1, and axe's `scrollable-region-focusable`.
+  //
+  // This layout scrolls the DOCUMENT and sets the pane to `overflow: visible`, so
+  // none of that applies: the pane does not scroll, arrow keys already move the
+  // page, and the tabindex is left over as a focus stop that does nothing. It is
+  // not free either — @esa/tokens/focus.css matches `[tabindex]:focus-visible`,
+  // so landing on it draws a 2px ring around the ENTIRE content region, which
+  // reads as a rendering fault rather than as a focus indicator. Every keyboard
+  // user hit it on the way out of the rail.
+  //
+  // Removing the attribute also retires the ~45 lines that used to sit here
+  // correcting where focus landed after the omnibox closed: that fix existed
+  // only because `showModal()`'s restore could put focus on this pane, which it
+  // can no longer do. Native restore is now correct on its own.
+  document.querySelectorAll('.esa-app-shell__content[tabindex]').forEach((pane) => {
+    pane.removeAttribute('tabindex');
+  });
 </script>
 
 <style>
@@ -288,7 +332,9 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   .firma2-app-frame :global(.esa-app-shell) {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    /* ONE row. The bar used to hold the top one; with the bar gone the rail and
+       the content are the whole grid, side by side. */
+    grid-template-rows: minmax(0, 1fr);
     /* `overflow: visible` undoes the shell's own `overflow: hidden`, and it is
        load-bearing rather than tidying: an `overflow: hidden` ancestor becomes
        the scrollport for every sticky descendant, so the rail below would have
@@ -310,7 +356,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
      resolve against that 100dvh, so a long nav still scrolls within the rail. */
   .firma2-app-frame :global(.esa-app-shell__nav) {
     grid-column: 1;
-    grid-row: 1 / 3;
+    grid-row: 1;
     position: sticky;
     top: 0;
     align-self: start;
@@ -322,77 +368,29 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
        esa-sidebar-nav's own `height: 100%` inner nav shortens to match. */
     padding-block-end: var(--firma2-account-height);
   }
-  /* The bar and the content are ONE region, not a band above a page.
-     Both already sit on the canvas colour (theme-firma2.css holds
-     `-elevation-raised` level with `background-default`), so the only thing
-     still reading as a seam is the shell's own separator:
-     esa-app-shell.astro:229 puts a 1px `--color-border-default-strong` (#bbb)
-     under the bar — a deliberately HEAVY step, since the shell assumes a bar
-     that floats over a scrolling page. With the full-height rail this spoke
-     re-flows to, column 2 IS the main section, so the seam is dropped and the
-     omnibox and account menu read as chrome sitting at the top of the content
-     rather than as a separate strip.
+  /* THE BAR IS GONE. Its three controls now live in the rail (see
+     moveChromeIntoRail above), which left an empty 66px band that scrolled away
+     for no reason — so the layout drops it rather than reserving space for
+     nothing.
 
-     Dropped here rather than in the theme: the rule names
-     `--color-border-default-strong`, a semantic role a great many components
-     read for their own borders, so re-pointing it would reach far past this one
-     edge. No hook exists for the bar's border alone (--topbar-border and
-     friends were removed 2026-08-16), which makes this a light-DOM override on
-     a class the shell exposes — the same tier the layout rules above already
-     work at.
+     `display: none` rather than removing the node in script. It takes the
+     element out of the accessibility tree as well as the layout, so there is no
+     empty <header> banner landmark left for a screen-reader user to land in —
+     which removing it in JS would also achieve, but a frame later and after the
+     browser had already painted the controls in a corner they are leaving. This
+     way they are never painted there at all.
 
-     The rail keeps its own right border, so column 2 still has an edge on the
-     side where the surfaces actually differ.
-
-     TWO classes on the selector, not one, and that is load-bearing. Astro
-     compiles the shell's own rule to `.esa-app-shell__bar[data-astro-cid-...]`
-     — one class plus one attribute, specificity (0,2,0), exactly what
+     Two classes on the selector, not one, and that is load-bearing. Astro
+     compiles the shell's own rule to `.esa-app-shell__bar[data-astro-cid-...]` —
+     one class plus one attribute, specificity (0,2,0), exactly what
      `.firma2-app-frame .esa-app-shell__bar` scores. On a tie the later rule
      wins, and the shell's stylesheet is emitted after this one, so the plain
-     selector compiled to dead code: the seam rendered anyway. Matching the
-     bar's second class (esa-app-bar, which EsaAppBar puts on the same element)
-     takes it to (0,3,0) and settles it on specificity instead of on emission
-     order, which is not something this layout controls. */
+     selector would compile to dead code. Matching the bar's second class
+     (esa-app-bar, which EsaAppBar puts on the same element) takes it to (0,3,0)
+     and settles it on specificity instead of on emission order, which is not
+     something this layout controls. */
   .firma2-app-frame :global(.esa-app-shell__bar.esa-app-bar) {
-    grid-column: 2;
-    grid-row: 1;
-    border-bottom: none;
-  }
-  /* ONE LEFT EDGE for column 2. The bar and the content pane are the same region
-     in this layout (see the rule above), so everything in them has to hang off
-     the same vertical line — the sidebar toggle in the bar's `start` slot, and
-     the page's h1, cards and tables below it.
-
-     Out of the box they do not. esa-app-bar pads its row by --spacing-600 (32px)
-     and esa-app-shell pads its content pane by --spacing-500 (24px), so with the
-     rail 280px wide the toggle lands at x=312 and the page content at x=304 —
-     measured, not estimated. An 8px step is the worst size for this: too small
-     to read as a deliberate inset, too big for the edge to look straight.
-
-     The two disagree because they were never meant to meet. The hub's bar spans
-     the full window ABOVE the rail and the content pane, so its inset answers to
-     the window and nothing sits beside it to disagree with. This spoke re-flows
-     the bar into column 2 beside a full-height rail, which puts the two insets
-     into the same column for the first time — the mismatch is a consequence of
-     the re-flow, so it is this layout's to settle.
-
-     The content pane's 24px is the one that wins: it is the edge every page
-     already draws against, and it is the larger surface.
-
-     Padding on the ROW, not `--_bar-pad-x`. That hook is `--_`-prefixed and
-     esa-app-bar's own header says so in as many words — there is no public knob
-     behind it and density belongs in a variant, not a per-instance override. A
-     light-DOM rule on the class the component exposes is the same tier as the
-     border override above, and it does not pretend to an API that was
-     deliberately removed. Specificity: esa-app-bar's own rule compiles to
-     `.esa-app-bar__row[data-astro-cid-…]` at (0,2,0); this scores (0,4,0), so it
-     wins on specificity rather than on emission order.
-
-     Inline only. The block padding is left alone — it sets the bar's height, and
-     the toggle's 12px vertical offset from the rail's wordmark across the seam
-     is a separate question about two regions' vertical rhythms, not this one. */
-  .firma2-app-frame :global(.esa-app-shell__bar .esa-app-bar__row) {
-    padding-inline: var(--spacing-500, 24px);
+    display: none;
   }
   /* min-height: 0 so this grid item can be laid out from its track rather than
      floored at its content height — the row is `minmax(0, 1fr)` and this is the
@@ -416,7 +414,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
      rather than to the document root. */
   .firma2-app-frame :global(.esa-app-shell__content) {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 1;
     min-height: 0;
     position: relative;
     /* The document is the scroller now, so the pane must not open a second one
@@ -425,29 +423,24 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     overflow: visible;
   }
 
-  /* ---- ACCOUNT MENU AT THE FOOT OF THE RAIL ----
-     The companion script moves the shell's profile dropdown out of the bar and
-     appends it to the shell as `.firma2-app-frame__account`; the rules below are
-     where it lands. Its height is --firma2-account-height, declared on the frame
-     at the top of this stylesheet because both halves read it: the strip itself,
-     and the padding the rail reserves so a long nav list can never run
-     underneath it. */
+  /* ---- THE RAIL'S FOOT: ACCOUNT + COLLAPSE ----
+     The companion script moves the shell's profile dropdown and its sidebar
+     toggle out of the (now deleted) bar and appends them to the shell as
+     `.firma2-app-frame__account`; the rules below are where they land. Both are
+     app-level controls rather than page ones, which is why they sit together
+     under the navigation instead of over the content.
 
-  /* Hidden, not emptied: the bar's `end` group is compiled in (esa-app-bar
-     renders it from Astro.slots.has at build time), so removing its child at
-     runtime would leave an empty flex item holding the row's 32px gap open. It
-     also means the menu is never painted in the corner before the move. */
-  .firma2-app-frame :global(.esa-app-shell__bar .esa-app-bar__end) {
-    display: none;
-  }
-
+     The strip's height is --firma2-account-height, declared on the frame at the
+     top of this stylesheet because both halves read it: the strip itself, and
+     the padding the rail reserves so a long nav list can never run underneath
+     it. */
   .firma2-app-frame :global(.firma2-app-frame__account) {
     /* Same grid area as the rail, pinned to the bottom of it. The column track
        is sized BY the rail, so the strip is exactly as wide as the rail is and
        follows it down to 72px when it collapses — no width of its own, and no
        second place to keep that number in sync. */
     grid-column: 1;
-    grid-row: 1 / 3;
+    grid-row: 1;
     align-self: end;
     /* The rail holds the fold with `top: 0`; this holds the other edge. Both are
        sticky because the document is what scrolls (see the frame rule at the top
@@ -457,8 +450,14 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     bottom: 0;
     z-index: var(--z-sidebar, 100);
 
+    /* Account leading, collapse trailing. `space-between` rather than a gap so
+       the toggle keeps the rail's trailing edge whatever the name's length —
+       the same edge esa-sidebar-nav's own toggle held with `margin-left: auto`
+       before this spoke moved it down here. */
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-200, 8px);
     min-height: var(--firma2-account-height);
     /* Matches esa-sidebar-nav's own `.nav` padding, so the account row's icon
        lands on the same left edge as every nav item's icon above it. */
@@ -476,19 +475,35 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     border-inline-end: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
   }
 
-  /* COLLAPSED RAIL — 72px, so the name and the disclosure chevron have to go and
-     the glyph centres, which is the icon-rail convention the nav items above it
-     already follow (esa-sidebar-nav zeroes its own labels the same way).
+  /* ---- COLLAPSED RAIL: 72px ----
+     Everything with a text half loses it and the glyphs centre, which is the
+     icon-rail convention the nav items above already follow — esa-sidebar-nav
+     zeroes its own labels exactly this way, and turns its head row into a column
+     for the same reason: two 32px controls plus a gap do not fit across 72px.
+     So the foot stacks too, and the strip's reserved height grows to hold both.
+
      `:has()` on the frame rather than a class toggled by script: `collapsed` is
      a reflected attribute on the rail, so the DOM already carries the state and
-     a second copy of it could only disagree. Both targets are LIGHT DOM —
-     esa-button is an .astro lego — so no shadow-root injection is needed. */
+     a second copy of it could only disagree. Every target here is LIGHT DOM —
+     esa-button and the shell's own search/toggle buttons — so none of it needs
+     shadow-root injection. */
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) {
+    --firma2-account-height: 96px;
+  }
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account) {
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
   }
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account .esa-button__label),
-  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account .esa-button__native > .esa-icon:last-child) {
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account .esa-button__native > .esa-icon:last-child),
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search-label),
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search-kbd) {
     display: none;
+  }
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search) {
+    justify-content: center;
+    padding-inline: 0;
   }
 
   /* Omnibox icon: stop the placeholder from eating it.
@@ -521,5 +536,24 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   }
   .firma2-app-frame :global(.esa-app-shell__search-label) {
     min-width: 0;
+  }
+
+  /* THE OMNIBOX IS A RAIL ROW NOW, so it takes the rail's width instead of the
+     bar's. The shell sizes it `clamp(180px, 30vw, 340px)` — a rule written for a
+     control floating in a full-width bar, where the viewport is the only thing
+     there is to measure against. In a 280px rail that clamp resolves to 340px at
+     any window wider than 1133px and the button hangs out past the rail's edge.
+     100% hands the width back to the column, which is the rail's own token
+     (--sidenav-width) and follows it down to 72px on collapse with nothing to
+     keep in sync.
+
+     The `::slotted([slot='header'])` rules the rail applies to header content —
+     `display: block`, its own padding — do NOT reach this button, and that is
+     the shadow-DOM cascade rather than luck: for a slotted element the outer
+     tree's declarations beat the inner tree's ::slotted rules, so the shell's
+     own display/padding/height hold. Verified rendered: 34px tall, flex row
+     intact, in both rail states. */
+  .firma2-app-frame :global(.esa-app-shell__search) {
+    width: 100%;
   }
 </style>

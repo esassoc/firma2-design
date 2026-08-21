@@ -4,15 +4,25 @@
 // Program/Status filter dropdowns, quick search, Clear all, record-count footer
 // and CSV export this spoke's data grids share. It is the surface the measure
 // setup drawer opens on top of, so the columns are the fields the drawer
-// collects — name, program, data type + unit, reporting frequency, status —
+// collects — name, kind, classifications, quantity + unit, counting rule, status —
 // rather than a separate reading of the same record.
 //
-// Column set follows the open-source ProjectFirma performance-measure model, so
-// the screen speaks the product's own language. Deliberately absent: definition,
-// reporter guidance, aggregation, decimal places and subcategories. They are all
-// real fields on the record and none of them is SCANNABLE — a paragraph in a
-// cell is a wall, and a reader comparing measures compares the six facts below.
-// Definition still reaches the reader, as the Measure column's tooltip.
+// Column set follows the QUANTITY-PLUS-DIMENSIONS model the data module
+// proposes, so the screen speaks the product's own language. Kind leads the
+// attribute columns because the FORK above that model — an output records work
+// someone did, an outcome records a condition someone measured — decides who
+// files a row and which counting rules are legal for it, so it is the fact that
+// changes how every column to its right should be read. The one column that is
+// not a stored field is Dimensions, which renders a measure's shape as
+// "6 (2 reported)". That is the model's whole argument — how much a measure
+// asks of reporters versus how much it derives — and a count is the only form
+// of the argument that stays comparable down a column.
+//
+// Deliberately absent: definition, reporter guidance, decimal places, and the
+// dimension list itself. They are all real fields on the record and none of
+// them is SCANNABLE — a paragraph in a cell is a wall, and a reader comparing
+// measures compares the eight facts below. Definition still reaches the reader,
+// as the Measure column's tooltip.
 //
 // Search and filters live INSIDE this component rather than beside it: both feed
 // the same AG Grid instance (quick filter and external filter), so splitting
@@ -29,8 +39,8 @@
 // as a direct dependency with the same Theming-API-only setup), and
 // shared/firma2-data-grid-chrome.css is the reusable home for its frame — reused
 // here verbatim, not forked. Every other control IS a lego: esa-text-field for
-// search, esa-filter-container + esa-filter-dropdown for the Program and Status
-// filters, esa-filter-clear-button for Clear all, esa-button for the CSV
+// search, esa-filter-container + esa-filter-dropdown for the Kind, Program and
+// Status filters, esa-filter-clear-button for Clear all, esa-button for the CSV
 // download, esa-empty-state for the no-results overlay, and the Status cells
 // clone real server-rendered esa-pill markup rather than restyling a chip by
 // hand.
@@ -40,7 +50,7 @@ import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaFilterClearButton from '@esa/ecology/esa-filter-clear-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
-import { measuresByName, MEASURE_STATUS_TONE, PROGRAMS } from '../../data/firma2-performance-measures';
+import { measuresByName, MEASURE_KINDS, MEASURE_STATUS_TONE, CLASSIFICATIONS } from '../../data/firma2-performance-measures';
 import type { MeasureStatus, PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
 
 interface Props {
@@ -80,13 +90,36 @@ const statusOptions = STATUS_ORDER.filter((s) => measures.some((m) => m.status =
   color: TONE_DOT[MEASURE_STATUS_TONE[s]],
 }));
 
-// Program options come from the portfolio's vocabulary (PROGRAMS), narrowed to
+// Classification options come from the portfolio's vocabulary (CLASSIFICATIONS), narrowed to
 // the branches this catalog actually uses — same "never offer an empty filter"
-// convention as the status list. No dots: program is a taxonomy tier, not a
+// convention as the status list. No dots: a classification is a goal, not a
 // status, and nothing else on the screen colours it.
-const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program === p)).map((p) => ({
+const classificationOptions = CLASSIFICATIONS.filter((c) =>
+  measures.some((m) => m.classifications.includes(c)),
+).map((p) => ({
   value: p,
   label: p,
+}));
+
+// A two-value vocabulary is the cheapest filter this table can offer and the
+// one people will reach for most: "show me the outcomes" is a question about
+// the whole catalog, and outcomes are the minority of it — a handful of rows
+// scattered down a list of outputs. Sorting the Kind column clusters them;
+// filtering isolates them, and leaves the Program and Status dropdowns free to
+// narrow further inside one kind. That is also why the column itself can stay
+// quiet: the reader who needs kind separated has a control that separates it,
+// so the cells do not have to shout.
+//
+// Values are the stored ids ('output'), labels the module's own names
+// ('Output'), and the order is MEASURE_KINDS' declared one — output first,
+// because it is the majority of any catalog and the shape a measure is assumed
+// to be until someone says otherwise. Narrowed to the kinds actually present,
+// same "never offer an empty filter" rule as the two beside it. No dots: a kind
+// classifies what a row IS, not a state it is in, and nothing on this screen
+// colours it.
+const kindOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === k.id)).map((k) => ({
+  value: k.id,
+  label: k.name,
 }));
 ---
 <section class="firma2-measure-table stack" data-gap="md">
@@ -115,21 +148,33 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
       <div class="firma2-data-grid__search">
         <esa-text-field
           label="Search measures"
-          placeholder="Measure name or unit"
+          placeholder="Name, quantity, or unit"
           size="md"
           data-measures-search
         ></esa-text-field>
       </div>
 
       <EsaFilterContainer>
+        <!-- Kind leads the three, matching the column order: it is the coarsest
+             cut in the catalog, so it is the one a reader reaches for before
+             narrowing by program or status. -->
         <esa-filter-dropdown
-          data-measures-program-filter
-          name="program"
-          label="Program"
+          data-measures-kind-filter
+          name="kind"
+          label="Kind"
           size="md"
           multiple
-          placeholder="Search programs"
-          options={JSON.stringify(programOptions)}
+          placeholder="Search kinds"
+          options={JSON.stringify(kindOptions)}
+        ></esa-filter-dropdown>
+        <esa-filter-dropdown
+          data-measures-classification-filter
+          name="classifications"
+          label="Classifications"
+          size="md"
+          multiple
+          placeholder="Search classifications"
+          options={JSON.stringify(classificationOptions)}
         ></esa-filter-dropdown>
         <esa-filter-dropdown
           data-measures-status-filter
@@ -149,7 +194,7 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
            (`align-items: flex-end`, from the shared chrome) it bottom-aligns with
            the triggers, and the height rule below makes it match them outright.
 
-           It clears the two FILTERS and leaves the search box alone: the lego
+           It clears the three FILTERS and leaves the search box alone: the lego
            hard-codes aria-label="Clear all filters", and wiping typed search text
            under that name would make the accessible name a lie. The search field
            has its own obvious affordance.
@@ -199,12 +244,20 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
        "No Rows To Show" — Title Case, not this product's voice, and it names no
        way out. Copy follows esa-empty-state's contract: the title states what is
        absent as a fact, the description is one imperative recovery action naming
-       the actual controls on screen. -->
+       the actual controls on screen.
+
+       The description stopped naming the filters individually when Kind made
+       them three: "the Kind, Program, and Status filters" spends nine words
+       listing controls the reader is looking straight at, and it would have to
+       be rewritten again at four. "the filters above" points at the same row
+       and survives the next column. It does NOT name Clear all, which is hidden
+       whenever nothing is selected — an empty state reached by search alone
+       would be naming a control that is not on screen. -->
   <div data-measures-empty hidden aria-hidden="true">
     <EsaEmptyState
       size="sm"
       title="No matching measures"
-      description="Try a different search, or clear the Program and Status filters."
+      description="Try a different search, or clear the filters above."
     />
   </div>
 
@@ -250,11 +303,12 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
   import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
   import { mergeDraft, readDraft } from '../../lib/measure-draft';
   import {
-    DATA_TYPES,
+    COUNTING_RULES,
+    MEASURE_KINDS,
     MEASURE_STATUS_TONE,
-    REPORTING_FREQUENCIES,
     measureDisplayName,
     measureHref,
+    reportedDimensions,
   } from '../../data/firma2-performance-measures';
   import { withBase } from '../../lib/base';
   import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
@@ -265,11 +319,23 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
 
   /**
    * Sort a closed vocabulary in the order the vocabulary itself declares, not
-   * alphabetically. Three of this table's columns hold a fixed option list that
-   * the setup drawer offers in a meaningful order — a cadence (Annually →
-   * Quarterly → On completion), a lifecycle (Active → Draft → Retired) — and
-   * alphabetising it throws that order away and interleaves unrelated values.
-   * Anything not in the list sorts last rather than throwing.
+   * alphabetically. THREE of this table's columns hold a fixed option list that
+   * the setup drawer offers in a meaningful order, and alphabetising any of
+   * them throws that order away:
+   *
+   *   - Status is a lifecycle (Active → Draft → Retired). Alphabetical would
+   *     put Draft before Active, which is backwards.
+   *   - Counting rule runs the three output rules from the coarsest reading of
+   *     a total (sum every entry) to the narrowest (count distinct places),
+   *     then the two outcome rules (most recent per place, average across
+   *     places) — so sorting the column groups by kind for free.
+   *   - Kind is output → outcome, and this one only LOOKS alphabetical.
+   *     'outcome' sorts before 'output' on a string compare, so the default
+   *     sort would invert the declared order and lead the catalog with its
+   *     minority kind.
+   *
+   * Anything not in the list sorts last rather than throwing, which is also how
+   * an unset optional lands at the bottom.
    */
   const rankBy = (order: readonly string[]) => (a: string, b: string) => {
     const at = order.indexOf(a);
@@ -279,12 +345,27 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
 
   const STATUS_ORDER = Object.keys(MEASURE_STATUS_TONE);
 
+  // The counting rule is stored as an id and read as a sentence, so the column
+  // needs both: the declared id order for sorting, and the id → name lookup for
+  // the cell. Both derive from COUNTING_RULES rather than being retyped, which
+  // is why 'average-per-place' — added to the module with the output/outcome
+  // fork — arrived here already named and ranked, instead of sorting as an
+  // unknown at the bottom of the column. A sixth rule will do the same.
+  const COUNTING_RULE_ORDER = COUNTING_RULES.map((r) => r.id as string);
+  const COUNTING_RULE_NAME = new Map(COUNTING_RULES.map((r) => [r.id as string, r.name] as const));
+
+  // Same two derivations for kind, same reason: 'output' is what the record
+  // stores, "Output" is what a reader is owed, and MEASURE_KINDS owns both.
+  const KIND_ORDER = MEASURE_KINDS.map((k) => k.id as string);
+  const KIND_NAME = new Map(MEASURE_KINDS.map((k) => [k.id as string, k.name] as const));
+
   function initMeasureTable(root: HTMLElement) {
     // outerHTML of the element itself, not the wrapper's innerHTML: AG Grid's
     // overlayNoRowsTemplate takes HTML with a SINGLE root element, and innerHTML
     // would hand it the surrounding whitespace text nodes as well.
     const emptyState = root.querySelector<HTMLElement>('[data-measures-empty] > *');
-    const programFilter = root.querySelector<HTMLElement>('[data-measures-program-filter]');
+    const kindFilter = root.querySelector<HTMLElement>('[data-measures-kind-filter]');
+    const classificationFilter = root.querySelector<HTMLElement>('[data-measures-classification-filter]');
     const statusFilter = root.querySelector<HTMLElement>('[data-measures-status-filter]');
     const clearButton = root.querySelector<HTMLElement>('[data-esa-filter-clear]');
 
@@ -296,18 +377,26 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
     });
 
     // Dropdown-driven filters, kept out of AG Grid's own column-filter UI so the
-    // esa-filter-dropdowns stay the single filter surface on this screen. Both
-    // are multi-select: an empty array means "no constraint on this dimension",
-    // which is why Retired measures are in the table before anyone touches
-    // Status, and why there is no "All" option to forget to select.
-    let programValues: string[] = [];
+    // esa-filter-dropdowns stay the single filter surface on this screen. All
+    // three are multi-select: an empty array means "no constraint on this
+    // dimension", which is why Retired measures are in the table before anyone
+    // touches Status, and why there is no "All" option to forget to select.
+    //
+    // Kind is multi-select too, even though selecting both of two values is the
+    // same as selecting neither. Making it single-select would buy nothing —
+    // the state, the event payload and the Clear all reset are all arrays, so a
+    // second shape would be a second code path for a control that behaves
+    // identically — and the dropdowns share a row, so they should also share
+    // their interaction.
+    let kindValues: string[] = [];
+    let classificationValues: string[] = [];
     let statusValues: string[] = [];
 
-    // Quick search covers the NAME and the UNIT — the two dimensions someone
-    // types. Program and Status have dropdowns; data type and reporting
-    // frequency are three- and four-value vocabularies that are faster to spot
-    // in a sorted column than to type. defaultColDef opts every column out of
-    // quick filter; these two opt back in.
+    // Quick search covers the NAME and the QUANTITY — its words and its unit,
+    // which is what someone types when they are hunting for "acres" or
+    // "hours". Kind, Program and Status have dropdowns; the counting rule is a
+    // five-value vocabulary, faster to spot in a sorted column than to type.
+    // defaultColDef opts every column out of quick filter; these two opt in.
     // LOCAL DRAFTS WIN OVER THE SEED, and the catalog has to honour them or it
     // contradicts the setup page. Save a name on a measure, come back here, and a
     // table still showing "Untitled measure" reads as a bug — the record changed,
@@ -372,43 +461,149 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
               ? `<a class="firma2-grid-link" href="${esc(withBase(measureHref(p.data)))}">${esc(measureDisplayName(p.data))}</a>`
               : '',
         },
-        // UNSET IS A REAL STATE, not a missing value. `program` and
-        // `reportingFrequency` are optional on the record because a draft
-        // created from the one-question dialog genuinely has not answered them
-        // yet. An empty cell reads as a rendering fault; an em dash reads as
-        // "not answered", which is the truth. Sorting still groups them
-        // together because AG Grid sorts on the raw undefined, not the dash.
+        // Output or outcome — the fork the whole catalog hangs off, so it sits
+        // immediately beside the name it classifies rather than out at the
+        // right-hand edge with Status.
+        //
+        // PLAIN TEXT, NOT A SECOND PILL, and this was the real decision here.
+        // Three arguments, in order:
+        //
+        //   1. A pill is a STATE marker with a dismiss affordance behind it.
+        //      Status earns it: Active/Draft/Retired is where a measure is in
+        //      its life, it changes without the record changing, and it is the
+        //      one thing on the row a reader might want to act on. Kind is what
+        //      a measure IS — set at creation, never edited (it is not even in
+        //      MeasureDraft's editable Pick, so the local-draft merge cannot
+        //      touch it). Classifications do not need a chip to be true.
+        //   2. Two chip columns in an eight-column row is texture. The Status
+        //      pill is the only saturated thing in the grid, which is exactly
+        //      why it reads at a glance; a second coloured column beside it
+        //      halves the value of both and turns the row's right half into
+        //      confetti. Containers and rows stay neutral; colour is spent
+        //      once, on the thing that changes.
+        //   3. Colour cannot be the channel anyway. Two values distinguished by
+        //      hue is unreadable to a colourblind reader and invisible in a
+        //      printed CSV, so the word would have to be there regardless — at
+        //      which point the chip around it is carrying nothing.
+        //
+        // The word is the whole treatment, which leaves ONE honest weakness:
+        // "Output" and "Outcome" share four letters, so they are slower to tell
+        // apart down a column than two colours would be. The answers are the
+        // Kind filter dropdown (isolate one kind in a click) and the column
+        // sort (rankBy groups them, and it has to be declared — see rankBy's
+        // note on 'outcome' sorting first alphabetically). A control that
+        // separates them beats a colour that merely marks them.
+        //
+        // The cell spends the module's name ("Output"), never the stored id.
+        // The header tooltip carries the two facts the column cannot show: WHO
+        // files each kind, and that the Counting rule column beside it is
+        // drawing from a different list depending on this cell.
         {
-          headerName: 'Program', field: 'program', colId: 'program',
-          flex: 1, minWidth: 150, tooltipField: 'program',
+          headerName: 'Kind', field: 'kind', colId: 'kind', width: 100,
+          headerTooltip: 'Outputs record work a project did. Outcomes record a condition a monitoring effort measured — so the two allow different counting rules.',
+          comparator: rankBy(KIND_ORDER),
+          valueFormatter: (p) => (p.value ? KIND_NAME.get(p.value) ?? p.value : UNSET),
+        },
+        // UNSET IS A REAL STATE, not a missing value. `classifications` is
+        // empty and `unit` and `countingRule` are undefined on a measure
+        // created from the one-question dialog, because it genuinely has not
+        // answered them yet. So a draft row carries an em dash in FOUR columns
+        // — Classifications,
+        // Quantity, Counting rule, Dimensions — and that is the point: it is a
+        // measure someone started, and the row says exactly how far they got.
+        // An empty cell would read as a rendering fault; an em dash reads as
+        // "not answered". Sorting still groups them together because AG Grid
+        // sorts on the raw undefined, not on the dash.
+        //
+        // There are TWO drafts now, one per kind, and they make the convention
+        // legible rather than muddying it: both rows read "Untitled measure"
+        // followed by four dashes, and the ONLY cell that differs is Kind. Four
+        // dashes in a row could be a bug; the same four dashes twice, split by
+        // the one answer that was given, is unmistakably a record in progress —
+        // the question was asked, answered, and nothing after it was.
+        // A SET IN A CELL, joined for display and for the tooltip. The record
+        // holds an array; a grid cell holds a line. `valueGetter` does the join
+        // once so the sort, the tooltip and the text all read the same string —
+        // a formatter alone would have left AG Grid sorting on the raw array,
+        // which stringifies with commas and no spaces and sorts differently
+        // from what the reader sees.
+        {
+          headerName: 'Classifications', colId: 'classifications',
+          valueGetter: (p) => (p.data?.classifications ?? []).join(', '),
+          flex: 1, minWidth: 170,
+          tooltipValueGetter: (p) => p.value || undefined,
           valueFormatter: (p) => p.value || UNSET,
         },
-        // Type and unit are ONE fact — "Number · acres" — so they share a column.
-        // Two columns would cost ~120px that the truncating Measure and Program
-        // columns need more, and a unit alone ("acres") never answers a question
-        // its data type has not already framed. Percent and Currency carry their
-        // own unit, so the record stores an empty string and the separator is
-        // dropped rather than left dangling.
+        // Quantity and unit are ONE fact — "Treated extent · acres" — so they
+        // share a column, on the same argument that used to hold data type and
+        // unit together. Two columns would cost ~120px the truncating Measure
+        // and Classifications columns need more, and neither half stands alone: "acres"
+        // does not say of what, "Treated extent" does not say measured how. The
+        // separator is dropped rather than left dangling when either half is
+        // missing, which is the unnamed draft's case — it has neither.
         {
-          headerName: 'Data type', field: 'dataType', colId: 'dataType', width: 165,
-          comparator: rankBy(DATA_TYPES),
+          headerName: 'Quantity', field: 'quantity', colId: 'quantity', width: 175,
           valueFormatter: (p) =>
-            p.data ? (p.data.unit ? `${p.data.dataType} · ${p.data.unit}` : p.data.dataType) : '',
-          getQuickFilterText: (p) => p.data?.unit ?? '',
+            [p.data?.quantity, p.data?.unit].filter(Boolean).join(' · ') || UNSET,
+          getQuickFilterText: (p) => `${p.data?.quantity ?? ''} ${p.data?.unit ?? ''}`.trim(),
         },
+        // The counting rule decides what a total MEANS, so the cell spends the
+        // rule's whole name ("Union the mapped extent") rather than its stored
+        // id: `spatial-union` is the database's word for it, not a reader's.
+        // Sorted in COUNTING_RULES' own declared order, which now runs the three
+        // output rules broadest-to-narrowest and then the two outcome ones — so
+        // sorting this column clusters by kind as a side effect. Alphabetical
+        // would put "Average across places" first for no reason anyone could
+        // name.
+        //
+        // The rules are kind-exclusive (COUNTING_RULES entries declare
+        // `appliesTo`, and the drawer only offers a kind its own list), so this
+        // column and Kind are correlated — a reader who knows the vocabulary
+        // can infer one from the other. Kind still earns its own column: the
+        // inference only runs in the fluent reader's head, it runs backwards
+        // for everyone else, and it fails entirely on a draft, which has a kind
+        // and no rule at all.
         {
-          headerName: 'Reporting frequency', field: 'reportingFrequency', colId: 'reportingFrequency', width: 180,
-          headerTooltip: 'How often each project reports a value.',
-          comparator: rankBy(REPORTING_FREQUENCIES),
-          valueFormatter: (p) => p.value || UNSET,
+          headerName: 'Counting rule', field: 'countingRule', colId: 'countingRule', width: 180,
+          headerTooltip: 'How entries combine into a total. Outputs sum or union; outcome readings supersede or average.',
+          comparator: rankBy(COUNTING_RULE_ORDER),
+          valueFormatter: (p) => (p.value ? COUNTING_RULE_NAME.get(p.value) ?? p.value : UNSET),
         },
-        // A count, so it is right-aligned on tabular figures and the header
+        // The one column that is not a stored field, and the one that earns its
+        // width: it is where the model's trade becomes comparable across the
+        // catalog. "6 (2 reported)" says a reporter answers two questions and
+        // the program can still slice the result six ways — the cost and the
+        // leverage, in one cell, side by side down the column.
+        //
+        // valueGetter returns the TOTAL as a number and the formatter renders
+        // the string, so the sort is numeric. Sorting the rendered text would
+        // put "10 (3 reported)" above "6 (2 reported)" on a string compare and
+        // rank the heaviest measure in the catalog as the lightest. No `field`
+        // beside the getter: the value is computed, and naming a field as well
+        // would only leave a reader working out which of the two wins.
+        //
+        // Tabular figures but LEFT-aligned: the parenthetical makes this a
+        // phrase rather than a magnitude, so it does not take the right-aligned
+        // numeric treatment Projects gets — the digits still line up on scan.
+        // Zero dimensions is an em dash, not "0": a measure with none has not
+        // been shaped yet, which is the same "not answered" the columns beside
+        // it are reporting.
+        {
+          headerName: 'Breakdowns', colId: 'dimensions', width: 140,
+          headerTooltip: 'Ways the total can be split. Questions are answered by hand; the rest fill in from the map, the record, or earlier entries.',
+          cellClass: 'firma2-grid-num',
+          valueGetter: (p) => p.data?.dimensions?.length ?? 0,
+          valueFormatter: (p) =>
+            p.data && p.value ? `${p.value} (${reportedDimensions(p.data).length} asked)` : UNSET,
+        },
+        // A magnitude, so it is right-aligned on tabular figures and the header
         // follows the cells. It reuses the shared `firma2-grid-cost` /
         // `-cost-header` pair, which is the chrome's right-aligned-numeric
-        // treatment and carries nothing currency-specific — the name is now one
-        // use behind its job and would read better as `firma2-grid-number`.
-        // Renaming it is a change to a file two grids share, so it belongs in a
-        // pass over the shared chrome, not smuggled in here.
+        // treatment and carries nothing currency-specific — the name is two
+        // uses behind its job now and wants renaming alongside the plain
+        // `firma2-grid-num` the Dimensions column uses. That is a change to a
+        // file two grids share, so it belongs in a pass over the shared chrome,
+        // not smuggled in here.
         {
           headerName: 'Projects', field: 'projectCount', colId: 'projectCount', width: 120,
           headerTooltip: 'Projects currently reporting this measure.',
@@ -432,9 +627,16 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
         // its scoped styles) as the single source. A JS overlayComponent would
         // mean re-authoring the lego's markup by hand.
         overlayNoRowsTemplate: emptyState?.outerHTML,
-        isExternalFilterPresent: () => programValues.length > 0 || statusValues.length > 0,
+        isExternalFilterPresent: () =>
+          kindValues.length > 0 || classificationValues.length > 0 || statusValues.length > 0,
         doesExternalFilterPass: (node) =>
-          (programValues.length === 0 || programValues.includes(node.data?.program ?? '')) &&
+          (kindValues.length === 0 || kindValues.includes(node.data?.kind ?? '')) &&
+          // A ROW MATCHES IF IT CARRIES ANY SELECTED CLASSIFICATION — `some`,
+          // not equality, because the field is a set now. Selecting two
+          // classifications widens the result rather than demanding both, which
+          // is what every other filter on this bar already means.
+          (classificationValues.length === 0 ||
+            (node.data?.classifications ?? []).some((c) => classificationValues.includes(c))) &&
           (statusValues.length === 0 || statusValues.includes(node.data?.status ?? '')),
       },
     });
@@ -444,7 +646,10 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
     // Clear all is only in the row when there is something to clear — a control
     // that does nothing is one more thing to read past on the way to the table.
     const syncClearVisibility = () => {
-      if (clearButton) clearButton.hidden = programValues.length === 0 && statusValues.length === 0;
+      if (clearButton) {
+        clearButton.hidden =
+          kindValues.length === 0 && classificationValues.length === 0 && statusValues.length === 0;
+      }
     };
     syncClearVisibility();
 
@@ -456,7 +661,8 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
       gridApi.onFilterChanged();
       syncClearVisibility();
     };
-    programFilter?.addEventListener('selection-change', onSelection((v) => { programValues = v; }));
+    kindFilter?.addEventListener('selection-change', onSelection((v) => { kindValues = v; }));
+    classificationFilter?.addEventListener('selection-change', onSelection((v) => { classificationValues = v; }));
     statusFilter?.addEventListener('selection-change', onSelection((v) => { statusValues = v; }));
 
     // esa-filter-clear-button is presentational: it emits a bubbling
@@ -471,11 +677,12 @@ const programOptions = PROGRAMS.filter((p) => measures.some((m) => m.program ===
     // emit selection-change, so the local arrays are reset here rather than being
     // waited on.
     root.addEventListener('esa-filter-clear', () => {
-      [programFilter, statusFilter].forEach((el) => {
+      [kindFilter, classificationFilter, statusFilter].forEach((el) => {
         const dropdown = el as (HTMLElement & { _selected?: string[] }) | null;
         if (dropdown) dropdown._selected = [];
       });
-      programValues = [];
+      kindValues = [];
+      classificationValues = [];
       statusValues = [];
       gridApi.onFilterChanged();
       syncClearVisibility();

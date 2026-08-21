@@ -1,0 +1,814 @@
+---
+// firma2-measure-attributes — every subcategory on the measure EXCEPT the
+// primary: one list, one heading, each row carrying its own source.
+//
+// IT REPLACED TWO SECTIONS, and the merge is a model correction, not a tidy-up.
+// "Also asked of the reporter" (firma2-reporter-questions) and "Filled in
+// automatically" (firma2-auto-breakdowns) presented reported and derived
+// subcategories as two different KINDS of thing, when the data model has always
+// said otherwise: MeasureDimension is one shape with a `source` field, and the
+// mental model this page teaches should match — a measure has the thing it
+// measures, and then attributes on every entry; where an attribute's answer
+// comes from is a property OF the attribute, not a different species. Splitting
+// them by source also hid the authored order: the dimensions array interleaves
+// freely, and two filtered lists silently re-sorted what the author declared.
+//
+// WHAT THE SPLIT USED TO CARRY, AND WHERE IT LIVES NOW. Section membership was
+// the cost signal — reported subcategories tax every reporter on every entry
+// forever and can never be backfilled; derived ones are free. That signal did
+// not survive as a section boundary, so it moved to the two places it actually
+// operates:
+//   - THE ADD MOMENT. There are still two ways in, priced apart on sight: a
+//     ghost button that names its cost ("Ask the reporter something else") and
+//     a sunken tray of dashed catalog entries ("Available without asking").
+//     The fork is where the author commits, so the fork is where the price is.
+//   - THE ROW. Every row wears its source at the trailing edge — "Reported",
+//     "Map layer", "Entry history", "Record field" — and a reported row is
+//     visibly a FORM (fields to fill) while a derived row is visibly a FACT
+//     (name and vocabulary, nothing to type). The behaviours differ because
+//     the sources differ; the list membership does not.
+//
+// ROWS ARE READ-ONLY OR EDITABLE BY SOURCE, unchanged from the two sections:
+// a derived row's name came from the catalog and its vocabulary from the layer
+// — an editable name box would invite renaming "Critical zone" to something the
+// report cannot match back to the layer that answers it. A reported row is the
+// one place authoring happens, so it is a real form, always open: a name plus
+// an option list has no readable one-line collapsed form.
+//
+// CONTRACTS — consumed by src/lib/measure-editor.ts:
+//   .firma2-measure-attributes             the root class it queries
+//   readDimensions(): MeasureDimension[]   expando; every NON-PRIMARY dimension,
+//                                          reported and derived, in row order
+//   setDimensions(next)                    expando; restore from a saved draft
+//                                          (primary entries are skipped)
+//   firma2-dimensions-change               bubbling, { detail: { dimensions } }
+//
+// COMPOSED, NOT BUILT: esa-text-field (name), bcn-option-list (options),
+// esa-button ghost (ask), ghost/dashed (catalog) and chrome/icon-only (remove),
+// on layout primitives. Every hard part is carried over from the two sections
+// it replaced — the one-authored-copy prototype rows, 40px pinning re-applied
+// per row, focus management on add and remove, the kit's shared announcer, and
+// the settle-then-emit timing on restore.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import BcnOptionList from '../shared/bcn-option-list.astro';
+import {
+  GEO_LAYERS,
+  HISTORICAL_RULES,
+  RECORD_FIELDS,
+  dimensionValues,
+  sourceLabel,
+} from '../../data/firma2-performance-measures';
+import type { MeasureDimension } from '../../data/firma2-performance-measures';
+
+interface Props {
+  /** Every dimension on the measure; this section renders all but the primary. */
+  dimensions: MeasureDimension[];
+}
+
+const { dimensions } = Astro.props;
+
+// The section's slice: everything that is not the primary, IN AUTHORED ORDER.
+// The primary is excluded here, not by the caller — the page hands every
+// section the same array, and each owning its slice is what keeps them from
+// overlapping. Unlike the two sections this replaced, nothing is re-sorted by
+// source: the order the author declared is the order rendered.
+const attributes = dimensions.filter((d) => !d.primary);
+
+// ---------------------------------------------------------------------------
+// The source catalogue (verbatim from the auto-breakdowns section)
+// ---------------------------------------------------------------------------
+
+interface SourceEntry {
+  /** The round-trip encoding, `kind:ref`. Also the catalog button's value. */
+  value: string;
+  /** The source's own name, which becomes the row's name unedited. */
+  name: string;
+  kind: 'spatial' | 'historical' | 'record';
+  /** What this source will return. Empty means open-ended — a year, a project. */
+  values: string[];
+}
+
+// NOTHING IS RETYPED HERE — a layer added to GEO_LAYERS appears in the catalog
+// on the next build with its values and name attached.
+const SOURCES: SourceEntry[] = [
+  ...GEO_LAYERS.map((layer) => ({
+    value: `spatial:${layer.id}`,
+    name: layer.name,
+    kind: 'spatial' as const,
+    values: layer.values,
+  })),
+  ...HISTORICAL_RULES.map((rule) => ({
+    value: `historical:${rule.id}`,
+    name: rule.name,
+    kind: 'historical' as const,
+    values: [...rule.values],
+  })),
+  ...RECORD_FIELDS.map((field) => ({
+    value: `record:${field.id}`,
+    name: field.name,
+    kind: 'record' as const,
+    // RECORD_FIELDS carry no value list on purpose — a reporting year is
+    // whatever the entry says, not a closed vocabulary.
+    values: [] as string[],
+  })),
+];
+
+// ---------------------------------------------------------------------------
+// Copy
+// ---------------------------------------------------------------------------
+
+// "Other subcategories" — the counterpart of the record section's "Primary
+// subcategory" field, which is the pairing that teaches the model in two
+// headings: one subcategory makes an entry an entry; these are the rest.
+// "Subcategory" over "attribute" and "dimension" because it is the word the
+// domain already uses (ProjectFirma 1.x) — the UI retires the other two.
+const HEADING = 'Other subcategories';
+
+// Each row's name field. The reported row's name IS the subcategory's name;
+// "Question" (the old label) framed it as reporter-facing prose, which its
+// source marker now says instead.
+const NAME_LABEL = 'Subcategory';
+const OPTIONS_LABEL = 'Options';
+
+// The one costly action, and it names its price — deliberately the verbal
+// opposite of the free tray's "Available without asking", so the two ways in
+// read as the trade they are.
+const ASK_LABEL = 'Ask the reporter something else';
+const CATALOG_HEADING = 'Available without asking';
+
+// THE SOURCE MARKERS, one copy. "Reported" joins the three derived kinds now
+// that reported rows sit in the same list and need the same trailing-edge
+// answer to "where does this come from".
+const SOURCE_KIND_LABEL: Record<MeasureDimension['source']['kind'], string> = {
+  reported: 'Reported',
+  spatial: 'Map layer',
+  historical: 'Entry history',
+  record: 'Record field',
+};
+
+const GROUP_LABEL: Record<SourceEntry['kind'], string> = {
+  spatial: 'Map layers',
+  historical: 'Entry history',
+  record: 'Record fields',
+};
+const GROUP_ORDER: SourceEntry['kind'][] = ['spatial', 'historical', 'record'];
+
+const NO_FIXED_LIST = 'No fixed list';
+
+/** The marker: the KIND, plus the source's own name only when it differs. */
+const sourceNote = (d: MeasureDimension): string => {
+  const kindLabel = SOURCE_KIND_LABEL[d.source.kind];
+  const label = sourceLabel(d);
+  return label === kindLabel || label === d.name ? kindLabel : `${kindLabel} · ${label}`;
+};
+
+const valuesText = (d: MeasureDimension): string =>
+  dimensionValues(d).join(', ') || NO_FIXED_LIST;
+
+// ---------------------------------------------------------------------------
+// Rows — the authored attributes, then ONE prototype of each row shape
+// ---------------------------------------------------------------------------
+
+const BLANK_REPORTED: MeasureDimension = { name: '', source: { kind: 'reported' } };
+const BLANK_DERIVED: MeasureDimension = { name: '', source: { kind: 'record', ref: '' } };
+
+interface RowEntry {
+  dimension: MeasureDimension;
+  prototype: boolean;
+}
+const rows: RowEntry[] = [
+  ...attributes.map((dimension) => ({ dimension, prototype: false })),
+  { dimension: BLANK_REPORTED, prototype: true },
+  { dimension: BLANK_DERIVED, prototype: true },
+];
+
+const isReported = (d: MeasureDimension): boolean => d.source.kind === 'reported';
+
+/** The `kind:ref` encoding a derived row round-trips through. */
+const sourceValue = (d: MeasureDimension): string => `${d.source.kind}:${d.source.ref ?? ''}`;
+
+// Declared catalog entries render hidden rather than omitted, so re-adding a
+// removed subcategory is an unhide — no id churn, no cloning.
+const declared = new Set(attributes.filter((d) => !isReported(d)).map(sourceValue));
+const catalogEmpty = SOURCES.every((s) => declared.has(s.value));
+---
+
+<section
+  class="firma2-measure-attributes stack"
+  data-gap="md"
+  data-sources={JSON.stringify(SOURCES)}
+  aria-labelledby="firma2-measure-attributes-heading"
+>
+  <h2 id="firma2-measure-attributes-heading" class="typography-label-lg-strong">{HEADING}</h2>
+
+  <!-- A <ul>: a countable set of peers — which is the merge's claim, made
+       structurally. A screen reader entering hears one count of subcategories,
+       not two lists implying two kinds of thing. An EMPTY list renders nothing,
+       and the two add affordances below are the empty state. -->
+  <ul class="firma2-measure-attributes__rows stack" data-gap="md">
+    {rows.map(({ dimension, prototype }, index) => (
+      <li
+        class="firma2-measure-attributes__row repel"
+        data-gap="sm"
+        data-align="start"
+        data-kind={isReported(dimension) ? 'reported' : 'derived'}
+        data-source={isReported(dimension) ? undefined : sourceValue(dimension)}
+        hidden={prototype}
+        data-prototype={prototype ? (isReported(dimension) ? 'reported' : 'derived') : undefined}
+      >
+        {isReported(dimension) ? (
+          <!-- A REPORTED ROW IS A FORM — the one place in this list where
+               authoring happens, so its fields are real and always open.
+               `.switcher` at the primitive's default 32rem threshold. -->
+          <div class="firma2-measure-attributes__fields switcher" data-gap="sm">
+            <esa-text-field
+              class="firma2-measure-attributes__name-field"
+              label={NAME_LABEL}
+              size="md"
+              value={dimension.name}
+            ></esa-text-field>
+
+            <BcnOptionList
+              class="firma2-measure-attributes__options"
+              label={OPTIONS_LABEL}
+              options={dimension.options ?? []}
+              placeholder="e.g. Initial"
+            />
+          </div>
+        ) : (
+          <!-- A DERIVED ROW IS A FACT — name and vocabulary, nothing to type.
+               Both came from the source the author picked. -->
+          <div class="firma2-measure-attributes__derived stack" data-gap="3xs">
+            <span class="firma2-measure-attributes__name typography-body-md" data-name>
+              {dimension.name}
+            </span>
+            <p class="firma2-measure-attributes__values typography-body-sm" data-values>
+              {valuesText(dimension)}
+            </p>
+          </div>
+        )}
+
+        <!-- THE TRAILING COLUMN EVERY ROW SHARES: source marker, then remove.
+             The markers stack into a scannable answer to "which of these cost
+             a reporter something" — the question the deleted section boundary
+             used to answer, now answered per row. -->
+        <div class="firma2-measure-attributes__actions cluster" data-gap="sm">
+          <span
+            class="firma2-measure-attributes__source typography-label-sm-strong"
+            data-source-label
+          >{sourceNote(dimension)}</span>
+          <EsaButton
+            class="firma2-measure-attributes__remove"
+            variant="chrome"
+            size="sm"
+            iconOnly
+            icon="trash-2"
+            label={`Remove subcategory ${index + 1}`}
+          />
+        </div>
+      </li>
+    ))}
+  </ul>
+
+  <!-- THE TWO WAYS IN, priced apart on sight. The ask button carries no leading
+       icon: the catalog labels are NOUNS and need the `+` to read as actions,
+       while this label is already a verb phrase — and the asymmetry stops the
+       one costly action from looking like another free one. -->
+  <div class="firma2-measure-attributes__ask">
+    <EsaButton class="firma2-measure-attributes__ask-button" variant="ghost" size="md"
+      >{ASK_LABEL}</EsaButton
+    >
+  </div>
+
+  <!-- THE FREE CATALOG, on the sunken layer — a tray the entries rest in, which
+       says "already here" without a word. Real <button>s, not esa-chip-group:
+       these are actions that remove themselves once used, and a chip's
+       aria-checked lifecycle is incoherent for that (full argument preserved
+       from the section this replaced). ghost + dashed because chrome's
+       transparent border deletes the dash. -->
+  <div class="firma2-measure-attributes__catalog stack" data-gap="sm" hidden={catalogEmpty} data-catalog>
+    <p class="firma2-measure-attributes__catalog-heading typography-label-md-strong">{CATALOG_HEADING}</p>
+
+    {GROUP_ORDER.map((groupKind) => {
+      const entries = SOURCES.filter((s) => s.kind === groupKind);
+      const labelId = `firma2-measure-attributes-group-${groupKind}`;
+      return (
+        <div
+          class="firma2-measure-attributes__group stack"
+          data-gap="2xs"
+          data-group={groupKind}
+          hidden={entries.every((e) => declared.has(e.value))}
+        >
+          <p id={labelId} class="firma2-measure-attributes__group-label typography-label-sm-strong">
+            {GROUP_LABEL[groupKind]}
+          </p>
+          <div class="cluster" data-gap="2xs" role="group" aria-labelledby={labelId}>
+            {entries.map((entry) => (
+              <!-- The wrapper owns `hidden` — esa-button spreads ...rest onto
+                   the inner <button>, so the span is the element this component
+                   can reliably hide and query. -->
+              <span
+                class="firma2-measure-attributes__catalog-entry"
+                data-value={entry.value}
+                hidden={declared.has(entry.value)}
+              >
+                <EsaButton variant="ghost" appearance="dashed" size="md" icon="plus"
+                  >{entry.name}</EsaButton
+                >
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</section>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  // The kit's ONE polite live region — a region per section means some messages
+  // announce twice and others not at all.
+  import { announce } from '@esa/ecology/announcer';
+
+  // Structurally identical to MeasureDimension — restated because importing the
+  // data module here would ship the whole dataset to the browser for one type.
+  type SourceKind = 'reported' | 'spatial' | 'historical' | 'record';
+
+  interface Dimension {
+    name: string;
+    source: { kind: SourceKind; ref?: string };
+    options?: string[];
+  }
+
+  interface SourceEntry {
+    value: string;
+    name: string;
+    kind: 'spatial' | 'historical' | 'record';
+    values: string[];
+  }
+
+  const NO_FIXED_LIST = 'No fixed list';
+  const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
+    reported: 'Reported',
+    spatial: 'Map layer',
+    historical: 'Entry history',
+    record: 'Record field',
+  };
+
+  // 40px is MEASURED, not chosen — AppLayout carries the table and pins once at
+  // load, which rows created later miss; re-applied per row with the same guard
+  // flag so the two passes can never double-apply.
+  const TEXT_FIELD_CSS = `
+    .control { height: 40px; }
+    .input { padding-block: 0; }
+  `;
+  type Marked = ShadowRoot & { _firma2FieldH?: boolean };
+
+  function adopt(host: Element): void {
+    const root = host.shadowRoot as Marked | null;
+    if (!root || root._firma2FieldH) return;
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(TEXT_FIELD_CSS);
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+    root._firma2FieldH = true;
+  }
+
+  /** Resolve once the Lit element has rendered, so its shadow root exists. */
+  function settled(el: Element): Promise<void> {
+    const lit = el as Element & { updateComplete?: Promise<unknown> };
+    return Promise.resolve(lit.updateComplete).then(() => undefined);
+  }
+
+  function init(root: HTMLElement): void {
+    const list = root.querySelector<HTMLElement>('.firma2-measure-attributes__rows');
+    const askButton = root.querySelector<HTMLElement>('.firma2-measure-attributes__ask-button button');
+    const catalog = root.querySelector<HTMLElement>('[data-catalog]');
+    if (!list || !askButton || !catalog) return;
+
+    let sources: SourceEntry[] = [];
+    try {
+      sources = JSON.parse(root.dataset.sources ?? '[]') as SourceEntry[];
+    } catch {
+      /* A malformed catalogue is a build bug; the rows still work without it. */
+    }
+    const sourceById = new Map(sources.map((entry) => [entry.value, entry]));
+
+    // TWO PROTOTYPES, one per row shape, lifted into real <template>s.
+    // `outerHTML` serializes the LIGHT DOM only — never the shadow roots the
+    // field legos may have rendered — so a cloned row is markup, not a
+    // half-upgraded element. (bcn-option-list survives this because its own
+    // add-row prototype is a genuine <template>, whose content is inert.)
+    const blanks: Partial<Record<'reported' | 'derived', HTMLElement>> = {};
+    list.querySelectorAll<HTMLElement>('[data-prototype]').forEach((proto) => {
+      const kind = proto.dataset.prototype as 'reported' | 'derived';
+      proto.remove();
+      proto.removeAttribute('hidden');
+      proto.removeAttribute('data-prototype');
+      const template = document.createElement('template');
+      template.innerHTML = proto.outerHTML.trim();
+      blanks[kind] = (template.content.firstElementChild as HTMLElement) ?? undefined;
+    });
+    const reportedBlank = blanks.reported;
+    const derivedBlank = blanks.derived;
+    if (!reportedBlank || !derivedBlank) return;
+
+    const allRows = (): HTMLElement[] =>
+      Array.from(list.querySelectorAll<HTMLElement>('.firma2-measure-attributes__row'));
+
+    const nameField = (li: HTMLElement) =>
+      li.querySelector<HTMLElement & { value?: string }>('.firma2-measure-attributes__name-field');
+    const optionsField = (li: HTMLElement) =>
+      li.querySelector<HTMLElement & { value?: string[] }>('.firma2-measure-attributes__options');
+
+    const rowName = (li: HTMLElement): string =>
+      li.dataset.kind === 'reported'
+        ? (nameField(li)?.value ?? '').trim()
+        : (li.querySelector<HTMLElement>('[data-name]')?.textContent ?? '').trim();
+
+    /** Every non-primary dimension, reported and derived, in row order. */
+    function readDimensions(): Dimension[] {
+      return allRows().map((li) => {
+        if (li.dataset.kind === 'reported') {
+          const dimension: Dimension = { name: rowName(li), source: { kind: 'reported' } };
+          dimension.options = [...(optionsField(li)?.value ?? [])];
+          return dimension;
+        }
+        const [kind, ref] = (li.dataset.source ?? '').split(':') as [SourceKind, string | undefined];
+        // No `options` and no `primary` on a derived row, ever — it takes its
+        // values from the source it names. A BLANK ref stays its own kind
+        // rather than being coerced to `reported`: coercion once made a
+        // read-only row restore as an editable one on the next reload.
+        return { name: rowName(li), source: ref ? { kind, ref } : { kind } };
+      });
+    }
+
+    /** Accessible names for every remove button — the row's name once there is
+        one, the position until then. Positions shift on every add and remove. */
+    function relabel(): void {
+      allRows().forEach((li, index) => {
+        const button = li.querySelector<HTMLElement>('.firma2-measure-attributes__remove button');
+        if (!button) return;
+        const typed = rowName(li);
+        const label = typed ? `Remove ${typed}` : `Remove subcategory ${index + 1}`;
+        button.setAttribute('aria-label', label);
+        // esa-button pairs `title` with aria-label on icon-only — one name for
+        // the hover half and the announced half.
+        button.setAttribute('title', label);
+      });
+    }
+
+    /** The catalog mirrors the list — derived from the declared set on every
+        change, so an entry can never stay hidden after its row is deleted. */
+    function syncCatalog(): void {
+      const taken = new Set(
+        allRows()
+          .filter((li) => li.dataset.kind === 'derived')
+          .map((li) => li.dataset.source ?? ''),
+      );
+
+      root.querySelectorAll<HTMLElement>('.firma2-measure-attributes__catalog-entry').forEach((wrapper) => {
+        wrapper.hidden = taken.has(wrapper.dataset.value ?? '');
+      });
+
+      let anyGroup = false;
+      root.querySelectorAll<HTMLElement>('[data-group]').forEach((group) => {
+        const remaining = Array.from(
+          group.querySelectorAll<HTMLElement>('.firma2-measure-attributes__catalog-entry'),
+        ).some((w) => !w.hidden);
+        group.hidden = !remaining;
+        if (remaining) anyGroup = true;
+      });
+      catalog!.hidden = !anyGroup;
+    }
+
+    function emitChange(): void {
+      root.dispatchEvent(
+        new CustomEvent('firma2-dimensions-change', {
+          detail: { dimensions: readDimensions() },
+          bubbles: true,
+        }),
+      );
+    }
+
+    /** Height patch + seeded values for one REPORTED row. Both halves wait on
+        the element: the patch needs a shadow root, and the seeds need the
+        element UPGRADED — a property set pre-upgrade shadows the accessor. */
+    function dressRow(li: HTMLElement): Promise<void> {
+      if (li.dataset.kind !== 'reported') return Promise.resolve();
+      const pending: Promise<void>[] = [];
+
+      const name = nameField(li);
+      if (name) pending.push(settled(name).then(() => adopt(name)));
+
+      const options = optionsField(li);
+      if (options) {
+        pending.push(
+          settled(options).then(() => {
+            const raw = options.dataset.options;
+            if (raw == null) return;
+            // Consumed once, or the SERVER's options would re-apply over
+            // whatever the author has since typed.
+            delete options.dataset.options;
+            try {
+              const parsed = JSON.parse(raw) as string[];
+              if (Array.isArray(parsed) && parsed.length) options.value = parsed;
+            } catch {
+              /* A malformed payload is a caller bug, not a reason to break the row. */
+            }
+          }),
+        );
+      }
+
+      return Promise.all(pending).then(() => undefined);
+    }
+
+    function focusName(li: HTMLElement): void {
+      const field = nameField(li);
+      if (!field) return;
+      void settled(field).then(() => field.focus());
+    }
+
+    /** Fill a cloned DERIVED row from a catalog entry (or a restored draft). */
+    function fillDerived(li: HTMLElement, entry: SourceEntry): void {
+      li.dataset.source = entry.value;
+      const name = li.querySelector<HTMLElement>('[data-name]');
+      if (name) name.textContent = entry.name;
+      const label = li.querySelector<HTMLElement>('[data-source-label]');
+      if (label) {
+        const kindLabel = SOURCE_KIND_LABEL[entry.kind];
+        label.textContent =
+          entry.name === kindLabel || entry.name === name?.textContent
+            ? kindLabel
+            : `${kindLabel} · ${entry.name}`;
+      }
+      const values = li.querySelector<HTMLElement>('[data-values]');
+      if (values) values.textContent = entry.values.length ? entry.values.join(', ') : NO_FIXED_LIST;
+    }
+
+    /** ASK — the priced way in. The new row is blank, so focus landing in its
+        name field says everything an announcement would. */
+    function addReported(): void {
+      const row = reportedBlank!.cloneNode(true) as HTMLElement;
+      list!.appendChild(row);
+      void dressRow(row);
+      relabel();
+      emitChange();
+      focusName(row);
+    }
+
+    /** THE CATALOG — the free way in. Focus stays in the tray (the next visible
+        entry), because the row this creates has nothing to type and its only
+        control is Remove — landing there would put the next Enter on a
+        destructive control. The announcement narrates the disappearance of the
+        button the author just pressed. */
+    function addDerived(wrapper: HTMLElement): void {
+      const entry = sourceById.get(wrapper.dataset.value ?? '');
+      if (!entry) return;
+
+      const row = derivedBlank!.cloneNode(true) as HTMLElement;
+      fillDerived(row, entry);
+      list!.appendChild(row);
+      relabel();
+      syncCatalog();
+      emitChange();
+
+      const all = Array.from(
+        root.querySelectorAll<HTMLElement>('.firma2-measure-attributes__catalog-entry'),
+      );
+      const index = all.indexOf(wrapper);
+      const visible = all.filter((w) => !w.hidden);
+      const next = visible.find((w) => all.indexOf(w) > index) ?? visible[visible.length - 1];
+      next?.querySelector('button')?.focus();
+
+      announce(`${entry.name} added. ${visible.length} still available.`);
+    }
+
+    /** Remove either kind. Focus lands where the undo is: for a derived row,
+        the catalog entry this removal just brought back; for a reported row,
+        the row that slid into its place, then the ask button. */
+    function removeRow(li: HTMLElement): void {
+      const kind = li.dataset.kind;
+      const value = li.dataset.source ?? '';
+      const name = rowName(li);
+      const index = allRows().indexOf(li);
+      li.remove();
+      const remaining = allRows();
+      relabel();
+      syncCatalog();
+      emitChange();
+
+      if (kind === 'derived') {
+        const restored = root.querySelector<HTMLElement>(
+          `.firma2-measure-attributes__catalog-entry[data-value="${value}"]`,
+        );
+        const target =
+          (restored && !restored.hidden && restored.querySelector<HTMLElement>('button')) ||
+          remaining[0]?.querySelector<HTMLElement>('.firma2-measure-attributes__remove button') ||
+          askButton;
+        target?.focus();
+      } else {
+        const next = remaining[index] ?? remaining[remaining.length - 1];
+        if (next && next.dataset.kind === 'reported') focusName(next);
+        else if (next) next.querySelector<HTMLElement>('.firma2-measure-attributes__remove button')?.focus();
+        else askButton!.focus();
+      }
+
+      const count = remaining.length ? ` ${remaining.length} left.` : '';
+      announce(`${name || 'Subcategory'} removed.${count}`);
+    }
+
+    /**
+     * Replace every row from the outside — the restore path. Rows are rebuilt
+     * IN THE GIVEN ORDER, both kinds interleaved, which is the merge's other
+     * dividend: the old pair of sections each rebuilt only its slice, so a
+     * draft's authored order was lost on every reload.
+     *
+     * Reported seeds are ATTRIBUTES, not properties — a detached clone has not
+     * upgraded, and a property write would be shadowed by the accessor when it
+     * does. The emit waits for every reported row to settle plus one frame,
+     * so no listener is told to read values that are not on the elements yet.
+     * Primary entries are skipped: the record section owns the primary.
+     */
+    function setDimensions(next: Dimension[]): void {
+      allRows().forEach((li) => li.remove());
+      const built: HTMLElement[] = [];
+
+      for (const dimension of next) {
+        if ((dimension as { primary?: boolean }).primary) continue;
+        if (dimension.source.kind === 'reported') {
+          const li = reportedBlank!.cloneNode(true) as HTMLElement;
+          const name = li.querySelector('esa-text-field');
+          if (name) name.setAttribute('value', dimension.name);
+          const options = li.querySelector<HTMLElement>('bcn-option-list');
+          if (options) options.dataset.options = JSON.stringify(dimension.options ?? []);
+          list!.appendChild(li);
+          built.push(li);
+        } else {
+          const li = derivedBlank!.cloneNode(true) as HTMLElement;
+          const value = `${dimension.source.kind}:${dimension.source.ref ?? ''}`;
+          const entry = sourceById.get(value);
+          // The name FALLS BACK to the dimension's own: silently renaming a
+          // hand-edited draft on restore is worse than showing a name the
+          // catalog does not recognise.
+          fillDerived(li, {
+            value,
+            name: dimension.name || entry?.name || value,
+            kind: dimension.source.kind as SourceEntry['kind'],
+            values: entry?.values ?? [],
+          });
+          list!.appendChild(li);
+        }
+      }
+
+      relabel();
+      syncCatalog();
+      void Promise.all(built.map(dressRow)).then(() => {
+        relabel();
+        requestAnimationFrame(() => emitChange());
+      });
+    }
+
+    list.addEventListener('click', (event) => {
+      const trigger = (event.target as Element | null)?.closest('.firma2-measure-attributes__remove');
+      const li = trigger?.closest<HTMLElement>('.firma2-measure-attributes__row');
+      if (li) removeRow(li);
+    });
+
+    askButton.addEventListener('click', addReported);
+
+    catalog.addEventListener('click', (event) => {
+      const wrapper = (event.target as Element | null)?.closest<HTMLElement>(
+        '.firma2-measure-attributes__catalog-entry',
+      );
+      if (wrapper) addDerived(wrapper);
+    });
+
+    // Delegated: `input` from esa-text-field and `change` from bcn-option-list
+    // are composed bubblers; one listener covers rows that do not exist yet.
+    // Derived rows emit neither, which is correct — they have nothing to edit.
+    const onEdit = (): void => {
+      relabel();
+      emitChange();
+    };
+    list.addEventListener('input', onEdit);
+    list.addEventListener('change', onEdit);
+
+    // Server-rendered rows: dress the reported ones, then emit once settled —
+    // the same timing discipline as setDimensions, for the same shipped bug.
+    const initial = allRows();
+    relabel();
+    syncCatalog();
+    void Promise.all(initial.map(dressRow)).then(() => {
+      requestAnimationFrame(() => emitChange());
+    });
+
+    (root as HTMLElement & {
+      readDimensions?: () => Dimension[];
+      setDimensions?: (dimensions: Dimension[]) => void;
+    }).readDimensions = readDimensions;
+    (root as HTMLElement & { setDimensions?: (dimensions: Dimension[]) => void }).setDimensions =
+      setDimensions;
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-attributes').forEach(init);
+</script>
+
+<style>
+  /* `hidden` HAS TO WIN over the author `display` this file's layouts set —
+     the UA's `[hidden] { display: none }` is the weakest rule in the cascade,
+     and the prototype rows sit inside a flex .stack until the script lifts
+     them. Two classes clears every rule this file writes. */
+  .firma2-measure-attributes [hidden] {
+    display: none;
+  }
+
+  /* The composites set type only; the spine owns spacing. */
+  .firma2-measure-attributes h2,
+  .firma2-measure-attributes p {
+    margin: 0;
+  }
+  .firma2-measure-attributes h2 {
+    color: var(--color-content-default, #202020);
+  }
+
+  .firma2-measure-attributes__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Both row bodies take the slack with the same basis, so the trailing marker
+     column lands on one edge whichever kind of row it belongs to. */
+  .firma2-measure-attributes__fields,
+  .firma2-measure-attributes__derived {
+    flex: 1 1 24rem;
+    min-inline-size: 0;
+  }
+
+  /* A DERIVED ROW READS AT FULL INK. Small text darkens, never greys — the
+     vocabulary is the payoff the author came for, and read-only is not a
+     reason to whisper. */
+  .firma2-measure-attributes__name,
+  .firma2-measure-attributes__values,
+  .firma2-measure-attributes__source {
+    color: var(--color-content-default, #202020);
+  }
+
+  /* Two or three words at the far edge; breaking "Map layer" across lines
+     would read as two markers. */
+  .firma2-measure-attributes__source {
+    white-space: nowrap;
+  }
+
+  .firma2-measure-attributes__actions {
+    flex: 0 0 auto;
+    min-height: 40px;
+  }
+
+  /* THE ACTIONS ALIGN TO THE CONTENT'S FIRST LINE, and the two row shapes put
+     that line in different places: a reported row opens with a field LABEL, so
+     its marker and trash drop one label-height to sit level with the 40px field
+     box; a derived row's first line is the name itself, so no offset. The
+     offset is in the same tokens the label resolves, so it tracks the
+     font-size clamp. */
+  .firma2-measure-attributes__row[data-kind='reported'] .firma2-measure-attributes__actions {
+    margin-block-start: calc(
+      var(--typography-label-md-font-size, 0.9375rem) * var(--typography-label-md-line-height, 1.6) +
+        var(--form-label-gap, 0.25rem)
+    );
+  }
+
+  /* Pinning the box, not restyling the lego — icon-only esa-button steps
+     32 / 38 / 46 and never touches the 40px the fields sit at. */
+  .firma2-measure-attributes__row :global(.firma2-measure-attributes__remove .esa-button__native) {
+    height: 40px;
+    width: 40px;
+  }
+
+  /* The one colour in the component, on a destructive control at the moment of
+     commitment. */
+  .firma2-measure-attributes__row :global(.firma2-measure-attributes__remove .esa-button__native:hover),
+  .firma2-measure-attributes__row :global(.firma2-measure-attributes__remove .esa-button__native:focus-visible) {
+    color: var(--color-content-utility-danger, #ce2c31);
+  }
+
+  /* The catalog entry span wraps a lego whose own box is inline-block;
+     inline-flex keeps the span glued to it so the cluster lays out the
+     buttons, not the wrappers. */
+  .firma2-measure-attributes__catalog-entry {
+    display: inline-flex;
+  }
+
+  /* THE CATALOG SITS ON THE SUNKEN LAYER — a tray the buttons rest in, one
+     value step down the neutral ramp, no hue spent. */
+  .firma2-measure-attributes__catalog {
+    padding: var(--spacing-300, 0.75rem);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken, #f5f5f5);
+  }
+
+  .firma2-measure-attributes__catalog-heading,
+  .firma2-measure-attributes__group-label {
+    color: var(--color-content-default, #202020);
+  }
+</style>

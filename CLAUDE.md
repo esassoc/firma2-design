@@ -63,6 +63,18 @@ update the plugin: `claude plugin marketplace update ecology`.
   **/design-qa** (on-demand quality pass), **/ship** (sync → build → deploy →
   public URL), **/request-lego** (file a hub gap)
 
+## Product brief — who we build for
+
+`docs/product-brief.md` is the standing brief for this spoke: the four readers,
+what they are trying to do, what we optimize for and in what order, and the
+principles each built screen has already paid for. **Read it before designing a
+new screen**, and answer its five opening questions in the page's module header.
+
+It is one level up from the skills: `design-principles` is *how it looks*,
+`component-first` is *what it is built from*, `microcopy` is *what it says* —
+the brief is *who and why*. Add to it when a screen teaches something the brief
+does not say, and name the screen that proved it.
+
 ## Microcopy — every non-editable string
 
 All interface copy the user cannot edit (titles, labels, buttons, card

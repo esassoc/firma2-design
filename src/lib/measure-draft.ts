@@ -33,14 +33,12 @@ export type MeasureDraft = Partial<
     PerformanceMeasureDefinition,
     | 'name'
     | 'definition'
-    | 'program'
-    | 'dataType'
+    | 'classifications'
+    | 'quantity'
     | 'unit'
     | 'decimalPlaces'
-    | 'aggregation'
-    | 'subcategories'
-    | 'reportingFrequency'
-    | 'required'
+    | 'countingRule'
+    | 'dimensions'
     | 'reporterGuidance'
   >
 >;

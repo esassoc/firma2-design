@@ -13,10 +13,17 @@
 //
 // WHY ONE QUESTION AND NOT ZERO. The single question is the one that decides the
 // SHAPE of everything downstream — the one answer that changes which fields exist,
-// so it cannot be deferred to the draft page without the draft page rearranging
-// itself under the user later. For performance measures that is the data type:
-// Number, Percent or Currency decides whether a unit field applies at all. Ask it
-// once, up front, and the draft page can be built correctly the first time.
+// so it cannot be deferred to the draft page without that page rearranging itself
+// under the user later. Ask it once, up front, and the draft can be built
+// correctly the first time.
+//
+// THE TEST A CANDIDATE QUESTION HAS TO PASS: does the answer change what you see
+// next? The first version of this dialog asked its caller's records for a UNIT,
+// and every answer landed on the same form with the same fields — so the question
+// was ceremony, and it was asked before the thing was even named. If a question
+// does not fork the destination, it belongs in the draft page as a field. That is
+// why `destinations` below is a map: routing by answer is the mechanism that
+// keeps this component honest.
 //
 // NOTHING ABOUT ANY ONE ENTITY LIVES IN HERE. Performance measures is the first
 // caller, not the subject. Organizations, Funding Sources and every other entity
@@ -55,15 +62,26 @@ interface Props {
   options: CreateOption[];
   /** Primary action label — e.g. "Create draft". */
   createLabel: string;
-  /** Where Create navigates. The chosen value is appended as ?type=<value>. */
-  destination: string;
+  /**
+   * Where "Create" goes, keyed by the chosen option's value.
+   *
+   * A MAP, not one route, because the answer is supposed to MATTER. If every
+   * answer landed in the same place the question would be decorative — which is
+   * exactly the fault this component's first version had. Routing by answer is
+   * how a one-question dialog earns its existence.
+   */
+  destinations: Record<string, string>;
 }
 
-const { id, heading, question, helpText, options, createLabel, destination } = Astro.props;
+const { id, heading, question, helpText, options, createLabel, destinations } = Astro.props;
 
 // The caller passes a root-relative route; the site base is this file's job, the
 // same split the rest of the spoke uses for hand-written links.
-const resolvedDestination = withBase(destination);
+// Base-prefixed once, here, and handed to the script as JSON — the same
+// render-time base contract the nav model and the prototype registry use.
+const resolvedDestinations = Object.fromEntries(
+  Object.entries(destinations).map(([value, route]) => [value, withBase(route)]),
+);
 
 // esa-radio-group's option type is `{ label, value, disabled? }` — THERE IS NO
 // per-option description field (read the lego, 2026-08-20). So CreateOption's
@@ -93,7 +111,7 @@ const initialValue = options[0]?.value ?? '';
   heading={heading}
   size="md"
   show-close-button
-  data-destination={resolvedDestination}
+  data-destinations={JSON.stringify(resolvedDestinations)}
   data-initial-value={initialValue}
 >
   <!-- No .stack wrapper around the body. There is exactly one child, and a
@@ -212,10 +230,17 @@ const initialValue = options[0]?.value ?? '';
       // A LIVE BUILD WOULD POST AND REDIRECT to the new record's own id —
       // /performance-measures/4187/edit or similar — because the point of this
       // flow is a saved draft with a bookmarkable, shareable URL. The prototype
+      // Falls back to the FIRST route rather than to an empty string: a
+      // hand-edited value should land somewhere real, not on the current page
+      // with a query string appended.
+      const routeFor = (value: string): string => {
+        const map = JSON.parse(element.dataset.destinations ?? '{}') as Record<string, string>;
+        return map[value] ?? Object.values(map)[0] ?? '';
+      };
       // has no server to hand one back, so the destination page reads the answer
       // off the query string instead. `?type=` is the stand-in, not the design.
       window.location.assign(
-        `${element.dataset.destination ?? ''}?type=${encodeURIComponent(value)}`,
+        `${routeFor(value)}?kind=${encodeURIComponent(value)}`,
       );
     });
 

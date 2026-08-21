@@ -134,6 +134,18 @@ Raised via `/request-lego` unless noted otherwise.
   listbox" from "abandon the edit". *Fix:* only preventDefault when open. Minor —
   fold into any select ticket.
 
+- **`esa-popover` has no block/full-width anchor mode.** Its host and shadow
+  `.esa-popover-anchor` are both `inline-block`, so a slotted trigger that
+  needs `width: 100%` (an editable-field's display box) collapses to
+  max-content inside the anchor. *Bit:* the project rail's Lead organization
+  row cannot raise an entity hover card the way the classification chips do —
+  wrapping its full-width display button in the popover breaks the box
+  geometry. *Fix:* honour a `block` attribute (host + anchor become
+  `display: block`), or read the host's own computed display. Also wanted:
+  a chip-skin hook on `esa-combobox` (its multi-select chips ship one
+  hard-coded green capsule skin; `firma2-editable-field` re-skins them via an
+  adopted sheet to match `esa-pill`).
+
 ### Tooling
 
 - **`check-verbal-restraint.mjs` skips silently** when the design-gate corpus is

@@ -2,18 +2,31 @@
 // firma2-editable-field — ONE record attribute on a ProjectFirma detail page,
 // rendered as a label → value pair that can be CORRECTED in place.
 //
-// This is a trimmed port of cb-fish-design's `cbf-invoice-field` — the vetted
-// precedent for this exact interaction. What carries over verbatim in spirit:
-// the read↔edit swap scoped to ONE row, the affordance that stays quiet until
-// the row is engaged, the explicit save/cancel (never a blur-commit), and the
-// rule that opening a row moves as little as possible. What is DROPPED, because
-// this page has no review workflow: the copy control, the flag/raise-an-issue
-// control, and the issue-note machinery. A project page is a record you keep
-// accurate, not a submission you adjudicate.
+// THE CHOREOGRAPHY, in one breath: at rest the value sits in a QUIET FIELD —
+// an invisible box with exactly the md control's geometry (40px, the control's
+// own inline padding, its radius), so the value stands precisely where the
+// input's text will stand. Hovering (or tabbing to it) draws the ring esa-text-
+// field draws, which is the whole affordance: this text is a field. Clicking
+// (or Enter) swaps in the real lego control, seeded and focused — and because
+// the display already occupied the control's footprint, NOTHING moves or
+// resizes: the swap changes chrome, never geometry.
+// Leaving commits: click anywhere outside, Tab away, press Enter, or pick a
+// select option, and the value is saved. Escape abandons. There are no Save or
+// Cancel buttons and no pencil — the field's edge is its own boundary, and
+// crossing it is the save gesture (the Notion/Linear convention). An INVALID
+// value at the boundary reverts silently to the last good value; only an
+// explicit Enter earns an inline error, because Enter is "save this" and
+// deserves an answer, while leaving is "I'm done here" and deserves quiet.
 //
-// EDITS ARE REAL AND THEY ARE LOCAL. Typing a new lead organization and pressing
-// Save writes it into the display immediately. Nothing is persisted — there is no
-// API behind this prototype — so a reload restores the seeded record. That is the
+// ONE ROW OPEN AT A TIME, by construction (a change from the pencil-era
+// pattern, where several rows could sit open): commit-on-blur means opening
+// row B necessarily closes row A, so openEdit commits any other open row first
+// — which is also what makes "click straight from one value into another" a
+// single gesture.
+//
+// EDITS ARE REAL AND THEY ARE LOCAL. Committing a new lead organization writes
+// it into the display immediately. Nothing is persisted — there is no API
+// behind this prototype — so a reload restores the seeded record. That is the
 // intended behaviour, and it is recorded HERE rather than in visible copy: a
 // "changes are not saved" banner would be text ABOUT the page, and the reviewer
 // being walked through this already knows it is a prototype.
@@ -25,27 +38,38 @@
 //         [data-control] [data-format] which control it flips to, how it renders back
 //         [data-raw]                   the value BEHIND the display ("412000",
 //                                      "2023,2027") — the control is seeded from
-//                                      this and it is rewritten on save
+//                                      this and it is rewritten on commit
 //         [data-editing]               present while THIS row is open; the
-//                                      control-cluster swap is pure CSS off it
-//   read  [data-field-display]         the formatted value
+//                                      display↔edit swap is pure CSS off it
+//   read  [data-field-display]         the display BUTTON — the click/keyboard
+//                                      target that opens the editor
+//         [data-field-value]           the formatted value inside it — the node
+//                                      the script rewrites on commit
+//         [data-field-open]            (rows with `href`) the ↗ open-link's
+//                                      wrapper — hidden for good once an edit
+//                                      changes the value out from under it
 //   edit  [data-field-edit-region]     wraps the control(s), revealed while editing
 //         [data-field-input]           THE control — esa-text-field / esa-textarea /
 //                                      esa-select, all of which expose `.value` and
 //                                      `.errorText`, so one read/write path serves all
-//         [data-field-edit] / [data-field-edit-save] / [data-field-edit-cancel]
 //
 // bcn-lego-checked: there is no `esa-inline-edit` / editable-field lego — checked
 // the full `node_modules/@esa/ecology/src/components/` catalog (esa-form-field is
 // label+control chrome for a FORM, not a read/edit data row; esa-stat and esa-card
-// are read-only). This ports cb-fish-design's `cbf-invoice-field`, the vetted
-// precedent for the same interaction in a sibling spoke. Every control it flips to
-// IS a lego (esa-text-field / esa-textarea / esa-select) and so is every affordance
-// (esa-button), so nothing here restyles a primitive — the bespoke part is the
-// read↔edit CHOREOGRAPHY, which is what a component is for. Beacon is not cloned on
-// this machine. firma2-editable-field is the reusable home: the project detail
-// page's Basics, Description and Work-areas sections all render it.
+// are read-only). Every control the row flips to IS a lego (esa-text-field /
+// esa-textarea / esa-select). The bespoke parts are (1) the read↔edit
+// CHOREOGRAPHY, which is what a component is for, and (2) the display trigger —
+// a native <button> that is a display-only variant of the CONTROL'S OWN BOX,
+// rebuilt from the control's tokens (its pinned 40px, its padding, its radius,
+// its border ring on hover). No esa-button variant renders as a quiet field box
+// (chrome/ghost draw a BUTTON box, wrong padding and wrong ring), and the legos
+// expose no read-only display state, so the native button carries only
+// semantics and the borrowed field chrome. Beacon is not
+// cloned on this machine. firma2-editable-field is the reusable home: every row
+// of the project detail page's Key facts panel — including the description — and
+// its page title all render it.
 import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
 
 interface Props {
   /** Stable key, e.g. "leadOrganization". Lands on the root as data-field. */
@@ -55,28 +79,78 @@ interface Props {
   /** Display value, ALREADY formatted — "$412,000", "2023–2027", "Tehama". */
   value: string;
   /** Which control the row flips to. Default 'text'. */
-  control?: 'text' | 'textarea' | 'select' | 'number' | 'year-range';
-  /** Options for control="select". */
+  control?: 'text' | 'textarea' | 'select' | 'number' | 'year-range' | 'multi-select';
+  /** Options for control="select" and control="multi-select". */
   options?: string[];
+  /**
+   * The current SET, for control="multi-select" + format="list": the display
+   * renders one chip per member, one member per line, and the editor seeds
+   * from it. The scalar
+   * `value` prop still carries the joined form ("A, B") for anything that needs
+   * the row as a string. A SET is the one shape this component edits that is
+   * not retyped — it is added to and removed from — so its control is the
+   * multi-select combobox rather than a text box, and its raw value is a JSON
+   * array rather than a delimited string (a delimiter would be a character the
+   * vocabulary could never use again).
+   */
+  values?: string[];
+  /**
+   * Where each MEMBER of a set leads. The chip ITSELF is the link — clicking
+   * a member navigates, unlike the scalar rows where clicking edits — so this
+   * is the `href` of every member's <a>. One URL for all members because this
+   * is a prototype: the mock points every chip at the page where that
+   * member's projects are visible; a real app resolves each member's own
+   * detail route here.
+   */
+  memberHref?: string;
+  /**
+   * Hover-card context per member, keyed by member name — shown in an
+   * esa-popover raised on hover/focus of the member's chip. Key the WHOLE
+   * vocabulary, not just the current set: a member added in the editor needs
+   * its card the moment it lands. `kind` is the entity's type line
+   * ("Portfolio goal"), `lines` the context sentences the panel computed.
+   */
+  memberCards?: Record<string, { kind: string; title: string; lines: string[] }>;
   /**
    * Raw value handed to the control when it differs from the display value:
    * "412000" behind "$412,000", "2023,2027" behind "2023–2027".
    * Defaults to `value`.
    */
   editValue?: string;
-  /** How a saved value is re-rendered into the display. Default 'text'. */
-  format?: 'text' | 'currency' | 'year-range';
+  /** How a committed value is re-rendered into the display. Default 'text'. */
+  format?: 'text' | 'currency' | 'year-range' | 'list';
   /**
    * Element shape. 'dl-pair' emits <div><dt/><dd/></div> for use inside a <dl>
-   * (the Basics panel). 'block' emits a plain <div>. Default 'dl-pair'.
+   * (the Key facts panel). 'block' emits a plain <div>. 'page-title' is the ADOPTING
+   * shape — see the note above `data-adopt-display` below. Default 'dl-pair'.
    */
-  as?: 'dl-pair' | 'block';
+  as?: 'dl-pair' | 'block' | 'page-title';
+  /**
+   * Refuse to COMMIT-ON-ENTER an empty value (inline error, row stays open); an
+   * empty value at a blur boundary reverts silently either way. Off by default —
+   * a blank county is a record that has not been filled in yet, which is a real
+   * state. On for a field the page cannot render without, i.e. the title.
+   * Numeric and year rows validate unconditionally; this is the text rows' one
+   * rule.
+   */
+  required?: boolean;
   /**
    * Render the label visually-hidden — for a field whose card title already names
    * it (the Description section). It is still in the DOM and still names the
    * control. Default false.
    */
   labelHidden?: boolean;
+  /**
+   * Where the CURRENT value leads — the organization's page behind its name.
+   * Renders the Notion/Airtable resolution of "editable AND a link": clicking
+   * the value still edits (one gesture, every row), and navigation gets its own
+   * real <a> — an ↗ docked at the box's trailing edge, revealed with the ring,
+   * its own tab stop, always visible on touch. Cmd/Ctrl+click on the value is
+   * the shortcut. After an edit CHANGES the value the affordance retires: this
+   * prototype cannot resolve the new value's page, and a link that lies is
+   * worse than none.
+   */
+  href?: string;
 }
 
 const {
@@ -85,10 +159,15 @@ const {
   value,
   control = 'text',
   options = [],
+  values = [],
+  memberHref,
+  memberCards = {},
   editValue,
   format = 'text',
   as = 'dl-pair',
   labelHidden = false,
+  required = false,
+  href,
 } = Astro.props;
 
 // `dl-pair` is the shape firma2-project-facts already renders — a <div> grouping a
@@ -97,6 +176,20 @@ const {
 // same choreography without the list semantics, for a section that is one field.
 const Head = as === 'dl-pair' ? 'dt' : 'div';
 const Body = as === 'dl-pair' ? 'dd' : 'div';
+
+// THE ADOPTING SHAPE. `page-title` renders the choreography for the <h1>
+// esa-page-header already rendered: firma2-page-header's script moves that h1
+// into this row and moves this row's display BUTTON inside the h1, so the
+// heading stays a real heading whose content — and accessible name — is the
+// (editable) project name. The alternative — rendering a second heading here
+// and hiding the lego's — would put the name in the DOM twice and leave a page
+// with two h1s for anyone whose JS never arrived. The lego exposes no title
+// slot, which is the real gap and is filed as a /request-lego; adopting is what
+// a spoke can do honestly in the meantime.
+//
+// Nothing renders until that move lands (the row ships `hidden`), so a
+// duplicate title never appears on a page where the script did not run.
+const adopts = as === 'page-title';
 
 // The value BEHIND the display. `editValue` exists because a formatted value is
 // not a value a control can hold: a number input cannot be seeded with "$412,000",
@@ -115,51 +208,201 @@ const yearParts = (() => {
   return parts.length === 2 ? parts : null;
 })();
 
-const raw = yearParts ? yearParts.join(',') : seed;
+// A set's raw value is a JSON array — see the `values` prop note.
+const raw = format === 'list' ? JSON.stringify(values) : yearParts ? yearParts.join(',') : seed;
 
 // esa-select takes `{ value, label }` records as a PROPERTY (Astro can only set
 // attributes), so the list rides across as JSON and the script assigns it after
 // upgrade. Identical value and label: these are plain vocabulary strings, not codes.
 const selectOptions = options.map((o) => ({ value: o, label: o }));
+
+// The edit hint's id — `field` is unique per page (it is the record's own key),
+// so the id is too.
+const hintId = `f2-edit-hint-${field}`;
 ---
 <div
-  class="firma2-editable-field stack"
-  data-gap="3xs"
+  class:list={[
+    'firma2-editable-field',
+    adopts ? 'firma2-editable-field--page-title cluster' : 'stack',
+  ]}
+  data-gap={adopts ? 'xs' : '2xs'}
   data-editable-field
   data-field={field}
   data-control={control}
   data-format={format}
   data-raw={raw}
+  data-required={required ? '' : undefined}
+  data-link={href ? '' : undefined}
+  data-member-cards={Object.keys(memberCards).length ? JSON.stringify(memberCards) : undefined}
   data-label-hidden={labelHidden ? '' : undefined}
+  data-adopt-display={adopts ? '' : undefined}
+  hidden={adopts || undefined}
 >
-  <Head class="firma2-editable-field__head">
-    <span class:list={['firma2-editable-field__label', 'typography-label-sm', labelHidden && 'visually-hidden']}>
-      {label}
-    </span>
-  </Head>
+  {/* NO HEAD IN THE ADOPTING SHAPE. The heading it edits IS the label — a page
+      whose h1 says "Bear Creek Fish Passage" does not also need the word "Project
+      name" over it; the display button's hidden hint carries that word for AT. */}
+  {!adopts && (
+    <Head class="firma2-editable-field__head">
+      <span class:list={['firma2-editable-field__label', 'typography-label-sm', labelHidden && 'visually-hidden']}>
+        {label}
+      </span>
+    </Head>
+  )}
 
   <Body class="firma2-editable-field__body">
-    <!-- READ. The value, and the only thing on screen at rest.
-         It is also a click target: clicking the value opens the editor, which is
-         the gesture people reach for before they find the pencil. That does NOT
-         make it the keyboard path — the pencil beside it is a real <button> and
-         is what Tab reaches, so nothing here is mouse-only. -->
-    <span class="firma2-editable-field__value" data-field-display>
-      {yearParts ? (
-        <Fragment>
-          {yearParts[0]}<span aria-hidden="true">–</span><span class="visually-hidden"> to </span>{yearParts[1]}
-        </Fragment>
-      ) : value}
-    </span>
+    <!-- READ. The value, and the only thing on screen at rest — but it is a real
+         <button>, which is what keeps the whole interaction keyboard-honest: Tab
+         reaches it, focus-visible draws the same chrome hover draws, and
+         Enter/Space open the editor exactly as a click does. Its accessible NAME
+         is the visible value (SC 2.5.3 clean); the "Edit <label>" affordance
+         rides in as a DESCRIPTION via aria-describedby, replacing the aria-label
+         the old pencil button used to carry. `user-select` is restored in CSS so
+         drag-selecting the value to copy it still works — and still does not
+         open the editor (see onClick). -->
+    {format === 'list' && values.length > 0 ? (
+      <!-- THE LIST DISPLAY: one member per line, and THE CHIP IS THE LINK.
+           A member wears a chip (esa-pill, md — the stage pill's own rung)
+           because a chip is the kit's mark for a value picked from a
+           vocabulary; and unlike every scalar row, clicking it NAVIGATES —
+           an entity chip's most-wanted act is "take me to it", so the chip
+           is a real <a> and gets the browser's whole link grammar (cmd-click,
+           middle-click, copy link) for free. Hovering it raises a card of
+           context (esa-popover, trigger="hover") when the row was given one.
+
+           EDITING MOVES TO THE BOX: clicking the line's empty space — or the
+           box around the chips — opens the shared editor, and a
+           hidden-until-focused Edit button at the end of the list is the
+           keyboard's way in (a container full of links must not itself be a
+           button; nested interactive content is invalid both in HTML and in
+           ARIA). This inverts the scalar rows' click-to-edit, deliberately:
+           a vocabulary member cannot be typo-fixed, so correction is the rare
+           act here and navigation the common one. -->
+      <div class="firma2-editable-field__display firma2-editable-field__display--list" data-field-display>
+        <span class="firma2-editable-field__value firma2-editable-field__list" data-field-value>
+          {values.map((member) => (
+            <span class="firma2-editable-field__member" data-member>
+              {memberCards[member] ? (
+                <esa-popover trigger="hover" position="bottom">
+                  <a class="firma2-editable-field__member-link" href={memberHref}>
+                    <EsaPill label={member} size="md" removable={false} />
+                  </a>
+                  <div slot="content" class="firma2-editable-field__card stack" data-gap="2xs">
+                    <span class="firma2-editable-field__card-kind typography-label-sm" data-card-kind>
+                      {memberCards[member].kind}
+                    </span>
+                    <span class="typography-title-sm-strong" data-card-title>{memberCards[member].title}</span>
+                    <div class="stack" data-gap="2xs" data-card-lines>
+                      {memberCards[member].lines.map((line) => (
+                        <span class="typography-body-sm">{line}</span>
+                      ))}
+                    </div>
+                  </div>
+                </esa-popover>
+              ) : memberHref ? (
+                <a class="firma2-editable-field__member-link" href={memberHref}>
+                  <EsaPill label={member} size="md" removable={false} />
+                </a>
+              ) : (
+                <button type="button" class="firma2-editable-field__member-btn" aria-describedby={hintId}>
+                  <EsaPill label={member} size="md" removable={false} />
+                </button>
+              )}
+            </span>
+          ))}
+        </span>
+        <button
+          type="button"
+          class="firma2-editable-field__member-edit"
+          aria-label={`Edit ${label}`}
+        >
+          Edit
+        </button>
+      </div>
+    ) : (
+      <button
+        type="button"
+        class="firma2-editable-field__display"
+        data-field-display
+        aria-describedby={hintId}
+      >
+        <span class="firma2-editable-field__value" data-field-value>
+          {yearParts ? (
+            <Fragment>
+              {yearParts[0]}<span aria-hidden="true">–</span><span class="visually-hidden"> to </span>{yearParts[1]}
+            </Fragment>
+          ) : value}
+        </span>
+      </button>
+    )}
+    {/* THE RUNTIME MEMBER LINE, held in reserve — the clone source for a
+        commit that changes the set, so repainted lines keep this exact markup
+        and its scope attributes (the cloned esa-popover upgrades on
+        insertion like any custom element). The link and the card skeleton
+        clone WITH the line: members come from a fixed vocabulary whose
+        destination and context are both known up front (memberHref,
+        data-member-cards), so an added member arrives with its link live and
+        its card filled (paintMembers writes the label, kind, title and
+        lines). Unconditional (not derived from the current set) because a
+        row edited down to zero members still has to be able to grow back. */}
+    {format === 'list' && (
+      <template data-member-template>
+        <span class="firma2-editable-field__member" data-member>
+          {Object.keys(memberCards).length ? (
+            <esa-popover trigger="hover" position="bottom">
+              <a class="firma2-editable-field__member-link" href={memberHref}>
+                <EsaPill label="" size="md" removable={false} />
+              </a>
+              <div slot="content" class="firma2-editable-field__card stack" data-gap="2xs">
+                <span class="firma2-editable-field__card-kind typography-label-sm" data-card-kind></span>
+                <span class="typography-title-sm-strong" data-card-title></span>
+                <div class="stack" data-gap="2xs" data-card-lines></div>
+              </div>
+            </esa-popover>
+          ) : memberHref ? (
+            <a class="firma2-editable-field__member-link" href={memberHref}>
+              <EsaPill label="" size="md" removable={false} />
+            </a>
+          ) : (
+            <button type="button" class="firma2-editable-field__member-btn" aria-describedby={hintId}>
+              <EsaPill label="" size="md" removable={false} />
+            </button>
+          )}
+        </span>
+      </template>
+    )}
+    <!-- OUTSIDE the button on purpose: a description, not part of the name — and
+         in the adopting shape the button moves inside the h1, where this word
+         must never join the heading's text. -->
+    <span class="visually-hidden" id={hintId}>Edit {label}</span>
+
+    <!-- NAVIGATE. A real <a> beside the edit button — buttons do things, links
+         go places, and folding both into one element would leave one of them
+         with the wrong semantics. Its own tab stop, directly after the display:
+         Tab hears the value, then "Open <value>, link". Revealed by the same
+         hover/focus that reveals the ring, never hover-ONLY (opacity, not
+         display — it is always in the tab order, and its own focus reveals it).
+         esa-button's chrome variant with href renders the <a> and carries the
+         focus ring; the name arrives via aria-label through ...rest, exactly as
+         the pencil-era buttons were named. -->
+    {href && (
+      <span class="firma2-editable-field__open" data-field-open>
+        <EsaButton
+          variant="chrome"
+          iconOnly
+          icon="external-link"
+          href={href}
+          size="xs"
+          aria-label={`Open ${value}`}
+        />
+      </span>
+    )}
 
     <!-- EDIT. Exactly one control (or, for a year range, one pair) renders,
-         chosen by `control`. It stands precisely where the read value stood, so
-         opening a row shifts only this line — the label above it does not move.
+         chosen by `control`. It lands precisely IN the box the display drew —
+         same height, same padding, same edge — so opening a row moves nothing.
 
-         SIZE. `sm` on every control, and it is honoured by all three legos: this
-         panel is ~18rem wide, and md (40px) plus the lego's own label gap would
-         make a five-row aside noticeably taller than the values it holds. sm is
-         also esa-select's documented floor, so the three agree on one rung.
+         SIZE. `md` on every control — the spoke's one control rung (the sm rung
+         is incomplete in the hub, and AppLayout pins controls to 40px).
 
          NO VISIBLE LABEL on the single controls: the row's own label sits
          directly above and stays there while editing, so a control that drew its
@@ -189,6 +432,31 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
           size="md"
           placeholder="Select an option"
         ></esa-select>
+      )}
+
+      <!-- A SET'S EDITOR: the multi-select combobox — type to filter, pick to
+           toggle, and the picked members render as removable chips ABOVE the
+           input (the lego's own arrangement, re-skinned by the script's
+           adopted sheet so they are the SAME quiet chips the display shows:
+           the swap adds the × and the input, and re-dresses nothing).
+           Constrained to `options` for the same reason Program is a select: a
+           free-typed member is how a roll-up bucket silently splits in two.
+           The input beneath the chips is the one piece of the edit state with
+           no display counterpart — the row grows by exactly that box and
+           returns to its footprint on commit. Note a pick does NOT commit the
+           row, unlike the single select: choosing one member of a set is not
+           "done", so the commit stays at the boundary — click away, Tab out —
+           like the text rows. -->
+      {control === 'multi-select' && (
+        <esa-combobox
+          class="firma2-editable-field__input"
+          data-field-input
+          data-control="multi-select"
+          data-name={label}
+          data-options={JSON.stringify(selectOptions)}
+          multiple
+          size="md"
+        ></esa-combobox>
       )}
 
       {(control === 'text' || control === 'number') && (
@@ -240,96 +508,313 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
         </div>
       )}
     </div>
-
-    <!-- Row affordances. LAST in the DOM on purpose: Tab out of the control has to
-         land on Save, and a cluster placed above the control would send it past
-         both buttons to the next row instead. They are painted back to the top
-         right corner by the stylesheet, which is where they belong beside a label.
-
-         Two mutually exclusive sets, swapped by [data-editing]: what you can DO to
-         the field, and how you get OUT of doing it. The rest-state control is not
-         disabled while editing, it is GONE — there is nothing to mis-click. -->
-    <!-- NAMED WITH `aria-label`, NOT `label`, and the difference is the point.
-         esa-button sets BOTH aria-label and `title` from `label` when iconOnly —
-         and `title` is a native browser tooltip: unstyleable, delayed, and
-         positioned by the UA. These controls are docked to the top-right corner
-         of the row, so the UA parked the tooltip directly over the row ABOVE:
-         hovering Cancel on one field covered the LABEL of the field above it.
-         The tooltip was redundant anyway — this row's own <dt> is on screen two
-         lines up saying what the button's name repeats. esa-button counts an
-         `aria-label` arriving through ...rest as a valid accessible name (its
-         own pre-consolidation docs told people to write exactly that), so the
-         screen reader still hears "Cancel editing Lead organization" and
-         nothing is painted over. -->
-    <div class="firma2-editable-field__controls">
-      <span class="firma2-editable-field__control firma2-editable-field__control--rest" data-field-edit>
-        <EsaButton variant="chrome" iconOnly icon="pencil" aria-label={`Edit ${label}`} size="xs" />
-      </span>
-      <span class="firma2-editable-field__control firma2-editable-field__control--editing" data-field-edit-save>
-        <EsaButton variant="chrome" iconOnly icon="check" aria-label={`Save ${label}`} size="xs" />
-      </span>
-      <span class="firma2-editable-field__control firma2-editable-field__control--editing" data-field-edit-cancel>
-        <EsaButton variant="chrome" iconOnly icon="x" aria-label={`Cancel editing ${label}`} size="xs" />
-      </span>
-    </div>
   </Body>
 </div>
 
 <style>
-  /* The controls are painted OUT OF FLOW at the row's top-right corner.
-     In flow they would set the head's height to the button's instead of
-     the label's (~22px), which breaks the thing firma2-project-facts spent a
-     `data-gap="3xs"` building: the label sitting tight ON its value. Out of flow,
-     a row at rest measures exactly what it measured before this component existed. */
   .firma2-editable-field {
     position: relative;
   }
 
-  /* Space kept clear for the buttons, so a long label never runs under them the
-     moment they appear on hover. Two `sm` icon buttons plus their gap; the label
-     wraps before it reaches them rather than colliding. */
-  .firma2-editable-field__head {
-    padding-inline-end: calc(var(--spacing-800, 4rem) + var(--spacing-200, 0.5rem));
-  }
-
   /* The label is the quiet half of the pair — the same treatment
-     firma2-project-facts gave its own <dt>, carried over so a converted row and an
-     unconverted one are indistinguishable. */
+     firma2-project-facts gave its own <dt>. */
   .firma2-editable-field__label {
     display: block;
     color: var(--color-content-default-secondary, #646464);
   }
 
-  /* With the label visually hidden there is nothing to hold the corner open, so
-     the strip is reserved explicitly and the value starts below the pencil rather
-     than under it. */
-  .firma2-editable-field[data-label-hidden] .firma2-editable-field__head {
-    min-block-size: var(--spacing-600, 2rem);
+  /* THE LABEL ALIGNS WITH THE VALUE'S GLYPHS, not with the box edge. The box is
+     invisible at rest, so a label flush with its border sits 13px LEFT of the
+     text it names and the pair reads as misaligned prose. Indenting the label
+     by the display's own text inset puts label and value on one x in every
+     state; the box edge overhangs left of both when it appears — the floating-
+     label convention. Same inset expression as the display's padding, so the
+     two cannot drift. */
+  .firma2-editable-field__head {
+    padding-inline-start: calc(var(--spacing-300, 0.75rem) + var(--form-border-width, 1px));
   }
 
   .firma2-editable-field__body {
     min-width: 0;
+    /* The anchor for the ↗ open-link, which docks inside the box's trailing
+       edge. Positioning it off the BODY rather than the button keeps it a
+       sibling of the button — an <a> inside a <button> is invalid HTML. */
+    position: relative;
   }
 
-  .firma2-editable-field__value {
-    display: block;
+  /* THE DISPLAY: a display-only variant of the CONTROL — the md field box,
+     rebuilt from the control's own tokens, minus the editing machinery. Every
+     measure here is the one esa-text-field draws (as pinned by AppLayout's
+     CONTROL_PINS): 40px box, --spacing-300 inline padding inside a
+     --form-border-width edge, --radius-md corner, and the value's own
+     typography-body-md is already the control's 15px text. The point is
+     GEOMETRIC IDENTITY across all three states: rest and hover ARE the
+     control's footprint, so opening the editor swaps chrome — ring, caret —
+     and moves nothing. (An earlier cut dressed the text up with a pill
+     instead; every hover and every open changed the field's size, which is
+     exactly what this shape exists to avoid.)
+
+     The ring is the control's own border, PRESENT AT ALL TIMES and transparent
+     at rest — hover colors it in, so the ring can never be a resize. Present-
+     but-transparent (rather than a hover box-shadow, which an earlier cut
+     used) is what survives forced-colors mode: Windows Contrast Themes delete
+     box-shadows outright but repaint transparent borders with a system color,
+     so those users see the field box the way they see every native input's.
+     border-box keeps the bordered box at the control's exact 40px, and the
+     border supplies the 1px of the text's 13px inset (border + spacing-300)
+     so the value stands on the exact x the control's input text will stand
+     on. Ring only, no fill: esa-text-field's own field background token is
+     transparent, so a ring IS the honest quote. */
+  .firma2-editable-field__display {
+    appearance: none;
+    box-sizing: border-box;
+    border: var(--form-border-width, 1px) solid transparent;
+    border-radius: var(--radius-md, 0.5rem);
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    text-align: start;
+    display: flex;
+    align-items: center;
+    inline-size: 100%;
     overflow-wrap: anywhere;
-    /* Only ever seen while hovering the value — which is exactly when the row's
-       pencil has appeared too, so the two affordances arrive together. */
-    cursor: pointer;
+    /* Buttons default to user-select: none; restored so drag-to-copy a figure
+       out of the panel keeps working (the script refuses to open on a drag). */
+    user-select: text;
+    cursor: text;
+    padding-block: 0;
+    padding-inline: var(--spacing-300, 0.75rem);
+    margin: 0;
+    /* The md rung's pinned control height — also comfortably past the SC 2.5.8
+       pointer-target floor. min, not fixed: a long value that wraps grows the
+       box, exactly as the control it stands in for would. */
+    min-block-size: 40px;
+    transition: border-color 120ms ease;
+  }
+  /* The value is a flex item now; without this a long name refuses to wrap and
+     overflows the box instead of growing it. */
+  .firma2-editable-field__display [data-field-value] {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* A textarea row's display is a PARAGRAPH, not a line: the box it quotes is
+     the textarea's — same edge padding on all sides, height from the text
+     itself. The editor's height is then matched to this box by the script
+     (auto-sized rows), which is the other half of the no-resize contract.
+     `:not([hidden])`, because this rule sits AFTER the [hidden] guard above at
+     the same specificity — without it, it re-displays the hidden button and
+     the open editor renders BELOW the paragraph it replaces (measured: the
+     description row doubled). */
+  .firma2-editable-field[data-control='textarea'] .firma2-editable-field__display:not([hidden]) {
+    display: block;
+    /* The border supplies its own 1px of the inset now, same as inline. */
+    padding-block: var(--spacing-300, 0.75rem);
+    min-block-size: 40px;
   }
   /* `display: block` above outranks the UA's `[hidden] { display: none }`, so the
-     script hiding the read value would be silently ignored without this. Every
-     display-setting rule in this file needs its own guard. */
-  .firma2-editable-field__value[hidden] {
+     script hiding the display while editing would be silently ignored without
+     this. Every display-setting rule in this file needs its own guard. */
+  .firma2-editable-field__display[hidden] {
     display: none;
+  }
+  /* Ring reveal keys off the BODY, not the button alone, so mousing onto the
+     ↗ open-link (a sibling floating inside the same box) does not blink the
+     ring off mid-gesture. The bare :hover fallback covers the page-title
+     shape, whose body is display:contents and generates no hoverable box. */
+  .firma2-editable-field__display:hover,
+  .firma2-editable-field__body:hover .firma2-editable-field__display {
+    border-color: var(--form-border-color, #cecece);
+  }
+  .firma2-editable-field__display:focus-visible {
+    border-color: var(--form-border-color, #cecece);
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+  /* No hover on touch, so the chrome that WAS the hover reveal is simply on —
+     the same stance the old pattern took with its always-visible pencils. */
+  @media (hover: none) {
+    .firma2-editable-field__display {
+      border-color: var(--form-border-color, #cecece);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-editable-field__display {
+      transition: none;
+    }
+  }
+
+  /* ── The ↗ open-link (rows with `href`) ──────────────────────────────────
+     Docked inside the box's trailing edge, on the 40px box's own midline.
+     Revealed by the same hover/focus that reveals the ring — but only ever by
+     OPACITY: it is always in the DOM and always in the tab order, and its own
+     focus reveals it, so no keyboard or AT user needs to know hover exists.
+     Gone entirely while editing — mid-edit it would point at the value being
+     replaced. */
+  .firma2-editable-field__open {
+    position: absolute;
+    inset-inline-end: var(--spacing-100, 0.25rem);
+    inset-block-start: 20px;
+    translate: 0 -50%;
+    display: inline-flex;
+    opacity: 0;
+    transition: opacity 120ms ease;
+    color: var(--color-content-default-tertiary, #757575);
+  }
+  .firma2-editable-field__open[hidden] {
+    display: none;
+  }
+  .firma2-editable-field__body:hover .firma2-editable-field__open,
+  .firma2-editable-field__body:focus-within .firma2-editable-field__open {
+    opacity: 1;
+  }
+  .firma2-editable-field[data-editing] .firma2-editable-field__open {
+    display: none;
+  }
+  /* The value never runs under the icon: the strip it floats in is reserved.
+     Only on linked rows — an unlinked row keeps its full line. */
+  .firma2-editable-field[data-link] .firma2-editable-field__display {
+    padding-inline-end: calc(var(--spacing-600, 2rem) + var(--spacing-200, 0.5rem));
+  }
+  @media (hover: none) {
+    .firma2-editable-field__open {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-editable-field__open {
+      transition: none;
+    }
+  }
+
+  /* ── The list display (format="list") ────────────────────────────────────
+     The container carries the field chrome the button class already draws —
+     same box, same ring — it just is not a button (see the markup for why).
+     What it must NOT inherit from that class is text behaviour: clicking a
+     member is a press, not a caret. */
+  .firma2-editable-field__display--list {
+    cursor: default;
+  }
+  /* The container is a flex row (base class), so the list span is a flex item
+     hugging its content — grown here to the full box, because the member
+     lines must span it: a line's empty space is the click-to-edit target. */
+  .firma2-editable-field__display--list [data-field-value] {
+    flex: 1 1 auto;
+  }
+
+  /* ONE MEMBER PER LINE, not a wrapping row. Wrapped chips read as a jumble
+     at ~350px, and a line per member reads as the short list it is — and
+     matches the editor: the combobox's chips are stacked the same way by the
+     adopted sheet below. Lines stretch so the space right of a chip belongs
+     to the row (click there = edit). The block padding is slack against the
+     box edge: one member centers in the 40px box, more grow it. */
+  .firma2-editable-field__list {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-100, 0.25rem);
+    padding-block: var(--spacing-100, 0.25rem);
+  }
+
+  .firma2-editable-field__member {
+    display: flex;
+    align-items: center;
+  }
+
+  /* THE CHIP IS THE LINK — the pill is the anchor's whole face, so the reset
+     leaves nothing of the UA link but the semantics, and focus draws the
+     ring on the pill's own corner. Hover confirms the press target by
+     deepening the pill's edge — the chip-scale echo of the box ring. */
+  .firma2-editable-field__member-link {
+    display: inline-flex;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    border-radius: var(--radius-chip, var(--radius-sm, 0.25rem));
+  }
+  .firma2-editable-field__member-link:focus-visible {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+  .firma2-editable-field__member-link:hover :global(.esa-pill) {
+    border-color: var(--color-border-default, #cecece);
+  }
+  /* The label underlines on hover — the one cue every reader already knows
+     means "this text goes somewhere", worth customizing into the pill because
+     nothing else on a chip says LINK rather than badge. On focus too, so the
+     keyboard sees the same promise the pointer does. */
+  .firma2-editable-field__member-link:hover :global(.esa-pill__label),
+  .firma2-editable-field__member-link:focus-visible :global(.esa-pill__label) {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* The fallback shape for a set with no pages behind it: the member is a
+     button and its click opens the shared editor. */
+  .firma2-editable-field__member-btn {
+    appearance: none;
+    display: inline-flex;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+    border-radius: var(--radius-chip, var(--radius-sm, 0.25rem));
+  }
+  .firma2-editable-field__member-btn:focus-visible {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+
+  /* THE KEYBOARD'S WAY INTO THE EDITOR. Pointer users click the box; a
+     keyboard user tabbing through chips-that-are-links would otherwise have
+     no way to open the editor at all. A real button, visually hidden until
+     its own focus lands (the skip-link pattern), sitting after the last
+     member so it reads "…Salmon & steelhead recovery, link — Edit
+     Classifications, button". */
+  .firma2-editable-field__member-edit {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+  .firma2-editable-field__member-edit:focus-visible {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    align-self: flex-start;
+    font: inherit;
+    font-size: var(--typography-body-sm-font-size, 0.8125rem);
+    color: var(--color-content-default-secondary, #646464);
+    background: none;
+    cursor: pointer;
+    border-radius: var(--radius-sm, 0.25rem);
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+
+  /* The hover card raised off a member chip (esa-popover supplies the panel
+     surface; this is only the content's measure). */
+  .firma2-editable-field__card {
+    min-inline-size: 14rem;
+    max-inline-size: 18rem;
+  }
+  .firma2-editable-field__card-kind {
+    color: var(--color-content-default-secondary, #646464);
   }
 
   /* Years and dollars are figures, so they get figures' shaping — the same
      treatment the Projects index table gives these two exact fields, so a cost
      reads as the same kind of thing in both places. */
-  .firma2-editable-field[data-format='currency'] .firma2-editable-field__value,
-  .firma2-editable-field[data-format='year-range'] .firma2-editable-field__value {
+  .firma2-editable-field[data-format='currency'] .firma2-editable-field__display,
+  .firma2-editable-field[data-format='year-range'] .firma2-editable-field__display {
     font-variant-numeric: tabular-nums;
   }
 
@@ -350,84 +835,93 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
     width: auto;
   }
 
-  /* A label sitting 2px above a line of text reads as one unit; 2px above a
-     32px bordered box reads as a collision. The value line takes the extra
-     breath — the LABEL does not move, which is the geometry rule that matters. */
-  .firma2-editable-field[data-editing] {
-    --gap: var(--spacing-150, 0.375rem);
-  }
+  /* NO EDITING-STATE GAP CHANGE. The row's gap is `2xs` (4px) in the template —
+     the same 4px esa-text-field puts between its own label and its box — and it
+     is CONSTANT: the display already stands at the control's height, so there
+     is no swap for the label to breathe around. A state-conditional gap here
+     would reintroduce the exact shift this shape exists to remove. */
 
-  /* Affordances recede until the row is engaged, so a panel of five rows reads as
-     data rather than as a wall of buttons. Focus-within keeps them tab-reachable,
-     and a touch device — where there is no hover to reveal anything — gets them
-     unconditionally. */
-  .firma2-editable-field__controls {
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline-end: 0;
-    display: inline-flex;
-    gap: var(--spacing-050, 0.125rem);
-    color: var(--color-content-default-tertiary, #757575);
-  }
-  .firma2-editable-field__control {
-    display: inline-flex;
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-
-  /* THE CHIP IS SIZED TO THE LABEL'S LINE, and that is a bleed fix, not a taste
-     one. esa-button at `xs` draws a 32px box; the row's label line is 22.4px.
-     Anchored at the row's top edge, the button's hover/focus background
-     therefore hung ~10px BELOW the label and landed on top of the value beneath
-     it — and a value like "Deer Creek Watershed Alliance" runs nearly the full
-     289px rail, so the grey chip sat squarely on the text.
-     Padding the VALUE to clear it was the other option and is worse: the
-     reservation would apply at rest as well as on hover, permanently narrowing
-     every value in a column that has no width to spare. Sizing the chip is the
-     one fix that costs nothing when nobody is hovering.
-     24px, not 22.4: that is the floor WCAG 2.2 SC 2.5.8 (Target Size Minimum)
-     sets for a pointer target, so the chip stops at the smallest box it is
-     allowed to be rather than at the label's exact height. The 14px glyph is
-     untouched — it was already correct and subordinate.
-     Reached through :global() because esa-button is an .astro component: its
-     .esa-button__native carries ITS scope hash, not this file's, so a plain
-     selector here compiles to something that matches nothing. Contained by the
-     __control class, so it cannot leak to any other button on the page. */
-  .firma2-editable-field__control :global(.esa-button__native) {
-    block-size: 24px;
-    inline-size: 24px;
-    min-block-size: 0;
-  }
-  .firma2-editable-field:hover .firma2-editable-field__control,
-  .firma2-editable-field:focus-within .firma2-editable-field__control {
-    opacity: 1;
-  }
-  @media (hover: none) {
-    .firma2-editable-field__control {
-      opacity: 1;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .firma2-editable-field__control {
-      transition: none;
-    }
-  }
-
-  /* Only one set exists in the DOM's flow at a time — removed, not disabled, so
-     there is nothing to mis-click and nothing to explain. A row being edited keeps
-     its controls lit: it is unambiguously engaged, and its save/cancel must never
-     need a hover to be found. */
-  .firma2-editable-field:not([data-editing]) .firma2-editable-field__control--editing {
+  /* ── The adopting shape: one row, the title as its own trigger ─────────────
+     Everything above assumes a label stacked ON a value. A page title has no
+     label above it and nothing below it: the h1 esa-page-header rendered is
+     moved into this row and the display button is moved INSIDE the h1, so the
+     heading's content — and its accessible name — is the (editable) project
+     name, with the hover chrome drawn on the title itself. .cluster is the
+     row, so no bespoke flex. */
+  .firma2-editable-field--page-title[hidden] {
     display: none;
   }
-  .firma2-editable-field[data-editing] .firma2-editable-field__control--rest {
+  /* The body is a passthrough here. The h1 is moved into the ROW (it cannot be
+     moved into a wrapper that did not exist when esa-page-header rendered it), so
+     `display: contents` is what puts the edit region in the same flex row as
+     the heading instead of in a box beside it. */
+  .firma2-editable-field--page-title .firma2-editable-field__body {
+    display: contents;
+  }
+  /* THE ADOPTED HEADING TAKES THE ROW, and this is the rule that stops a title
+     wrapping in the middle of an empty bar.
+
+     The h1 is a flex item in this cluster, so left alone it is `flex: 0 1 auto`
+     and sizes to its MAX-CONTENT — which, once the display button is inside it,
+     is not the text's width. It is the text's width plus the button's inline
+     padding MINUS the negative margin two rules below (the one that keeps the
+     glyphs on the breadcrumb's x). Those do not cancel: the margin comes off the
+     h1's max-content contribution, the padding stays on the button, and
+     `max-inline-size: 100%` then caps the button at the h1 it just shrank. Net
+     ~26px, which on "Bear River Gravel Augmentation" was the difference between
+     one line and two — with two thirds of the header bar empty beside it, and
+     `text-wrap: balance` splitting the result into two even lines that looked
+     entirely intentional.
+
+     Growing the h1 costs nothing at rest: the button is `inline-size:
+     fit-content`, so it still hugs the glyphs and the hover plate is the same
+     size it always was. Only the invisible heading box gets wider, and it gets
+     wider into space that was empty. min-inline-size: 0 is the companion half —
+     a flex item's automatic minimum is its own min-content, so without it a
+     genuinely long title would refuse to shrink and push the actions off the
+     bar's trailing edge.
+
+     :global() because the h1 belongs to esa-page-header and carries ITS scope
+     hash; contained by the variant class, so it can only reach a heading this
+     row adopted. The companion half is in firma2-page-header.astro, which
+     unshrinks the COLUMN this row sits in — both are needed, and neither works
+     alone. */
+  .firma2-editable-field--page-title :global(.esa-page-header__title) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+  /* While editing, the display button inside the h1 is hidden — which would
+     leave an EMPTY h1 in the flex row, still costing a gap. Hide the heading
+     itself for the duration; the edit control carries the name (aria-label from
+     data-name) while it stands in. :global() because the h1 belongs to
+     esa-page-header and carries ITS scope hash — contained by the variant class
+     + state attribute, so it can only ever touch the heading this row adopted. */
+  .firma2-editable-field--page-title[data-editing] :global(.esa-page-header__title) {
     display: none;
   }
-  .firma2-editable-field[data-editing] .firma2-editable-field__control {
-    opacity: 1;
+  /* THE TITLE'S TEXT DOES NOT MOVE, in any state. The button's box carries the
+     control's inline padding, so its text would start 13px right of where the
+     plain h1's did — and the breadcrumb one line up is left-aligned with the
+     title, which makes any nudge visible. The negative margin slides the BOX
+     left instead, keeping the glyphs on the breadcrumb's own x; the edit
+     region takes the same offset so the control's box lands exactly on the
+     display's, glyph over glyph. */
+  .firma2-editable-field--page-title .firma2-editable-field__display {
+    inline-size: fit-content;
+    max-inline-size: 100%;
+    margin-inline: calc(-1 * (var(--spacing-300, 0.75rem) + var(--form-border-width, 1px)));
   }
-  .firma2-editable-field[data-editing] [data-field-edit-save] {
-    color: var(--color-background-brand, currentColor);
+  .firma2-editable-field--page-title .firma2-editable-field__edit {
+    margin-inline-start: calc(-1 * (var(--spacing-300, 0.75rem) + var(--form-border-width, 1px)));
+  }
+
+  /* The control stands in for a heading, so it takes the width a heading had —
+     but a title is measured in words, not in rem, and the field must not push the
+     header's actions off the bar. It asks for 24rem, gives it back as the bar
+     narrows, and never exceeds the column. */
+  .firma2-editable-field--page-title .firma2-editable-field__edit {
+    flex: 1 1 24rem;
+    max-inline-size: 100%;
   }
 </style>
 
@@ -438,6 +932,10 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-textarea';
   import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-combobox';
+  // The member chips' hover cards (format="list" rows with memberCards).
+  import '@esa/ecology/esa-popover';
+  import { skinComboboxChips } from '../../lib/combobox-chip-skin';
   // Dependency-free formatter module. NOT shared/grid-chrome.ts, which exports the
   // identical Intl.NumberFormat but registers the whole AG Grid runtime at module
   // scope — importing it here would pull the grid into every page holding a field.
@@ -457,10 +955,14 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
   const inputsOf = (row: HTMLElement): Control[] =>
     Array.from(row.querySelectorAll<Control>('[data-field-input]'));
   const displayOf = (row: HTMLElement) => row.querySelector<HTMLElement>('[data-field-display]');
+  const valueOf = (row: HTMLElement) => row.querySelector<HTMLElement>('[data-field-value]');
   const regionOf = (row: HTMLElement) => row.querySelector<HTMLElement>('[data-field-edit-region]');
-  const pencilOf = (row: HTMLElement) =>
-    row.querySelector<HTMLElement>('[data-field-edit] button');
   const isEditing = (row: HTMLElement) => row.hasAttribute('data-editing');
+  // The DOM is the state store — [data-editing] sits on at most one row (openEdit
+  // enforces it), so "the open row" is a query, not a module variable that could
+  // drift from the truth.
+  const openRowOf = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>('[data-editable-field][data-editing]');
 
   const setError = (control: Control | undefined, message: string): void => {
     if (!control) return;
@@ -474,7 +976,40 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
   };
 
   /**
-   * Re-render a saved year range into the display.
+   * A committed row says so, out loud, once — for anything on the page that MIRRORS
+   * the value it just wrote. The project title is mirrored twice (the breadcrumb one
+   * line above it and the browser tab), and a rename that left either stale would
+   * show a reader two names for one record.
+   *
+   * An event, not a callback registry: the row does not need to know who is
+   * listening, and a listener attaches with one line and no coupling back into
+   * this module. `detail.value` is what the DISPLAY now reads — formatted, not
+   * raw — because a mirror renders the same string a reader sees.
+   *
+   * Fired only when the value actually CHANGED: blur-commits fire on every
+   * click-away, and a page full of no-op events would make every listener carry
+   * its own dedupe.
+   */
+  const announceSave = (row: HTMLElement, value: string): void => {
+    // The ↗ open-link pointed at the page for the value that just changed. A
+    // prototype cannot resolve the NEW value's page, and a link that lies is
+    // worse than none — the affordance retires with the value it belonged to.
+    // (A real app would re-resolve the href here instead.)
+    //
+    // Set rows are untouched by this: their members ARE links, from a fixed
+    // vocabulary whose destination never goes stale, and paintMembers has
+    // just rebuilt them live — no [data-field-open] doors exist there.
+    row.querySelectorAll('[data-field-open]').forEach((door) => door.setAttribute('hidden', ''));
+    row.dispatchEvent(
+      new CustomEvent('firma2:field-save', {
+        bubbles: true,
+        detail: { field: row.dataset.field ?? '', value, raw: row.dataset.raw ?? '' },
+      })
+    );
+  };
+
+  /**
+   * Re-render a committed year range into the display.
    *
    * Built from nodes rather than a string of HTML — there is no escaping to get
    * wrong, and the aria-hidden dash / visually-hidden "to" pair is the same one
@@ -493,8 +1028,66 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
     display.replaceChildren(document.createTextNode(start), dash, spoken, document.createTextNode(end));
   };
 
+  /**
+   * Re-render a committed set into the display as member lines, by cloning
+   * the row's server-rendered template — esa-pill is a compile-time lego, so
+   * the clone is the only way a runtime repaint keeps the real markup and the
+   * Astro scope attributes its styles are keyed to. Falls back to joined text
+   * only if the template is somehow missing, so a commit can never blank the
+   * row.
+   */
+  const paintMembers = (row: HTMLElement, display: HTMLElement, members: string[]): void => {
+    const template = row.querySelector<HTMLTemplateElement>('template[data-member-template]');
+    // A row that STARTED empty renders the plain single-button display (see
+    // the markup), and chip buttons cannot nest inside a button — that shape
+    // takes the joined text until a reload re-renders it as chips.
+    if (!template?.content.firstElementChild || display.closest('button')) {
+      display.textContent = members.join(', ');
+      return;
+    }
+    // The card context for every vocabulary member rode in on the row (see
+    // data-member-cards) so a repaint can fill an added member's card without
+    // asking anyone.
+    let cards: Record<string, { kind: string; title: string; lines: string[] }> | null = null;
+    try {
+      cards = JSON.parse(row.dataset.memberCards ?? 'null');
+    } catch {
+      cards = null;
+    }
+    const units = members.map((member) => {
+      const unit = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const label = unit.querySelector('.esa-pill__label');
+      if (label) label.textContent = member;
+      const card = cards?.[member];
+      const kind = unit.querySelector('[data-card-kind]');
+      const title = unit.querySelector('[data-card-title]');
+      const lines = unit.querySelector('[data-card-lines]');
+      if (kind && title && lines) {
+        kind.textContent = card?.kind ?? '';
+        title.textContent = card?.title ?? member;
+        lines.replaceChildren(
+          ...(card?.lines ?? []).map((text) => {
+            const line = document.createElement('span');
+            line.className = 'typography-body-sm';
+            line.textContent = text;
+            return line;
+          })
+        );
+      }
+      return unit;
+    });
+    display.replaceChildren(...units);
+  };
+
   const openEdit = (row: HTMLElement): void => {
     if (isEditing(row)) return;
+    // At most one row open: commit-on-blur means opening B IS leaving A, so
+    // leaving A commits it. Usually the capture-phase click commit has already
+    // done this by the time a click reaches here; this covers every other way
+    // a row can open.
+    const other = openRowOf();
+    if (other && other !== row) commitEdit(other, 'blur');
+
     const inputs = inputsOf(row);
     if (inputs.length === 0) return;
 
@@ -505,10 +1098,32 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
       const [start = '', end = ''] = raw.split(',').map((s) => s.trim());
       inputs[0].value = start;
       inputs[1].value = end;
+    } else if (row.dataset.control === 'multi-select') {
+      // The raw is a JSON array; the combobox's value setter takes the array
+      // whole and renders the members as its own removable chips.
+      try {
+        inputs[0].value = JSON.parse(raw);
+      } catch {
+        inputs[0].value = [];
+      }
     } else {
       inputs[0].value = raw;
     }
     clearErrors(row);
+
+    // The textarea opens at the SIZE OF THE TEXT IT REPLACES: same line count
+    // as the rendered paragraph, and the display's box padding equals the
+    // control's, so the swap holds the row's height. Measured here — while the
+    // display is still visible — not hard-coded, because a description is one
+    // line on one project and nine on another.
+    if (row.dataset.control === 'textarea') {
+      const span = valueOf(row);
+      if (span) {
+        const lineHeight = parseFloat(getComputedStyle(span).lineHeight) || 24;
+        const lines = Math.round(span.getBoundingClientRect().height / lineHeight);
+        inputs[0].setAttribute('rows', String(Math.max(1, Math.min(20, lines))));
+      }
+    }
 
     row.dataset.editing = '';
     const display = displayOf(row);
@@ -522,40 +1137,97 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
     requestAnimationFrame(() => inputs[0]?.focus?.());
   };
 
-  const closeEdit = (row: HTMLElement): void => {
+  /**
+   * `refocus` is the difference between the two ways out. A KEY exit (Enter,
+   * Escape, a select choice) happened with focus inside the row, so focus
+   * returns to the display button — without this it would fall to <body> and a
+   * keyboard user would restart their tab from the top of the page to correct
+   * the next field. A BLUR exit happened because the user sent focus somewhere
+   * else on purpose; stealing it back would fight the very gesture that
+   * committed.
+   */
+  const closeEdit = (row: HTMLElement, refocus: boolean): void => {
     row.removeAttribute('data-editing');
     const display = displayOf(row);
     const region = regionOf(row);
     if (region) region.hidden = true;
     if (display) display.hidden = false;
     clearErrors(row);
-    // Focus comes back to the control that opened the row, either way out. Without
-    // this it would fall to <body> and a keyboard user would restart their tab from
-    // the top of the page to correct the next field.
-    pencilOf(row)?.focus();
+    // The pills display is a container of chip buttons, not itself focusable —
+    // a key exit lands on the first chip, which is where Tab enters the row.
+    if (refocus && display) {
+      (display.matches('button') ? display : display.querySelector<HTMLElement>('button') ?? display).focus?.();
+    }
   };
 
-  const saveEdit = (row: HTMLElement): void => {
-    const display = displayOf(row);
+  // Abandon: nothing was written, so the read state that reappears is still the
+  // truth, and the next open re-seeds from data-raw. Escape and an invalid value
+  // at a blur boundary both land here.
+  const revertEdit = (row: HTMLElement, refocus: boolean): void => closeEdit(row, refocus);
+
+  /**
+   * Commit — the one write path, entered from every exit except Escape.
+   *
+   * `source` decides what an INVALID value earns. 'key' is an explicit save
+   * (Enter, or a select choice): refusing with the lego's inline errorText and
+   * staying open is the honest answer to "save this". 'blur' is the user
+   * leaving: holding the row open after they clicked away would trap them, so
+   * the edit reverts silently to the last good value — the Notion/Linear
+   * convention.
+   */
+  const commitEdit = (row: HTMLElement, source: 'key' | 'blur'): void => {
+    const display = valueOf(row);
     const inputs = inputsOf(row);
     if (!display || inputs.length === 0) return;
     clearErrors(row);
+    const refocus = source === 'key';
+    const refuse = (control: Control | undefined, message: string): void => {
+      if (source === 'key') return setError(control, message);
+      revertEdit(row, false);
+    };
 
     if (row.dataset.control === 'year-range') {
       const start = String(inputs[0].value ?? '').trim();
       const end = String(inputs[1].value ?? '').trim();
       const startYear = Number(start);
       const endYear = Number(end);
-      if (!start || !Number.isFinite(startYear)) return setError(inputs[0], 'Enter a year.');
-      if (!end || !Number.isFinite(endYear)) return setError(inputs[1], 'Enter a year.');
+      if (!start || !Number.isFinite(startYear)) return refuse(inputs[0], 'Enter a year.');
+      if (!end || !Number.isFinite(endYear)) return refuse(inputs[1], 'Enter a year.');
       // The ONLY rule worth enforcing on a range: it has to run forwards. Anything
       // more (a plausible century, a cap on span) would be inventing policy the
       // record does not have. Surfaced through the lego's own errorText, wired to
       // the control by aria-describedby — never a bespoke message element.
-      if (endYear < startYear) return setError(inputs[1], `Must be ${startYear} or later.`);
-      row.dataset.raw = `${startYear},${endYear}`;
+      if (endYear < startYear) return refuse(inputs[1], `Must be ${startYear} or later.`);
+      const nextRaw = `${startYear},${endYear}`;
+      const changed = nextRaw !== row.dataset.raw;
+      row.dataset.raw = nextRaw;
       paintYearRange(display, String(startYear), String(endYear));
-      closeEdit(row);
+      if (changed) announceSave(row, `${startYear}–${endYear}`);
+      closeEdit(row, refocus);
+      return;
+    }
+
+    if (row.dataset.control === 'multi-select') {
+      const picked = inputs[0].value;
+      const members = Array.isArray(picked) ? picked.map(String) : picked ? [String(picked)] : [];
+      // Commit in the VOCABULARY'S order, not click order: the combobox
+      // appends members as they are toggled, and two records with the same
+      // classifications should read identically however they were assembled.
+      let order: string[] = [];
+      try {
+        order = (JSON.parse(inputs[0].dataset.options ?? '[]') as { value: string }[]).map((o) => o.value);
+      } catch {
+        /* fall through to click order */
+      }
+      const sorted = order.length ? order.filter((v) => members.includes(v)) : members;
+      const nextRaw = JSON.stringify(sorted);
+      const changed = nextRaw !== row.dataset.raw;
+      row.dataset.raw = nextRaw;
+      paintMembers(row, display, sorted);
+      // An EMPTY set commits like a blank county: a record whose goals have not
+      // been entered yet is a real state, not an error.
+      if (changed) announceSave(row, sorted.join(', '));
+      closeEdit(row, refocus);
       return;
     }
 
@@ -563,21 +1235,28 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
 
     if (row.dataset.format === 'currency') {
       const amount = Number(next);
-      if (!next || !Number.isFinite(amount)) return setError(inputs[0], 'Enter an amount.');
+      if (!next || !Number.isFinite(amount)) return refuse(inputs[0], 'Enter an amount.');
+      const changed = String(amount) !== row.dataset.raw;
       row.dataset.raw = String(amount);
       display.textContent = currencyFormatter.format(amount);
-      closeEdit(row);
+      if (changed) announceSave(row, display.textContent);
+      closeEdit(row, refocus);
       return;
     }
 
+    // The one rule a text row can carry. It is opt-in (`required`) because a blank
+    // county is a record nobody has filled in yet, which is true and savable — but a
+    // blank TITLE is a page with no name in its header, its breadcrumb or its tab.
+    if (!next && row.hasAttribute('data-required')) {
+      return refuse(inputs[0], `Enter a ${(inputs[0].dataset.name ?? 'value').toLowerCase()}.`);
+    }
+
+    const changed = next !== row.dataset.raw;
     row.dataset.raw = next;
     display.textContent = next;
-    closeEdit(row);
+    if (changed) announceSave(row, next);
+    closeEdit(row, refocus);
   };
-
-  // Cancel discards by simply closing: nothing was written, so the read state that
-  // reappears is still the truth, and the next open re-seeds from data-raw.
-  const cancelEdit = (row: HTMLElement): void => closeEdit(row);
 
   /**
    * Per-page setup: hand esa-select its options, and name the controls that render
@@ -609,7 +1288,7 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
   // whose FIRST child is an 18px `.check` that is present for every option and
   // merely `opacity: 0` when unselected. Label left is therefore
   // 12 + 18 + 4 (gap) = 34px, while the trigger's value sits at its field
-  // padding — 10px at the `sm` rung this component uses.
+  // padding.
   //
   // The fix orders the check to the trailing edge instead of removing it: the
   // tick still marks the current value, still animates by opacity alone, and
@@ -632,6 +1311,37 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
     .option__label { order: 0; }
   `;
 
+  // ── esa-combobox: the edit chips ARE the display chips ─────────────────────
+  //
+  // The display renders a set as quiet esa-pill chips; the combobox renders the
+  // same members, while editing, as ITS chips — which ship green-tinted, fully
+  // rounded and one type rung larger. Same data, two skins, and the swap-in
+  // moment re-dressed every member: exactly the display↔edit discontinuity this
+  // component exists to remove.
+  //
+  // THE RECIPE MOVED OUT, to src/lib/combobox-chip-skin.ts. It lived here first
+  // and had to leave the day a SECOND screen edited the same vocabulary: the
+  // measure setup band's classifications combobox had no skin, so one concept
+  // rendered neutral here and green there. The recipe is shared now; what stays
+  // in this file is the only part that is genuinely this component's — WHERE
+  // the chips sit.
+  //
+  // GEOMETRY, measured against the display and mirrored exactly: the .chips
+  // inset repeats the display box's text inset (border + spacing-300) so the
+  // chips stand on the same x in both states, and its top margin repeats the
+  // list's block padding + border so they stand on the same Y. One member per
+  // line, matching the display's own column — see the list display's note for
+  // why a wrapping row is wrong there.
+  const COMBOBOX_CHIP_GEOMETRY = `
+    .chips {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--spacing-100, 0.25rem);
+      padding-inline-start: calc(var(--spacing-300, 0.75rem) + var(--form-border-width, 1px));
+      margin-block-start: calc(var(--spacing-100, 0.25rem) + var(--form-border-width, 1px));
+    }
+  `;
+
   function alignSelectOptions(el: Control): void {
     const root = el.shadowRoot as (ShadowRoot & { _f2SelectAligned?: boolean }) | null | undefined;
     if (!root || root._f2SelectAligned) return;
@@ -650,7 +1360,9 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
       if (name) el.setAttribute('aria-label', name);
 
       customElements.whenDefined(el.localName).then(async () => {
-        if (el.dataset.control === 'select') {
+        const hasOptions =
+          el.dataset.control === 'select' || el.dataset.control === 'multi-select';
+        if (hasOptions) {
           try {
             el.options = JSON.parse(el.dataset.options ?? '[]');
           } catch {
@@ -658,7 +1370,10 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
           }
         }
         await el.updateComplete;
-        if (el.dataset.control === 'select') alignSelectOptions(el);
+        // esa-combobox shares esa-select's leading-check option markup, so it
+        // shares the same indent defect and the same adopted-sheet repair.
+        if (hasOptions) alignSelectOptions(el);
+        if (el.dataset.control === 'multi-select') skinComboboxChips(el, COMBOBOX_CHIP_GEOMETRY);
         if (!name) return;
         const inner = el.shadowRoot?.querySelector('input, textarea, [role="combobox"]');
         if (inner && !inner.hasAttribute('aria-label')) inner.setAttribute('aria-label', name);
@@ -666,31 +1381,114 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
     });
   };
 
+  /**
+   * THE BOUNDARY, and the load-bearing decision of this script: leaving is
+   * detected by `click` (capture) + `focusin`, NOT by `focusout` +
+   * relatedTarget and NOT by pointerdown. Each rejected mechanism lies in its
+   * own way:
+   *
+   *   focusout     relatedTarget is null when a click lands on nothing
+   *                focusable (the page background — the single most common
+   *                commit gesture), and choosing a select option momentarily
+   *                blurs the inner input toward a non-focusable shadow <div>,
+   *                which would read as "left the row" mid-choice.
+   *   pointerdown  commits BEFORE the click finishes — the open row's control
+   *                collapses back to a text line, everything below it shifts
+   *                up mid-press, and the click the user aimed at another row's
+   *                value lands on whatever moved under the cursor. Verified in
+   *                the browser: with row A open, clicking row B missed B.
+   *
+   * So:
+   *
+   *   click (capture)  the pointer path. By click time the browser has already
+   *                    fixed the event's target from the PRE-commit layout, so
+   *                    committing here (capture) and letting the same event
+   *                    bubble into onClick is what makes "click straight from
+   *                    one value into another" a single accurate gesture.
+   *   focusin          the keyboard path: Tab out of the row lands focus
+   *                    somewhere, and that somewhere is either inside (no-op)
+   *                    or outside (commit). SUPPRESSED while a pointer gesture
+   *                    is in flight — Chrome focuses a clicked button at
+   *                    mousedown, which would resurrect the mid-press layout
+   *                    shift through this listener; the click handler a few
+   *                    milliseconds later owns that commit instead.
+   *
+   * Both test with composedPath(), not target.closest(): events from inside a
+   * lego's shadow root retarget to the host, but the PATH still walks host →
+   * row → document, so a click on an option inside esa-select's in-shadow
+   * dropdown counts as inside the row — which it is. The two year boxes are
+   * both light-DOM children of the row, so moving between them never commits.
+   */
+  const commitIfOutside = (event: Event): void => {
+    const open = openRowOf();
+    if (!open) return;
+    if (!event.composedPath().includes(open)) commitEdit(open, 'blur');
+  };
+
+  // True from pointerdown to pointerup/cancel — the window in which a focusin
+  // is a side effect of the press rather than a keyboard movement. The click
+  // that ends the gesture arrives after pointerup and does its own commit.
+  let pointerGesture = false;
+  const gestureStart = (): void => {
+    pointerGesture = true;
+  };
+  const gestureEnd = (): void => {
+    pointerGesture = false;
+  };
+  const onFocusin = (event: FocusEvent): void => {
+    if (!pointerGesture) commitIfOutside(event);
+  };
+
+  // A select CHOICE is a commit in itself — nobody picks a program from a
+  // five-item list and then wants a second gesture to mean it. esa-select
+  // dispatches its change composed+bubbling, so it reaches this document
+  // listener; native change events from the other legos' shadow inputs are not
+  // composed and never surface, so the control guard is the only scoping needed.
+  //
+  // The guard ALSO excludes multi-select on purpose, whose combobox fires the
+  // same composed change on every toggle: one member of a set is not "done",
+  // so a set commits at the boundary like the text rows, never per pick.
+  const onChange = (event: Event): void => {
+    const row = rowOf(event.target as Element | null);
+    if (!row || !isEditing(row) || row.dataset.control !== 'select') return;
+    commitEdit(row, 'key');
+  };
+
+  // Bubble phase, so the capture-phase commit above has already closed any other
+  // open row by the time this decides whether to open one.
   const onClick = (event: MouseEvent): void => {
     const target = event.target as Element | null;
     const row = rowOf(target);
     if (!row || !target) return;
 
-    if (target.closest('[data-field-edit-save]')) return saveEdit(row);
-    if (target.closest('[data-field-edit-cancel]')) return cancelEdit(row);
-    if (target.closest('[data-field-edit]')) return openEdit(row);
-
     // Clicking the value opens the editor — but not when the click was the end of a
-    // drag-select, which is how someone copies a figure out of the panel.
+    // drag-select, which is how someone copies a figure out of the panel. The
+    // display is a real <button> (or, for a set, a box of chip buttons), so
+    // Enter and Space arrive here as clicks too.
     if (!isEditing(row) && target.closest('[data-field-display]')) {
+      // A member chip is a real <a> INSIDE the list display — its click, in
+      // every modifier combination, is the browser's own navigation and none
+      // of this component's business.
+      if (target.closest('a')) return;
       if (window.getSelection()?.isCollapsed === false) return;
+      // Cmd/Ctrl+click on a LINKED value follows the link — the browser's own
+      // "open that" chord, honoured even though the value is a button. The ↗
+      // beside the value is the discoverable path; this is the shortcut.
+      const link = row.querySelector<HTMLAnchorElement>('[data-field-open]:not([hidden]) a');
+      if (link && (event.metaKey || event.ctrlKey)) {
+        window.open(link.href, '_blank', 'noopener');
+        return;
+      }
       openEdit(row);
     }
   };
 
   /**
    * Enter commits, Escape abandons — the keys a text field already answers to.
-   * Reaching for the mouse to leave a one-word correction is the difference between
-   * fixing five fields and fixing one.
    *
-   * NOT for every control, though. In a textarea Enter is a newline, and in a select
-   * Enter picks the highlighted option; stealing those would break the control to
-   * save a keystroke, so those rows commit with their buttons.
+   * NOT uniformly, though. In a textarea Enter is a newline, so the explicit
+   * commit there is Cmd/Ctrl+Enter (leaving commits it anyway); in a select
+   * Enter picks the highlighted option, and the pick itself commits (onChange).
    *
    * CAPTURE PHASE, deliberately. esa-select calls preventDefault() on Escape
    * unconditionally, so by the time a bubbling listener saw the key the listbox
@@ -706,26 +1504,46 @@ const selectOptions = options.map((o) => ({ value: o, label: o }));
     if (!row || !isEditing(row)) return;
 
     if (event.key === 'Escape') {
-      const select = row.querySelector<Control>('[data-control="select"]');
-      if (select?.shadowRoot?.querySelector('.dropdown')) return;
+      // Both dropdown-bearing legos render their open panel as `.dropdown`:
+      // an open panel gets the first Escape (the lego closes it), the edit
+      // gets the second.
+      const withDropdown = row.querySelector<Control>(
+        '[data-control="select"], [data-control="multi-select"]',
+      );
+      if (withDropdown?.shadowRoot?.querySelector('.dropdown')) return;
       event.preventDefault();
       event.stopPropagation();
-      cancelEdit(row);
+      revertEdit(row, true);
       return;
     }
 
-    if (!KEY_COMMIT.has(row.dataset.control ?? 'text')) return;
+    const control = row.dataset.control ?? 'text';
+    if (control === 'textarea') {
+      if (!event.metaKey && !event.ctrlKey) return;
+      event.preventDefault();
+      commitEdit(row, 'key');
+      return;
+    }
+    if (!KEY_COMMIT.has(control)) return;
     event.preventDefault();
-    saveEdit(row);
+    commitEdit(row, 'key');
   };
 
-  // ONE pair of delegated listeners for every row on the page, not one per instance.
+  // ONE set of delegated listeners for every row on the page, not one per instance.
   // Astro emits this module once however many fields render, but a page can also
   // import it through several sections at once — the flag makes a second evaluation
   // a no-op rather than a double-fire that would open and immediately re-open a row.
   const w = window as Window & { __firma2EditableField?: boolean };
   if (!w.__firma2EditableField) {
     w.__firma2EditableField = true;
+    document.addEventListener('pointerdown', gestureStart, true);
+    document.addEventListener('pointerup', gestureEnd, true);
+    document.addEventListener('pointercancel', gestureEnd, true);
+    // Capture, so the commit runs even when a library widget (map, grid) stops
+    // the click from bubbling — and before onClick below opens the next row.
+    document.addEventListener('click', commitIfOutside, true);
+    document.addEventListener('focusin', onFocusin);
+    document.addEventListener('change', onChange);
     document.addEventListener('click', onClick);
     document.addEventListener('keydown', onKeydown, true);
     document.addEventListener('astro:page-load', () => hydrate());

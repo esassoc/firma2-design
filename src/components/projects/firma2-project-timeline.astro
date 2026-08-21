@@ -22,7 +22,7 @@ import EsaCard from '@esa/ecology/esa-card.astro';
 import '../shared/firma2-card-section.css';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaIcon from '@esa/ecology/esa-icon.astro';
-import type { Milestone } from '../../data/firma2-project-detail';
+import type { LifecycleStatus, Milestone } from '../../data/firma2-project-detail';
 
 interface Props {
   /** Chronological, oldest first — the order buildMilestones() emits. */
@@ -37,15 +37,16 @@ const { milestones } = Astro.props;
 // <color>` as a status indicator by name, and a vertical timeline is the exact
 // place that anti-pattern shows up — a tinted rail segment per row. These are
 // icons instead, so the state survives a greyscale print and a colour-blind
-// reader. All three sit on the same 24-unit ring, which is why they line up in a
+// reader. All four sit on the same 24-unit ring, which is why they line up in a
 // single-pixel-wide column and the rail can run dead straight between them.
 //
 // `paths` IS THE LEGO'S OWN EXTENSION POINT, not a fork. esa-icon documents it as
 // "inner SVG markup for a glyph not in the built-in registry", used as the
-// fallback when `name` is unknown. ICON_PATHS ships circle-check but neither
-// `circle` nor `circle-dot` (checked icon-registry.ts, 55 glyphs), so those two
-// carry their Lucide bodies inline. `name` is still passed for both: the registry
-// wins when it has the glyph, so the day the hub adds them this file needs no edit.
+// fallback when `name` is unknown. ICON_PATHS ships circle-check but not
+// `circle`, `circle-dot` or `circle-pause` (checked icon-registry.ts), so those
+// three carry their Lucide bodies inline. `name` is still passed for all four:
+// the registry wins when it has the glyph, so the day the hub adds them this
+// file needs no edit.
 //
 // THE LABEL IS THE ACCESSIBLE HALF. With `label` set, esa-icon renders
 // role="img" + aria-label, so the status is text to a screen reader and not
@@ -53,7 +54,16 @@ const { milestones } = Astro.props;
 // date and title because the DOM order is marker, date, title — "Complete,
 // February 2024, Site assessment and planting plan complete" is the order a
 // person reads the row in too.
-const MARKERS: Record<Milestone['status'], { name: string; paths?: string; label: string }> = {
+//
+// `halted` ONLY A DEFERRED PROJECT PRODUCES. Before it existed this timeline had
+// no way to show a stall: buildMilestones() gave a deferred project nothing but
+// complete and upcoming rows, so a project that had quit rendered exactly like
+// one sitting between two scheduled events, and the only statement of "this has
+// stopped" on the page was one word in a pill at the top right. "Deferred" is
+// the portfolio's own word for it, deliberately — "Paused" reads better but
+// would be a second name for a state ProjectStage already names. See
+// buildMilestones() for the positional rule that picks the halted row.
+const MARKERS: Record<LifecycleStatus, { name: string; paths?: string; label: string }> = {
   complete: {
     name: 'circle-check',
     label: 'Complete',
@@ -68,6 +78,12 @@ const MARKERS: Record<Milestone['status'], { name: string; paths?: string; label
     paths: '<circle cx="12" cy="12" r="10"></circle>',
     label: 'Upcoming',
   },
+  halted: {
+    name: 'circle-pause',
+    paths:
+      '<circle cx="12" cy="12" r="10"></circle><line x1="10" x2="10" y1="15" y2="9"></line><line x1="14" x2="14" y1="15" y2="9"></line>',
+    label: 'Deferred',
+  },
 };
 
 // NO EMPTY STATE ON PURPOSE. buildMilestones() throws when a program has no
@@ -78,7 +94,7 @@ const MARKERS: Record<Milestone['status'], { name: string; paths?: string; label
 ---
 <EsaCard title="Milestones">
   <!-- ADD, not edit. This section is a COLLECTION, and that is what separates
-       it from Basics and Description: those hold scalar values, so each one got
+       it from Key facts and Description: those hold scalar values, so each one got
        a per-field affordance that appears on hover and edits in place, and their
        section pencils went away. A set has no single field to hover — you add to
        it, remove from it, reorder it — so the section keeps one control and it
@@ -212,13 +228,25 @@ const MARKERS: Record<Milestone['status'], { name: string; paths?: string; label
     color: var(--color-content-default-secondary, #60655f);
   }
 
-  /* The one place colour is spent. Brand at the content step (grass-11), which is
-     a text-legible ramp position rather than the brand FILL — the house keeps
-     saturated brand for the primary action, and this is a marker, not a button.
-     Paired with circle-dot's filled centre, "now" is the only row on the list
-     carrying both a hue and a solid centre, and it needs no tinted row behind it
-     to be found. */
+  /* Brand at the content step (grass-11), which is a text-legible ramp position
+     rather than the brand FILL — the house keeps saturated brand for the primary
+     action, and this is a marker, not a button. Paired with circle-dot's filled
+     centre, "now" is the only row on the list carrying both a hue and a solid
+     centre, and it needs no tinted row behind it to be found. */
   .firma2-timeline__item[data-status='current'] > .firma2-timeline__marker {
     color: var(--color-content-brand, #2a7e3b);
+  }
+
+  /* The stall, and the only other place colour is spent on this list. It matches
+     STAGE_TONE's `warning` for Deferred, so this marker, the halted rung on the
+     stage ladder at the top of the page, and the stage pill in the header are
+     all one colour for one fact.
+     `current` and `halted` cannot co-occur — buildMilestones() gives a deferred
+     project no in-progress row, because nothing is progressing — so the list
+     never carries more than one coloured marker. Contrast is not doing the work
+     regardless: the pause glyph is unique in the set, so the state survives
+     greyscale and colour-blindness on shape alone. */
+  .firma2-timeline__item[data-status='halted'] > .firma2-timeline__marker {
+    color: var(--color-content-utility-warning, #9a6700);
   }
 </style>

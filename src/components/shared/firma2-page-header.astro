@@ -25,6 +25,7 @@
 // hairline and its bleed identical on every screen.
 import EsaPageHeader from '@esa/ecology/esa-page-header.astro';
 import EsaBreadcrumbs from '@esa/ecology/esa-breadcrumbs.astro';
+import Firma2EditableField from './firma2-editable-field.astro';
 
 /** One step of the trail. The LAST crumb is the current page and takes no href —
     esa-breadcrumbs marks it aria-current="page" on that basis. */
@@ -33,15 +34,27 @@ export interface Crumb {
   href?: string;
 }
 
+/** Makes the h1 a field. `field` is the record's own key ("projectName");
+    `label` is the word the display's edit hint and its text box are announced with. */
+export interface EditableTitle {
+  field: string;
+  label: string;
+}
+
 interface Props {
   /** The page's name. Renders as the h1. */
   title: string;
   /** The trail above the title. Omit on a top-level page, where a single crumb
       would only repeat the title one line below it. */
   crumbs?: Crumb[];
+  /**
+   * Present when the title is a STORED VALUE the reader may correct — a record's
+   * name, not a screen's name. Omit on every page whose title is a route.
+   */
+  editableTitle?: EditableTitle;
 }
 
-const { title, crumbs } = Astro.props;
+const { title, crumbs, editableTitle } = Astro.props;
 const hasCrumbs = (crumbs?.length ?? 0) > 0;
 ---
 <div class="firma2-page-header">
@@ -65,6 +78,25 @@ const hasCrumbs = (crumbs?.length ?? 0) > 0;
       <slot name="actions" slot="actions" />
     </EsaPageHeader>
   )}
+
+  {/* THE TITLE, AS A FIELD. It renders here, outside the header, and the script
+      below moves it into the title block around the h1 esa-page-header already
+      rendered — the lego takes its title as a string prop and offers no slot to
+      put a field in, so adoption is the only composition available that does not
+      print the name twice. Rendered as MARKUP by the shared component, never
+      built in JS: the script moves nodes, it does not author any.
+
+      Filed as a /request-lego — a `title` slot on esa-page-header would let this
+      be plain composition, and every spoke with an editable record name wants it. */}
+  {editableTitle && (
+    <Firma2EditableField
+      field={editableTitle.field}
+      label={editableTitle.label}
+      value={title}
+      as="page-title"
+      required
+    />
+  )}
 </div>
 
 <script>
@@ -84,14 +116,110 @@ const hasCrumbs = (crumbs?.length ?? 0) > 0;
   // taller with a breadcrumb than without, and taller again if a long title
   // wraps at a narrow width. The observer covers the wrap case, which is a live
   // resize and not something a build-time constant could know.
+  //
+  // THE SAME MEASUREMENT IS PUBLISHED AS A CUSTOM PROPERTY, because it is not
+  // only scroll-padding that needs it. Any section sized against the FOLD has to
+  // subtract whatever this band is currently occupying, and the band's height is
+  // a runtime fact — one line of title or two, crumb or no crumb. Writing it to
+  // :root turns "how tall is the header" into something CSS can read, so a
+  // full-bleed section states `calc(100dvh - var(--firma2-band-height) - …)` and
+  // re-solves it on every resize instead of carrying a constant that is right at
+  // one width. The project detail page's map is the first consumer.
   const band = document.querySelector<HTMLElement>('.firma2-page-header');
   if (band) {
     const sync = (): void => {
       const h = Math.round(band.getBoundingClientRect().height);
       document.documentElement.style.scrollPaddingBlockStart = `${h}px`;
+      document.documentElement.style.setProperty('--firma2-band-height', `${h}px`);
     };
     sync();
     new ResizeObserver(sync).observe(band);
+  }
+
+  // ── THE EDITABLE TITLE: dock the field around the lego's own h1 ─────────────
+  //
+  // esa-page-header takes its title as a STRING prop and renders the h1 itself,
+  // so there is no slot a field can be composed into. The two alternatives were
+  // both worse: rendering a second heading and hiding the lego's puts the record's
+  // name in the DOM twice and ships two h1s to anyone whose JS never ran, and
+  // re-implementing the header's bar in the spoke drifts the one component every
+  // page opens with. So the field ADOPTS the heading — the h1 esa-page-header
+  // rendered is moved into the row, and the row's own display BUTTON (which the
+  // field server-renders carrying the same title text) is moved inside the h1.
+  // The heading keeps its class and its scope hash, so it looks identical after
+  // the move; its content is now the button, so the heading's accessible name is
+  // still exactly the project name (a button inside a heading is valid HTML —
+  // the reverse nesting is not).
+  //
+  // The row's markup is server-rendered by firma2-editable-field; this only moves
+  // nodes, it never authors any. Everything after the move — hover chrome, open,
+  // seed, commit-on-leave, Enter, Escape, focus return — is that component's
+  // delegated script, unchanged and shared with every other field on the page.
+  const titleField = band?.querySelector<HTMLElement>('[data-editable-field][data-adopt-display]');
+  const heading = band?.querySelector<HTMLElement>('.esa-page-header__title');
+
+  if (band && titleField && heading) {
+    // Grab the button BEFORE any node moves — after replaceChildren it is the
+    // h1's content, and querying for it then would still work, but taking the
+    // reference first keeps the sequence order-proof.
+    const display = titleField.querySelector<HTMLElement>('[data-field-display]');
+    heading.replaceWith(titleField);
+    titleField.prepend(heading);
+    if (display) heading.replaceChildren(display);
+    titleField.hidden = false;
+
+    // THE EDITOR KEEPS THE TITLE'S TYPE. Left alone, opening the title swaps a
+    // 30px two-line heading for a 40px box of 15px text — the record's name
+    // shrinks to half size at the exact moment someone is working on it, and
+    // the band collapses under the sticky header. The input takes the h1's own
+    // COMPUTED type instead (measured, not restated — the heading's composite
+    // class stays the single source of truth), and the control's box goes
+    // height:auto so it fits what it now holds.
+    //
+    // An adopted stylesheet into the lego's shadow root — the same technique,
+    // and the same justification, as AppLayout's CONTROL_PINS and the select
+    // option alignment in firma2-editable-field: a hub gap (no size rung
+    // renders heading-scale text), worth a /request-lego, escaped locally and
+    // loudly. `:host`-prefixed so it outranks the CONTROL_PINS 40px pin
+    // regardless of which sheet lands last.
+    const titleInput = titleField.querySelector<HTMLElement>('esa-text-field');
+    if (titleInput) {
+      customElements.whenDefined('esa-text-field').then(async () => {
+        await (titleInput as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete;
+        const root = titleInput.shadowRoot;
+        if (!root) return;
+        const type = getComputedStyle(heading);
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(`
+          :host .control { height: auto; }
+          :host .input {
+            font-size: ${type.fontSize};
+            font-weight: ${type.fontWeight};
+            line-height: ${type.lineHeight};
+            letter-spacing: ${type.letterSpacing};
+          }
+        `);
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      });
+    }
+
+    // THE NAME IS ON SCREEN TWICE, and the second one is one line up. The last
+    // breadcrumb IS the current page, so a rename that left it reading the old
+    // name would show a reader two names for one record with 12px between them.
+    // The browser tab is the third copy and gets the same treatment: it is how a
+    // reader picks this record out of eight open tabs.
+    const crumb = band.querySelector<HTMLElement>('.esa-breadcrumbs__current');
+    let previous = heading.textContent?.trim() ?? '';
+
+    titleField.addEventListener('firma2:field-save', (event: Event) => {
+      const next = (event as CustomEvent<{ value: string }>).detail?.value?.trim() ?? '';
+      if (!next || next === previous) return;
+      if (crumb) crumb.textContent = next;
+      // Replaced rather than rebuilt: the tab title is `<name> — <app>`, and the
+      // suffix is the page's to compose, not this component's to know.
+      if (previous) document.title = document.title.replace(previous, next);
+      previous = next;
+    });
   }
 </script>
 
@@ -120,19 +248,73 @@ const hasCrumbs = (crumbs?.length ?? 0) > 0;
        This is the one place in the spoke that knows the pane's padding value.
        It is the shell's own literal (esa-app-shell.astro), not a token the pane
        exposes — worth a /request-lego for a `--app-shell-content-padding` hook
-       so a full-bleed child can read it instead of restating it. */
+       so a full-bleed child can read it instead of restating it.
+
+       THE TRAILING BLEED IS A HOOK, the leading one is not. A page whose content
+       runs to the window's right edge wants both, and that is the default. A
+       page with something ELSE on that edge — the project detail page pins a
+       full-height record rail there — wants the band to stop at the column it
+       belongs to, because the band is `position: sticky` at --z-header and the
+       rail sits a rung below at --z-sidebar: 24px of bleed is 24px of band
+       painted over the rail's top corner. Set `--firma2-band-bleed-end: 0px` on
+       any ancestor to close it. There is no matching hook on the leading edge
+       because nothing has ever needed one — the rail is on the other side and
+       the app's nav is outside the pane entirely. */
     --_bleed: var(--spacing-500, 1.5rem);
-    margin-inline: calc(var(--_bleed) * -1);
+    margin-inline-start: calc(var(--_bleed) * -1);
+    margin-inline-end: calc(var(--firma2-band-bleed-end, var(--_bleed)) * -1);
     margin-block-start: calc(var(--_bleed) * -1);
-    padding-inline: var(--_bleed);
+    padding-inline-start: var(--_bleed);
+    padding-inline-end: var(--firma2-band-bleed-end, var(--_bleed));
     padding-block: var(--spacing-400, 1rem);
 
     /* Opaque, or the content scrolling beneath shows straight through. The
        CANVAS role — the same surface the pane is painted with, so the band is
-       not a second elevation stacked on the page but the page's own top. The
-       hairline is what separates it once content is moving under it; at rest it
-       reads as the rule under a title, which is what it also is. */
+       not a second elevation stacked on the page but the page's own top.
+
+       NO HAIRLINE. There was a 1px rule along the bottom edge, and it did two
+       jobs: it read as the rule under a page title at rest, and it marked where
+       content disappeared once the page was moving. The first job is now wrong —
+       the project's description sits directly under the band, and a line drawn
+       between a record's name and the sentence saying what that record IS
+       separates two halves of one thought. The second is a cost worth paying:
+       the band is opaque, so content still passes cleanly beneath it, and what
+       is lost is the seam, not the legibility. Removed 2026-08-20 at the
+       author's direction. */
     background: var(--color-background-default, #fcfcfc);
-    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  /* THE TITLE COLUMN TAKES THE BAR'S SLACK. ALWAYS — not, as it did until now,
+     only for the duration of an edit.
+
+     esa-page-header sizes that column to its content, and shrink-to-fit is a
+     defensible default for a heading that sits beside actions and stops. It is
+     wrong here for a measurable reason: the adopted title is not a bare string
+     any more, it is a BUTTON around the string, and that button carries
+     `padding-inline` so the hover plate extends past the glyphs. Shrink-to-fit
+     sizes the column from the text's max-content and the padding then eats into
+     it from both sides, so the line box comes out ~15px SHORT of the very text
+     it was sized for — and the heading wraps with two thirds of the bar empty
+     beside it. "Bear River Gravel Augmentation" needs 452px, had 1184px of bar
+     to sit in, and was given 437px. `text-wrap: balance` on the heading role is
+     what makes the result look deliberate rather than broken: it splits the
+     overflow into two even lines, so the title reads as a two-line design
+     decision instead of as a box 15px too small.
+
+     Growing the column costs nothing anywhere: the actions keep their width
+     because the lego declares `flex-shrink: 0` on them, and `min-width: 0` on
+     the column (also the lego's) means a genuinely long title still yields
+     rather than pushing them off the edge. A title that wraps after this is a
+     title that really is wider than the bar.
+
+     The edit state no longer needs a rule of its own — it was the same
+     declaration, for the same reason (a text box sized to a heading's content
+     collapsed to ~240px), and it is now simply the resting behaviour.
+
+     :global() because the column belongs to esa-page-header and carries its
+     scope hash; contained by .firma2-page-header, so no other header on any page
+     can be reached. */
+  .firma2-page-header :global(.esa-page-header__titles) {
+    flex: 1 1 auto;
   }
 </style>

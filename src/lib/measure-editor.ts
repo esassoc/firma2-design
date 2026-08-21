@@ -1,50 +1,62 @@
-// The performance-measure setup controller — the wiring between the config
-// rail, the two preview panels, and local draft storage.
+// The performance-measure setup controller — the wiring between the metadata
+// band, the two record zones, the two preview panels, and local draft storage.
 //
-// WHY A CONTROLLER AND NOT A COMPONENT. Three sections have to agree about one
-// record, and none of them can own it: the rail holds the controls, the two
-// previews render consequences, and none should know the others exist. So the
-// page owns a controller that reads the rail, builds the working record, and
-// announces it. The previews listen on `document` for MEASURE_CHANGE_EVENT and
-// re-render themselves; this module never touches their DOM, and they never
-// reach back into the rail.
+// WHY A CONTROLLER AND NOT A COMPONENT. Six sections have to agree about one
+// record, and none of them can own it: the band and the zones hold the
+// controls, the previews render consequences, and none should know the others
+// exist. So the page owns a controller that reads the controls, builds the
+// working record, and announces it. The previews listen on `document` for
+// MEASURE_CHANGE_EVENT and re-render themselves; this module never touches
+// their DOM, and they never reach back into the controls.
 //
-// THE VALUES IN THE RAIL ARE SLUGGED. firma2-measure-config builds its select
-// and radio options as `{ label, value: slug(label) }`, so the DOM holds
-// "on-completion" where the record holds "On completion". Reading a control
-// therefore means mapping back through the SAME vocabulary the options were
-// built from — never by un-hyphenating and title-casing the string, which would
-// turn "on-completion" into "On Completion" and silently fail every comparison
-// downstream. `fromSlug` below is that mapping, and it is why every vocabulary
-// is imported rather than retyped.
+// THE DIMENSIONS ARE COMPOSED FROM TWO ZONES, in the model's own order: the
+// primary subcategory (firma2-measure-record), then every other subcategory —
+// reported and derived, interleaved as authored (firma2-measure-attributes).
+// [primary, ...rest-in-row-order] matches every seed's authored order, so a
+// no-op read composes back to the seed and the draft diff stays empty.
+//
+// EACH ZONE'S FALLBACK IS ITS OWN SLICE OF THE SEED, and the distinction
+// between `undefined` and a real answer is load-bearing. An optional chain
+// returning undefined means the zone's script has not installed its expando —
+// component missing or broken — and the safe read is the seed's slice, which
+// diffs to nothing and therefore SAVES nothing. A null primary or an empty
+// array is a real answer the author gave. Collapsing the two (one flat
+// `?? seed.dimensions`) would either duplicate the seed mid-concat or make a
+// broken selector read as a deliberate deletion that Save then persists.
+//
+// NOTHING IS SLUGGED ANY MORE, and the note survives because the trap it
+// describes is still live. The band used to slug PROGRAM option values, so the
+// DOM held "forest-health-fuels" where the record held "Forest Health & Fuels"
+// and every read had to map back through the vocabulary that built it. Program
+// is gone, replaced by CLASSIFICATIONS, whose combobox option values ARE the
+// labels — no round trip, nothing to get wrong. UNIT and COUNTING RULE were
+// never slugged either: their DOM values are already the canonical `UNITS`
+// member and `CountingRule` id, and slugging them would produce strings
+// ("tons-per-year") that no longer satisfy the unions they came from.
 
 import {
-  DATA_TYPES,
-  AGGREGATIONS,
-  REPORTING_FREQUENCIES,
-  PROGRAMS,
+  CLASSIFICATIONS,
+  UNITS,
+  COUNTING_RULES,
+  measureDisplayName,
+  outstandingFields,
+  outstandingLine,
+  primaryDimension,
 } from '../data/firma2-performance-measures';
-import { measureDisplayName } from '../data/firma2-performance-measures';
+import type { Classification } from '../data/firma2-projects';
 import type {
   PerformanceMeasureDefinition,
-  MeasureSubcategory,
+  MeasureDimension,
+  MeasureUnit,
+  CountingRule,
 } from '../data/firma2-performance-measures';
 import {
   readDraft,
   writeDraft,
-  clearDraft,
   mergeDraft,
   emitMeasureChange,
   type MeasureDraft,
 } from './measure-draft';
-
-/** Must match firma2-measure-config's own `slug`, or every lookup misses. */
-const slug = (label: string): string =>
-  label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-
-/** Slugged DOM value -> the canonical label from the vocabulary that built it. */
-const fromSlug = <T extends string>(vocabulary: readonly T[], value: string): T | undefined =>
-  vocabulary.find((entry) => slug(entry) === value);
 
 const el = <T extends HTMLElement>(id: string): T | null => document.getElementById(id) as T | null;
 
@@ -55,109 +67,189 @@ const valueOf = (id: string): string => {
   return typeof raw === 'string' ? raw : '';
 };
 
+/**
+ * The multi-value counterpart, for esa-combobox in `multiple` mode — the one
+ * control on this page whose `.value` is a string[]. Anything else reads as an
+ * empty set rather than throwing: a control that has not upgraded yet is not a
+ * deliberate deselection, and the caller's `?? seed` fallback covers it.
+ */
+const valuesOf = (id: string): string[] => {
+  const node = el<HTMLElement & { value?: unknown }>(id);
+  const raw = node?.value;
+  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
+};
+
+/**
+ * KEY-ORDER-STABLE serialization, for diffing only. The seeds write a
+ * dimension's keys as `name, source, primary, options`; every zone's read-back
+ * builds `name, source, options, primary`. Plain JSON.stringify is
+ * insertion-order-sensitive, so a bare string compare called those two
+ * different — which put `dimensions` into the stored draft on an UNTOUCHED
+ * page, and the stored whole-array then masked every later seed edit. Sorting
+ * keys at every depth compares the values and nothing else.
+ */
+const stableStringify = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
+};
+
 export interface MeasureEditorOptions {
   /** The build-time record. Local edits are layered over this, never into it. */
   seed: PerformanceMeasureDefinition;
 }
 
 export function initMeasureEditor({ seed }: MeasureEditorOptions): void {
-  const rail = document.querySelector('.firma2-measure-config');
-  if (!rail) return;
+  // THE RECORD'S BOUNDARY, NOT ONE SECTION'S. The listeners hang off the page
+  // wrapper so a control can move between sections — which keeps happening —
+  // without the previews going quiet.
+  //
+  // NOT `document`, which is the other obvious answer. The Lit legos' `change`
+  // and `input` are composed and bubbling, so a document listener would also
+  // fire `publish()` on every keystroke in the app-shell omnibox and every
+  // sidebar-nav interaction. Harmless, but it erases the one thing this
+  // selector documents: WHICH controls own this record.
+  const root = document.querySelector('[data-firma2-measure-root]');
+  if (!root) return;
 
-  const repeater = document.querySelector<
-    HTMLElement & {
-      readRows?: () => MeasureSubcategory[];
-      setRows?: (rows: MeasureSubcategory[]) => void;
-    }
-  >('.firma2-option-repeater');
+  type RecordZone = HTMLElement & {
+    readPrimaryDimension?: () => MeasureDimension | null;
+    setPrimaryDimension?: (d: MeasureDimension | null) => Promise<void> | void;
+  };
+  type ListZone = HTMLElement & {
+    readDimensions?: () => MeasureDimension[];
+    setDimensions?: (next: MeasureDimension[]) => void;
+  };
+
+  const recordZone = document.querySelector<RecordZone>('.firma2-measure-record');
+  // ONE attributes zone where there were two. firma2-measure-attributes owns
+  // every non-primary dimension — reported and derived, interleaved in authored
+  // order — so the controller stops re-splitting the array by source and
+  // stitching it back together. The record still owns the primary.
+  const attributesZone = document.querySelector<ListZone>('.firma2-measure-attributes');
 
   /** The record as the controls currently describe it. */
   function readWorkingMeasure(): PerformanceMeasureDefinition {
-    const dataType = fromSlug(DATA_TYPES, valueOf('fmc-data-type')) ?? seed.dataType;
     const decimalsRaw = Number.parseInt(valueOf('fmc-decimals'), 10);
+    const unitRaw = valueOf('fmc-unit');
+    const ruleRaw = valueOf('fmc-rule');
+
+    // Two slices now, each with the undefined-vs-answer distinction the
+    // header note explains: the primary from the record section, everything
+    // else from the attributes section, in ROW ORDER — the merge is what let
+    // the authored interleave of reported and derived rows survive a
+    // round-trip. Half-declared rows (named, but no vocabulary yet) are kept
+    // rather than filtered: dropping one would make the previews disagree
+    // with the section the author is looking at.
+    const primaryRead = recordZone?.readPrimaryDimension?.();
+    const primary = primaryRead === undefined ? primaryDimension(seed) ?? null : primaryRead;
+    const attributes =
+      attributesZone?.readDimensions?.() ?? seed.dimensions.filter((d) => !d.primary);
 
     return {
       ...seed,
+      quantity: valueOf('fmc-quantity'),
       name: valueOf('fmc-name'),
       definition: valueOf('fmc-definition'),
-      program: fromSlug(PROGRAMS, valueOf('fmc-program')),
-      dataType,
-      // The Unit row is REMOVED from the DOM, not hidden, when the data type
-      // does not take one — so reading it would return "" and silently erase a
-      // unit the user typed before switching. Percent and currency carry their
-      // own unit and the record stores "" for both, so the honest read is: the
-      // control's value when it exists, and "" when it legitimately does not.
-      unit: dataType === 'Number' ? valueOf('fmc-unit') : '',
-      decimalPlaces: Number.isNaN(decimalsRaw) ? seed.decimalPlaces : decimalsRaw,
-      aggregation: fromSlug(AGGREGATIONS, valueOf('fmc-aggregation')),
-      reportingFrequency: fromSlug(REPORTING_FREQUENCIES, valueOf('fmc-frequency')),
-      required: Boolean(el<HTMLElement & { checked?: boolean }>('fmc-required')?.checked),
       reporterGuidance: valueOf('fmc-guidance'),
-      // A half-typed row (a name with no options yet) is dropped rather than
-      // shown, so the preview's cell count never multiplies by zero mid-keystroke.
-      subcategories: (repeater?.readRows?.() ?? seed.subcategories).filter(
-        (row) => row.name.trim() && row.options.length > 0,
+      // A SET, READ WHOLE AND VALIDATED MEMBER BY MEMBER. esa-combobox in
+      // `multiple` mode exposes `.value` as a string[], so this is the one
+      // control on the page whose value is not a string — hence its own reader
+      // rather than valueOf(). Each member is checked against the vocabulary
+      // for the same reason unit and counting rule are: a hand-edited DOM or a
+      // stale draft must not put a label into the record that no roll-up
+      // downstream knows. NOT SLUGGED — the combobox's option values are the
+      // labels themselves, so there is no round trip to get wrong.
+      classifications: valuesOf('fmc-classifications').filter(
+        (c): c is Classification => (CLASSIFICATIONS as string[]).includes(c),
       ),
+      // Validated against the vocabulary rather than cast: a hand-edited DOM or
+      // a stale draft must not put a value into the record that no rollup,
+      // formatter or filter downstream knows how to handle.
+      unit: (UNITS as readonly string[]).includes(unitRaw) ? (unitRaw as MeasureUnit) : undefined,
+      countingRule: COUNTING_RULES.some((r) => r.id === ruleRaw)
+        ? (ruleRaw as CountingRule)
+        : undefined,
+      decimalPlaces: Number.isNaN(decimalsRaw) ? seed.decimalPlaces : decimalsRaw,
+      dimensions: [...(primary ? [primary] : []), ...attributes],
     };
   }
 
-  /** Push a stored draft back onto the controls. Runs once, on load. */
+  /** Push a stored draft back onto the controls. Runs on load only. */
   function applyDraftToControls(draft: MeasureDraft): void {
     const setValue = (id: string, value: string | undefined) => {
       if (value === undefined) return;
       const node = el<HTMLElement & { value?: unknown }>(id);
       if (node) node.value = value;
     };
+    setValue('fmc-quantity', draft.quantity);
     setValue('fmc-name', draft.name);
     setValue('fmc-definition', draft.definition);
     setValue('fmc-guidance', draft.reporterGuidance);
     setValue('fmc-unit', draft.unit);
+    setValue('fmc-rule', draft.countingRule);
     if (draft.decimalPlaces !== undefined) setValue('fmc-decimals', String(draft.decimalPlaces));
-    if (draft.dataType) setValue('fmc-data-type', slug(draft.dataType));
-    if (draft.program) setValue('fmc-program', slug(draft.program));
-    if (draft.aggregation) setValue('fmc-aggregation', slug(draft.aggregation));
-    if (draft.reportingFrequency) setValue('fmc-frequency', slug(draft.reportingFrequency));
-    if (draft.required !== undefined) {
-      const toggle = el<HTMLElement & { checked?: boolean }>('fmc-required');
-      if (toggle) toggle.checked = draft.required;
+    // The set is assigned as an ARRAY, not a string — esa-combobox `multiple`
+    // takes and returns string[]. `setValue` is typed for the scalar controls
+    // and would coerce, so this writes the property directly.
+    if (draft.classifications) {
+      const node = el<HTMLElement & { value?: unknown }>('fmc-classifications');
+      if (node) node.value = [...draft.classifications];
     }
-    // Subcategories go back through the repeater's own setRows(), which clones
-    // the same prototype row addRow() uses — so a restored row and a typed one
-    // are the same markup. Without this the demo lost its most important state
-    // on reload: subcategories are what drive the reporting-form preview, so a
-    // saved draft came back with the grid gone.
-    if (draft.subcategories) repeater?.setRows?.(draft.subcategories);
+
+    // The dimensions split back into the two zones. THE PRIMARY IS SET EVEN
+    // WHEN ABSENT — a draft whose author deleted the primary contains no
+    // flagged row, and skipping the call would leave the seed's subcategory
+    // standing, resurrecting exactly what was deleted. The attributes zone
+    // takes the rest in one call and routes each row by its own source kind,
+    // so a blank-ref derived row restores read-only rather than as an
+    // editable question.
+    if (draft.dimensions) {
+      const primary = draft.dimensions.find((d) => d.primary) ?? null;
+      void recordZone?.setPrimaryDimension?.(primary);
+      attributesZone?.setDimensions?.(draft.dimensions.filter((d) => !d.primary));
+    }
   }
 
-  /**
-   * The page header is server-rendered from the SEED, so a measure saved with a
-   * name still showed "Untitled measure" in the h1, the crumb and the tab after
-   * a reload — the field said one thing and the heading said another. The record
-   * IS the page here, so the page's own identity has to track it.
-   *
-   * Routed through measureDisplayName() so clearing the name falls back to the
-   * same string the server would have rendered, rather than to an empty heading.
-   */
+  /** The page identity and the readiness line are both renders of the record. */
   function syncPageIdentity(working: PerformanceMeasureDefinition): void {
     const shown = measureDisplayName(working);
     const title = document.querySelector('.esa-page-header__title');
     if (title && title.textContent !== shown) title.textContent = shown;
-    // The last crumb is the current page; esa-breadcrumbs marks it aria-current.
     const crumb = document.querySelector('[aria-current="page"]');
     if (crumb && crumb.textContent !== shown) crumb.textContent = shown;
     const docTitle = `${shown} — ProjectFirma 2.0`;
     if (document.title !== docTitle) document.title = docTitle;
+
+    // Beside Save, through the same outstandingLine() the server rendered it
+    // with — one copy of the sentence, and outstandingFields() is the one
+    // opinion about readiness (it already forks on the measure's kind).
+    const readiness = document.getElementById('fmc-readiness');
+    if (readiness) {
+      const line = outstandingLine(outstandingFields(working).length);
+      if (readiness.textContent !== line) readiness.textContent = line;
+    }
   }
 
   /** Only what the user actually changed, so a seed edit is never masked. */
   function buildPatch(working: PerformanceMeasureDefinition): MeasureDraft {
     const patch: MeasureDraft = {};
     const keys: (keyof MeasureDraft)[] = [
-      'name', 'definition', 'program', 'dataType', 'unit', 'decimalPlaces',
-      'aggregation', 'subcategories', 'reportingFrequency', 'required', 'reporterGuidance',
+      'name', 'definition', 'classifications', 'quantity', 'unit',
+      'decimalPlaces', 'countingRule', 'dimensions', 'reporterGuidance',
     ];
     for (const key of keys) {
-      if (JSON.stringify(working[key]) !== JSON.stringify(seed[key])) {
+      // stableStringify, not JSON.stringify: the zones rebuild dimension
+      // objects in a different key order than the seeds author them, and a
+      // key-order-sensitive compare stored the whole array on an untouched
+      // page — see the helper's note.
+      if (stableStringify(working[key]) !== stableStringify(seed[key])) {
         (patch as Record<string, unknown>)[key] = working[key];
       }
     }
@@ -170,76 +262,98 @@ export function initMeasureEditor({ seed }: MeasureEditorOptions): void {
     emitMeasureChange(working);
   };
 
-  // Every control the rail owns bubbles a composed `change`; the textareas and
-  // text fields also bubble `input`, which is what makes the preview track
-  // typing rather than waiting for blur. One delegated pair on the rail beats
-  // ten listeners that have to be kept in step with the rail's markup.
-  rail.addEventListener('change', publish);
-  rail.addEventListener('input', publish);
-  rail.addEventListener('firma2-repeater-change', publish);
+  // Every control on the record bubbles a composed `change`; text fields and
+  // textareas also bubble `input`, which is what makes the previews track
+  // typing rather than waiting for blur. One delegated set on the page's record
+  // wrapper beats a dozen listeners that have to be kept in step with each
+  // section's markup — and it keeps working when a control moves between
+  // sections, which is exactly what keeps happening.
+  root.addEventListener('change', publish);
+  root.addEventListener('input', publish);
+  root.addEventListener('firma2-dimensions-change', publish);
 
   const toast = (message: string, variant: 'success' | 'danger'): void => {
     const container = document.querySelector<HTMLElement & { show?: (c: unknown) => string }>(
       'esa-snackbar-container',
     );
-    // A duration would auto-dismiss, which the lego documents as an SC 2.2.1
-    // (Timing Adjustable) failure unless the host supplies its own adjustment.
-    // Persistent-until-dismissed is the conforming default; take it.
+    // No duration: the lego documents auto-dismiss as an SC 2.2.1 (Timing
+    // Adjustable) failure unless the host supplies its own adjustment.
     container?.show?.({ message, variant });
   };
 
-  el<HTMLButtonElement>('fmc-save')?.addEventListener('click', () => {
-    const working = readWorkingMeasure();
-    const saved = writeDraft(seed.slug, buildPatch(working));
-    toast(
-      saved
-        ? 'Draft saved in this browser.'
-        : 'Could not save. This browser is blocking local storage.',
-      saved ? 'success' : 'danger',
-    );
-  });
+  // ---- AUTOSAVE, ON THE SIGNAL THE PREVIEWS ALREADY USE --------------------
+  //
+  // This was a Save button and a Cancel button in the page header; the page's
+  // own note records why they went. What replaces them is not a new mechanism —
+  // `publish` above is already called on every change to every control on the
+  // record, because that is what keeps the previews live. Persisting on the
+  // same signal is one more call on a path that was already firing.
+  //
+  // ON `change`, NOT `input`. `publish` takes both, deliberately: the previews
+  // track typing, which is the whole point of a preview. A write does not want
+  // that — `input` fires per keystroke, so a definition paragraph would be a few
+  // hundred serialize-and-write round trips, and the last keystroke's value is
+  // the only one anybody wanted. `change` fires when a control is done being
+  // changed (blur for text, immediately for a select or a checkbox), which is
+  // exactly the "crossing the field's edge is the save gesture" boundary the
+  // rest of the spoke uses. The custom dimensions event is a commit, not a
+  // keystroke, so it saves on arrival.
+  //
+  // SILENT ON SUCCESS, LOUD ON FAILURE. A toast per field would be the noisiest
+  // thing on the screen and would be reporting the expected case, which is text
+  // ABOUT the page. A blocked localStorage is the one thing the author cannot
+  // see and must not discover later, so it still speaks — once. `warned` is what
+  // keeps "once" true: without it, every subsequent field would re-announce the
+  // same broken browser.
+  let warned = false;
+  const persist = (): void => {
+    const saved = writeDraft(seed.slug, buildPatch(readWorkingMeasure()));
+    if (saved || warned) return;
+    warned = true;
+    toast('Could not save. This browser is blocking local storage.', 'danger');
+  };
 
-  el<HTMLButtonElement>('fmc-cancel')?.addEventListener('click', () => {
-    // Discard everything since the last save by re-reading from storage — a
-    // reload is the honest revert here, because the repeater's rows cannot be
-    // rebuilt in place (see applyDraftToControls).
-    window.location.reload();
-  });
+  root.addEventListener('change', persist);
+  root.addEventListener('firma2-dimensions-change', persist);
 
-  el<HTMLButtonElement>('fmc-discard')?.addEventListener('click', () => {
-    clearDraft(seed.slug);
-    window.location.reload();
-  });
-
-  // Restore, then announce. The page was server-rendered from the seed, so the
-  // previews are showing the seed until this runs.
-  const stored = readDraft(seed.slug);
-  if (stored) {
-    applyDraftToControls(stored);
-    // The rail hydrates its own selects behind customElements.whenDefined, and
-    // module execution order across component scripts is not guaranteed — so a
-    // value written here can be overwritten by the rail's own hydration a tick
-    // later. Re-applying after the definitions settle makes this the last write.
-    void Promise.all([
-      customElements.whenDefined('esa-select'),
-      customElements.whenDefined('esa-text-field'),
-      customElements.whenDefined('esa-textarea'),
-      customElements.whenDefined('esa-switch-toggle'),
-    ]).then(() => {
-      requestAnimationFrame(() => {
-        applyDraftToControls(stored);
-        publish();
+  // RESTORE AND FIRST PUBLISH RUN AFTER DOMContentLoaded, and the gate is about
+  // MODULE ORDER, not element upgrade. The zones install their expandos at
+  // their own module eval, and execution order across component scripts is not
+  // guaranteed — but every deferred module runs before DOMContentLoaded, so by
+  // then the expandos provably exist. This matters most for the breakdowns
+  // zone, which contains NO Lit elements at all: a customElements.whenDefined
+  // gate can never vouch for it, and optional-chaining past its missing
+  // setDimensions would silently revert a saved deletion on the next Save.
+  const start = (): void => {
+    const stored = readDraft(seed.slug);
+    if (stored) {
+      applyDraftToControls(stored);
+      // The band and the record zone hydrate their own selects behind
+      // customElements.whenDefined, and a value written above can be
+      // overwritten by that hydration a tick later. Re-applying after the
+      // definitions settle makes this the last write.
+      void Promise.all([
+        customElements.whenDefined('esa-select'),
+        customElements.whenDefined('esa-text-field'),
+        customElements.whenDefined('esa-textarea'),
+        customElements.whenDefined('esa-input-tag'),
+      ]).then(() => {
+        requestAnimationFrame(() => {
+          applyDraftToControls(stored);
+          publish();
+        });
       });
-    });
-  }
-
-  // The previews register their listeners at module-eval time, and deferred
-  // module scripts all run before DOMContentLoaded — so dispatching here is
-  // guaranteed to be heard. Dispatching during module eval would race them.
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', publish, { once: true });
-  } else {
+    }
+    // The previews register their listeners at module-eval time, so they are
+    // guaranteed to hear this. The zones' own settle-emits may publish again
+    // afterwards; reads are pull-based, so the last one wins harmlessly.
     publish();
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
   }
 }
 
