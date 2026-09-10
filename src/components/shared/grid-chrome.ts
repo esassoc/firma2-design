@@ -150,3 +150,47 @@ export function wireDataGrid<T = unknown>(opts: DataGridWiring<T>): DataGridHand
 
   return { gridApi, data, countState };
 }
+
+/**
+ * The smaller sibling of wireDataGrid(), for the record grids that sit inside a
+ * card on a detail page rather than filling a screen.
+ *
+ * wireDataGrid() bootstraps the PORTFOLIO grid's chrome — quick search, CSV
+ * export, a filtered-count footer — and requires a `countNoun` and a
+ * `csvFileName` to do it. A card grid has none of that: no search box to wire,
+ * nothing to export, and a count footer under three rows of a project's own
+ * funding sources would be restating what the reader can see. Passing empty
+ * strings to satisfy the bigger signature would be a call site lying about what
+ * it wants, so this is its own door.
+ *
+ * What the two share is the part worth sharing: the theme, and the read-only
+ * defaults. Everything else a caller passes.
+ *
+ * SORTING IS OFF BY DEFAULT here, unlike wireDataGrid(). A portfolio table is a
+ * thing you interrogate; a project's own three funding sources have an authored
+ * order that means something, and a sortable header invites a reader to destroy
+ * it for no gain. A caller that wants it can turn it on per column.
+ */
+export function createCardGrid<T = unknown>(
+  host: HTMLElement,
+  opts: { rowData: T[]; columnDefs: ColDef[] } & Partial<GridOptions<T>>,
+): GridApi<T> {
+  const { rowData, columnDefs, ...rest } = opts;
+  return createGrid(host, {
+    theme: firma2GridTheme,
+    rowData,
+    columnDefs,
+    // autoHeight so the card grows with its rows: these grids have no viewport
+    // of their own and must never scroll vertically inside a card.
+    domLayout: 'autoHeight',
+    animateRows: false,
+    suppressCellFocus: true,
+    defaultColDef: {
+      sortable: false,
+      resizable: false,
+      suppressHeaderMenuButton: true,
+      suppressMovable: true,
+    },
+    ...rest,
+  });
+}

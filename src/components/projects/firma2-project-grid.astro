@@ -26,6 +26,7 @@
 // CTA and the CSV download, and the Stage cells clone real server-rendered
 // esa-pill markup rather than restyling a chip by hand.
 import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
 import EsaPill from '@esa/ecology/esa-pill.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
@@ -65,6 +66,10 @@ const stageOptions = STAGE_ORDER.filter((s) => projects.some((p) => p.stage === 
 // Program options — same convention, derived from the data. No dots: program is
 // a taxonomy tier, not a status, and nothing else on the screen colours it.
 const programOptions = programs.map((p) => ({ value: p, label: p }));
+
+// panel-right is not in the icon registry, so the path rides in explicitly —
+// same glyph, same technique as the measure table's peek.
+const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>';
 ---
 <section class="firma2-project-grid stack" data-gap="md">
   <!-- Search and the two filters are ONE row now. The filters are collapsed
@@ -161,6 +166,18 @@ const programOptions = programs.map((p) => ({ value: p, label: p }));
     ))}
   </div>
 
+  <!-- The peek affordance — a real esa-button, server-rendered once and cloned
+       into every Project cell, same trick as the pills. It opens the project
+       peek sheet; the cell's LINK is the way to the full page. Quiet until the
+       row is hovered or focused (CSS below). The glyph rides in the default
+       slot because panel-right is not in the registry — same as the measure
+       table's peek, so the two grids wear one affordance. -->
+  <div data-projects-peek-template hidden aria-hidden="true">
+    <EsaButton variant="chrome" size="sm" aria-label="Open project">
+      <EsaIcon name="panel-right" size="sm" paths={PANEL_RIGHT} />
+    </EsaButton>
+  </div>
+
   <!-- The no-match empty state, server-rendered once and handed to AG Grid as its
        overlayNoRowsTemplate. Without this the grid falls back to its OWN built-in
        "No Rows To Show" — Title Case, not this product's voice, and it names no way
@@ -180,11 +197,70 @@ const programOptions = programs.map((p) => ({ value: p, label: p }));
   <script type="application/json" data-projects-data set:html={JSON.stringify(projects)}></script>
 </section>
 
+<style>
+  /* bcn-lego-checked: layout-only rules for the cloned esa-button peek inside
+     AG Grid cells — the button IS the lego; these position and reveal it. Same
+     rules, same reasons as firma2-measure-table's peek (the precedent), scoped
+     to this component because each grid owns its own cell chrome. */
+
+  /* The Project cell: the link takes the room and truncates; the peek docks at
+     the cell's end and never wraps under. */
+  .firma2-project-grid :global(.firma2-grid-namecell) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-200, 0.5rem);
+    inline-size: 100%;
+  }
+
+  .firma2-project-grid :global(.firma2-grid-namecell__text) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* QUIET UNTIL ASKED FOR: opacity (not display) so the cell text does not
+     reflow when the row is hovered, and the button stays in the tab order for
+     keyboard users, whose focus is what reveals it. */
+  .firma2-project-grid :global(.firma2-grid-peek) {
+    opacity: 0;
+    transition: opacity 120ms ease;
+    flex: none;
+    line-height: 0;
+  }
+
+  .firma2-project-grid :global(.ag-row-hover .firma2-grid-peek),
+  .firma2-project-grid :global(.firma2-grid-peek:focus-within) {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .firma2-project-grid :global(.firma2-grid-peek) {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-project-grid :global(.firma2-grid-peek) {
+      transition: none;
+    }
+  }
+
+  /* The cloned esa-button's sm rung is taller than a grid row; pin it to a
+     28px square so the row height never moves — same measured-pin technique
+     the chrome uses on the CSV button. */
+  .firma2-project-grid :global(.firma2-grid-peek .esa-button__native) {
+    block-size: 28px;
+    inline-size: 28px;
+    padding: 0;
+  }
+</style>
+
 <script>
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-filter-dropdown';
   import { escGridHtml as esc, gridCurrencyFormatter as money, wireDataGrid } from '../shared/grid-chrome';
-  import { STAGE_ORDER, projectHref } from '../../data/firma2-projects';
+  import { STAGE_ORDER, projectHref, projectSlug } from '../../data/firma2-projects';
   import type { Project } from '../../data/firma2-projects';
   import { withBase } from '../../lib/base';
   import type { ColDef } from 'ag-grid-community';
@@ -209,6 +285,10 @@ const programOptions = programs.map((p) => ({ value: p, label: p }));
     root.querySelectorAll<HTMLElement>('[data-projects-badge-templates] [data-stage]').forEach((el) => {
       pillHTML.set(el.dataset.stage ?? '', el.innerHTML);
     });
+
+    // The peek button, cloned per Project cell. Its generic accessible name is
+    // swapped for the row's own at render time.
+    const peekHTML = root.querySelector('[data-projects-peek-template]')?.innerHTML ?? '';
 
     // Dropdown-driven filters, kept out of AG Grid's own column-filter UI so the
     // esa-filter-dropdowns stay the single filter surface on this screen. Both
@@ -244,14 +324,25 @@ const programOptions = programs.map((p) => ({ value: p, label: p }));
         // string of HTML, and the moment this data comes from anywhere else an
         // unescaped interpolation here is an injection point. Cheap now, load-
         // bearing later.
+        // The cell holds TWO affordances, one split: the LINK is the way to
+        // the full page, the peek button at the cell's end opens the sheet —
+        // a sibling of the <a>, never inside it (a button in a link is
+        // invalid HTML and a double announcement). Same anatomy as the
+        // measure table's name cell.
         {
           headerName: 'Project', field: 'projectName', colId: 'projectName',
           flex: 2, minWidth: 200, cellClass: 'firma2-grid-name', tooltipField: 'projectName',
           getQuickFilterText: (p) => p.data?.projectName ?? '',
-          cellRenderer: (p: { data?: Project }) =>
-            p.data
-              ? `<a class="firma2-grid-link" href="${esc(withBase(projectHref(p.data)))}">${esc(p.data.projectName)}</a>`
-              : '',
+          cellRenderer: (p: { data?: Project }) => {
+            if (!p.data) return '';
+            const name = esc(p.data.projectName);
+            const peek = peekHTML.replace('aria-label="Open project"', `aria-label="Open ${name}"`);
+            return (
+              `<span class="firma2-grid-namecell">` +
+              `<a class="firma2-grid-link firma2-grid-namecell__text" href="${esc(withBase(projectHref(p.data)))}">${name}</a>` +
+              `<span class="firma2-grid-peek" data-open-project="${esc(projectSlug(p.data))}">${peek}</span></span>`
+            );
+          },
         },
         { headerName: 'Program', field: 'program', colId: 'program', flex: 1, minWidth: 150, tooltipField: 'program' },
         {

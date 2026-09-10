@@ -1,46 +1,66 @@
 ---
-// firma2-project-expenditures — the accrual half of the project's funding
-// commitment: what has actually been drawn down against the plan, by year.
-// firma2-project-funding answers "who is paying and how much did they
-// promise"; this section answers the question a promise cannot answer on its
-// own — "is the money actually moving, and does it track the plan". The two
-// totals agree exactly (both sum to `estimatedTotalCost`), because they are
-// two views of the same commitment, not two competing numbers.
+// firma2-project-expenditures — the money section of a project's detail page:
+// what the whole project is budgeted to cost, what it has drawn down against
+// that, what is left, and what it will cost to run once it exists.
+// firma2-project-funding answers "who is paying and how much did they promise";
+// this section answers "is the money actually moving, and what is still owed".
+//
+// THE BUDGET IS ONE FIGURE, FOR THE WHOLE PROJECT. This section used to pair a
+// per-year "budgeted" bar against a per-year "spent" bar, and that plan did not
+// exist — `estimatedTotalCost` is a whole-project number, and slicing it by an
+// accrual curve invented an annual allocation nobody had committed to, then
+// invited a reader to call a year "behind plan" against it. So the budget is
+// now a STAT, stated once, and the chart carries the one thing that genuinely
+// varies year to year: what the project actually spent. See the ExpenditureYear
+// note in firma2-project-detail.ts.
+//
+// TWO KINDS OF MONEY, AND THE CARD KEEPS THEM APART. Estimated cost builds the
+// work; annual operating cost keeps it working, every year, after the last
+// invoice clears. ProjectFirma stores both on the project for a reason a
+// steward feels directly — the capital grant is the easy half — so the second
+// figure sits in the same row as the first rather than being folded into it.
+// It is deliberately NOT added to spent-to-date or netted against remaining:
+// they are different obligations on different clocks, and one arithmetic
+// between them would be a claim this record cannot support.
 //
 // A SERIES, NOT A SET. Funding sources, measures and milestones are each a
 // COLLECTION a steward adds to, edits and removes from — that is why they
 // carry an "Add" affordance in their card header. A year of spend is not
-// something anyone adds; it accrues as reporting periods close. The correct
-// action here is "Report", scoped to a period, and that workflow does not
-// exist in this prototype yet — so this card carries NO header action rather
-// than a mislabeled "Add expenditure" that would claim a different act than
-// the one this data actually represents. Key facts and Description make the same
-// call for the same reason: a control with no honest verb is worse than none.
+// something anyone adds; it accrues as reporting periods close, exactly the
+// way a performance measure's activity accrues. The correct action here is
+// "Report", scoped to a period, and that workflow does not exist in this
+// prototype yet — so this card carries NO header action rather than a
+// mislabeled "Add expenditure" that would claim a different act than the one
+// this data actually represents. Key facts and Description make the same call
+// for the same reason: a control with no honest verb is worse than none.
 //
-// DERIVED, NOT AUTHORED. firma2-project-detail.ts computes both budgeted and
-// spent from data that already exists on the record — estimatedTotalCost, the
+// DERIVED, NOT AUTHORED. firma2-project-detail.ts computes each year's spend
+// from data that already exists on the record — estimatedTotalCost, the
 // implementation window, and the SAME completion fraction the performance
 // measures section reports against — rather than a second hand-typed number
-// that could quietly disagree with the measures already on this page. See
-// that module's "Expenditures" section for the derivation.
+// that could quietly disagree with the measures already on this page. The
+// operating cost is the exception and is authored per project; see the note on
+// Project.estimatedAnnualOperatingCost for why a formula would have flattened
+// the only interesting thing about it.
 //
 // COLUMNS, chosen from the dataviz skill's form table: the reader's job is
-// comparing two discrete magnitudes (planned, actual) per year, which is
-// exactly the grouped-bar job. TWO SERIES, so esa-chart enables its legend
-// automatically (`series.length > 1`) and resolves each series' fill from the
-// categorical ramp in FIXED order — Budgeted first (slot 1), Spent second
-// (slot 2) — so colour reads as identity, never rank, and never repaints if a
-// project's data changes. No direct labels: the axis and the paired table
-// below already carry the exact figures.
+// comparing one magnitude across an ordered set of periods, which is the plain
+// bar job. ONE SERIES now, so esa-chart draws no legend (`series.length > 1`)
+// and there is nothing for colour to encode — every bar is the same fact
+// measured at a different time. No direct labels: the axis and the paired
+// table below already carry the exact figures.
 //
-// NEUTRAL, NOT AN ALARM. Same call firma2-project-measures makes: spending
-// that lags or leads its own plan is not flagged red or amber here. The two
-// bars are the finding; colouring one of them would be this component
-// editorialising about a budget it knows nothing about.
+// NEUTRAL, NOT AN ALARM. Same call firma2-project-measures makes: a light
+// spending year is not flagged red or amber here. With the invented plan gone
+// there is no longer even a line to be behind — the bars are the finding.
 import EsaCard from '@esa/ecology/esa-card.astro';
 import '../shared/firma2-card-section.css';
 import EsaStat from '@esa/ecology/esa-stat.astro';
 import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+// NOT esa-icon-button: as of 2026-08-14 that lego is a deprecated shim that
+// forwards to exactly this and console.warn()s on every build. Same call
+// firma2-project-measures and firma2-project-funding make.
+import EsaButton from '@esa/ecology/esa-button.astro';
 import type { ExpenditureYear } from '../../data/firma2-project-detail';
 import { currencyFormatter as currency } from '../../lib/format';
 
@@ -48,134 +68,348 @@ interface Props {
   /** The project's spend, oldest year first — buildExpenditures()'s order. */
   expenditures: ExpenditureYear[];
   /**
-   * The project's estimated total cost. Equals the sum of `expenditures`
-   * budgeted figures by construction — passed in rather than re-summed here,
-   * the same call firma2-project-funding makes for the same reason: a second
-   * summation is a second answer that can drift from the first.
+   * The project's estimated total cost — the whole-project budget every figure
+   * in the top row is measured against.
    */
   estimatedTotalCost: number;
+  /** What the project costs to run per year once built. Never netted against
+   *  the capital figures — see the note above. */
+  estimatedAnnualOperatingCost: number;
+  /**
+   * The project's slug — the key spend RECORDED in this browser is stored under
+   * (src/lib/expenditure-draft.ts). Optional so an existing caller degrades to a
+   * read-only section rather than breaking, the same contract
+   * firma2-project-measures gives its own `projectSlug`.
+   */
+  projectSlug?: string;
 }
 
-const { expenditures, estimatedTotalCost } = Astro.props;
+const { expenditures, estimatedTotalCost, estimatedAnnualOperatingCost, projectSlug } =
+  Astro.props;
+
+// Recording needs somewhere to put what it records. Without a slug this is the
+// same card minus the door — which is the honest degradation, not a broken one.
+const canRecord = Boolean(projectSlug);
 
 const totalSpent = expenditures.reduce((sum, year) => sum + year.spent, 0);
+// REMAINING IS SUBTRACTED HERE rather than carried on the record, and that is
+// safe for the reason the funding table's total is NOT: this is a difference
+// between two figures both printed in the same row, so a reader can check it by
+// eye and there is no second authority to drift from. Floored at zero — an
+// overspend is a real thing, but nothing in this data can produce one, and a
+// negative "remaining" would read as a bug rather than a finding.
+const remaining = Math.max(estimatedTotalCost - totalSpent, 0);
+
+// The share of the budget drawn down, as a whole percent. Carried on both the
+// spent and the remaining tile so the pair reads as one burn-down and neither
+// figure has to be divided in the reader's head. Guarded against a zero total,
+// which no seeded project has and a hand-edited one could.
+const spentShare = estimatedTotalCost > 0 ? Math.round((totalSpent / estimatedTotalCost) * 100) : 0;
+
+// NOTHING DRAWN AGAINST A PROJECT THAT HAS SPENT NOTHING. Seven of the
+// twenty-four seeded projects are in Proposal or Planning & Design, and every
+// one of them reports $0 against every year in its window. That used to render
+// anyway, because the chart had a second series — the invented per-year
+// `budgeted` plan always had bars to draw. With the plan gone, the same markup
+// renders a 346px box containing one $0 gridline and a row of future years:
+// a large empty rectangle that reads as a chart that failed to load.
+//
+// AND NO EMPTY STATE IN ITS PLACE, which is the part worth arguing. esa-empty-
+// state is the lego for "this collection has nothing in it", and the honest
+// copy for it here would be "No expenditures reported yet" — which is what the
+// tile directly above already says, in the project's own currency, as $0 and
+// 0% of estimated cost. A component that states a fact and then narrates the
+// same fact underneath is saying it twice. So the figures stand alone and the
+// chart, its note and its data table simply are not part of this render.
+//
+// This is a different call from firma2-project-measures' "THE ZERO CASE IS NOT
+// AN EMPTY STATE", not a contradiction of it. There, a project with nothing
+// reported still has TARGETS — real per-measure information that survives the
+// zero — so the rows render. Here the per-year plan was exactly the thing
+// removed as fictional, so a zero year genuinely holds nothing to show.
+const hasSpend = totalSpent > 0;
 
 // Exactly one instance of this section ever renders on a page (one project
 // detail page, one Expenditures card), unlike firma2-measure-rollup-preview,
 // which can stack several panels on one setup screen — so a static id carries
 // no collision risk and needs no per-project scoping.
 const noteId = 'firma2-expenditures-note';
-const chartLabel = 'Expenditures by year';
 ---
 
 <EsaCard title="Expenditures">
-  <div class="stack" data-gap="lg">
-    <!-- The headline figure, above the chart — the dataviz skill's rule that a
-         single answerable number belongs in a stat tile rather than read off a
-         bar. `sub` carries the denominator, the same "value carries the figure,
-         sub carries what it is measured against" split firma2-measure-rollup-
-         preview uses for its own reported/expected pair. -->
-    <EsaStat
-      value={currency.format(totalSpent)}
-      label="Spent to date"
-      sub={`of ${currency.format(estimatedTotalCost)} budgeted`}
-    />
+  <!-- RECORD SPEND, not "Add expenditure", and the verb is the whole argument
+       this card spent a release making by carrying NO action at all. A year of
+       spend is not a thing anyone adds to a list; it is filed against a period
+       as that period closes — so the door had to wait for the act to be named
+       correctly rather than borrow the "Add X" every other collection section
+       on this page uses.
+       IT IS THE SAME DOOR AS THE MEASURES CARD'S. "Record work" files a figure
+       against a measure for a year; this files a figure against the project for
+       a year. Same sheet shape, same batch rhythm (Save keeps the sheet open,
+       Done ends the sitting), same browser-local honesty line under the log,
+       same `notepad-text` icon — because to a reporter closing out a period
+       these are two halves of one sitting, not two different skills. -->
+  {canRecord && (
+    <EsaButton
+      slot="actions"
+      variant="chrome"
+      size="sm"
+      icon="notepad-text"
+      data-firma2-spend-record
+    >Record spend</EsaButton>
+  )}
 
-    <!-- THE <esa-chart> ELEMENT IS NOT HERE AT BUILD TIME. Minted by the script
-         below on load, for the same 353 KB gzipped reason firma2-measure-
-         rollup-preview defers it: esa-chart dynamically imports
-         ag-charts-community from firstUpdated(), so only a page that actually
-         renders a chart element pays for the library. Unlike that panel this
-         section is never empty (every project has an implementation window,
-         so buildExpenditures() always returns at least one year) — so there is
-         no conditional empty state to gate the mount on, only the mount
-         itself. -->
-    <div
-      class="firma2-project-expenditures__chart"
-      data-firma2-expenditures-chart
-      data-firma2-expenditures-payload={JSON.stringify(
-        expenditures.map((year) => ({
-          // Years travel as STRINGS. A category axis given the integer 2023
-          // formats it with a thousands separator ("2,023") under the bar,
-          // which reads as a data bug — the same fix firma2-measure-rollup-
-          // preview's chart uses for the same axis type.
-          year: String(year.year),
-          budgeted: year.budgeted,
-          spent: year.spent,
-        })),
+  <div
+    class="firma2-project-expenditures stack"
+    data-gap="lg"
+    data-project-slug={projectSlug}
+    data-estimated-total-cost={estimatedTotalCost}
+    data-has-spend={hasSpend ? '' : undefined}
+  >
+    <!-- THE FOUR FIGURES, AS ONE BLOCK. `.grid` from the hub's layout
+         primitives carries the gap and the box; what this component overrides
+         is the TRACK COUNT, and only because auto-fit gets this particular case
+         wrong. Four tiles at a 36px display value need roughly 200px each, and
+         the column they sit in is 662px wide at a 1440 viewport — so auto-fit
+         resolves to three tracks and orphans the fourth tile on a row of its
+         own, which reads as a wrap accident rather than a grouping. Two-up or
+         four-up, never three. See the CSS for why the breakpoint is a CONTAINER
+         query and not a media query. -->
+    <div class="firma2-project-expenditures__figures grid" data-gap="md">
+      <!-- FIRST, because it is the denominator of the two tiles after it. `sub`
+           says the one thing this card exists to correct: the figure covers the
+           whole project, so the bars below are not slices of it. -->
+      <EsaStat
+        value={currency.format(estimatedTotalCost)}
+        label="Estimated cost"
+        sub="Total across all years"
+      />
+      <!-- WRAPPED, because esa-stat takes no arbitrary attributes (it destructures
+           value/label/sub/accent and spreads nothing) and these two tiles have to
+           be findable by the script that repaints them after a spend is recorded.
+           The wrapper is a bare grid item with no box of its own, so it changes
+           nothing about the layout it sits in. -->
+      <div data-spend-tile="spent">
+        <EsaStat
+          value={currency.format(totalSpent)}
+          label="Spent to date"
+          sub={`${spentShare}% of estimated cost`}
+        />
+      </div>
+      <!-- "Remaining" ALONE would be ambiguous sitting beside an operating-cost
+           tile — remaining of which? The sub answers it, and pairs with the tile
+           to its left so the two read as one burn-down. -->
+      <div data-spend-tile="remaining">
+        <EsaStat
+          value={currency.format(remaining)}
+          label="Remaining"
+          sub={`${100 - spentShare}% of estimated cost`}
+        />
+      </div>
+      <!-- LAST, and separated by meaning rather than by a rule: the three tiles
+           before it are one budget being drawn down; this is a different
+           obligation on a different clock, which is why nothing sums it into
+           them. NO `accent`. It carried the brand green for a build, on the
+           reasoning that the odd figure out should be marked as such — and the
+           green made the SMALLEST number the loudest thing in the card, louder
+           than the three larger figures in near-black beside it. Reading order
+           and the sub already say what it is; a colour that shouts is not a
+           colour that explains. -->
+      <EsaStat
+        value={currency.format(estimatedAnnualOperatingCost)}
+        label="Est. annual operating cost"
+        sub="Once built, every year"
+      />
+    </div>
+
+    <!-- ALWAYS RENDERED, REVEALED BY `data-has-spend` ON THE ROOT. This block
+         used to be gated with `{hasSpend && …}` and dropped from the build
+         entirely for a project with nothing spent — correct while the section
+         was read-only, and wrong the moment it grew a Record button: the first
+         figure a reporter files against a Proposal project has to make the chart
+         APPEAR, and markup that was never sent cannot appear.
+         A CLASS, NOT `hidden`. The `[hidden]` attribute is a UA default that any
+         author `display` rule silently beats, and this wrapper needs
+         `display: contents` so the stack still spaces its three children — so
+         the visibility switch is an author rule on the root's data attribute,
+         which cannot be quietly overridden by the same collision. -->
+    <div class="firma2-project-expenditures__series" data-firma2-expenditures-series>
+      <!-- THE <esa-chart> ELEMENT IS NOT HERE AT BUILD TIME. Minted by the script
+           below on load, for the same 353 KB gzipped reason firma2-measure-
+           rollup-preview defers it: esa-chart dynamically imports
+           ag-charts-community from firstUpdated(), so only a page that actually
+           renders a chart element pays for the library. Unlike that panel this
+           section is never empty (every project has an implementation window,
+           so buildExpenditures() always returns at least one year) — so there is
+           no conditional empty state to gate the mount on, only the mount
+           itself. -->
+      <div
+        class="firma2-project-expenditures__chart"
+        data-firma2-expenditures-chart
+        data-firma2-expenditures-payload={JSON.stringify(
+          expenditures.map((year) => ({
+            // Years travel as STRINGS. A category axis given the integer 2023
+            // formats it with a thousands separator ("2,023") under the bar,
+            // which reads as a data bug — the same fix firma2-measure-rollup-
+            // preview's chart uses for the same axis type.
+            year: String(year.year),
+            spent: year.spent,
+          })),
+        )}
+      ></div>
+
+      <!-- NOTE — the provenance of the per-year split, stated once and wired to
+           the chart with `described-by` so the caveat is announced with the
+           figure rather than only sitting near it. Same reasoning and same
+           mechanism as firma2-measure-rollup-preview's note: a bar per year reads
+           as that year's own filed figure, and here it is not — it is one project
+           total, distributed across the years spending could have reached.
+           Primary ink, not the secondary grey body-sm usually wears: a
+           qualification a reader must not skip should not be styled as the thing
+           most safely skipped.
+
+           GATED ON `hasSpend`, WHICH IS THE *SEED* TOTAL, and that is the one
+           conditional in this component evaluated at build time rather than in
+           the repaint. The caveat is about DERIVED figures — it explains where
+           buildExpenditures' numbers came from. A project that arrived with
+           nothing spent has no derived figures, so every bar a reader can see on
+           it was typed by a person against a real period, and telling them those
+           are "estimated" would be the component describing its own seed data
+           over the top of somebody's filed report. Seed spend never changes at
+           runtime, so the gate never needs re-evaluating. -->
+      {hasSpend && (
+        <p id={noteId} class="firma2-project-expenditures__note typography-body-sm">
+          Yearly figures are estimated: the project&rsquo;s total spend to date, spread
+          across the years spending could have reached.
+        </p>
       )}
-    ></div>
 
-    <!-- NOTE — the provenance of the split, stated once and wired to the chart
-         with `described-by` so the caveat is announced with the figure rather
-         than only sitting near it. Same reasoning and same mechanism as
-         firma2-measure-rollup-preview's note: a bar per year reads as that
-         year's own reported actual, and for "spent" it is not — it is one
-         project total, distributed across the years spending could have
-         reached. Primary ink, not the secondary grey body-sm usually wears:
-         a qualification a reader must not skip should not be styled as the
-         thing most safely skipped. -->
-    <p id={noteId} class="firma2-project-expenditures__note typography-body-sm">
-      Yearly figures are estimated: budgeted is each year&rsquo;s planned share of the
-      project&rsquo;s estimated total cost; spent is the project&rsquo;s overall
-      completion to date, spread across the years spending could have reached.
-    </p>
+      <!-- THE TABLE IS THE CHART'S TEXT ALTERNATIVE, and it is not optional —
+           same rule, same reason as firma2-measure-rollup-preview: AG Charts
+           ships no table, figcaption or offscreen text on its own. Rendered
+           statically rather than built from a client script: this page has no
+           live-editing draft to track, so the server already has the final
+           numbers and there is nothing a script would do here that markup does
+           not do for free — real HTML for a reader with no JavaScript, and one
+           less runtime path to keep in sync with the chart.
 
-    <!-- THE TABLE IS THE CHART'S TEXT ALTERNATIVE, and it is not optional —
-         same rule, same reason as firma2-measure-rollup-preview: AG Charts
-         ships no table, figcaption or offscreen text on its own. Rendered
-         statically rather than built from a client script: this page has no
-         live-editing draft to track, so the server already has the final
-         numbers and there is nothing a script would do here that markup does
-         not do for free — real HTML for a reader with no JavaScript, and one
-         less runtime path to keep in sync with the chart. -->
-    <EsaCollapsible title="View as data" flush>
-      <!-- bcn-lego-checked: no esa- lego renders a table (checked
-           node_modules/@esa/ecology/src/components/ — no esa-table; esa-stat
-           holds one figure, esa-chart is the thing this exists to make
-           readable). Same call firma2-project-funding and firma2-measure-
-           rollup-preview already made for their own tables: AG Grid is this
-           spoke's tabular precedent but is scoped to the portfolio table, and
-           chrome around 3-6 rows of derived figures buys nothing. A native
-           <table> with real <th scope> is the semantic primitive here. -->
-      <table class="firma2-project-expenditures__table">
-        <caption class="visually-hidden">{chartLabel}</caption>
-        <thead>
-          <tr>
-            <th scope="col">Year</th>
-            <th scope="col" class="firma2-project-expenditures__num">Budgeted</th>
-            <th scope="col" class="firma2-project-expenditures__num">Spent</th>
-          </tr>
-        </thead>
-        <tbody>
-          {expenditures.map((year) => (
-            <tr>
-              <!-- The year names the row, so it is a row header: what a screen
-                   reader reads back to place you when you arrow into a figure. -->
-              <th scope="row">{year.year}</th>
-              <td class="firma2-project-expenditures__num">{currency.format(year.budgeted)}</td>
-              <td class="firma2-project-expenditures__num">{currency.format(year.spent)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </EsaCollapsible>
+           AN AG GRID, not the hand-rolled <table> this was. AG Grid is a
+           first-class dependency with a house wrapper (shared/grid-chrome.ts) and
+           a token-mapped theme, and the project detail page is adopting it. The
+           reason is consistency rather than capability; two columns of figures
+           need nothing a grid provides, but three hand-rolled tables on one page
+           each solving alignment and numeric formatting their own way is the
+           thing worth retiring. -->
+      <EsaCollapsible title="View as data" flush>
+        <div class="firma2-project-expenditures__grid" data-firma2-expenditures-grid></div>
+
+        <script
+          type="application/json"
+          data-firma2-expenditures-rows
+          set:html={JSON.stringify(expenditures)}
+        ></script>
+      </EsaCollapsible>
+    </div>
+
+    <!-- THE SPEND SHEET — where one period's expenditure is filed. Composed
+         from legos (esa-side-dialog, esa-select, esa-text-field, esa-button) and
+         layout primitives; the data attributes are query hooks, not skins.
+         DELIBERATELY SHORTER THAN THE MEASURES SHEET, and the difference is the
+         model's, not a simplification. An entry has to ask which measure it
+         files under and answer that measure's subcategory schemas; an
+         expenditure has neither — money files against the project itself and has
+         no schema to qualify it. Two fields is the whole atom, so two fields is
+         the whole form. The one dimension NOT asked is the funding source; see
+         the header note on src/lib/expenditure-draft.ts for why that is a
+         decision on the record rather than an omission.
+         SAVE KEEPS THE SHEET OPEN. Closing out a period is a batch act — several
+         years catching up after a late reconciliation is the normal case — so
+         Save appends to the log and clears the figure while HOLDING the year, and
+         Done is how a sitting ends. Same rhythm as Record work. -->
+    <esa-side-dialog
+      class="firma2-project-expenditures__sheet"
+      heading="Record spend"
+      size="md"
+      position="right"
+    >
+      <div class="stack" data-gap="lg">
+        <esa-select data-spend-year label="Reporting year" size="md"></esa-select>
+        <esa-text-field
+          data-spend-amount
+          label="Amount"
+          size="md"
+          inputmode="decimal"
+          prefix="$"
+          required
+        ></esa-text-field>
+        <!-- THE LOG SAYS WHERE THIS LIVES, in the heading rather than in a
+             tooltip or a footnote: nothing in this prototype reaches a server,
+             and a reporter who files four figures deserves to know that before
+             they close the tab, not after. Same sentence, same placement as the
+             measures sheet's. -->
+        <section class="stack" data-gap="2xs" data-spend-log-block>
+          <h3 class="firma2-project-expenditures__log-title typography-label-sm">
+            Recorded in this browser
+          </h3>
+          <ul class="firma2-project-expenditures__log stack" data-gap="2xs" data-spend-log></ul>
+        </section>
+      </div>
+      <div slot="footer" class="repel">
+        <EsaButton variant="ghost" size="md" data-spend-done>Done</EsaButton>
+        <EsaButton variant="primary" size="md" data-spend-save>Save entry</EsaButton>
+      </div>
+    </esa-side-dialog>
+
+    <!-- Remove-button template, cloned into log rows by the script — the same
+         lego-clone trick the measures sheet and the data grids use, so a
+         script-built row carries a real esa-button rather than a hand-rolled
+         lookalike. -->
+    <div data-spend-remove-template hidden aria-hidden="true">
+      <EsaButton variant="chrome" iconOnly icon="x" size="sm" aria-label="Remove entry"
+        >Remove entry</EsaButton
+      >
+    </div>
   </div>
 </EsaCard>
 
 <script>
+  // ---------------------------------------------------------------------------
+  // THE SECTION IS NOW READ-WRITE, and that changes what this script is. It used
+  // to mint a chart from a server payload and stop. It now owns a small pipeline:
+  // SEED (built figures from firma2-project-detail) + RECORDED (what was filed in
+  // this browser) -> merged rows -> the four tiles, the chart and the data grid,
+  // all repainted from ONE function so they cannot disagree. Everything a
+  // reporter files lands in all three places or none.
+  // ---------------------------------------------------------------------------
   import '@esa/ecology/esa-chart';
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
   import { currencyFormatter as currency } from '../../lib/format';
+  import {
+    addExpenditure,
+    readExpenditures,
+    removeExpenditure,
+  } from '../../lib/expenditure-draft';
+  // esa-side-dialog lands flush-left and content-tall in Chrome without this;
+  // src/lib/side-dialog-fix.ts explains the why. Same call the measures sheet makes.
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
 
   /** esa-chart's element class is not imported for typing — the module is
    *  imported for its REGISTRATION side effect, which is all a custom element
    *  needs to exist in the document. Same convention as firma2-measure-
    *  rollup-preview's script. */
   type ChartElement = HTMLElement & Record<string, unknown>;
+  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string };
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
 
+  interface Row {
+    year: number;
+    spent: number;
+    status: 'complete' | 'current' | 'upcoming';
+  }
   interface YearDatum {
     year: string;
-    budgeted: number;
     spent: number;
   }
 
@@ -190,97 +424,405 @@ const chartLabel = 'Expenditures by year';
     maximumFractionDigits: 1,
   });
 
-  const mount = (slot: HTMLElement): void => {
-    const raw = slot.dataset.firma2ExpendituresPayload;
-    if (!raw) return;
-    const data = JSON.parse(raw) as YearDatum[];
+  document.querySelectorAll<HTMLElement>('.firma2-project-expenditures').forEach((root) => {
+    const slug = root.dataset.projectSlug ?? '';
+    const total = Number(root.dataset.estimatedTotalCost ?? 0);
+    const chartSlot = root.querySelector<HTMLElement>('[data-firma2-expenditures-chart]');
+    const gridHost = root.querySelector<HTMLElement>('[data-firma2-expenditures-grid]');
+    const seedPayload = root.querySelector<HTMLScriptElement>('[data-firma2-expenditures-rows]');
+    if (!chartSlot || !seedPayload) return;
 
-    void customElements.whenDefined('esa-chart').then(() => {
-      const el = document.createElement('esa-chart') as ChartElement;
-      el.setAttribute('label', 'Expenditures by year');
-      el.setAttribute('described-by', 'firma2-expenditures-note');
-      el.data = data;
-      el.series = [
-        {
-          type: 'bar',
-          xKey: 'year',
-          yKey: 'budgeted',
-          yName: 'Budgeted',
-          // Both numbers are the dataviz skill's fixed mark spec: a 4px
-          // rounded data-end, and bars capped at 24px so a six-year series
-          // does not render slabs filling their whole band — the same values
-          // firma2-measure-rollup-preview's chart uses.
-          cornerRadius: 4,
-          width: 24,
-          tooltip: {
-            renderer: (params: { title?: string; yName?: string; yKey: string; datum: YearDatum }) => ({
-              title: params.title,
-              data: [
-                {
-                  label: params.yName ?? 'Budgeted',
-                  value: currency.format(Number(params.datum[params.yKey as keyof YearDatum])),
-                },
-              ],
-            }),
-          },
-        },
-        {
-          type: 'bar',
-          xKey: 'year',
-          yKey: 'spent',
-          yName: 'Spent',
-          cornerRadius: 4,
-          width: 24,
-          tooltip: {
-            renderer: (params: { title?: string; yName?: string; yKey: string; datum: YearDatum }) => ({
-              title: params.title,
-              data: [
-                {
-                  label: params.yName ?? 'Spent',
-                  value: currency.format(Number(params.datum[params.yKey as keyof YearDatum])),
-                },
-              ],
-            }),
-          },
-        },
-      ];
-      // Only `axes` is overridden — esa-chart merges this OVER what it
-      // computes, so the token-resolved mark colours, forced-colors repaint
-      // and reduced-motion handling all survive. The value axis gets no
-      // `title`: "Budgeted" and "Spent" are already named in the legend, and
-      // repeating "Dollars" on the axis would be the unit stated twice.
-      //
-      // AXES IS A DICTIONARY, NOT AN ARRAY, on the installed ag-charts-community
-      // (14.1.0): `AgCartesianAxesOptions` is `Record<string, AgCartesianAxisOptions>`
-      // keyed `x` / `y`, not the array-of-axis-objects shape the library's
-      // OLDER docs (and firma2-measure-rollup-preview's chart, checked against
-      // this same version) both assume. An array here does not error — AG
-      // Charts logs "Option `axes` cannot be set to […]; expecting an object,
-      // ignoring" to the console and silently falls back to its own inferred
-      // default axes, which is why it took reading the console, not just the
-      // chart, to catch. Keyed correctly below.
-      el.options = {
-        axes: {
-          x: { type: 'category', position: 'bottom' },
-          y: {
-            type: 'number',
-            position: 'left',
-            label: {
-              formatter: (params: { value: unknown }) => compactCurrency.format(Number(params.value)),
+    /** The built figures, exactly as the server computed them. Never mutated —
+     *  recorded spend is laid OVER this, so clearing the store restores it. */
+    const seed: Row[] = JSON.parse(seedPayload.textContent ?? '[]');
+
+    /**
+     * SEED + RECORDED, merged by year. A year's bar is the built figure plus
+     * everything filed against that year in this browser, which is what makes a
+     * recorded $40,000 show up as a taller 2025 rather than a second series
+     * competing with it: they are the same fact from two sources, not two facts.
+     */
+    const rows = (): Row[] => {
+      if (!slug) return seed;
+      const recorded = readExpenditures(slug);
+      if (recorded.length === 0) return seed;
+      const byYear = new Map<number, number>();
+      for (const e of recorded) byYear.set(e.year, (byYear.get(e.year) ?? 0) + e.amount);
+      return seed.map((r) => ({ ...r, spent: r.spent + (byYear.get(r.year) ?? 0) }));
+    };
+
+    const sum = (rs: Row[]): number => rs.reduce((acc, r) => acc + r.spent, 0);
+
+    // ---- the chart ---------------------------------------------------------
+    let chartEl: ChartElement | null = null;
+
+    const chartData = (rs: Row[]): YearDatum[] =>
+      // Years travel as STRINGS. A category axis given the integer 2023 formats
+      // it with a thousands separator ("2,023") under the bar, which reads as a
+      // data bug — the same fix firma2-measure-rollup-preview's chart uses.
+      rs.map((r) => ({ year: String(r.year), spent: r.spent }));
+
+    /**
+     * MINTED ON DEMAND, ONCE. Two reasons it is not in the markup: esa-chart
+     * dynamically imports ag-charts-community (353 KB gzipped) from
+     * firstUpdated(), so only a page that renders one pays for it; and a chart
+     * created inside a `display: none` subtree measures its container at zero
+     * width and commits to that. So this is called only once the section HAS
+     * spend to draw — at boot for a project that arrived with some, and
+     * straight after the first entry for a project that did not.
+     */
+    // IT TAKES NO DATA, and that is the fix for a bug this had on first build.
+    // `whenDefined` means the element is created a tick or more AFTER the call,
+    // so a caller that passed a snapshot was handing over rows that could be
+    // stale by the time they were used — which is exactly what happened on boot
+    // for a project with recorded spend: the seed mount was queued first, paint()
+    // ran synchronously and found `chartEl` still null so its repaint was
+    // skipped, and the chart then resolved with the seed figures while the tiles
+    // beside it showed the merged ones. Reading `rows()` inside the promise means
+    // the chart is built from whatever is true when it actually exists.
+    const mountChart = (): void => {
+      if (chartEl) return;
+      void customElements.whenDefined('esa-chart').then(() => {
+        if (chartEl) return;
+        const el = document.createElement('esa-chart') as ChartElement;
+        el.setAttribute('label', 'Expenditures by year');
+        // ONLY WHEN THE NOTE EXISTS. It is gated on seed spend (see its markup
+        // comment), and `described-by` pointing at an id that was never rendered
+        // is a dangling aria-describedby — announced as nothing, and the kind of
+        // breakage that never shows up visually.
+        if (root.querySelector('#firma2-expenditures-note')) {
+          el.setAttribute('described-by', 'firma2-expenditures-note');
+        }
+        el.data = chartData(rows());
+        el.series = [
+          {
+            type: 'bar',
+            xKey: 'year',
+            yKey: 'spent',
+            yName: 'Spent',
+            // Both numbers are the dataviz skill's fixed mark spec: a 4px
+            // rounded data-end, and bars capped at 24px so a long series does
+            // not render slabs filling their whole band.
+            cornerRadius: 4,
+            width: 24,
+            tooltip: {
+              renderer: (params: { title?: string; yName?: string; datum: YearDatum }) => ({
+                title: params.title,
+                data: [
+                  {
+                    label: params.yName ?? 'Spent',
+                    value: currency.format(params.datum.spent),
+                  },
+                ],
+              }),
             },
           },
-        },
-      };
-      slot.replaceChildren(el);
-    });
-  };
+        ];
+        // Only `axes` is overridden — esa-chart merges this OVER what it
+        // computes, so the token-resolved mark colours, forced-colors repaint
+        // and reduced-motion handling all survive. The value axis gets no
+        // `title`: the card is called Expenditures and every tick carries a
+        // dollar sign, so "Dollars" on the axis would be the unit stated twice.
+        //
+        // AXES IS A DICTIONARY, NOT AN ARRAY, on the installed
+        // ag-charts-community (14.1.0): `AgCartesianAxesOptions` is
+        // `Record<string, AgCartesianAxisOptions>` keyed `x` / `y`, not the
+        // array-of-axis-objects shape the library's OLDER docs assume. An array
+        // here does not error — AG Charts logs "Option `axes` cannot be set to
+        // […]; expecting an object, ignoring" and silently falls back to its own
+        // inferred axes, which is why it took reading the console to catch.
+        el.options = {
+          axes: {
+            x: { type: 'category', position: 'bottom' },
+            y: {
+              type: 'number',
+              position: 'left',
+              label: {
+                formatter: (params: { value: unknown }) =>
+                  compactCurrency.format(Number(params.value)),
+              },
+            },
+          },
+        };
+        chartEl = el;
+        chartSlot.replaceChildren(el);
+      });
+    };
 
-  document
-    .querySelectorAll<HTMLElement>('[data-firma2-expenditures-chart]')
-    .forEach(mount);
+    // ---- the data grid -----------------------------------------------------
+    //
+    // MOUNTED WHEN THE DISCLOSURE OPENS, not on load. A grid created inside a
+    // closed <details> measures its container at zero width and lays every column
+    // out against it; Chrome keeps that box laid out under `content-visibility:
+    // hidden`, so the grid gets a real element with no usable width and commits
+    // to it. Waiting for the first open means it measures the width it will
+    // actually render at.
+    let gridApi: { setGridOption: (k: string, v: unknown) => void } | null = null;
+    const details = gridHost?.closest('details');
+
+    const buildGrid = async (): Promise<void> => {
+      if (!gridHost || gridApi) return;
+      const { createCardGrid, gridCurrencyFormatter: money } = await import('../shared/grid-chrome');
+      const asMoney = (p: { value: unknown }) =>
+        p.value == null ? '' : money.format(Number(p.value));
+      gridApi = createCardGrid<Row>(gridHost, {
+        rowData: rows(),
+        suppressHorizontalScroll: true,
+        columnDefs: [
+          // The year names the row, and stays a plain figure: a category label,
+          // not a quantity, so no thousands separator turns 2023 into "2,023".
+          { headerName: 'Year', field: 'year', colId: 'year', flex: 1, minWidth: 90 },
+          {
+            headerName: 'Spent',
+            field: 'spent',
+            colId: 'spent',
+            flex: 1,
+            minWidth: 120,
+            type: 'rightAligned',
+            valueFormatter: asMoney,
+          },
+        ],
+      }) as unknown as typeof gridApi;
+    };
+
+    if (details) {
+      details.addEventListener('toggle', () => { if (details.open) void buildGrid(); });
+      if (details.open) void buildGrid();
+    }
+
+    // ---- the tiles ---------------------------------------------------------
+    const tileValue = (name: string): HTMLElement | null =>
+      root.querySelector<HTMLElement>(`[data-spend-tile="${name}"] .esa-stat__value`);
+    const tileSub = (name: string): HTMLElement | null =>
+      root.querySelector<HTMLElement>(`[data-spend-tile="${name}"] .esa-stat__sub`);
+
+    /**
+     * ONE REPAINT FOR THE WHOLE SECTION. Tiles, chart and grid all read the same
+     * merged rows in the same pass, so there is no order in which a reader can
+     * catch two of them disagreeing.
+     */
+    const paint = (): void => {
+      const rs = rows();
+      const spent = sum(rs);
+      const remaining = Math.max(total - spent, 0);
+      const share = total > 0 ? Math.round((spent / total) * 100) : 0;
+
+      const spentValue = tileValue('spent');
+      if (spentValue) spentValue.textContent = currency.format(spent);
+      const spentSub = tileSub('spent');
+      if (spentSub) spentSub.textContent = `${share}% of estimated cost`;
+
+      const remainingValue = tileValue('remaining');
+      if (remainingValue) remainingValue.textContent = currency.format(remaining);
+      const remainingSub = tileSub('remaining');
+      if (remainingSub) remainingSub.textContent = `${100 - share}% of estimated cost`;
+
+      // The reveal. A project that arrives with nothing spent has the chart, the
+      // note and the table in the DOM but not on the screen; the first figure
+      // filed against it flips this and mounts the chart for the first time.
+      if (spent > 0) {
+        root.setAttribute('data-has-spend', '');
+        mountChart();
+      } else {
+        root.removeAttribute('data-has-spend');
+      }
+
+      if (chartEl) chartEl.data = chartData(rs);
+      gridApi?.setGridOption('rowData', rs);
+    };
+
+    // ---- the recording sheet ----------------------------------------------
+    const sheet = root.querySelector<Sheet>('.firma2-project-expenditures__sheet');
+    const trigger = root
+      .closest('.esa-card, esa-card')
+      ?.querySelector<HTMLElement>('[data-firma2-spend-record]');
+    const yearField = root.querySelector<Control>('[data-spend-year]');
+    const amountField = root.querySelector<Control>('[data-spend-amount]');
+    const logBlock = root.querySelector<HTMLElement>('[data-spend-log-block]');
+    const log = root.querySelector<HTMLElement>('[data-spend-log]');
+    const removeTemplate = root.querySelector<HTMLElement>('[data-spend-remove-template]');
+
+    // Boot the read-only half regardless — a section with no slug, or one whose
+    // sheet failed to resolve, is still a section that has to draw itself.
+    if (root.hasAttribute('data-has-spend')) mountChart();
+
+    if (!sheet || !slug || !yearField || !amountField || !log || !logBlock) return;
+    void fixSideDialog(sheet);
+
+    const cloneButton = (label: string): HTMLElement | null => {
+      const btn = removeTemplate?.firstElementChild?.cloneNode(true) as HTMLElement | undefined;
+      if (!btn) return null;
+      btn.classList.add('firma2-project-expenditures__log-remove');
+      btn.setAttribute('aria-label', label);
+      return btn;
+    };
+
+    const paintLog = (): void => {
+      const recorded = readExpenditures(slug);
+      // The heading is the honesty line, so the block only exists once there is
+      // something for it to be honest about.
+      logBlock.style.display = recorded.length === 0 ? 'none' : '';
+      log.replaceChildren();
+      for (const e of recorded) {
+        const li = document.createElement('li');
+        li.className = 'firma2-project-expenditures__log-row repel';
+        li.dataset.spendId = e.id;
+        const text = document.createElement('span');
+        text.className = 'typography-body-sm';
+        text.textContent = `${e.year} · ${currency.format(e.amount)}`;
+        li.append(text);
+        const remove = cloneButton(
+          `Remove the ${e.year} entry of ${currency.format(e.amount)}`,
+        );
+        if (remove) li.append(remove);
+        log.append(li);
+      }
+    };
+
+    const openSheet = (): void => {
+      // NEWEST YEAR FIRST and selected by default: a reporter closing out a
+      // period is almost always filing against the one that just closed, so the
+      // common case is zero interactions with this control. Same ordering and
+      // same default as the measures sheet's year select.
+      const years = seed.map((r) => r.year);
+      yearField.options = [...years].reverse().map((y) => ({ label: String(y), value: String(y) }));
+      // ASSIGNED AFTER whenDefined, not before: a value set on a custom element
+      // that has not upgraded yet is shadowed by the class field the constructor
+      // installs, and the control renders empty with the property looking correct.
+      void customElements.whenDefined('esa-select').then(() => {
+        yearField.value = years.length > 0 ? String(years[years.length - 1]) : '';
+      });
+      amountField.value = '';
+      amountField.errorText = '';
+      paintLog();
+      sheet.show();
+      requestAnimationFrame(() => {
+        (amountField.shadowRoot?.querySelector<HTMLElement>('input') ?? amountField).focus();
+      });
+    };
+
+    trigger?.addEventListener('click', openSheet);
+    root.querySelector('[data-spend-done]')?.addEventListener('click', () => sheet.close());
+
+    root.querySelector('[data-spend-save]')?.addEventListener('click', () => {
+      // Commas are what a person types into a money field, and "$40,000" is what
+      // they paste out of a spreadsheet — both are the figure, so both parse.
+      const amount = Number(String(amountField.value ?? '').replace(/[$,\s]/g, ''));
+      if (!Number.isFinite(amount) || amount <= 0) {
+        amountField.errorText = 'Enter the amount spent in this period.';
+        return;
+      }
+      amountField.errorText = '';
+      const year = Number(String(yearField.value ?? ''));
+      if (!Number.isFinite(year)) return;
+      addExpenditure(slug, { year, amount });
+
+      // Batch-friendly: the figure lands in the log and the section, the amount
+      // clears for the next one, the YEAR HOLDS. Catching up a late
+      // reconciliation is several figures against one period, so re-picking the
+      // year every time would be the form fighting the task.
+      paintLog();
+      paint();
+      amountField.value = '';
+      (amountField.shadowRoot?.querySelector<HTMLElement>('input') ?? amountField).focus();
+    });
+
+    log.addEventListener('click', (event) => {
+      const btn = (event.target as Element).closest('.firma2-project-expenditures__log-remove');
+      const li = btn?.closest<HTMLElement>('[data-spend-id]');
+      if (!li?.dataset.spendId) return;
+      removeExpenditure(slug, li.dataset.spendId);
+      paintLog();
+      paint();
+    });
+
+    // ---- boot --------------------------------------------------------------
+    // Recorded spend survives a reload, so the section has to reconcile with the
+    // store before a reader sees it — otherwise the server's figures would show
+    // for a frame and then jump.
+    if (readExpenditures(slug).length > 0) paint();
+  });
 </script>
 
 <style>
+  /* bcn-lego-checked: no esa- lego lays out a stat ROW (esa-stat is a single
+     tile and says so in its own header), and the hub's `.grid` primitive IS
+     the lego for this — it is composed above and keeps the gap, the box and
+     the token scale. All that is overridden is the track count, because
+     auto-fit's one knob (--grid-min) cannot express "2 or 4, never 3". Checked
+     Beacon: its stat rows are fixed 4-col Bootstrap `.row > .col-3`, which is
+     the orphan bug with extra steps. Nothing reusable is being invented here,
+     so there is no bcn- component to promote this to. */
+
+  /* A CONTAINER QUERY, NOT A MEDIA QUERY, and the difference is load-bearing:
+     this card's width does not track the viewport monotonically. At a 1440
+     viewport the record rail is beside it and the column measures 662px; at
+     1280 the `.sidebar` primitive drops the rail below and the SAME column
+     measures 902px. A `min-width: 1280px` rule would therefore apply the wide
+     layout to the narrow box and vice versa. The card asks its own box. */
+  /* The container is the card's CONTENT WRAPPER, not the grid itself: an
+     element can never be its own query container, so `container-type` on
+     `__figures` would silently resolve every @container rule below against an
+     ancestor that does not exist — no error, no match, and the two-column
+     fallback would just always win. The wrapper is the same inline size as the
+     grid it holds, so it is the honest place for the knob. */
+  .firma2-project-expenditures {
+    container-type: inline-size;
+  }
+
+  .firma2-project-expenditures__figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 60rem, not the 56rem the four tiles technically fit in: at 902px the tiles
+     land on ~205px and the widest seeded value ($9,640,000 at display-sm) very
+     nearly fills that. The threshold buys the biggest figure in the portfolio
+     room to breathe rather than sizing the row for the median project. */
+  @container (min-width: 60rem) {
+    .firma2-project-expenditures__figures {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  /* One column below ~26rem — two tracks of ~150px would clip a seven-figure
+     value mid-number, which is the one failure mode a money tile cannot have. */
+  @container (max-width: 26rem) {
+    .firma2-project-expenditures__figures {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* THE REVEAL. `display: contents` so the wrapper is not a box — the three
+     children stay direct participants in the card's `.stack`, keeping its gap
+     between them exactly as when they were siblings. Hidden by an author rule on
+     the root's data attribute rather than `[hidden]`, which is a UA default any
+     author `display` (including the `contents` above) silently beats. */
+  .firma2-project-expenditures__series {
+    display: contents;
+  }
+
+  .firma2-project-expenditures:not([data-has-spend]) .firma2-project-expenditures__series {
+    display: none;
+  }
+
+  /* The recording sheet's log. `.repel` does the row layout; these two rules are
+     only the reading rhythm — a hairline between filed figures so a batch of
+     four reads as four, and room for the remove button not to crowd them. */
+  .firma2-project-expenditures :global(.firma2-project-expenditures__log-row) {
+    --gap: var(--spacing-200, 0.5rem);
+    padding-block: var(--spacing-200, 0.5rem);
+    border-block-end: 1px solid var(--color-border-default-secondary, #e4e4e4);
+  }
+
+  .firma2-project-expenditures :global(.firma2-project-expenditures__log-row:last-child) {
+    border-block-end: 0;
+  }
+
+  .firma2-project-expenditures__log-title {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
   .firma2-project-expenditures__note {
     margin: 0;
     /* Primary ink deliberately — see the NOTE comment in the markup. body-sm
@@ -289,45 +831,9 @@ const chartLabel = 'Expenditures by year';
     color: var(--color-content-default, #202020);
   }
 
-  .firma2-project-expenditures__table {
-    width: 100%;
-    /* Collapsed so rows are separated by ONE hairline rather than a doubled
-       one — same call, same reason, as firma2-project-funding's table. */
-    border-collapse: collapse;
-  }
-
-  .firma2-project-expenditures__table th,
-  .firma2-project-expenditures__table td {
-    text-align: start;
-    vertical-align: baseline;
-    padding-block: var(--spacing-200, 0.5rem);
-    padding-inline: var(--spacing-300, 0.75rem);
-  }
-
-  .firma2-project-expenditures__table th:first-child,
-  .firma2-project-expenditures__table td:first-child { padding-inline-start: 0; }
-  .firma2-project-expenditures__table th:last-child,
-  .firma2-project-expenditures__table td:last-child { padding-inline-end: 0; }
-
-  .firma2-project-expenditures__table thead th {
-    color: var(--color-content-default-secondary, #646464);
-    font-weight: var(--font-weight-semibold, 600);
-    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
-  }
-
-  .firma2-project-expenditures__table tbody th {
-    font-weight: inherit;
-  }
-
-  .firma2-project-expenditures__table tbody tr + tr th,
-  .firma2-project-expenditures__table tbody tr + tr td {
-    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
-  }
-
-  .firma2-project-expenditures__num {
-    text-align: end;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    width: 1%;
+  /* The grid draws its own surface from firma2GridTheme, already mapped onto
+     this spoke's tokens, so there is nothing left to style but the box. */
+  .firma2-project-expenditures__grid {
+    inline-size: 100%;
   }
 </style>

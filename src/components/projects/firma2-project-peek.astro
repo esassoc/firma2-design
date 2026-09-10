@@ -1,0 +1,646 @@
+---
+// firma2-project-peek — the project peek PANEL: a docked rail beside the
+// Projects index that answers "is this the project I think it is, and is it on
+// track — do I need to open it?" while the index stays fully usable beside it.
+//
+// A RAIL, NOT A SHEET (user-directed 2026-08-25). The first build was an
+// esa-side-dialog — a modal overlay with a scrim — and modality was the wrong
+// property: a reader triaging the portfolio wants the peek AND the table, and
+// a scrim takes the table away. So the panel is now what the detail page's
+// record rail is — a real <aside> the page is laid out around, pinned with the
+// same sticky + 100dvh construction, its width a `.sidebar` track the reader
+// can drag (bcn-edge-handle) — and the rest of the screen keeps working: rows
+// still peek (clicking another row repaints this panel in place), filters
+// still filter, nothing is trapped. "Prefer a boundary over a negotiation" is
+// the brief's own rule, and a docked track is the boundary.
+//
+// THE BRIEF'S FIVE, answered (docs/product-brief.md §5):
+//   1. One question: is this project on track — worth opening?
+//   2. Reader: program staff scanning the index ("show me the numbers, don't
+//      make me navigate"); hardest to serve is the corrector, who noticed a
+//      wrong county mid-scan and should not need a page load to fix it.
+//   3. Series vs scalar: the series lead, compressed to their current standing
+//      (a panel carries the verdict; the history stays on the page built for
+//      it) — beside them the scalar index card, reused whole.
+//   4. Irreversible: nothing — every act here is a correction or a door.
+//   5. Cut: contacts / comments / audit (rail tabs on the page; not the triage
+//      question). The map and the photos are IN now, not cut — the panel is
+//      wide enough to carry a surface (~46rem default), and "where is it" and
+//      "is it real" are the two questions a reader asks before trusting any
+//      number. Both come along whole: firma2-project-map (canvas variant, its
+//      own title plate and legend) and firma2-project-gallery.
+//
+// STILL A WINDOW ONTO A LIVE RECORD — no Save, no Cancel. Every fact row is
+// the same click-to-edit firma2-editable-field the detail page renders,
+// committing when you leave the field. Escape's ladder: an open field first
+// (the editable-field module consumes it), an open menu second (the dropdown
+// consumes it — the defaultPrevented guard below), the panel last.
+//
+// THE HEADER CARRIES THE DOORS AND THE ACTS. The name is a real <a> to the
+// detail page (the entity-chip rule) and — user-directed — the same door gets
+// a visible CTA, "Open project", because a linked title alone is a door only
+// to readers who try it. Record work stays the one primary: it deep-links to
+// the project page's activity-first recorder (#record-work), the act that
+// feeds the progress rows above it. Add expenditure, Share, Fact sheet stay
+// behind the "…" menu — Share live (src/lib/share-record.ts, the same gesture
+// the page header runs), the other two real, enabled and unwired.
+//
+// PAINTING: one panel, one <template> per project (server-rendered, so the
+// fact rows ARE firma2-project-facts, the chips ARE esa-pill, the map IS
+// firma2-project-map — scope hashes, configs and all). A template's clone is
+// CACHED per project: an edit made here survives closing the panel exactly as
+// long as an edit made on the page would (until reload; nothing persists).
+// Cloned subtrees are announced with `firma2:field-hydrate` (editable-field's
+// seam) and `firma2:map-init` (the map's — first show inits Leaflet, a cached
+// re-show gets invalidateSize + refit instead).
+//
+// bcn-lego-checked: the panel composes esa-button, esa-pill (cloned stage
+// chip), esa-dropdown-menu, esa-snackbar-container, bcn-edge-handle,
+// bcn-progress-ring, and whole spoke sections (facts, map, gallery); layout is
+// .sidebar (the page's spine), .stack/.repel/.cluster/.grid. esa-side-dialog
+// was this component's first form and is deliberately NOT used: it is a modal
+// transient (its own file says so) and this surface must not be modal. No
+// esa- lego is a page-level rail (same lookup firma2-record-rail records);
+// that component is the idiom source but is built to its own 25–34rem record
+// bounds, collapse strip and storage — this panel shares the construction,
+// not the object. Bespoke CSS: the pinning/track rules (adapted from
+// firma2-record-rail, credited inline), the door-link cue, the progress-row
+// inset, and the map band's frame. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import BcnProgressRing from '../shared/bcn-progress-ring.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import Firma2ProjectFacts from './firma2-project-facts.astro';
+import Firma2ProjectMap from './firma2-project-map.astro';
+import Firma2ProjectGallery from './firma2-project-gallery.astro';
+import { projects, projectSlug, projectHref, STAGE_ORDER, STAGE_TONE } from '../../data/firma2-projects';
+import { getProjectDetail, reportedTotal } from '../../data/firma2-project-detail';
+import type { Milestone } from '../../data/firma2-project-detail';
+import { currencyFormatter as money } from '../../lib/format';
+import { withBase } from '../../lib/base';
+
+const num = (n: number): string => n.toLocaleString('en-US');
+
+/**
+ * The one milestone worth a row: what the project is AT. Underway wins; a
+ * project between milestones shows what comes next; a finished (or halted)
+ * project shows where its timeline stopped. The label tells the truth about
+ * which of the three the reader is looking at.
+ */
+const milestoneRow = (
+  milestones: Milestone[],
+): { label: string; milestone: Milestone } | null => {
+  const current = milestones.find((m) => m.status === 'current');
+  if (current) return { label: 'Current milestone', milestone: current };
+  const next = milestones.find((m) => m.status === 'upcoming');
+  if (next) return { label: 'Next milestone', milestone: next };
+  const last = milestones[milestones.length - 1];
+  return last ? { label: 'Last milestone', milestone: last } : null;
+};
+
+const records = projects.map((project) => {
+  const detail = getProjectDetail(project);
+  const spent = detail.expenditures.reduce((sum, y) => sum + y.spent, 0);
+  return {
+    slug: projectSlug(project),
+    name: project.projectName,
+    stage: project.stage,
+    href: withBase(projectHref(project)),
+    detail,
+    spent,
+    milestone: milestoneRow(detail.milestones),
+  };
+});
+---
+<!-- A named <aside>: unlike the detail page's record rail (whose first heading
+     names it a breath later), this panel opens with a project NAME, so without
+     a label the landmark would be called "Deer Creek…" — a record, not a
+     region. The id is the edge handle's aria-controls target. -->
+<aside class="firma2-project-peek" id="firma2-project-peek" aria-label="Project peek" hidden>
+  <div class="firma2-project-peek__inner stack" data-gap="xl">
+    <header class="firma2-project-peek__head stack" data-gap="sm">
+      <div class="repel" data-gap="sm">
+        <!-- THE NAME IS A DOOR — a real <a> to the detail page. From OUTSIDE a
+             record the act a reader wants from its name is "take me to it";
+             the title edits on its own page's header, not here. -->
+        <h2 class="firma2-project-peek__title typography-title">
+          <a class="firma2-project-peek__door" data-peek-door href="#"
+            ><span data-peek-name></span></a
+          >
+        </h2>
+        <!-- xs, an icon floating at the panel's corner — the same rung the
+             record rail's edge toggle argues for a glyph without siblings. -->
+        <EsaButton
+          variant="chrome"
+          iconOnly
+          icon="x"
+          label="Close project details"
+          size="xs"
+          data-peek-close
+        />
+      </div>
+
+      <div class="repel" data-gap="sm">
+        <p class="firma2-project-peek__stage">
+          <span class="visually-hidden">Stage </span><span data-peek-stage></span>
+        </p>
+        <!-- THE ACTS, tertiary → primary. "Open project" is the door made
+             visible (user-directed): the linked title alone is a door only to
+             readers who try it. Record work keeps the one primary — it lands
+             in the project page's own recorder via #record-work. -->
+        <div class="cluster" data-gap="xs">
+          <esa-dropdown-menu class="firma2-project-peek__more" position="below-end">
+            <EsaButton variant="secondary" appearance="outline" size="md" aria-label="More actions">⋯</EsaButton>
+          </esa-dropdown-menu>
+          <EsaButton variant="secondary" appearance="outline" size="md" href="#" data-peek-open>
+            Open project
+          </EsaButton>
+          <EsaButton variant="primary" size="md" href="#" data-peek-record>Record work</EsaButton>
+        </div>
+      </div>
+    </header>
+
+    <div class="firma2-project-peek__record-host" data-peek-record-host></div>
+
+    <!-- Real esa-pill markup per stage, server-rendered once and cloned into
+         the stage line at paint — the data grids' template trick: the chip in
+         the panel IS the lego. -->
+    <div data-peek-stage-templates hidden aria-hidden="true">
+      {STAGE_ORDER.map((s) => (
+        <span data-stage={s}>
+          <EsaPill label={s} variant={STAGE_TONE[s]} size="md" removable={false} />
+        </span>
+      ))}
+    </div>
+
+    <!-- ONE TEMPLATE PER PROJECT. Template content is inert — ids never
+         collide, scripts and image fetches never fire — until the one open
+         project is cloned live. -->
+    {records.map((r) => (
+      <template
+        data-project-peek={r.slug}
+        data-name={r.name}
+        data-stage={r.stage}
+        data-href={r.href}
+      >
+        <div class="firma2-project-peek__record stack" data-gap="xl">
+          <!-- SIDE BY SIDE, because the panel is finally wide enough: the
+               verdicts and the index card are the two halves of the triage
+               question, and reading them in one glance is what the width
+               buys. .grid wraps them to one column when the handle narrows
+               the track. -->
+          <div class="firma2-project-peek__columns grid" data-gap="xl">
+            <Firma2RailSection title="Progress">
+              <dl class="firma2-project-peek__progress stack" data-gap="md">
+                {r.detail.measures.map((m) => {
+                  const reported = reportedTotal(m.series);
+                  const pct = m.expected > 0 ? (reported / m.expected) * 100 : 0;
+                  return (
+                    <div class="firma2-project-peek__row stack" data-gap="2xs">
+                      <dt class="firma2-project-peek__row-label typography-label-sm">{m.name}</dt>
+                      <dd class="firma2-project-peek__row-value cluster" data-gap="xs">
+                        <BcnProgressRing value={pct} size="xs" />
+                        <span class="typography-body-sm">
+                          {num(reported)} of {num(m.expected)} {m.unit}
+                        </span>
+                      </dd>
+                    </div>
+                  );
+                })}
+                <div class="firma2-project-peek__row stack" data-gap="2xs">
+                  <dt class="firma2-project-peek__row-label typography-label-sm">Spent to date</dt>
+                  <dd class="firma2-project-peek__row-value cluster" data-gap="xs">
+                    <BcnProgressRing
+                      value={r.detail.project.estimatedTotalCost > 0 ? (r.spent / r.detail.project.estimatedTotalCost) * 100 : 0}
+                      size="xs"
+                    />
+                    <span class="typography-body-sm firma2-project-peek__figure">
+                      {money.format(r.spent)} of {money.format(r.detail.project.estimatedTotalCost)} estimated
+                    </span>
+                  </dd>
+                </div>
+                {r.milestone && (
+                  <div class="firma2-project-peek__row stack" data-gap="2xs">
+                    <dt class="firma2-project-peek__row-label typography-label-sm">{r.milestone.label}</dt>
+                    <dd class="firma2-project-peek__row-value cluster" data-gap="xs">
+                      <span class="typography-body-sm">{r.milestone.milestone.title}</span>
+                      <span class="typography-meta">{r.milestone.milestone.date}</span>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </Firma2RailSection>
+
+            <Firma2ProjectFacts detail={r.detail} titleHidden={false} />
+          </div>
+
+          <!-- THE MAP, a framed band rather than a bleed: in a column a
+               surface needs an edge (the section variant's no-frame argument
+               is about bleeding to the PANE, which this box does not). The
+               canvas variant fills this positioned box and brings its own
+               title plate, legend and Add area. -->
+          <div class="firma2-project-peek__map">
+            <Firma2ProjectMap detail={r.detail} variant="canvas" />
+          </div>
+
+          <Firma2ProjectGallery photos={r.detail.photos} />
+        </div>
+      </template>
+    ))}
+
+    <esa-snackbar-container class="firma2-project-peek__toasts"></esa-snackbar-container>
+  </div>
+
+  <!-- THE EDGE IS A RESIZE GRIP — the record rail's own control, its own
+       reasons (see bcn-edge-handle). It writes the `.sidebar` spine's
+       --sidebar-width (size-host="parent" resolves the aside's parent, the
+       primitive). 560px is the floor where the two-column record still reads
+       after wrapping to one; 880px is where the panel would stop being a
+       panel and start being the page. Its own storage key: a reader's peek
+       width is not their record-rail width. -->
+  <bcn-edge-handle
+    edge="start"
+    size-var="--sidebar-width"
+    size-host="parent"
+    min="560"
+    max="880"
+    label="project details"
+    storage-key="project-peek"
+  ></bcn-edge-handle>
+</aside>
+
+<style>
+  /* ---- THE PINNED TRACK — construction adapted from firma2-record-rail,
+     which documents every load-bearing half at length. Restated here rather
+     than reused because the two are different objects (that rail: always
+     present, 25–34rem, collapse strip; this panel: on demand, 35–55rem,
+     closes) sharing one idiom. ---- */
+  .firma2-project-peek {
+    /* The content pane's own padding, reached through on two edges so the
+       panel sits flush in the frame's corner — esa-app-shell's literal. */
+    --_bleed: var(--spacing-500, 1.5rem);
+
+    /* Holds the fold: sticky needs align-self to escape the flex stretch, and
+       the explicit viewport height is what fills the column it gave up. */
+    position: sticky;
+    top: 0;
+    align-self: start;
+    block-size: 100dvh;
+
+    display: flex;
+    flex-direction: column;
+
+    /* The app's own rail rung — nothing on this page needs painting over
+       (the index has no full-bleed neighbours), so no header-band escalation. */
+    z-index: var(--z-sidebar, 100);
+
+    margin-block-start: calc(var(--_bleed) * -1);
+    margin-inline-end: calc(var(--_bleed) * -1);
+    padding: var(--_bleed);
+
+    /* The primitive gives its aside flex-grow: 1 against the main column's
+       999 — a thousandth of the free space, and a width that is never quite
+       the number the handle wrote. Grow 0 makes the track the stated width.
+
+       THE CAP IS NOT COSMETIC — it is the record rail's guardrail, needed here
+       for the same measured reason: `.sidebar` wraps its aside below the
+       content the moment the tracks no longer fit, and a fixed 46rem basis at
+       a 1280px window did exactly that — a full-width, 100dvh, sticky slab
+       dropped into the middle of the page (measured 2026-08-25). Capped at
+       "the container, less what the main column is owed, less the gutter",
+       the panel gives width back before the line can overflow; the 35rem
+       floor (the handle's own minimum) is where it stops giving, which keeps
+       the honest wrap available for genuinely narrow windows — and the
+       container query below then unpins it. The -1px and the query's <= are
+       the record rail's same rounding-step lesson. */
+    flex-basis: max(
+      35rem,
+      min(
+        var(--sidebar-width, 46rem),
+        calc(100% - var(--sidebar-content-min, 60%) - var(--spacing-500, 1.5rem) - 1px)
+      )
+    );
+    flex-grow: 0;
+    box-sizing: border-box;
+
+    /* The edge grip straddles this border by design. */
+    overflow: visible;
+
+    /* One sheet of paper with a rule down it — the pane's own background and
+       a hairline on the one edge that faces content. */
+    background: var(--color-background-default, #fcfcfc);
+    border-inline-start: var(--border-width-default, 1px) solid
+      var(--color-border-default-subtle, #d9d9d9);
+
+    /* The track animates; a drag must not (the handle sets data-resizing). */
+    transition: flex-basis var(--transition-base, 200ms ease);
+  }
+  .firma2-project-peek[data-resizing] {
+    transition: none;
+  }
+  /* Closed is GONE, not a strip: unlike the record rail, this panel is not
+     the page's record — the table is the page, and a reader who closed the
+     peek wants the full width back. The peek buttons on every row are the way
+     back in, so no reopen control has to survive on screen. display against
+     the author flex rule, so [hidden] means hidden. */
+  .firma2-project-peek[hidden] {
+    display: none;
+  }
+
+  .firma2-project-peek__inner {
+    /* Takes the height the frame's padding leaves, scrolls inside it;
+       min-block-size: 0 is what lets the scroll engage at all, and
+       overscroll-behavior keeps a bottomed-out scroll from taking the page. */
+    flex: 1;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .firma2-project-peek__title {
+    margin: 0;
+  }
+
+  /* THE DOOR: the name reads as the record's title and behaves as a link —
+     underline on hover/focus is the cue every reader knows means "this goes
+     somewhere", the same promise the classification chips make. */
+  .firma2-project-peek__door {
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-sm, 0.25rem);
+  }
+  .firma2-project-peek__door:hover,
+  .firma2-project-peek__door:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .firma2-project-peek__door:focus-visible {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+
+  .firma2-project-peek__stage {
+    margin: 0;
+  }
+
+  /* Two columns while the track affords them, one when it does not — the
+     .grid primitive's own wrap, no media query to hold. 16rem, not the 18rem
+     first written: at a 1280 window the capped track's content lands at
+     ~35rem, where an 18rem floor collapsed the pair to ONE column — Key facts
+     dropped below the fold while half the panel sat empty beside Progress.
+     At 16rem the pair holds two columns down to ~33rem of content (the
+     handle's own floor is just below it), and a facts value that wraps at
+     16rem is a better trade than a column of dead space. */
+  .firma2-project-peek__columns {
+    --grid-min: 16rem;
+  }
+
+  .firma2-project-peek__progress {
+    margin: 0;
+  }
+  .firma2-project-peek__progress dd {
+    margin: 0;
+  }
+
+  /* The fact rows beside these indent their labels by the field box's text
+     inset so label and value share an x (firma2-editable-field's
+     floating-label rule). These rows have no field box, but they share the
+     panel — same inset, one left edge. */
+  .firma2-project-peek__row {
+    padding-inline-start: calc(var(--spacing-300, 0.75rem) + var(--form-border-width, 1px));
+  }
+  .firma2-project-peek__row-label {
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-project-peek__figure {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* THE MAP BAND: a definite, positioned box for the canvas variant to fill
+     (its own contract), framed the way the gallery frames a photo — hairline
+     and the small radius — because a surface IN a column needs an edge.
+     21rem of height is enough for the shapes and both plates without costing
+     the gallery below the fold at the default track. */
+  .firma2-project-peek__map {
+    position: relative;
+    block-size: 21rem;
+    border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #e3e5e2);
+    border-radius: var(--radius-sm, 4px);
+    overflow: hidden;
+  }
+
+  /* THE HOVER CARD'S TRIGGER SHRINKS TO ITS CHIP IN HERE. firma2-hover-card
+     stretches its trigger row to a fixed 20rem (its fix 1) because in the
+     RECORD RAIL the rail itself is the scroll container and a panel centred
+     on a narrow chip clips at the rail's edge. Neither premise holds in this
+     panel: the scroller is the whole ~43rem inner column, so a 20rem panel
+     centred on a chip in either grid column stays inside it — and the fixed
+     row was actively wrong here twice over, measured 2026-08-25: 20rem
+     overflowed the ~19.8rem facts column (a 6px horizontal scroll on the
+     whole panel), and the full-width band raised the card for a pointer that
+     was nowhere near the chip — "shown without hovering over it". Shrunk to
+     content, only the chip is the trigger; the panel keeps its own --_span
+     width and centres on the chip with room on both sides. */
+  .firma2-project-peek :global(.firma2-hover-card__row) {
+    min-inline-size: 0;
+    inline-size: fit-content;
+    max-inline-size: 100%;
+  }
+
+  /* MAKE `hidden` MEAN HIDDEN for everything painted inside the record —
+     cloned fact rows toggle display/edit regions with the attribute, and
+     author display rules outrank the UA's [hidden]. Same rule, same reason as
+     the measure and schema sheets. */
+  .firma2-project-peek :global([hidden]) {
+    display: none !important;
+  }
+
+  /* ---- WHEN THE PRIMITIVE WRAPS ANYWAY, THE PANEL STOPS BEING A RAIL ----
+     Below the cap's floor (35rem track + 1.5rem gutter + the page's 20rem
+     content minimum = 56.5rem = 904px of container) the flex line cannot hold
+     both tracks and `.sidebar` drops the aside below the content — the
+     primitive working correctly. A 100dvh sticky box must not ride down with
+     it, so the pinning, the height, the bleed and the surface all come off
+     and the open panel renders as a plain full-width section under the table;
+     the resize grip goes with them (an inline column has nothing to resize).
+     Same construction, same arithmetic discipline as firma2-record-rail's own
+     fallback, with this panel's numbers. */
+  :global(.sidebar:has(> .firma2-project-peek)) {
+    container: firma2-project-peek-track / inline-size;
+  }
+  @container firma2-project-peek-track (width <= 904px) {
+    .firma2-project-peek {
+      position: static;
+      display: flex;
+      block-size: auto;
+      margin-block-start: 0;
+      margin-inline-end: 0;
+      overflow: visible;
+      border-inline-start: none;
+      transition: none;
+    }
+    .firma2-project-peek[hidden] {
+      display: none;
+    }
+    .firma2-project-peek__inner {
+      overflow: visible;
+    }
+    .firma2-project-peek bcn-edge-handle {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-snackbar-container';
+  import '../shared/bcn-edge-handle';
+  import { shareRecord } from '../../lib/share-record';
+
+  type Menu = HTMLElement & { items: { label: string; action: string }[]; open?: boolean };
+  type Snackbar = HTMLElement & {
+    show: (config: { message: string; variant?: string }) => void;
+  };
+
+  function initProjectPeek(panel: HTMLElement) {
+    const inner = panel.querySelector<HTMLElement>('.firma2-project-peek__inner');
+    const nameEl = panel.querySelector<HTMLElement>('[data-peek-name]');
+    const door = panel.querySelector<HTMLAnchorElement>('[data-peek-door]');
+    const stageEl = panel.querySelector<HTMLElement>('[data-peek-stage]');
+    const host = panel.querySelector<HTMLElement>('[data-peek-record-host]');
+    const menu = panel.querySelector<Menu>('.firma2-project-peek__more');
+    const toasts = panel.querySelector<Snackbar>('.firma2-project-peek__toasts');
+    // esa-button spreads rest props onto the native element itself, so these
+    // ARE the <a>/<button> and the per-project hrefs are attribute writes.
+    const openLink = panel.querySelector<HTMLAnchorElement>('a[data-peek-open]');
+    const recordLink = panel.querySelector<HTMLAnchorElement>('a[data-peek-record]');
+    const closeBtn = panel.querySelector<HTMLElement>('[data-peek-close]');
+    if (!inner || !nameEl || !door || !stageEl || !host) return;
+
+    // The stage chips, pre-cloned per stage from the server-rendered templates.
+    const pills = new Map<string, HTMLElement>();
+    panel
+      .querySelectorAll<HTMLElement>('[data-peek-stage-templates] [data-stage]')
+      .forEach((el) => pills.set(el.dataset.stage ?? '', el));
+
+    // One clone per project, CUT ONCE and kept: reopening a project shows the
+    // record as you left it, edits included — the same lifetime an edit has on
+    // the detail page (this browser session; nothing persists).
+    const clones = new Map<string, HTMLElement>();
+    let current: { slug: string; name: string; href: string } | null = null;
+    /** Where focus goes back when the panel closes — the peek button that
+     *  opened it, which is how a non-modal panel avoids dropping a keyboard
+     *  reader at <body>. */
+    let opener: HTMLElement | null = null;
+
+    const paint = (slug: string): boolean => {
+      const template = panel.querySelector<HTMLTemplateElement>(
+        `template[data-project-peek="${CSS.escape(slug)}"]`,
+      );
+      if (!template) return false;
+      const name = template.dataset.name ?? '';
+      const href = template.dataset.href ?? '#';
+      current = { slug, name, href };
+
+      nameEl.textContent = name;
+      door.href = href;
+      openLink?.setAttribute('href', href);
+      recordLink?.setAttribute('href', `${href}#record-work`);
+      const pill = pills.get(template.dataset.stage ?? '');
+      stageEl.replaceChildren(...(pill ? [pill.firstElementChild!.cloneNode(true)] : []));
+
+      let record = clones.get(slug);
+      if (!record) {
+        record = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+        clones.set(slug, record);
+      }
+      host.replaceChildren(record);
+      return true;
+    };
+
+    const open = (slug: string, trigger: HTMLElement | null): void => {
+      if (!paint(slug)) return;
+      if (trigger) opener = trigger;
+      panel.hidden = false;
+      // Announce the (now laid-out) subtree to the modules whose load-time
+      // sweeps never saw inside the template. Both seams are idempotent; on a
+      // cached clone the map answers with invalidate + refit instead of a
+      // second init. After the panel is visible, so the map measures a real
+      // box.
+      const record = host.firstElementChild;
+      record?.dispatchEvent(new CustomEvent('firma2:field-hydrate', { bubbles: true }));
+      record?.dispatchEvent(new CustomEvent('firma2:map-init', { bubbles: true }));
+      // Every open starts at the top, whichever project it shows.
+      inner.scrollTo(0, 0);
+      // A non-modal panel still owes the keyboard a way in: focus lands on the
+      // name, which announces which record just opened.
+      door.focus();
+    };
+
+    const close = (): void => {
+      panel.hidden = true;
+      // The stored trigger is the [data-open-project] wrapper span; the tab
+      // stop is the esa-button inside it. Guard on isConnected — AG Grid
+      // repaints cells, and focusing a detached node silently does nothing
+      // while LOOKING like a focus return.
+      if (opener?.isConnected) {
+        (opener.querySelector<HTMLElement>('button, a') ?? opener).focus();
+      }
+    };
+
+    // The delegated seam, mirroring the measure and schema sheets: anything
+    // carrying data-open-project opens this panel. Capture phase so grid cells
+    // never also act on the peek click.
+    document.addEventListener(
+      'click',
+      (event) => {
+        const trigger = (event.target as Element).closest<HTMLElement>('[data-open-project]');
+        if (!trigger) return;
+        const slug = trigger.dataset.openProject ?? '';
+        if (slug) open(slug, trigger);
+      },
+      true,
+    );
+
+    closeBtn?.addEventListener('click', close);
+
+    // ESCAPE'S LADDER, bottom rung. An open FIELD consumed the key already
+    // (editable-field stops propagation); an open MENU or select dropdown
+    // preventDefaulted it on its way past — so a plain Escape that reaches
+    // here with its default intact means "close the panel". Listener on the
+    // panel, not the document: this surface is non-modal, and Escape pressed
+    // in the grid belongs to the grid.
+    panel.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      close();
+    });
+
+    // Items land only after the element upgrades — a property assigned to the
+    // un-upgraded host would shadow Lit's accessor and never render.
+    void customElements.whenDefined('esa-dropdown-menu').then(() => {
+      if (!menu) return;
+      menu.items = [
+        // Add expenditure and Fact sheet are real, enabled and unwired — the
+        // prototype stance. Share is live.
+        { label: 'Add expenditure', action: 'add-expenditure' },
+        { label: 'Share', action: 'share' },
+        { label: 'Fact sheet', action: 'fact-sheet' },
+      ];
+    });
+
+    menu?.addEventListener('menu-action', (event) => {
+      const action = (event as CustomEvent<string>).detail;
+      if (action === 'share' && current) {
+        void shareRecord(
+          {
+            title: `${current.name} — ProjectFirma 2.0`,
+            url: new URL(current.href, window.location.href).toString(),
+          },
+          toasts,
+        );
+      }
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-peek').forEach(initProjectPeek);
+</script>

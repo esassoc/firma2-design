@@ -1,0 +1,180 @@
+---
+// firma2-project-measure-row — one performance measure as a row of the project's
+// measure table: what was committed, how much has been reported against it, and
+// one column per reporting period holding what that period delivered.
+//
+// A <tr>, AND THE YEARS ARE REAL COLUMNS. Every measure on a project is built
+// from the same window — buildMeasures() walks
+// implementationStartYear..completionYear for all of them — so the periods are a
+// shared axis and belong in a shared header, once, with every measure's figures
+// underneath. That is a table, and this is a row of it: no private strip, no
+// per-row axis, nothing a reader has to align by eye.
+//
+// THE RING LEADS THE ROW, at bcn-progress-ring's `xs` rung. It is the one thing
+// on this card a reader can scan straight down without reading a figure: eight
+// arcs at a glance say which measures are close and which have barely started,
+// where eight pairs of numbers have to be divided one at a time.
+// It was briefly deleted for being illegible, which was the wrong fix for a real
+// problem — the rung had inherited the large ring's thick stroke and round caps,
+// and at that diameter the caps closed a 10% gap, so 90% and 100% drew the same
+// circle. The rung was fixed instead; see that component's own note.
+//
+// THE YEAR CELLS CARRY NUMBERS AND NOTHING ELSE. An earlier version tinted each cell
+// by its share of the target, on the argument that colour would let a reader
+// scan a year without reading eight figures. It went: the numbers are already
+// there to be read, the tint made a plain table look like a heatmap, and a
+// figure that is BOTH printed and shaded is being said twice. Reading down a
+// column of tabular numerals is what a table is for.
+//
+// UNDER-DELIVERY AND LATE REPORTING ARE NOT ALARMS. Nothing in this row is
+// coloured by its value, in either direction — no threshold turns a cell amber
+// and none turns it green. A period that closed with nothing filed reads "—": a
+// fact, with no verdict attached. Whether a missing report is late depends on a
+// reporting obligation this component knows nothing about.
+//
+// bcn-lego-checked: Ecology has no table lego — walked
+// node_modules/@esa/ecology/src/components/ (67 files): esa-stat holds one
+// figure, esa-chart is a whole AG Charts instance, esa-badge and esa-pill are
+// single labelled tokens. Same call, same reason as firma2-project-expenditures
+// and firma2-project-funding, which both hand-roll a <table>: AG Grid is this
+// spoke's tabular precedent but is scoped to the portfolio grid, and chrome
+// around a handful of derived rows buys nothing. A native <table> with real
+// <th scope> is the semantic primitive, and this is genuinely tabular data —
+// measures down, periods across. Beacon is not cloned on this machine, so tier 2
+// could not be walked.
+import BcnProgressRing from '../shared/bcn-progress-ring.astro';
+import type { PerformanceMeasure } from '../../data/firma2-project-detail';
+import { isClosedPeriod } from '../../data/firma2-project-detail';
+
+interface Props {
+  /** One measure with its full period series — buildMeasures()'s output. */
+  measure: PerformanceMeasure;
+}
+
+const { measure } = Astro.props;
+
+// Thousands separators, and NO fixed fraction count. `reported` carries one
+// decimal for continuous units (acres, miles, acre-feet, cfs) and a whole number
+// for counts, and the two live in the same column — force two decimals and "4
+// crossings" becomes "4.00 crossings", which reads as fabricated data. Intl's
+// default (up to 3 fraction digits, none padded) prints each as authored.
+const fmt = (n: number): string => n.toLocaleString('en-US');
+
+// Percent for the ring's fill. Rounded, because an unrounded 55.16129032258065
+// would be a false precision the ring cannot even render — but never rounded UP
+// to a full ring: 99.6% of a target is not delivered, and a ring that reads full
+// while the numbers beside it disagree is the kind of small lie that costs a
+// prototype its credibility.
+const percent = ((): number => {
+  const { reported, expected } = measure;
+  if (expected <= 0) return 0;
+  const raw = (reported / expected) * 100;
+  if (raw >= 100) return 100;
+  const rounded = Math.round(raw);
+  return rounded === 100 ? 99 : rounded;
+})();
+
+// CLOSED PERIODS ONLY, and `value === null` is the only test for whether a report
+// exists — 0 is a report that was filed and said nothing was accomplished. A
+// record has no column for a period that has not happened; isClosedPeriod lives
+// in the data module because buildMeasures and the section's header ask the same
+// question and must get the same answer.
+const periods = measure.series.filter(isClosedPeriod);
+---
+
+<tr class="firma2-project-measure-row">
+  <!-- The measure names the row, so it is a row header: what a screen reader
+       reads back to place you when you arrow across into a figure. -->
+  <th scope="row" class="firma2-project-measure-row__measure">
+    <span class="firma2-project-measure-row__measure-inner">
+      <BcnProgressRing value={percent} size="xs" />
+      <span class="firma2-project-measure-row__name" title={measure.name}>{measure.name}</span>
+    </span>
+  </th>
+
+  <!-- ONE expression, not `{a} of {b} {unit}`. A whitespace-only text node
+       between two adjacent expressions is dropped by the compiler, so the
+       separated form renders "1,334 of 2,900acres". A template literal puts the
+       spacing inside the expression where nothing can collapse it. -->
+  <!-- The data-* attributes carry the row's BASE figures for the section's
+       entry painter (firma2-project-measures' script): entries recorded in
+       this browser are layered over these at read time, and a painter that
+       parsed its numbers back out of rendered prose would break on the first
+       locale comma. -->
+  <td class="firma2-project-measure-row__total firma2-project-measure-row__num"
+    data-reported={measure.reported}
+    data-expected={measure.expected}
+    data-unit={measure.unit}
+    >{`${fmt(measure.reported)} of ${fmt(measure.expected)} ${measure.unit}`}</td
+  >
+
+  {periods.map((period) => (
+    <td
+      class:list={[
+        'firma2-project-measure-row__year',
+        'firma2-project-measure-row__num',
+        period.value === null && 'firma2-project-measure-row__year--none',
+      ]}
+      data-year={period.year}
+      data-value={period.value ?? ''}
+    >
+      {period.value === null ? (
+        <!-- An em dash, with the real words for anyone who cannot see it. A
+             period that closed with nothing filed is a fact worth stating, and
+             "—" states it in the width a numeric column can afford. -->
+        <span aria-hidden="true">&mdash;</span>
+        <span class="visually-hidden">Not reported</span>
+      ) : (
+        fmt(period.value)
+      )}
+    </td>
+  ))}
+
+  <!-- The row's half of the section's trailing spacer column; see the stylesheet
+       there for why the table needs one. -->
+  <td class="firma2-project-measure-row__spacer"></td>
+</tr>
+
+<style>
+  .firma2-project-measure-row__measure-inner {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200, 0.5rem);
+    min-inline-size: 0;
+  }
+
+  /* ONE LINE, ALWAYS. A wrapping measure name is what makes rows different
+     heights and stops a table reading as a table; the `title` puts the full
+     string a hover away, and it is stated in full nowhere else it is truncated. */
+  .firma2-project-measure-row__name {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .firma2-project-measure-row__spacer {
+    padding: 0;
+  }
+
+  .firma2-project-measure-row__num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* THE TOTAL IS THE COLUMN A READER CAME FOR, so it carries the only weight in
+     the row. Everything else — the name, the per-year figures — sits at normal
+     weight underneath it. */
+  .firma2-project-measure-row__total {
+    font-weight: var(--font-weight-semibold, 600);
+  }
+
+  /* A period that closed with nothing filed. Secondary ink, because "—" is the
+     absence of a figure and should not carry a figure's weight — and it is the
+     ONLY thing that distinguishes these cells from one another. Nothing here is
+     coloured by its value; see the header. */
+  .firma2-project-measure-row__year--none {
+    color: var(--color-content-default-secondary, #646464);
+  }
+</style>

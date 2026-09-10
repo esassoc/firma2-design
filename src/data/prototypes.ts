@@ -23,6 +23,18 @@ export interface Prototype {
 }
 
 export const prototypes: Prototype[] = [
+  // The one screen here that is not a record. Listed because the colour-scheme
+  // control on it is app-wide and live — it is the fastest way to see every
+  // other prototype in this list rendered in the dark scheme.
+  {
+    slug: 'settings',
+    title: 'Settings',
+    description:
+      'One account’s own preferences: name and email, the light / dark / system theme, and which events send mail.',
+    route: '/prototypes/settings',
+    createdAt: '2026-08-24',
+    status: 'in-progress',
+  },
   {
     slug: 'performance-measures',
     title: 'Performance measure setup',
@@ -56,6 +68,20 @@ export const prototypes: Prototype[] = [
       'One project in full: work areas on a map, performance measures, funding sources and milestones.',
     route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement',
     createdAt: '2026-08-20',
+    status: 'in-progress',
+  },
+  // TWO READINGS OF ONE RECORD, and both are listed because the choice between
+  // them is a real one this spoke has not settled — not because one supersedes
+  // the other. The row above reads the project as a document and leads with the
+  // numbers; this one reads it as a place and makes the map the pane. Same
+  // representative project, for the same reason Deer Creek was picked there.
+  {
+    slug: 'project-detail-map',
+    title: 'Project detail — map view',
+    description:
+      'One project read as a place: the work-areas map fills the screen, and the record and its sections float over it until you hide them.',
+    route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement/map',
+    createdAt: '2026-08-24',
     status: 'in-progress',
   },
 ];

@@ -1,0 +1,255 @@
+---
+// firma2-map-panel — a panel that floats ON a map rather than beside it: pinned
+// to one inline edge of a positioned surface, as tall as its content up to the
+// height of that surface, scrolling inside itself, and able to be taken off the
+// screen and put back without moving anything else.
+//
+// WHAT IT IS FOR. A map-first screen has one surface and everything else is laid
+// over it. firma2-project-atlas floats three of these — the project's record on
+// the leading edge, its tracked sections on the trailing edge, and the control
+// that clears both — and the only thing that differs between them is which edge
+// they take, how wide they are, and whether they draw a surface of their own.
+// That is a component, not three copies of the same twelve declarations.
+//
+// IT IS NOT A RAIL, AND THAT IS THE WHOLE DISTINCTION. firma2-record-rail is the
+// docked version of this idea and stays the right answer on a page whose main
+// column is a document: it is `position: sticky` inside a real layout track, it
+// takes the content pane's own background, and it is ruled off by a hairline
+// because it sits BESIDE the content. A panel here sits OVER the content, so it
+// needs the opposite of all four — it is out of flow, it draws a floating
+// surface, it carries an edge and a shadow, and it covers what is under it.
+// Both exist because both readings of "put the record next to the map" are
+// legitimate; which one a page wants is the page's decision.
+//
+// COVERING THE MAP IS A REAL COST, and the surface underneath has to be told.
+// firma2-project-map exposes --firma2-map-plate-inset-inline-start for its own
+// chrome and takes a fit reservation through its reflow event; the atlas pushes
+// both past whatever this panel is occupying. That negotiation was tried once
+// before on the project detail page and abandoned (see firma2-record-rail's
+// header) — the difference is that there it bought nothing, and here the whole
+// screen is the map, so there is no version of this layout that avoids it.
+//
+// THE COLLAPSED STATE IS AN ATTRIBUTE, NOT A PROP. `data-collapsed` on the host
+// is the API: a parent's script sets and clears it, and this file owns what that
+// looks like. It is deliberately not a server prop — the state changes on a
+// click, long after the server rendered anything — and deliberately not a rule
+// in the parent's stylesheet, which would mean the parent reaching through a
+// component boundary to style a box it does not own. It is also why the panel
+// leaves with `visibility`, not `display`: hidden it is out of the tab order and
+// out of the accessibility tree, which is the whole of what `display: none` was
+// wanted for, and it can still be transitioned back.
+//
+// bcn-lego-checked: walked the catalog (`ls
+// node_modules/@esa/ecology/src/components/`) for a persistent floating surface
+// and there is none. esa-popover and esa-tooltip are anchored TRANSIENTS — they
+// open against a trigger and close again, and neither is a region that holds a
+// page's content for as long as the page lasts. esa-side-dialog is a modal
+// drawer: it takes focus, lays a scrim over the app and is dismissed, which is
+// the opposite of a panel the reader works alongside. esa-card is what goes
+// INSIDE this (the atlas slots four of them into the trailing panel) and is a
+// box in a column, with a header band and a padding step sized for a section of
+// a document — firma2-project-map's own header already argues that case for the
+// small plates it draws, and this is that argument at panel scale. esa-container
+// is a max-width content wrapper, not a surface. Beacon is not cloned on this
+// machine. The layout inside is `.stack`, the hub primitive; no flex is
+// hand-rolled here, and every value below is a token. This file is the reusable
+// home for the pattern — a second map screen composes it rather than restating
+// the surface, the scroll behaviour and the collapse.
+import type { HTMLAttributes } from 'astro/types';
+
+interface Props extends HTMLAttributes<'div'> {
+  /**
+   * The panel's accessible name. Present makes this a COMPLEMENTARY LANDMARK —
+   * an <aside> a screen-reader user can jump to and skip past by name, which is
+   * what a panel holding a section of the record needs to be.
+   *
+   * Omit for a panel that holds only chrome (a toolbar, one button). A landmark
+   * per control makes the landmark list longer without making it more useful,
+   * and the control already names itself.
+   */
+  label?: string;
+  /** Which inline edge the panel is pinned to. */
+  side: 'start' | 'end';
+  /**
+   * `plate` (default) draws the floating surface — fill, hairline, radius,
+   * shadow — for content that has none of its own.
+   *
+   * `bare` draws nothing and lets the slotted content be the surface. The
+   * atlas's trailing panel is a column of esa-cards, each already a white box
+   * with an edge; a plate behind them would be the boxes-inside-boxes read that
+   * firma2-rail-section deleted a border to avoid.
+   */
+  surface?: 'plate' | 'bare';
+  /**
+   * The panel's width, when this panel's width is its OWN business — `auto` for
+   * a panel holding a single control, which is as wide as that control.
+   *
+   * Omit it and the panel reads --firma2-map-panel-width off its surface,
+   * falling back to the 22rem the record's cards were written for. That is the
+   * form a composing surface wants: the width is the same fact as the map's
+   * reservation for it, so both have to come from one declaration, and only the
+   * surface can make it. Passed here it becomes an inline style and no ancestor
+   * can reach it — which is correct for the toolbar and wrong for everything a
+   * layout has to reason about.
+   */
+  width?: string;
+  /** Gap between slotted children, on the `.stack` scale. */
+  gap?: '2xs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+}
+
+const { label, side, surface = 'plate', width, gap = 'xl', class: className, ...rest } = Astro.props;
+
+const Tag = label ? 'aside' : 'div';
+---
+{/* An <aside> ONLY when it is named — see the `label` prop. An unnamed
+    complementary landmark is worse than no landmark: it appears in the list a
+    screen-reader user navigates by and tells them nothing about whether it is
+    the one they want. */}
+<Tag
+  class:list={['firma2-map-panel', className]}
+  data-side={side}
+  data-surface={surface}
+  aria-label={label}
+  style={width ? `--firma2-map-panel-width: ${width}` : undefined}
+  {...rest}
+>
+  {/* THE HOST IS THE SCROLL CONTAINER AND THE STACK IS INSIDE IT — the same
+      split firma2-record-rail makes, and it is load-bearing for a reason that
+      cost this component a round of debugging.
+
+      The scroller was the stack itself for a version, with the host a flex
+      parent it filled. That is one element fewer and it silently CRUSHED every
+      card in it: a flex column with a definite height shrinks its children to
+      fit before it ever considers scrolling, so four cards needing 1100px inside
+      a 720px panel each came out a fraction of their height with their content
+      clipped — a funding table showing its header row and nothing else. A block
+      scroll container has no such behaviour; its children keep their heights and
+      the overflow is what scrolls, which is the whole point of a scroll
+      container. `overflow-y` on a box with a radius also clips to that radius,
+      so the surface below needs no separate `overflow: hidden`.
+
+      overscroll-behavior so a wheel that bottoms out in here does not chain into
+      the page beneath. On a screen whose background is a MAP that is not a
+      nicety: a scroll escaping the panel would pan or zoom the map, and the
+      reader did not ask to go anywhere. */}
+  <div class="firma2-map-panel__inner stack" data-gap={gap}>
+    <slot />
+  </div>
+</Tag>
+
+<style>
+  .firma2-map-panel {
+    /* THE ONE STEP EVERY EDGE USES. The panel sits --spacing-400 off the
+       surface's edges on both axes, which is the same inset firma2-project-map
+       gives its own plates — so a panel and a plate on one map line up rather
+       than each keeping its own margin. The block-start is a knob because a
+       surface can carry more than one panel on an edge and the second has to
+       start below the first; the atlas stacks its toolbar and its sections that
+       way. */
+    --firma2-map-panel-inset: var(--spacing-400, 1rem);
+    --firma2-map-panel-inset-block-start: var(--firma2-map-panel-inset);
+
+    position: absolute;
+    /* Above firma2-project-map's own plates, which claim z-index 1 inside the
+       stacking context that section opens. A panel is the thing a reader came
+       to read; a plate is the map's tooling, and if they ever overlap the
+       reading wins. */
+    z-index: 2;
+
+    inset-block-start: var(--firma2-map-panel-inset-block-start);
+    /* AS TALL AS ITS CONTENT, UP TO THE SURFACE. Not `inset-block: 0` — that
+       stretches a short panel to the full height and leaves it mostly empty,
+       covering map for no reason. The max is what is left of the surface after
+       both insets, so the panel stops clear of the bottom edge and starts
+       scrolling instead of running off it. */
+    max-block-size: calc(
+      100% - var(--firma2-map-panel-inset-block-start) - var(--firma2-map-panel-inset)
+    );
+
+    inline-size: var(--firma2-map-panel-width, 22rem);
+    /* A NARROW WINDOW MUST NOT PUT THE PANEL OFF THE SURFACE. Two panels at
+       22rem need 44rem plus three gutters before they even meet in the middle,
+       and the app's nav rail is outside that. This is the floor that keeps each
+       one on screen; the atlas takes the pair off the map entirely below the
+       width where that stops being readable. */
+    max-inline-size: calc(100% - var(--firma2-map-panel-inset) * 2);
+
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    /* THE PANEL LEAVES AND COMES BACK, and this is the whole of that behaviour.
+       `visibility` rather than `display` so it can be transitioned, and because
+       hidden visibility already does the two things that matter — out of the tab
+       order, out of the accessibility tree. The delay is what keeps it on screen
+       long enough to fade: it flips at the END of the exit and at the START of
+       the return, which is what the `0s` in the collapsed rule below is doing.
+
+       --transition-base is the tier-2 role for exactly this ("a change big
+       enough to want to be watched — a panel resizing, a floating button
+       arriving"), and naming the role rather than a duration is also what
+       answers prefers-reduced-motion: @esa/tokens re-points the transition
+       tokens to --duration-0 inside its own reduced-motion block, so there is no
+       media query to write here. */
+    transition:
+      opacity var(--transition-base, 200ms ease),
+      translate var(--transition-base, 200ms ease),
+      visibility 0s;
+  }
+
+  .firma2-map-panel[data-side='start'] {
+    inset-inline-start: var(--firma2-map-panel-inset);
+  }
+
+  .firma2-map-panel[data-side='end'] {
+    inset-inline-end: var(--firma2-map-panel-inset);
+  }
+
+  /* THE FLOATING SURFACE. `elevation-floating` and `elevation-2` are the pair
+     the system already uses for a surface that sits OVER content rather than in
+     it — the same two firma2-project-map's plates and its shape tooltips
+     resolve, which is what keeps a plate, a tooltip and a panel on one map
+     looking like the same product.
+
+     The radius clips the scrolled content on its own — a box with `overflow-y:
+     auto` is a clip box — so there is no `overflow: hidden` here. */
+  .firma2-map-panel[data-surface='plate'] {
+    background: var(--color-background-elevation-floating, #fcfcfc);
+    border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+    border-radius: var(--radius-md, 0.5rem);
+    box-shadow: var(--elevation-2, 0 2px 12px 0 rgba(0, 0, 0, 0.04));
+    padding: var(--spacing-400, 1rem);
+  }
+
+  /* NO PADDING on the bare variant: its children carry their own surface and
+     their own padding, and a step here would inset a column of cards from an
+     edge that is not drawn. */
+
+  /* GONE, AND THE DIRECTION IT LEAVES IN IS THE EDGE IT CAME FROM. A panel that
+     faded straight out could have been anywhere; sliding a step toward its own
+     edge says where it went and where the click will bring it back from.
+     A physical translate rather than a logical one: `translate` takes x before
+     y and has no logical form, so the leading edge is the left one. This spoke
+     is LTR throughout; an RTL build would want these two swapped. */
+  .firma2-map-panel[data-collapsed] {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity var(--transition-base, 200ms ease),
+      translate var(--transition-base, 200ms ease),
+      /* Duration 0s, DELAY --transition-base: the shorthand reads the first time
+         as the duration and the second as the delay, so this is "flip it at the
+         end of the fade". Naming the same role as the delay is what keeps the
+         two in step — including at --duration-0 under reduced motion, where the
+         fade is instant and a hardcoded 200ms delay would leave an invisible
+         panel swallowing clicks for a fifth of a second. */
+      visibility 0s var(--transition-base, 200ms ease);
+  }
+
+  .firma2-map-panel[data-collapsed][data-side='start'] {
+    translate: calc(var(--spacing-400, 1rem) * -1) 0;
+  }
+
+  .firma2-map-panel[data-collapsed][data-side='end'] {
+    translate: var(--spacing-400, 1rem) 0;
+  }
+</style>

@@ -70,6 +70,7 @@
 // its page title all render it.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaPill from '@esa/ecology/esa-pill.astro';
+import Firma2HoverCard from './firma2-hover-card.astro';
 
 interface Props {
   /** Stable key, e.g. "leadOrganization". Lands on the root as data-field. */
@@ -299,22 +300,31 @@ const hintId = `f2-edit-hint-${field}`;
           {values.map((member) => (
             <span class="firma2-editable-field__member" data-member>
               {memberCards[member] ? (
-                <esa-popover trigger="hover" position="bottom">
+                /* THE SAME CARD THE CONTACTS TAB RAISES — firma2-hover-card,
+                   which owns the placement, the width and the reachability.
+                   This used to be an esa-popover with the card assembled inline
+                   here, and it carried two defects the contact card had already
+                   had fixed: on Red Clover Valley two of the three cards were
+                   CUT OFF at the rail's left edge (3px and 14px — the narrow
+                   chips clipped, the wide ones did not, so it looked fine on
+                   whichever record you happened to open), and the 8px gap under
+                   the chip was a dead zone that closed the card on the way to
+                   it. Both are gone by composing rather than repeating; the
+                   long form of why is in that file.
+                   `span` is 20rem, not the rail's 21rem: these chips sit inside
+                   the display box, which already insets --spacing-300 plus its
+                   border on BOTH edges, so the row has that much less to fill
+                   than a row sitting directly in the rail. */
+                <Firma2HoverCard
+                  kind={memberCards[member].kind}
+                  title={memberCards[member].title}
+                  lines={memberCards[member].lines}
+                  span="20rem"
+                >
                   <a class="firma2-editable-field__member-link" href={memberHref}>
                     <EsaPill label={member} size="md" removable={false} />
                   </a>
-                  <div slot="content" class="firma2-editable-field__card stack" data-gap="2xs">
-                    <span class="firma2-editable-field__card-kind typography-label-sm" data-card-kind>
-                      {memberCards[member].kind}
-                    </span>
-                    <span class="typography-title-sm-strong" data-card-title>{memberCards[member].title}</span>
-                    <div class="stack" data-gap="2xs" data-card-lines>
-                      {memberCards[member].lines.map((line) => (
-                        <span class="typography-body-sm">{line}</span>
-                      ))}
-                    </div>
-                  </div>
-                </esa-popover>
+                </Firma2HoverCard>
               ) : memberHref ? (
                 <a class="firma2-editable-field__member-link" href={memberHref}>
                   <EsaPill label={member} size="md" removable={false} />
@@ -371,16 +381,18 @@ const hintId = `f2-edit-hint-${field}`;
       <template data-member-template>
         <span class="firma2-editable-field__member" data-member>
           {Object.keys(memberCards).length ? (
-            <esa-popover trigger="hover" position="bottom">
+            /* THE CLONE SOURCE, and it composes the same component so a member
+               added in the editor gets the fixed geometry too — the bug this
+               replaced would otherwise have grown back on every repaint.
+               paintMembers writes into [data-card-kind] / [data-card-title] /
+               [data-card-lines], which firma2-hover-card renders and documents
+               as part of its contract; empty strings here because the clone is
+               filled at runtime. */
+            <Firma2HoverCard kind="" title="" lines={[]} span="20rem">
               <a class="firma2-editable-field__member-link" href={memberHref}>
                 <EsaPill label="" size="md" removable={false} />
               </a>
-              <div slot="content" class="firma2-editable-field__card stack" data-gap="2xs">
-                <span class="firma2-editable-field__card-kind typography-label-sm" data-card-kind></span>
-                <span class="typography-title-sm-strong" data-card-title></span>
-                <div class="stack" data-gap="2xs" data-card-lines></div>
-              </div>
-            </esa-popover>
+            </Firma2HoverCard>
           ) : memberHref ? (
             <a class="firma2-editable-field__member-link" href={memberHref}>
               <EsaPill label="" size="md" removable={false} />
@@ -830,15 +842,11 @@ const hintId = `f2-edit-hint-${field}`;
     outline-offset: var(--focus-ring-offset, 2px);
   }
 
-  /* The hover card raised off a member chip (esa-popover supplies the panel
-     surface; this is only the content's measure). */
-  .firma2-editable-field__card {
-    min-inline-size: 14rem;
-    max-inline-size: 18rem;
-  }
-  .firma2-editable-field__card-kind {
-    color: var(--color-content-default-secondary, #646464);
-  }
+  /* NO RULES FOR THE MEMBER'S HOVER CARD. Its measure and its ink moved to
+     firma2-hover-card when that was extracted — restating either here would be
+     two declarations that agree today and drift the first time one changes,
+     which is exactly how this component and firma2-contact-card came to have
+     two cards with two different bugs in them. */
 
   /* Years and dollars are figures, so they get figures' shaping — the same
      treatment the Projects index table gives these two exact fields, so a cost
@@ -1653,6 +1661,15 @@ const hintId = `f2-edit-hint-${field}`;
     document.addEventListener('keydown', onKeydown, true);
     document.addEventListener('firma2:field-set', onFieldSet);
     document.addEventListener('astro:page-load', () => hydrate());
+    // Rows that arrive AFTER load — the project peek sheet clones a record's
+    // rows out of a <template>, whose content the load-time hydrate() can
+    // never see. The cloner announces the new subtree with this event
+    // (bubbling, dispatched from the subtree's root) instead of importing this
+    // module a second way; hydrate() is idempotent (data-f2Hydrated), so a
+    // re-announced subtree costs nothing.
+    document.addEventListener('firma2:field-hydrate', (event) => {
+      if (event.target instanceof HTMLElement) hydrate(event.target);
+    });
   }
   hydrate();
 </script>

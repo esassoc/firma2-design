@@ -68,6 +68,41 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
 </BaseLayout>
 
 <script>
+  // THE ACCOUNT MENU'S DESTINATIONS.
+  //
+  // esa-app-shell's user menu is DATA, not links: its items carry an `action`
+  // string and selecting one emits a composed `menu-action` event: the shell
+  // deliberately does not decide where an app's account routes live. So the
+  // routing is the spoke's, and it belongs in the layout rather than on a page —
+  // the menu is on every screen, so its behaviour has to be too.
+  //
+  // Settings is the only action wired, because it is the only one this spoke has
+  // built. Profile and Sign out stay inert for now, which is the same honesty the
+  // sidenav applies to unbuilt routes (see the `disabled` note in the frontmatter
+  // above) — except that esa-app-shell's AppShellMenuItem has no `disabled` field
+  // to pass through, so they cannot yet be DIMMED the way a nav row is. That gap
+  // is upstream. Wire each one here as its screen lands.
+  import { withBase } from '../lib/base';
+
+  const ROUTES: Record<string, string> = {
+    settings: '/prototypes/settings',
+  };
+
+  // On `document`, not on the menu: the event is composed and bubbling, and the
+  // menu element is created by the shell's own island script, so there is no
+  // reliable moment at which this layout could query for it.
+  document.addEventListener('menu-action', (event) => {
+    const route = ROUTES[(event as CustomEvent<string>).detail];
+    if (route) window.location.href = withBase(route);
+  });
+</script>
+
+<script>
+  // Registers <bcn-edge-handle>, the grip mountRailEdgeHandle appends to the
+  // rail's edge below. A side-effect import: the module defines a custom element
+  // and exports nothing.
+  import '../components/shared/bcn-edge-handle';
+
   // esa-text-field is TALLER THAN EVERY CONTROL BESIDE IT, at every size.
   //
   // Measured control heights, the two legos a filter row is built from:
@@ -236,6 +271,81 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   }
 
   moveChromeIntoRail();
+
+  // ---- THE RAIL'S EDGE IS A CONTROL ----
+  //
+  // A bcn-edge-handle on the rail's trailing edge: a 2px bar at the middle of the
+  // fold that DRAGS THE RAIL TO A WIDTH. It does not collapse anything — the
+  // grip carried both jobs briefly and the two were split apart (2026-08-24,
+  // user-directed, following Stripe's docs sidebar), so the edge means width and
+  // nothing else. The component's own file owns the interaction; three things are
+  // this layout's.
+  //
+  // COLLAPSE STAYS IN THE FOOT, and this rail is the one place in the spoke where
+  // that differs from the record rail's top-corner button. It is not an oversight:
+  // moveChromeIntoRail put the shell's toggle down there on a documented argument
+  // — with no top bar, the rail IS the app's chrome, and the controls that persist
+  // across every screen (who you are, how wide this is) belong together at its
+  // foot. Moving it up to match the record rail would re-litigate that to make two
+  // rails with different jobs look alike. The grip watches the same `collapsed`
+  // attribute the foot toggle flips, so it takes itself off the edge of a
+  // collapsed rail whichever control shut it (see its #sync).
+  //
+  // WHY THE WIDTH IS WORTH DRAGGING AT ALL. 280px is a default chosen for a nav
+  // model, not for this one: every label in this spoke's rail fits inside it, and
+  // the reader who wants the rail narrower is buying content width on a screen
+  // whose main column is a map or a four-column table. The two ends are the
+  // limits of the rail's own construction — 200px is where the longest nav label
+  // starts to truncate, 400px is where the icon-plus-label row stops reading as a
+  // rail and starts reading as a column of its own.
+  //
+  // CREATED IN SCRIPT, NOT RENDERED IN MARKUP, for the same reason the account
+  // strip is: esa-sidebar-nav exposes one slot (`header`) and clips its host, so
+  // a handle rendered inside it would be dropped or cut in half at the border it
+  // is meant to straddle. Appended to the SHELL, it is a grid item in the rail's
+  // own column — the stylesheet places it, exactly as it places the foot.
+  function mountRailEdgeHandle(): void {
+    document.querySelectorAll<HTMLElement>('.esa-app-shell').forEach((shell) => {
+      // `:scope >` and not a bare tag selector. A page can render handles of its
+      // own — the record rail puts one on its own edge, inside this shell's
+      // content pane — and a descendant search would find that one and conclude
+      // the rail already had its handle. Cost one silent no-op before it was
+      // caught in the browser; the app's handle is a DIRECT child of the shell,
+      // and nothing else's ever is.
+      if (shell.querySelector(':scope > bcn-edge-handle')) return;
+      const nav = shell.querySelector<HTMLElement>('esa-sidebar-nav');
+      if (!nav?.id) return;
+
+      const handle = document.createElement('bcn-edge-handle');
+      // `end`: the rail is on the leading side of the page, so the edge that
+      // moves is its trailing one.
+      handle.setAttribute('edge', 'end');
+      handle.setAttribute('panel', `#${nav.id}`);
+      // The lego's own width hook, written on the lego's own element. Collapsed
+      // it reads --sidenav-width-collapsed instead, which is why nothing here has
+      // to remember the open width in order to restore it.
+      handle.setAttribute('size-var', '--sidenav-width');
+      handle.setAttribute('min', '200');
+      // 320, AND THE CEILING IS SET BY A NEIGHBOUR RATHER THAN BY THE RAIL. 400
+      // is where the icon-plus-label row stops reading as a rail, and it is not
+      // the binding constraint: the project record's `.sidebar` track wraps its
+      // rail below the content once the pane drops under 1064px, and on a 1440px
+      // window that happens the moment this rail passes 328px. A drag that made
+      // the navigation 40px wider and sent the record's rail to the bottom of the
+      // page would read as a bug whatever the CSS says. 320 keeps the whole range
+      // safe at the width most of these screens are reviewed at, and it costs
+      // nothing a nav label needs — the longest in this spoke fits at 280.
+      handle.setAttribute('max', '320');
+      // The accessible name reads "Resize navigation". "Navigation"
+      // and not "sidebar" or "rail": the reader is told what the panel HOLDS,
+      // which is also what the landmark it controls is called.
+      handle.setAttribute('label', 'navigation');
+      handle.setAttribute('storage-key', 'app-nav');
+      shell.appendChild(handle);
+    });
+  }
+
+  mountRailEdgeHandle();
 
   // The rail's head is a ROW (brand beside toggle) and this spoke needs a COLUMN
   // (brand above search). esa-sidebar-nav already writes exactly this rule for
@@ -473,6 +583,77 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     background: var(--color-background-elevation-sunken, #f0f0f0);
     border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
     border-inline-end: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  /* ---- THE RAIL'S EDGE HANDLE ----
+     bcn-edge-handle ships a placement that assumes it is a child of the panel it
+     controls, which is the common case and is what the record rail uses. It
+     cannot be one here — esa-sidebar-nav has a closed set of slots and clips its
+     host — so the companion script appends it to the SHELL and these six lines
+     put it back on the rail's edge. Same trick, same grid area, same reasoning as
+     `.firma2-app-frame__account` above.
+
+     `inset: auto` first, and it is load-bearing rather than tidy: the component's
+     own `:host` rules set inset-block-start and inset-inline-end for an ABSOLUTE
+     box, and on a STICKY one those same two properties are sticky constraints
+     against the scrollport — a stray `right` would shove the grip sideways for
+     reasons nothing on the page would explain. Clearing them and naming one
+     leaves exactly one constraint. (Outer-tree declarations beat a shadow root's
+     `:host` rules whatever their specificity, so this needs no !important and no
+     selector games.)
+
+     THE CHILD COMBINATOR IS LOAD-BEARING, not tidiness. A page inside this shell
+     can render handles of its own — the project record's rail puts one on its own
+     edge, in the content pane — and a descendant selector would drag them all
+     into the nav rail's grid area. It did, and the rail's grip landed at the foot
+     of the column instead of the middle of the fold. The app's handle is the only
+     one that is ever a direct child of the shell.
+
+     `top: 50dvh` + `translate: … -50%` is what holds the grip at the middle of
+     the FOLD rather than the middle of the page — the document is what scrolls
+     here, so the rail's own column is as tall as the whole record. The X half of
+     the translate is the straddle: `justify-self: end` lands the box's trailing
+     edge on the rail's border, and half its width back over the content pane is
+     what makes it sit ON the line instead of inside it. */
+  .firma2-app-frame :global(.esa-app-shell > bcn-edge-handle) {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
+    align-self: start;
+    position: sticky;
+    inset: auto;
+    top: 50dvh;
+    /* Half its own width past the rail's border, then --spacing-200 clear of it —
+       the grip stands OFF the edge rather than sitting on it, so it reads as an
+       object beside the line instead of a nick in it. The component makes the
+       same move for a handle placed inside its panel (--bcn-edge-handle-gap), and
+       the token is restated rather than read from there because that declaration
+       lives on the shadow root's `:host` and this rule is what overrides the
+       placement it belongs to — reading a value out of the block you are
+       replacing is a loop waiting to break. */
+    translate: calc(50% + var(--bcn-edge-handle-gap, var(--spacing-200, 8px))) -50%;
+  }
+
+  /* THE DRAG MUST NOT BE WATCHED THROUGH A 200ms EASE. esa-sidebar-nav animates
+     its own width — `transition: width var(--_sidenav-transition)`, which chains
+     off the global --transition-base — and that is right for a click and wrong
+     for a pointer, where it reads as the edge lagging behind the hand. The lego
+     exposes no per-component duration hook, so the tier-1 token is re-pointed on
+     the host for the length of the drag and nowhere else; `data-resizing` is set
+     and removed by the handle. A /request-lego for --sidenav-transition would
+     retire this rule. */
+  .firma2-app-frame :global(esa-sidebar-nav[data-resizing]) {
+    --transition-base: 0s;
+  }
+
+  /* NO EDGE HANDLE ON A PHONE. 45rem is the shell's own breakpoint — the width at
+     which it drops the omnibox to an icon — and below it a 18px drag target
+     pinned to the middle of the screen's edge is a thing to catch with a thumb by
+     accident, not a control. The foot's toggle still collapses the rail. */
+  @media (max-width: 45rem) {
+    .firma2-app-frame :global(.esa-app-shell > bcn-edge-handle) {
+      display: none;
+    }
   }
 
   /* ---- COLLAPSED RAIL: 72px ----

@@ -1,87 +1,103 @@
 ---
-// Performance measures — the tenant's measure catalog, and where a new one
-// starts.
+// Performance measures — the tenant's measure catalog and its subcategory
+// schemas, one page, two views, everything edited in side sheets.
 //
-// THIS SCREEN IS A PATTERN EXERCISE FIRST. Performance measures happen to be
-// the entity being set up, but the reusable deliverable is the entity-setup
-// model underneath it: firma2-entity-create-dialog knows nothing about
-// measures, and Organizations, Funding Sources and Users are expected to reuse
-// it unchanged.
+// The brief's five (docs/product-brief.md §5):
 //
-// THE MODEL, AND WHY IT IS NOT A WIZARD. An earlier version of this flow was a
-// four-step drawer. It was replaced because a wizard encodes an assumption that
-// does not hold: that the user completes setup in one sitting. Defining a
-// performance measure is part exploration and part consulting other people —
-// what unit does the program actually report in, does the funder require a
-// subcategory, is this wording the reporters will understand.
+// 1. ONE QUESTION: "What does this program measure, and is each measure ready
+//    to collect?" The Schemas view answers the same question one level down —
+//    "what can those measurements be divided by" — which is why it is a second
+//    view here and not a second screen: same readers, same maintenance visit.
+// 2. READERS: program admins configure; the client decision-maker reads the
+//    catalog cold. Hardest to serve: the admin's ABSENT counterpart — the
+//    REPORTER, who meets every schema attached here as a dropdown they must
+//    answer. Their burden is priced on screen: the sheet says "None are
+//    required", system schemas say who fills them in, and Used by counts the
+//    blast radius of an edit.
+// 3. SERIES/SCALAR: two homogeneous lists — tables, not rails. Nothing scalar
+//    leads.
+// 4. IRREVERSIBLE: nothing is (drafts are browser-local patches), so nothing
+//    gets a warning band; the closest thing — editing a shared schema other
+//    measures use — gets the Used by line at the moment of editing.
+// 5. CUT: the measure detail PAGE (claim sentence, split chart, per-measure
+//    URL). A flat attribute list stopped earning a navigation destination; a
+//    form over a table is a sheet. Also cut: the concept library dialog —
+//    creation starts blank in the same sheet editing uses.
 //
-// So creating a measure asks exactly ONE question — its data type, the single
-// answer that decides whether a unit even applies — and hands back a saved
-// Draft with its own URL. Everything else is filled in on that page, over days,
-// from a link you can bookmark and send to a colleague. The catalog below shows
-// those drafts alongside finished measures, unnamed ones included, because a
-// list that hid your half-finished work would defeat the point.
+// SETUP IS STILL NOT A WIZARD (§4): the sheet saves a Draft in any state of
+// completeness, and Active is gated — not the form. The one-question create
+// dialog died with the library flow; the type fork is now a field like any
+// other, changeable until the answers make it consequential.
 //
-// The app chrome (top bar, omnibox, sidenav, account menu) and the page's
-// padding come from AppLayout -> esa-app-shell, so this page is nothing but its
-// spine and three sections. Zero page CSS.
+// The app chrome and the page's padding come from AppLayout → esa-app-shell.
+// The page is its manifest: a header whose action swaps with the active view,
+// the two tables inside the tab lego's panels, and the two sheets.
 import AppLayout from '../../layouts/AppLayout.astro';
 import Firma2PageHeader from '../../components/shared/firma2-page-header.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import Firma2MeasureTable from '../../components/measures/firma2-measure-table.astro';
-import Firma2MeasureCreateDialog from '../../components/setup/firma2-measure-create-dialog.astro';
+import Firma2SchemaTable from '../../components/measures/firma2-schema-table.astro';
+import Firma2MeasureSidesheet from '../../components/measures/firma2-measure-sidesheet.astro';
+import Firma2SchemaSidesheet from '../../components/measures/firma2-schema-sidesheet.astro';
 
-const CREATE_DIALOG_ID = 'new-measure';
-
-// THE ONE QUESTION IS WHAT KIND OF STATEMENT THE MEASURE MAKES.
-//
-// It was the UNIT, and that failed on its own terms. The test for a one-question
-// modal is that the answer changes what happens next; the unit changed nothing —
-// same rail, same fields — so it was a field with ceremony around it, asked
-// before the name and defaulting silently to acres. Its options were also drawn
-// from this spoke's mock data rather than the domain, so it had no answer for a
-// cost, water-quality or outreach measure.
-//
-// Output vs outcome passes that test. An output has an actor and needs a primary
-// reported dimension; an outcome has none, because nobody DID a water
-// temperature. They take different counting rules — summing readings is
-// meaningless — and an outcome is reported by a monitoring effort about a PLACE
-// rather than by the project. Different required fields means a different form,
-// and that is what earns the fork.
-//
-// CREATION IS LIBRARY-FIRST NOW (docs/measure-model.md, PM10): the dialog
-// opens on ~15 standard themes and picking a concept lands a prefilled draft,
-// with "start from scratch" — the old output/outcome question, descriptions
-// intact — as the escape path. The kind fork survives inside the dialog; the
-// routing survives inside it too (the same two per-kind draft slugs, reached
-// through a localStorage prefill rather than a query param).
-//
-// The GENERIC one-question dialog this page used to render is untouched and
-// still the right tool for Organizations, Funding Sources and Users — see
-// firma2-measure-create-dialog's header for why browsing a library needed a
-// sibling rather than a mode flag on it.
-
+// The two views. "Measures" first — it is the page's name and the majority
+// visit; schemas are the supporting vocabulary one level down.
+const TABS = [{ label: 'Measures' }, { label: 'Subcategory schemas' }];
 ---
 <!-- manifest:
   layout: stack(2xl)
   sections:
-    - page header   -> firma2-page-header
-    - measure list  -> firma2-measure-table
-    - create dialog -> firma2-measure-create-dialog  (library-first)
+    - page header      -> firma2-page-header  (action swaps with the view)
+    - view tabs        -> esa-tab-layout
+      - measures       -> firma2-measure-table
+      - schemas        -> firma2-schema-table
+    - measure sheet    -> firma2-measure-sidesheet
+    - schema sheet     -> firma2-schema-sidesheet
 -->
 <AppLayout title="Performance measures — ProjectFirma 2.0" active="performance-measures">
   <div class="stack" data-gap="2xl">
     <Firma2PageHeader title="Performance measures">
-      <!-- "New measure", not "New performance measure": the page title two lines
-           up already establishes what kind of thing this makes, and the dialog
-           that opens says the full noun in its own heading. esa-button spreads
-           ...rest, so data-opens reaches the native <button> and the dialog's
-           document-level listener picks it up — no page script. -->
-      <EsaButton slot="actions" variant="primary" data-opens={CREATE_DIALOG_ID}>New measure</EsaButton>
+      <!-- One primary action at a time — the one that creates what the active
+           view lists. Both are rendered and the script swaps `hidden`, so the
+           header never reflows. The plain <div> wrappers exist because
+           `hidden` has to land on an element with no author display rule:
+           esa-button forwards rest props to its INNER native button, whose
+           own display wins over the UA's [hidden] — the same trap the measure
+           table documents on esa-filter-clear-button. data-open-* is the
+           sheets' delegated seam. -->
+      <div slot="actions" data-view-action="0">
+        <EsaButton variant="primary" data-open-measure="new">New measure</EsaButton>
+      </div>
+      <div slot="actions" data-view-action="1" hidden>
+        <EsaButton variant="primary" data-open-schema="new">New schema</EsaButton>
+      </div>
     </Firma2PageHeader>
 
-    <Firma2MeasureTable />
+    <esa-tab-layout class="firma2-measures-views" size="md" tabs={JSON.stringify(TABS)}>
+      <div slot="panel-0">
+        <Firma2MeasureTable />
+      </div>
+      <div slot="panel-1">
+        <Firma2SchemaTable />
+      </div>
+    </esa-tab-layout>
 
-    <Firma2MeasureCreateDialog id={CREATE_DIALOG_ID} />
+    <Firma2MeasureSidesheet />
+    <Firma2SchemaSidesheet />
   </div>
 </AppLayout>
+
+<script>
+  import '@esa/ecology/esa-tab-layout';
+
+  // The header's action follows the active view. The buttons carry their tab
+  // index; the lego's bubbling `tabchange` carries the new one.
+  const views = document.querySelector('.firma2-measures-views');
+  const actions = document.querySelectorAll<HTMLElement>('[data-view-action]');
+  views?.addEventListener('tabchange', (event) => {
+    const index = (event as CustomEvent<{ index: number }>).detail?.index ?? 0;
+    actions.forEach((el) => {
+      el.hidden = Number(el.dataset.viewAction) !== index;
+    });
+  });
+</script>

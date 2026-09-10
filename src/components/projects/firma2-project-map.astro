@@ -24,6 +24,17 @@
 // the convention every map UI already uses and is what the card was standing in
 // for.
 //
+// TWO VARIANTS, AND ONLY THE SIZING DIFFERS. `section` is everything described
+// above — the last section of a scrolling column, which has to work out its own
+// width and height because nothing around it knows it wants a screenful.
+// `canvas` is the same surface handed a box that is already the right size, and
+// it simply fills it; firma2-project-atlas is the caller, where this map is not
+// a section of the page but the page itself, with the record floating on it.
+// The canvas, the plates, the shapes, the tooltips and the whole client module
+// are shared verbatim — a second map component would have been 250 lines of
+// duplicated Leaflet for three sizing declarations, which is how two maps in one
+// product start rendering the same project differently.
+//
 // FULL-BLEED MEANS ITS COLUMN, NOT THE WINDOW. On the project detail page the
 // column is everything left of the record rail, and the two meet edge to edge:
 // this canvas bleeds a step further right than its track so the rail's own
@@ -88,9 +99,27 @@ interface Props {
    *  prop and this section can grow into the rest of it without a signature
    *  change. */
   detail: ProjectDetail;
+  /**
+   * WHICH BOX THIS SURFACE IS SIZED AGAINST — and it is only the sizing that
+   * differs; the canvas, the plates, the shapes and the script are one
+   * implementation.
+   *
+   * `section` (default) is a section IN a scrolling column: it gives the
+   * content pane's inline padding back with a negative margin and computes its
+   * own height off the fold, because nothing around it knows it wants to be a
+   * screenful. That is the project detail page's last section.
+   *
+   * `canvas` is the whole pane: it fills whatever positioned box it is dropped
+   * in (`block-size: 100%`, no bleed, no floor) and lets that parent own the
+   * arithmetic. That is firma2-project-atlas, where the map IS the page and the
+   * record floats on it — the parent already has to size itself against the
+   * fold to place its own panels, so a second copy of that calculation in here
+   * would be a second answer that can drift from the first.
+   */
+  variant?: 'section' | 'canvas';
 }
 
-const { detail } = Astro.props;
+const { detail, variant = 'section' } = Astro.props;
 const { workAreas, mapCenter, mapZoom } = detail;
 
 // "4.1 miles", "62 acres". Formatted ONCE, server-side, and shipped in the
@@ -118,7 +147,7 @@ const mapConfig = {
      <h3> in the head plate below is the section's heading — it was the card's
      before the card went, at the same typography role the card gave it, so the
      document outline is unchanged by the reskin. -->
-<section class="firma2-project-map">
+<section class="firma2-project-map" data-variant={variant}>
   <!-- CANVAS FIRST AND ABSOLUTE. Everything after it in this file is a plate
        laid ON it, which is the whole difference from the carded version: there,
        the map was a box in a column and the legend came after it; here the map
@@ -232,6 +261,15 @@ const mapConfig = {
     areas: MapArea[];
   }
 
+  /** The payload of `firma2-map:reflow` — a composing surface's own reservation,
+   *  in Leaflet's two-corner form (`[x, y]` pixels). Both halves are optional;
+   *  omitting one falls back to the plate reservation this section draws for
+   *  itself. See the listener near the foot of this script. */
+  interface ReflowDetail {
+    paddingTopLeft?: [number, number];
+    paddingBottomRight?: [number, number];
+  }
+
   // Leaflet is a CDN global, not an npm dependency of this spoke (same version
   // and same CDN as cb-fish-design), so there are no types to import and `any`
   // is the honest annotation rather than a fictional interface.
@@ -323,39 +361,71 @@ const mapConfig = {
     // buttons and the keyboard all still zoom.
     const map = L.map(canvas, { scrollWheelZoom: false }).setView(config.center, config.zoom);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    // THE BASEMAP IS THE ONE THING ON THIS SECTION THAT TOKENS CANNOT REACH.
+    // Every other Leaflet surface here — the canvas behind the tiles, the zoom
+    // bar, the attribution strip, the shape tooltips — is painted from semantic
+    // roles in the <style> block below, so all of it followed the dark scheme
+    // the day the scheme existed. The tiles are raster PNGs rendered on CARTO's
+    // servers, so the only lever is WHICH RASTER SET to ask for, and it has to
+    // be chosen in script. Leaving it on `light_all` put a white map, at full
+    // brightness, in the middle of an otherwise dark page — the single loudest
+    // thing on the screen, and on the atlas variant it is the whole screen.
+    //
+    // `dark_all` is the same cartography as `light_all` from the same source at
+    // the same zooms, inverted — not a different map. So the grayscale basemap
+    // this section was designed around (roads and streams legible, nothing
+    // competing with the work areas drawn on top) holds in both schemes.
+    const basemapUrl = () =>
+      document.documentElement.getAttribute('data-scheme') === 'dark'
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+    const tiles = L.tileLayer(basemapUrl(), {
       attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
       subdomains: 'abcd',
       maxZoom: 19,
     }).addTo(map);
 
-    const areaColor = token('--color-background-dataviz-categorical-1', '#3e9b4f');
-    const reachColor = token('--color-background-dataviz-categorical-2', '#3e63dd');
+    // THE SHAPE STYLES ARE FUNCTIONS, NOT CONSTANTS, and that is the whole of
+    // why: `token()` reads a computed custom property, which resolves against
+    // whatever `data-scheme` says AT THE MOMENT IT IS CALLED. Held in a const at
+    // init, the categorical ramp is frozen at the scheme the page loaded in —
+    // theme-firma2.css re-points categorical-1 from #3e9b4f to #46a758 in dark,
+    // so a reader who switched schemes with the map on screen kept the light
+    // green over dark tiles. Rebuilt per call, the same function serves the
+    // first paint and every repaint after it.
+    //
+    // A unit has an inside, so it gets one: a light wash that lets the basemap's
+    // roads and streams read through, under a thin edge that is the actual claim
+    // being made about the boundary.
+    const areaStyle = () => {
+      const areaColor = token('--color-background-dataviz-categorical-1', '#3e9b4f');
+      return {
+        color: areaColor,
+        weight: 2,
+        opacity: 0.9,
+        fillColor: areaColor,
+        fillOpacity: 0.22,
+      };
+    };
+
+    // A reach has no inside — it is a line of work along a channel — so the
+    // weight goes into the stroke instead of a fill. Rounded joins because these
+    // follow a watercourse, and mitred corners on a meander read as a survey
+    // line rather than a stream.
+    const reachStyle = () => ({
+      color: token('--color-background-dataviz-categorical-2', '#3e63dd'),
+      weight: 4,
+      opacity: 0.95,
+      lineCap: 'round',
+      lineJoin: 'round',
+    });
 
     const shapes = config.areas.map((area) => {
       const shape =
         area.kind === 'area'
-          ? // A unit has an inside, so it gets one: a light wash that lets the
-            // basemap's roads and streams read through, under a thin edge that
-            // is the actual claim being made about the boundary.
-            L.polygon(area.path, {
-              color: areaColor,
-              weight: 2,
-              opacity: 0.9,
-              fillColor: areaColor,
-              fillOpacity: 0.22,
-            })
-          : // A reach has no inside — it is a line of work along a channel — so
-            // the weight goes into the stroke instead of a fill. Rounded joins
-            // because these follow a watercourse, and mitred corners on a
-            // meander read as a survey line rather than a stream.
-            L.polyline(area.path, {
-              color: reachColor,
-              weight: 4,
-              opacity: 0.95,
-              lineCap: 'round',
-              lineJoin: 'round',
-            });
+          ? L.polygon(area.path, areaStyle())
+          : L.polyline(area.path, reachStyle());
 
       // Sticky so the label tracks the cursor across a large polygon instead of
       // pinning to a centroid that may be off screen at this zoom.
@@ -376,6 +446,90 @@ const mapConfig = {
     // construction. setView above still runs first, which is what makes the
     // authored center/zoom the fallback for a project with no shapes at all —
     // and gives Leaflet the view it requires before any layer is added.
+    // FRAME AROUND WHATEVER IS ON TOP OF THE SURFACE, and WHAT is on top is not
+    // always this component's business. The two defaults below are the plates
+    // this file draws itself — the head at the leading top corner, the legend at
+    // the leading foot. A composing surface that floats MORE over the canvas
+    // (firma2-project-atlas floats the whole record on it) knows its own panels'
+    // widths and nothing else does, so it passes its own reservation in through
+    // the reflow event rather than this file guessing at a layout it cannot see.
+    const fitToShapes = (
+      paddingTopLeft: [number, number] = [32, 96],
+      paddingBottomRight: [number, number] = [32, 132],
+    ): void => {
+      if (shapes.length === 0) return;
+      map.fitBounds(L.featureGroup(shapes).getBounds(), { paddingTopLeft, paddingBottomRight });
+    };
+
+    // THE ONE THING A PARENT CAN ASK THIS SECTION TO DO. Leaflet caches its
+    // container's size and paints tiles for that cache, so a canvas whose box
+    // changed — the atlas hiding the page header band, which gives the map
+    // another 100-odd pixels — renders a strip of grey until it is told. There
+    // is no resize event for "my parent restyled me", so the parent says so.
+    //
+    // An EVENT rather than an exported function, because the two are in separate
+    // Astro islands with no module boundary between them: the atlas holds a DOM
+    // node, not an instance. It is also the honest direction of the dependency —
+    // this section publishes a capability and does not know who calls it.
+    root.addEventListener('firma2-map:reflow', (event: Event) => {
+      const detail = (event as CustomEvent<ReflowDetail>).detail;
+      map.invalidateSize();
+      fitToShapes(detail?.paddingTopLeft, detail?.paddingBottomRight);
+    });
+
+    // THE COLUMN CAN CHANGE WIDTH WITHOUT THE WINDOW CHANGING SIZE, and Leaflet
+    // has no way to know. It listens to `resize` on the window and nothing else,
+    // so every layout move that is not a window move leaves it painting tiles for
+    // a box that is no longer there — a grey strip down whichever edge grew. Both
+    // of this page's rails can now be dragged and collapsed (bcn-edge-handle), so
+    // this is no longer an edge case: it is one drag away on every visit.
+    //
+    // A ResizeObserver rather than a listener for the handle's event, because the
+    // dependency runs the wrong way otherwise — the map would have to know which
+    // controls exist on the page it happens to be laid out in. Watching its own
+    // box catches every cause, including the nav rail collapsing, which was
+    // already silently wrong before any of this.
+    //
+    // invalidateSize ONLY — deliberately not fitToShapes. Re-framing on a resize
+    // would throw away a pan or a zoom the reader had just made, which is the
+    // more annoying failure of the two. `firma2-map:reflow` stays the way a
+    // parent asks for the frame back.
+    //
+    // rAF-coalesced: a drag fires the observer on every frame it moves, and
+    // invalidateSize forces a layout read plus a tile pass.
+    let reflowFrame = 0;
+    new ResizeObserver(() => {
+      if (reflowFrame) return;
+      reflowFrame = requestAnimationFrame(() => {
+        reflowFrame = 0;
+        map.invalidateSize();
+      });
+    }).observe(canvas);
+
+    // FOLLOW THE SCHEME WHILE THE PAGE IS OPEN. Reading data-scheme once at init
+    // covers a reader who arrives already dark; it does not cover the two cases
+    // that actually happen — someone changing the setting on the Settings screen
+    // and coming back, and a "System" reader whose machine flips at sunset with
+    // this page still on screen (src/lib/scheme.ts rewrites the attribute live
+    // for exactly that). Both surface here as one attribute mutation.
+    //
+    // A MutationObserver on <html>, which is the same mechanism esa-chart uses
+    // to re-theme itself (it watches data-theme / data-scheme / a11y-assurance).
+    // There is no event for "a custom property resolved to a different value",
+    // so the attribute that caused it is the signal.
+    //
+    // setUrl swaps the raster set in place: Leaflet keeps the tiles already
+    // painted until the replacements load, so the map darkens rather than
+    // blanking. setStyle re-reads the ramp for shapes that are already drawn —
+    // `config.areas` and `shapes` are built by one .map() call, so index i is
+    // the same work area in both, which is what makes the kind lookup honest.
+    new MutationObserver(() => {
+      tiles.setUrl(basemapUrl());
+      config.areas.forEach((area, i) => {
+        shapes[i].setStyle(area.kind === 'area' ? areaStyle() : reachStyle());
+      });
+    }).observe(document.documentElement, { attributeFilter: ['data-scheme'] });
+
     if (shapes.length > 0) {
       // FRAME AROUND THE PLATES, NOT INTO THE RAW BOX. A symmetric `padding` was
       // right when this was a card with nothing on top of it. Full-bleed, both
@@ -390,15 +544,51 @@ const mapConfig = {
       // this surface — the reservation was measured off that panel — and it does
       // not now that the record has a rail of its own beside the map. Whatever
       // is to the right of this box is no longer this component's problem.
-      map.fitBounds(L.featureGroup(shapes).getBounds(), {
-        paddingTopLeft: [32, 96],
-        paddingBottomRight: [32, 132],
-      });
+      fitToShapes();
     }
+
+    // AND THE OTHER HALF OF THE HANDSHAKE. The fit above used this section's own
+    // reservation, because at this point it is the only one it has — and on the
+    // project detail page that is the whole story, since nothing else is on the
+    // canvas. A composing surface that floats its own panels here cannot correct
+    // that on load without knowing WHEN there is a map to correct: this module
+    // waits on a CDN script, so it finishes an unknowable number of frames after
+    // the page's other islands have run and there is nothing to poll for.
+    // So it says so. The atlas listens for this and answers with the reflow it
+    // would otherwise only have sent on the first click.
+    root.dispatchEvent(new CustomEvent('firma2-map:ready'));
   }
 
-  document.querySelectorAll<HTMLElement>('.firma2-project-map').forEach((root) => {
+  /** Idempotent start — the guard is on the DOM so the load-time sweep and the
+   *  late-arrival seam below can never double-init one root. */
+  const startProjectMap = (root: HTMLElement): void => {
+    if (root.dataset.f2MapInit !== undefined) return;
+    root.dataset.f2MapInit = '';
     void initProjectMap(root);
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-map').forEach(startProjectMap);
+
+  // MAPS THAT ARRIVE AFTER LOAD. The project peek panel clones a record — map
+  // included — out of a <template>, whose content the sweep above can never
+  // see. The cloner announces the new subtree with this event (bubbling, from
+  // the subtree's root), the same seam shape firma2-editable-field uses for
+  // its own cloned rows. A root that is ALREADY running answers with a reflow
+  // instead: a cached clone re-enters the DOM with Leaflet's size cache stale,
+  // and invalidate + refit is what a re-shown map needs, not a second map.
+  document.addEventListener('firma2:map-init', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const roots = target.matches('.firma2-project-map')
+      ? [target]
+      : Array.from(target.querySelectorAll<HTMLElement>('.firma2-project-map'));
+    roots.forEach((root) => {
+      if (root.dataset.f2MapInit !== undefined) {
+        root.dispatchEvent(new CustomEvent('firma2-map:reflow', { detail: {} }));
+      } else {
+        startProjectMap(root);
+      }
+    });
   });
 </script>
 
@@ -441,6 +631,28 @@ const mapConfig = {
      on a short window. */
   .firma2-project-map {
     --firma2-map-offset: calc(var(--firma2-band-height, 148px) + var(--spacing-600, 2rem));
+
+    /* WHERE THE PLATES SIT, AS A KNOB RATHER THAN A CONSTANT. The step itself
+       is unchanged — --spacing-400 from whichever edge each plate takes — but
+       the leading inset is now a name a composing surface can re-point, because
+       the leading edge is the one that gets covered. firma2-project-atlas floats
+       the record panel there and pushes the plates clear of it with one
+       declaration; when that panel is hidden the same declaration goes away and
+       they return to the canvas edge.
+       Only the leading inline inset is exposed. The block insets never move (the
+       plates take the top and the foot of the surface however wide the panels
+       are) and the trailing edge carries no plate — Leaflet's attribution has
+       the trailing foot and this file does not place anything against it.
+
+       THE KNOB IS NOT DECLARED HERE, AND THAT IS THE WHOLE MECHANISM. A custom
+       property declared on this element would SHADOW the one an ancestor set,
+       so the composing surface's value would never arrive — the plates would sit
+       at the canvas edge under whatever was covering them, which is exactly the
+       bug this knob exists to prevent. The default lives in the two rules that
+       read it, as var()'s fallback, which is the form that leaves the name free
+       to inherit. */
+    --firma2-map-plate-inset: var(--spacing-400, 1rem);
+
     position: relative;
     margin-inline: calc(var(--spacing-500, 1.5rem) * -1);
     block-size: calc(100dvh - var(--firma2-map-offset));
@@ -451,6 +663,24 @@ const mapConfig = {
        the canvas with small numbers and nothing here can rise over the app's
        rail or a dialog. */
     isolation: isolate;
+  }
+
+  /* THE CANVAS VARIANT GIVES ALL THREE SIZING DECLARATIONS BACK. Every one of
+     them above exists because a section in a scrolling column has to work out
+     for itself how big it wants to be; dropped into a box that is already the
+     right size, each of them is wrong. The bleed would push a full-pane map a
+     step past the pane it was handed, the fold arithmetic would subtract a
+     header band its parent has already subtracted (and, in the atlas, one that
+     can be hidden outright), and the 30rem floor would overflow a short window
+     rather than letterbox it — the parent is the box the reader can see, so a
+     minimum here can only escape it.
+     `block-size: 100%` needs a parent with a definite height and a positioned
+     one to lay the plates against; firma2-project-atlas is both, and states so
+     where it sets them. */
+  .firma2-project-map[data-variant='canvas'] {
+    margin-inline: 0;
+    block-size: 100%;
+    min-block-size: 0;
   }
 
   /* NO HEIGHT OF ITS OWN ANY MORE. This used to be a 640px box inside a card,
@@ -508,8 +738,8 @@ const mapConfig = {
   /* Leading top corner: the section's name and its one action. `.cluster` is
      already holding the two side by side; this only places the plate. */
   .firma2-project-map__plate--head {
-    inset-block-start: var(--spacing-400, 1rem);
-    inset-inline-start: var(--spacing-400, 1rem);
+    inset-block-start: var(--firma2-map-plate-inset);
+    inset-inline-start: var(--firma2-map-plate-inset-inline-start, var(--firma2-map-plate-inset));
   }
 
   /* The title carries the card's own typography role, so it is the same heading
@@ -526,9 +756,24 @@ const mapConfig = {
      facts panel opposite it takes, so the two plates are the same column width
      on either side of the map. */
   .firma2-project-map__plate--legend {
-    inset-block-end: var(--spacing-400, 1rem);
-    inset-inline-start: var(--spacing-400, 1rem);
+    inset-block-end: var(--firma2-map-plate-inset);
+    inset-inline-start: var(--firma2-map-plate-inset-inline-start, var(--firma2-map-plate-inset));
     max-inline-size: 22rem;
+  }
+
+  /* THE PLATES TRAVEL WHEN THE LEADING INSET IS RE-POINTED, and the motion is
+     the whole of what tells a reader the two are related — the record panel
+     leaves and the map's own chrome moves into the room it vacated.
+
+     --transition-base IS THE ROLE FOR EXACTLY THIS, and its own token doc names
+     the case: "a change big enough to want to be watched — a panel resizing, a
+     floating button arriving." Naming the role rather than a duration also gets
+     the reduced-motion answer for free: @esa/tokens re-points the tier-2
+     transition tokens to --duration-0 inside its own
+     `@media (prefers-reduced-motion: reduce)` block, so a hand-written media
+     query here would be a second copy of a rule the system already applies. */
+  .firma2-project-map__plate {
+    transition: inset-inline-start var(--transition-base, 200ms ease);
   }
 
   /* `.stack` is the layout engine now, not `.grid`. The grid's 18rem floor was

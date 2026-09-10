@@ -1,0 +1,354 @@
+---
+// firma2-hover-card — THE hover card. One object: what KIND of thing this is,
+// WHICH one it is, and the few facts that place it — raised off whatever is
+// slotted in as its trigger, on hover or on focus.
+//
+// WHY THIS EXISTS: THERE WERE TWO OF THEM. The classification chips in Key facts
+// and the people in Contacts and Comments are the same interaction — an entity
+// in a data row, with more to say than the row has space for — and they had two
+// implementations, one inside firma2-editable-field and one inside
+// firma2-contact-card. That is the ordinary cost of duplication (two treatments
+// drifting), plus a sharper one: THE GEOMETRY BELOW IS SUBTLE AND BOTH COPIES
+// HAD IT WRONG, in the same two ways, and fixing one did nothing for the other.
+// Measured on the project rail, 2026-08-24:
+//
+//   - CLIPPED. Two of the three classification cards on Red Clover Valley were
+//     cut off at the rail's left edge (3px and 14px). The wide chips escaped and
+//     the narrow ones did not, which is the worst possible failure mode: it
+//     looks fine on the record you happen to open.
+//   - UNREACHABLE. Both cards sat 8px below their trigger with the pointer over
+//     nothing in between, so the card closed on the way to it unless you
+//     approached at exactly the right angle.
+//
+// Both are consequences of how esa-popover positions, and both are fixed once,
+// here. That is the argument for the component: not that the markup repeated,
+// but that the CORRECTNESS repeated and only got applied once.
+//
+// THE TWO FIXES, and why they take the shape they do:
+//
+// 1. THE PANEL IS EXACTLY AS WIDE AS ITS TRIGGER ROW. esa-popover centres its
+//    panel on its anchor (`left: 50%` and a translate) and has no start/end
+//    alignment; the rail, meanwhile, is a scroll container, and `overflow-y:
+//    auto` clips the x axis too — so anything leaving the column is cut, not
+//    merely overhung. Centre a box on an anchor of its OWN width, though, and
+//    the two left edges coincide: the card drops under the trigger flush with
+//    it, like a dropdown, and cannot leave a column the trigger fits in. The
+//    row is widened to `span` for the same reason. (`overflow-x: clip` with an
+//    `overflow-clip-margin` would have let the panel spill out instead, and was
+//    measured: `clip` computes to `hidden` when the other axis is a scroll
+//    container, so the margin is ignored. It is not available.)
+//
+//    THE ARROW GOES WITH IT. It is drawn at the panel's centre, which is now
+//    the middle of a wide row — it pointed at empty space and made the card read
+//    as belonging to the column rather than to the thing under it. With the
+//    edges aligned there is nothing left for it to point at.
+//
+// 2. THE GAP IS PADDING, NOT `offset`. esa-popover renders the panel INSIDE its
+//    anchor, so travelling from the trigger onto the card does not close it —
+//    but only while the pointer stays in the anchor's box, and the 8px `offset`
+//    puts that air outside it. Zero offset, and the same 8px is rebuilt as
+//    padding on the trigger row, which is inside: identical air, a bridge
+//    rather than a moat.
+//
+// THE RIGHT FIX IS A HUB ONE and this is the interim. esa-popover needs
+// `align="start" | "center" | "end"`; with it, both of the above collapse to one
+// attribute and the trigger goes back to being only as wide as the thing it is.
+// Worth a /request-lego — and when it lands, it lands for every card at once,
+// which is the second reason this file exists.
+//
+// THE SHAPE IS FIXED, AND IT IS THE ONE THE CLASSIFICATION CARD ALREADY HAD:
+// kind, then title, then lines. A reader who has learned one card in this app
+// has learned all of them. The `data-card-*` hooks are load-bearing — they are
+// how firma2-editable-field repaints a member's card at runtime after an edit,
+// by cloning this markup and writing into those three nodes — so they are part
+// of the contract, not decoration.
+//
+// A LINE CAN BE COPYABLE, and that lives here rather than in the caller for the
+// same reason everything else does. A card is often the only place a fact is
+// written down — an address, a reference number — and selecting text inside a
+// box that closes when the pointer leaves it is close to impossible, so the
+// affordance has to be a control. It docks to the END OF ITS OWN LINE: the
+// button copies THAT value, so putting it in a card-level corner would leave
+// the reader working out what it acts on (it was built that way first, and read
+// exactly that wrong). The card owns the clipboard call and the receipt because
+// they are the same in every card; the caller owns only which line and what to
+// call the button.
+//
+// A CONTROL INSIDE A HOVER PANEL IS REACHABLE HERE, which is not generally true
+// and is worth stating: the pointer travels the bridge into the card without
+// leaving the anchor, and Tab lands on the button straight after the trigger
+// because esa-popover ignores focus moving between the two. The same button
+// docked to the RAIL ROW instead would be a second tab stop on every row for an
+// act that only makes sense once you have read the card.
+//
+// bcn-lego-checked: esa-popover IS the lego and this composes it — the panel
+// surface, the placement, the open/close wiring, the Escape handler, the
+// focusin/focusout keyboard parity and the aria-expanded on the slotted trigger
+// are all its. Walked the catalog (`ls node_modules/@esa/ecology/src/
+// components/`) for a hover/entity/preview card: esa-card is a page-section
+// surface, esa-tooltip is a string of text with no structure, esa-popover is
+// exactly the primitive underneath this. Beacon is not cloned on this machine.
+// What is bespoke is the two geometry rules above, and they exist only because
+// the lego cannot yet express them.
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+/**
+ * A fact the reader is likely to want OUT of the card — an address, an
+ * identifier. `copy` is the button's accessible name and its hover tooltip, so
+ * it says what lands on the clipboard ("Copy email address"), and its presence
+ * is what turns the control on. Nothing else about the line changes.
+ */
+export interface HoverCardCopyLine {
+  text: string;
+  copy: string;
+}
+
+interface Props {
+  /** What KIND of thing this is. "Portfolio goal", "Grant manager". */
+  kind: string;
+  /** WHICH one — normally the same string the trigger shows. */
+  title: string;
+  /**
+   * The facts that place it. One short line each; keep it to three or four. A
+   * plain string is a line to read; a HoverCardCopyLine is a line to read AND
+   * take away.
+   */
+  lines?: (string | HoverCardCopyLine)[];
+  /**
+   * THE WIDTH OF THE COLUMN THIS CARD LIVES IN — the trigger row stretches to
+   * it and the panel is sized from it, so the card lands flush and unclipped.
+   * See fix 1 above; this is the one number a caller has to know.
+   *
+   * Default is the record rail's content measure: a 25rem track less the two
+   * --spacing-500 steps the rail spends on padding, to the nearest rung. A
+   * caller inside a box with its own inset passes a smaller value.
+   */
+  span?: string;
+}
+
+const { kind, title, lines = [], span = '21rem' } = Astro.props;
+---
+<esa-popover
+  class="firma2-hover-card__pop"
+  trigger="hover"
+  position="bottom"
+  has-arrow="false"
+  offset="0"
+  style={`--_span: ${span}`}
+>
+  <span class="firma2-hover-card__row repel" data-gap="xs">
+    <!-- THE TRIGGER. Whatever the caller puts here: a chip inside a link, a
+         person's name as a mailto. It must be FOCUSABLE, or the card is
+         pointer-only — esa-popover opens on focusin, but only if something in
+         here can take focus. -->
+    <slot />
+    <!-- Anything else the row carries — the Comments thread puts the date here.
+         It rides inside the trigger because the trigger has to span the row
+         (fix 1) and two things cannot both span it; hovering it therefore
+         raises the card too, which is right, since the row is the thing. -->
+    <slot name="trailing" />
+  </span>
+
+  <div slot="content" class="firma2-hover-card stack" data-gap="2xs">
+    <span class="firma2-hover-card__kind typography-label-sm" data-card-kind>{kind}</span>
+    <span class="typography-title-sm-strong" data-card-title>{title}</span>
+    <div class="stack" data-gap="2xs" data-card-lines>
+      {lines.map((line) => (
+        typeof line === 'string' ? (
+          <span class="firma2-hover-card__line typography-body-sm">{line}</span>
+        ) : (
+          <!-- A COPYABLE LINE. The text keeps the plain line's treatment
+               exactly — a fact does not change how it reads because it gained
+               an affordance — and the control docks to the END OF ITS OWN LINE,
+               which is the whole point: the button copies THIS value, not the
+               card, so it has to be adjacent to the value or it is asking the
+               reader to work out what it acts on. -->
+          <!-- A CLUSTER, NOT A REPEL, and the difference is the whole point of
+               putting the control on the line at all. `.repel` pushes its
+               groups to opposite edges, which aims the button at the PANEL and
+               leaves a run of empty space between it and the address — read as
+               a card-level control that happens to be on this row. Clustered,
+               it sits immediately after the value, and what it copies is the
+               thing it is touching. -->
+          <span class="firma2-hover-card__line firma2-hover-card__line--copy cluster" data-gap="2xs">
+            <span class="firma2-hover-card__line-text typography-body-sm">{line.text}</span>
+            <!-- `xs` — the in-row rung, the same one firma2-editable-field
+                 gives the ↗ it docks in a field. NOT the spoke's `md` control
+                 rung: that rule governs FORM CONTROLS, where the hub's small
+                 steps put field text under the 13px readability floor and
+                 AppLayout pins md boxes to 40px. An icon-only chrome button has
+                 no text to fall below a floor, is not in the pinned set, and at
+                 any larger step it outweighs the line it belongs to — which is
+                 exactly what it looked like at `sm`. -->
+            <EsaButton
+              variant="chrome"
+              iconOnly
+              icon="copy"
+              size="xs"
+              label={line.copy}
+              data-copy-value={line.text}
+            />
+            <!-- THE RECEIPT, doing both jobs from one node: the word a sighted
+                 reader sees and the announcement a screen reader hears. Empty
+                 at rest, so it costs no space until it has something to say.
+                 AFTER the button, which is what the cluster forces and what is
+                 right anyway: docked to the value, the button has the line's
+                 slack on its right, so a receipt that filled from the left
+                 would shove the control out from under the pointer that just
+                 pressed it.
+
+                 a11y-checked: empty in the SOURCE, not permanently — the
+                 delegated handler in this file's script writes "Copied" (or
+                 "Copy failed") into it on every copy and clears it 2s later,
+                 which is the announcement, and a live region has to be present
+                 and empty BEFORE the change for that change to be announced at
+                 all. Verified in a browser: pressing the button sets
+                 textContent and the receipt is read. A shared page-level
+                 announcer was the alternative and is worse here — it would
+                 split the word the reader sees from the word they hear, and
+                 this element is deliberately both. -->
+            <span class="firma2-hover-card__receipt typography-label-xs" role="status" data-copy-receipt></span>
+          </span>
+        )
+      ))}
+    </div>
+  </div>
+</esa-popover>
+
+<style>
+  .firma2-hover-card__pop {
+    /* Its own line in a stack, and a flex item that does not shrink below its
+       row in a `.repel` — either way the anchor gets the width fix 1 needs. */
+    display: block;
+  }
+
+  .firma2-hover-card__row {
+    /* AN EXPLICIT LENGTH, which is the part that cannot be avoided.
+       esa-popover's anchor is `display: inline-block` inside its own shadow root
+       — unreachable from here — so it shrink-wraps whatever is slotted into it,
+       and a `100%` on this row would resolve against that shrink-to-fit width,
+       i.e. against itself. Only a real length widens it. */
+    min-inline-size: var(--_span);
+
+    /* THE BRIDGE — fix 2. This is the air between the trigger and the card, and
+       it is padding rather than the popover's `offset` because padding is
+       inside the anchor's box: a pointer crossing it has not left the trigger. */
+    padding-block-end: var(--spacing-200, 0.5rem);
+  }
+
+  .firma2-hover-card {
+    /* THE PANEL MATCHES THE ROW — fix 1. The arithmetic runs backwards from the
+       panel to its content, because the panel sizes to what is in it: the row's
+       width, less the panel's own padding and border, both quoted from the
+       tokens esa-popover uses for them (`--_popover-padding` is --spacing-300;
+       the border is --border-width-default). Re-derive if the lego re-points
+       either. */
+    inline-size: calc(
+      var(--_span) - 2 * var(--spacing-300, 0.75rem) - 2 *
+        var(--border-width-default, 1px)
+    );
+  }
+
+  .firma2-hover-card__kind {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* A line can be an email address — one unbreakable token in a card narrower
+     than the column. Harmless on prose. */
+  .firma2-hover-card__line,
+  .firma2-hover-card__line-text {
+    overflow-wrap: anywhere;
+  }
+
+  /* THE BUTTON SETS THIS ROW'S HEIGHT — it is a 32px control on a 17px line, and
+     the negative block margin is what stops that from opening a gap the other
+     lines do not have. The value is half the difference between the xs button
+     (a 14px icon, two --spacing-200 steps and a border) and the body-sm leading
+     it sits on, so the TEXT keeps the card's rhythm and the control overhangs
+     it symmetrically. Re-measure if either rung moves. */
+  .firma2-hover-card__line--copy {
+    margin-block: calc(var(--spacing-100, 0.25rem) * -1);
+  }
+
+  /* The control never shrinks — a long address wraps INSIDE its own item and
+     the button stays a 32px square docked to the end of it. */
+  .firma2-hover-card__line--copy > :not(.firma2-hover-card__line-text) {
+    flex: none;
+  }
+
+  /* SECONDARY INK, NOT SUCCESS GREEN. "Copied" is a receipt for something the
+     reader just did on purpose, not an outcome they were waiting to learn — a
+     green flash on the smallest event on the screen would make it the loudest.
+     The failure case takes the danger token, because that one IS news. */
+  .firma2-hover-card__receipt {
+    color: var(--color-content-default-secondary, #646464);
+    white-space: nowrap;
+  }
+  .firma2-hover-card__receipt[data-copy-failed] {
+    color: var(--color-content-utility-danger, #641723);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-popover';
+
+  // COPY A LINE OUT OF A CARD — every copyable line on the page, wired once.
+  //
+  // ONE DELEGATED LISTENER, not one per card. A project record renders a card
+  // per contact in the Contacts tab and one per comment in the thread, and
+  // Astro bundles this module once however many times the component appears —
+  // so the handler has to be written for "any copy button, ever", which
+  // delegation is and a per-node loop is not. It also covers the cards
+  // firma2-editable-field repaints at runtime, which no loop at load could.
+  //
+  // navigator.clipboard NEEDS A SECURE CONTEXT (https, or localhost). Both the
+  // deployed site and `astro preview` qualify; a page opened over plain http on
+  // a LAN address would not, and that is what the catch is for — the value
+  // stays on screen, so the fallback is the reader's own selection rather than
+  // a control that pretends to have worked.
+  const CLEAR_AFTER_MS = 2000;
+
+  // Per-button, so two cards copied in quick succession do not clear each
+  // other's receipt. WeakMap rather than a dataset field: the timer is runtime
+  // state, not markup, and it goes when the node does.
+  const timers = new WeakMap<Element, number>();
+
+  function report(button: Element, message: string, failed: boolean): void {
+    const receipt = button
+      .closest('.firma2-hover-card__line--copy')
+      ?.querySelector<HTMLElement>('[data-copy-receipt]');
+    if (!receipt) return;
+
+    receipt.textContent = message;
+    receipt.toggleAttribute('data-copy-failed', failed);
+
+    const pending = timers.get(button);
+    if (pending) window.clearTimeout(pending);
+    timers.set(
+      button,
+      window.setTimeout(() => {
+        receipt.textContent = '';
+        receipt.removeAttribute('data-copy-failed');
+        timers.delete(button);
+      }, CLEAR_AFTER_MS),
+    );
+  }
+
+  document.addEventListener('click', async (event) => {
+    // `closest` from the event target, because the click lands on the <svg>
+    // inside esa-button's native <button> — the element carrying the value is
+    // an ancestor of whatever was actually hit.
+    const button = (event.target as Element | null)?.closest?.('[data-copy-value]');
+    if (!button) return;
+
+    const value = (button as HTMLElement).dataset.copyValue ?? '';
+    if (!value) return;
+
+    try {
+      await navigator.clipboard.writeText(value);
+      report(button, 'Copied', false);
+    } catch {
+      report(button, 'Copy failed', true);
+    }
+  });
+</script>

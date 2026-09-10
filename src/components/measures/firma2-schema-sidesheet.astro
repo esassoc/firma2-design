@@ -1,0 +1,269 @@
+---
+// firma2-schema-sidesheet — where a subcategory schema is created and edited:
+// its name, and the options a reporter will pick from.
+//
+// THE ORIGIN DECIDES THE MODE. User schemas open editable — this sheet is
+// their whole authoring surface. Imported and System schemas open READ-ONLY
+// with one sentence saying why: an imported list changes with the standard it
+// mirrors, and a system list is maintained with the source it reads (a map
+// layer, the record, entry history). Read-only is a statement, not a
+// limitation to apologise for — editing "Watershed" by hand is exactly the
+// copy-drift failure the shared-schema model exists to prevent.
+//
+// THE BLAST RADIUS IS ON SCREEN. Every mode shows which measures the schema
+// divides, because editing a list changes what all of them report — the
+// "Used by" column's number, spelled out as names at the moment of editing.
+//
+// PERSISTENCE: user edits go to the browser-local schema store
+// (src/lib/schema-draft.ts). An edited SEED keeps its id and shadows the seed;
+// a new schema gets a `local-` id. Only `local-` schemas can be deleted — a
+// static build cannot remove a seed, and the sheet does not pretend it can.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import BcnTagEditor from '../shared/bcn-tag-editor.astro';
+---
+<div class="firma2-schema-sidesheet">
+  <esa-side-dialog class="firma2-schema-sidesheet__sheet" heading="New subcategory schema" size="md" position="right">
+    <div class="firma2-schema-sidesheet__body stack" data-gap="lg">
+      <!-- Why this schema cannot be edited here. Painted only for imported
+           and system schemas; absent means editable. -->
+      <p class="firma2-schema-sidesheet__note typography-meta" data-schema-note hidden></p>
+
+      <div class="stack" data-gap="md" data-schema-editor>
+        <esa-text-field data-schema-field-name label="Name" size="md" placeholder="e.g. Habitat types"></esa-text-field>
+        <BcnTagEditor label="Options" placeholder="Add an option" class="firma2-schema-sidesheet__options" />
+      </div>
+
+      <!-- The same two facts, stated instead of edited — the options as the
+           same chips the editor shows, minus every affordance. -->
+      <dl class="firma2-schema-sidesheet__facts stack" data-gap="md" data-schema-facts hidden>
+        <div class="stack" data-gap="2xs">
+          <dt class="typography-label-sm">Name</dt>
+          <dd class="firma2-schema-sidesheet__fact typography-body-sm" data-fact-name></dd>
+        </div>
+        <div class="stack" data-gap="2xs">
+          <dt class="typography-label-sm">Options</dt>
+          <dd class="firma2-schema-sidesheet__fact typography-body-sm">
+            <BcnTagEditor label="Options" labelHidden readonly class="firma2-schema-sidesheet__facts-options" />
+            <span data-fact-options hidden></span>
+          </dd>
+        </div>
+      </dl>
+
+      <div class="stack" data-gap="2xs">
+        <h3 class="firma2-schema-sidesheet__group typography-label-sm">Used by</h3>
+        <p class="firma2-schema-sidesheet__used typography-body-sm" data-schema-used></p>
+      </div>
+    </div>
+
+    <div slot="footer" class="firma2-schema-sidesheet__footer repel">
+      <EsaButton variant="danger" appearance="outline" size="md" data-schema-delete hidden>Delete schema</EsaButton>
+      <div class="cluster" data-gap="xs">
+        <EsaButton variant="ghost" size="md" data-schema-cancel>Cancel</EsaButton>
+        <EsaButton variant="primary" size="md" data-schema-save>Save</EsaButton>
+      </div>
+    </div>
+  </esa-side-dialog>
+</div>
+
+<style>
+  /* bcn-lego-checked: layout-only rules around composed esa-* legos and
+     bcn-tag-editor; the only bespoke thing is spacing/ink on the read-only
+     fact list, which no lego renders (esa-stat is a number, esa-card a
+     container). Checked Beacon: not cloned on this machine. */
+  /* Wider than the md rung (400px) for the same reason as the measure sheet:
+     option rows plus their remove button want the room. Set via the lego's
+     own width token. */
+  .firma2-schema-sidesheet__sheet {
+    --side-dialog-width: 520px;
+  }
+
+  .firma2-schema-sidesheet__note,
+  .firma2-schema-sidesheet__fact,
+  .firma2-schema-sidesheet__used,
+  .firma2-schema-sidesheet__group {
+    margin: 0;
+  }
+
+  .firma2-schema-sidesheet__note,
+  .firma2-schema-sidesheet__used {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-schema-sidesheet__facts {
+    margin: 0;
+  }
+
+  .firma2-schema-sidesheet__facts dd {
+    margin: 0;
+  }
+
+  .firma2-schema-sidesheet__footer {
+    inline-size: 100%;
+  }
+
+  /* Keep Cancel/Save anchored right even when Delete schema is hidden and the
+     repel is down to one child. */
+  .firma2-schema-sidesheet__footer > :global(.cluster) {
+    margin-inline-start: auto;
+  }
+
+  /* MAKE `hidden` MEAN HIDDEN — the script toggles the editor block, the
+     read-only facts, the note and two footer buttons with the attribute, and
+     their author display rules (layout utilities, esa-button's native) outrank
+     the UA's [hidden]. Same rule, same reason as firma2-measure-sidesheet. */
+  .firma2-schema-sidesheet :global([hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-text-field';
+
+  import { measureDisplayName, measuresUsingSchema, measures } from '../../data/firma2-performance-measures';
+  import type { PerformanceMeasureDefinition, SubcategorySchema } from '../../data/firma2-performance-measures';
+  import {
+    allSchemas,
+    emitSchemaChange,
+    nextLocalSchemaId,
+    removeLocalSchema,
+    writeLocalSchema,
+  } from '../../lib/schema-draft';
+  import { draftedSlugs, isLocalMeasureSlug, mergeDraft, readDraft, withDraft } from '../../lib/measure-draft';
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
+
+  type Control = HTMLElement & { value?: unknown; errorText?: string };
+  type OptionList = HTMLElement & { value: string[] };
+  type Dialog = HTMLElement & { show: () => void; close: () => void; heading?: string };
+
+  const ERR_NAME = 'Name this schema.';
+  const ERR_OPTIONS = 'Add at least two options — one option splits nothing.';
+
+  /** Why the sheet is read-only, by origin. */
+  const NOTE_IMPORTED = (standard?: string): string =>
+    `Imported — mirrors ${standard ?? 'an external standard'}. Its options change with the standard, not here.`;
+  const NOTE_SYSTEM = (description?: string): string =>
+    `${description ?? 'Maintained by the system.'} Its options update with their source, not here.`;
+
+  function initSchemaSheet(root: HTMLElement) {
+    const sheet = root.querySelector<Dialog>('.firma2-schema-sidesheet__sheet');
+    const note = root.querySelector<HTMLElement>('[data-schema-note]');
+    const editor = root.querySelector<HTMLElement>('[data-schema-editor]');
+    const facts = root.querySelector<HTMLElement>('[data-schema-facts]');
+    const nameField = root.querySelector<Control>('[data-schema-field-name]');
+    const optionsList = root.querySelector<OptionList>('.firma2-schema-sidesheet__options');
+    const usedLine = root.querySelector<HTMLElement>('[data-schema-used]');
+    const saveBtn = root.querySelector<HTMLElement>('[data-schema-save]');
+    const deleteBtn = root.querySelector<HTMLElement>('[data-schema-delete]');
+    if (!sheet || !note || !editor || !facts || !nameField || !optionsList || !usedLine) return;
+    void fixSideDialog(sheet);
+
+    /** The schema being edited; null while creating a new one. */
+    let current: SubcategorySchema | null = null;
+
+    const currentMeasures = (): PerformanceMeasureDefinition[] => [
+      ...measures.map((seed) => mergeDraft(seed, readDraft(seed.slug))),
+      ...draftedSlugs().filter(isLocalMeasureSlug).map((slug) => withDraft(slug)),
+    ];
+
+    const usedByLine = (id: string | null): string => {
+      if (!id) return 'Used by no measures yet.';
+      const users = measuresUsingSchema(id, currentMeasures()).map((m) => measureDisplayName(m));
+      if (users.length === 0) return 'Used by no measures yet.';
+      return `Used by ${users.length} measure${users.length === 1 ? '' : 's'}: ${users.join(', ')}.`;
+    };
+
+    const paint = (schema: SubcategorySchema | null) => {
+      current = schema;
+      const editable = !schema || schema.origin === 'user';
+
+      sheet.heading = schema ? schema.name : 'New subcategory schema';
+      editor.hidden = !editable;
+      facts.hidden = editable;
+      note.hidden = editable;
+      if (saveBtn) saveBtn.hidden = !editable;
+      // A seed cannot be removed from a static build; only browser-minted
+      // schemas offer deletion.
+      if (deleteBtn) deleteBtn.hidden = !schema || !schema.id.startsWith('local-');
+
+      if (editable) {
+        nameField.value = schema?.name ?? '';
+        nameField.errorText = '';
+        optionsList.value = schema ? [...schema.options] : [];
+      } else if (schema) {
+        note.textContent =
+          schema.origin === 'imported' ? NOTE_IMPORTED(schema.standard) : NOTE_SYSTEM(schema.description);
+        facts.querySelector('[data-fact-name]')!.textContent = schema.name;
+        // Chips when the list is closed; one sentence when the system resolves
+        // it open-endedly and there is no list to show.
+        const factChips = facts.querySelector<OptionList>('.firma2-schema-sidesheet__facts-options');
+        const factText = facts.querySelector<HTMLElement>('[data-fact-options]');
+        const hasList = schema.options.length > 0;
+        if (factChips) {
+          factChips.hidden = !hasList;
+          factChips.value = hasList ? [...schema.options] : [];
+        }
+        if (factText) {
+          factText.hidden = hasList;
+          factText.textContent = hasList ? '' : 'Resolved by the system.';
+        }
+      }
+
+      usedLine.textContent = usedByLine(schema?.id ?? null);
+    };
+
+    // The delegated seam, mirroring the measure sheet: anything carrying
+    // data-open-schema opens this one. "new" (or empty) starts blank.
+    // Capture phase for the same reason as the measure sheet — the grids stop
+    // peek-button clicks before they can start an inline edit.
+    document.addEventListener(
+      'click',
+      (event) => {
+        const trigger = (event.target as Element).closest<HTMLElement>('[data-open-schema]');
+        if (!trigger) return;
+        const id = trigger.dataset.openSchema ?? '';
+        const schema = id && id !== 'new' ? allSchemas().find((s) => s.id === id) ?? null : null;
+        paint(schema);
+        sheet.show();
+      },
+      true,
+    );
+
+    root.querySelector('[data-schema-cancel]')?.addEventListener('click', () => sheet.close());
+
+    saveBtn?.addEventListener('click', () => {
+      const name = String(nameField.value ?? '').trim();
+      const options = optionsList.value.map((o) => o.trim()).filter(Boolean);
+      if (!name) {
+        nameField.errorText = ERR_NAME;
+        return;
+      }
+      if (options.length < 2) {
+        nameField.errorText = ERR_OPTIONS;
+        return;
+      }
+      nameField.errorText = '';
+
+      // An existing schema keeps its id — including a SEED's id, which is how
+      // the local copy shadows it. Only a brand-new schema mints one.
+      const schema: SubcategorySchema = {
+        id: current?.id ?? nextLocalSchemaId(name),
+        name,
+        origin: 'user',
+        options,
+      };
+      writeLocalSchema(schema);
+      emitSchemaChange();
+      sheet.close();
+    });
+
+    deleteBtn?.addEventListener('click', () => {
+      if (!current || !current.id.startsWith('local-')) return;
+      removeLocalSchema(current.id);
+      emitSchemaChange();
+      sheet.close();
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-schema-sidesheet').forEach(initSchemaSheet);
+</script>

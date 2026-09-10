@@ -1,5 +1,6 @@
 // Per-project detail for the ProjectFirma 2.0 project page: description, work
-// areas on the map, performance measures, funding sources, and milestones.
+// areas on the map, performance measures, funding sources, milestones, and the
+// people and notes on the record.
 //
 // INVENTED CONTENT. Every description, grant program, funding agency, measured
 // value, milestone and boundary below is fabricated. Nothing is copied,
@@ -33,7 +34,14 @@
 //     to a number a reader can catch us on;
 //   - milestone DATES come from the project's implementation start and
 //     completion years against a per-program template, so no project has a
-//     construction milestone before its own start year.
+//     construction milestone before its own start year;
+//   - CONTACTS are seeded off the project's own name against a pool of invented
+//     people, and each one's organization is read from the record — the lead
+//     from the sponsor, the grant manager from whichever body actually funds
+//     this project — so no roster can contradict the record it sits on;
+//   - COMMENTS are seeded the same way, authored by those same contacts, and a
+//     quarter of the portfolio has none at all, because an empty record is a
+//     real state and one nobody can reach is one nobody reviews.
 //
 // Derivation is what keeps 24 records internally consistent. Hand-typing 24
 // funding tables that each sum correctly is a bug waiting to ship.
@@ -66,15 +74,31 @@ export interface WorkArea {
 }
 
 /**
- * One year of a measure's reported value — ProjectFirma reports a measure
- * per REPORTING PERIOD, not as a single running total, and this is that
- * period made real data rather than a display-time guess. Same shape and
- * same reading as an `ExpenditureYear`'s `status`.
+ * One reporting period of a measure — ProjectFirma reports a measure per
+ * PERIOD, not as a single running total, and this is that period made real
+ * data rather than a display-time guess.
+ *
+ * TWO INDEPENDENT FACTS, and keeping them apart is the point of this shape.
+ * `status` is the CALENDAR fact — where the period sits relative to now —
+ * and it is unchanged: same shape and same reading as an `ExpenditureYear`'s.
+ * `value` is the RECORD fact — whether anybody filed against it. 2024 is
+ * `complete` whether or not a report exists for it.
  */
 export interface MeasureYear {
   year: number;
-  /** In the measure's own `unit`. 0 for a year that has not been reported yet. */
-  value: number;
+  /**
+   * The reading for this period in the measure's own `unit`, or `null` when NO
+   * REPORT EXISTS for it.
+   *
+   * `null` and `0` are different claims and the type keeps them apart: `0` is a
+   * report that was filed and said nothing was accomplished; `null` is a period
+   * nobody filed against — either because it has not closed yet, or because
+   * this measure is not reported every year, or because the report is late.
+   * The old shape used `0` for both, which is why an elapsed period with no
+   * report was indistinguishable from a real zero and why nothing on the page
+   * could draw the difference.
+   */
+  value: number | null;
   status: 'complete' | 'current' | 'upcoming';
 }
 
@@ -86,12 +110,56 @@ export interface PerformanceMeasure {
   unit: string;
   /** The target the project committed to. */
   expected: number;
-  /** What the project has reported to date — equals the sum of `series`. */
+  /** What the project has reported to date — equals the sum of the NON-NULL
+   *  values in `series`, which is what `reportedTotal()` computes. */
   reported: number;
-  /** Reported value by year, oldest first. Real per-year data: `reported`
-   *  is derived FROM this, not the other way around. */
+  /** Every period in the project's window, oldest first — INCLUDING the ones
+   *  with no report. Real per-period data: `reported` is derived FROM this,
+   *  not the other way around. */
   series: MeasureYear[];
 }
+
+/**
+ * Sum of the periods that were actually reported. The invariant this module
+ * holds is `measure.reported === reportedTotal(measure.series)`.
+ *
+ * `.toFixed(4)` because binary floating point does not agree with itself about
+ * decimal tenths: 8.4 + 12.6 + 13.1 is 34.099999999999994, and a total that
+ * disagrees with the headline figure by 6e-15 is a total that prints wrong the
+ * first time somebody formats it without a maximumFractionDigits.
+ */
+export const reportedTotal = (series: MeasureYear[]): number =>
+  Number(series.reduce((sum, period) => sum + (period.value ?? 0), 0).toFixed(4));
+
+/**
+ * The most recent period that carries a report, or `undefined` when the measure
+ * has never been reported against. Defined here rather than in the component
+ * that renders it because "the latest report" is a property of the series, and
+ * two consumers computing it two ways is two answers.
+ */
+export const latestReport = (series: MeasureYear[]): MeasureYear | undefined =>
+  [...series].reverse().find((period) => period.value !== null);
+
+/**
+ * Whether a period has CLOSED — the only kind a report can be missing from.
+ * A `null` value on a closed period is a gap; a `null` on any other period is
+ * simply nothing owed yet, and the difference is the whole of what the matrix
+ * and the data table say about a period nobody filed against.
+ *
+ * `year < PRESENT_YEAR` is NOT redundant with the status test. milestoneStatus()
+ * labels a DEFERRED project's current year `complete` — a deferred project could
+ * have drawn money and filed values right up to its halt, which is the accrual
+ * question, not the closure question — so a status-only test would accuse the
+ * two deferred projects of missing a report for a year that has not ended, and
+ * no other project of the same thing.
+ *
+ * Exported because three places need this answer and must not each derive it:
+ * buildMeasures decides which periods can carry a value, the matrix decides
+ * which cells are gaps, and the data table decides between "Not reported" and
+ * "Not due". Three derivations of one rule is three chances to disagree.
+ */
+export const isClosedPeriod = (period: Pick<MeasureYear, 'year' | 'status'>): boolean =>
+  period.status !== 'upcoming' && period.year < PRESENT_YEAR;
 
 /** One funder's contribution to a project's estimated total cost. */
 export interface FundingSource {
@@ -127,21 +195,117 @@ export interface Milestone {
 }
 
 /**
- * One year of the project's spend against its plan — the accrual half of the
- * funding commitment `FundingSource` records the promise of. `budgeted` is
- * this year's slice of `estimatedTotalCost`; `spent` is what the project has
- * actually drawn down, which is 0 for a year that has not arrived yet and the
- * full `budgeted` figure only once spending has caught up to the plan.
+ * One reporting year of the project's spend — the accrual half of the funding
+ * commitment `FundingSource` records the promise of.
+ *
+ * ONE FIGURE, NOT TWO, and dropping the second is the point of this shape. It
+ * used to carry a `budgeted` sibling: this year's slice of
+ * `estimatedTotalCost`, spread by the same accrual curve, so the chart could
+ * pair a planned bar against an actual one. That plan did not exist. A project
+ * is budgeted ONCE, for the whole of itself — `estimatedTotalCost` is a
+ * whole-project figure and nothing in the record divides it into annual
+ * allocations — so a per-year "budgeted" bar was this module inventing an
+ * authority the data never had, and inviting a reader to read "behind plan"
+ * off a plan nobody wrote. What varies year to year is what the project
+ * actually SPENT, and that is the only per-year money fact there is.
+ *
+ * SAME SHAPE AS A MeasureYear, deliberately: a project reports its spend for a
+ * period exactly the way it reports a measure's activity for a period, so the
+ * two series are the same kind of record and read the same way down the page.
+ * The one difference is `null` — a measure distinguishes "reported zero" from
+ * "nobody filed", money does not, because a year with no expenditure record
+ * against it is a year the project drew nothing.
  */
 export interface ExpenditureYear {
   year: number;
-  /** Whole dollars. Summed across every year, equals `estimatedTotalCost`. */
-  budgeted: number;
-  /** Whole dollars. Never exceeds the project's cumulative spend to date. */
+  /** Whole dollars drawn down in THIS year. Summed across every year, equals
+   *  the project's spend to date. */
   spent: number;
   /** Same reading as a Milestone's status — where this year sits relative to
    *  today's position in the project's life. */
   status: 'complete' | 'current' | 'upcoming';
+}
+
+/**
+ * A person on the project record. ProjectFirma stores project contacts by ROLE
+ * — who to call about the work on the ground, who administers the grant — and
+ * the role is what a reader scans for, so it is what a row leads with.
+ */
+export interface ProjectContact {
+  /** Full name, as the record holds it. */
+  name: string;
+  /** What this person is to THIS project. "Project lead", "Grant manager". */
+  role: string;
+  /** The body they work for — sponsor or funder, and the row says which. */
+  organization: string;
+  /** mailto target. Invented, on an invented domain; see the note above. */
+  email: string;
+}
+
+/**
+ * One note on the project record. ProjectFirma comments are the running account
+ * of coordination AROUND a project — a permit condition, a signed agreement, a
+ * budget amendment — kept on the record instead of in somebody's inbox. They
+ * are the one thing on this page with no number in it, which is exactly why a
+ * reader who has just read the numbers goes looking for them.
+ */
+export interface ProjectComment {
+  /**
+   * THE WHOLE CONTACT, not a name and an organization copied off one. Everyone
+   * who comments on a record is one of its own contacts — by construction here,
+   * and in practice in a real tenant — so the comment carries the person rather
+   * than a flattened copy of two of their fields. That is what lets a thread
+   * render the same firma2-contact-card the Contacts tab renders: hover a
+   * commenter and you get who they are, instead of the thread having to print
+   * their organization under every note.
+   */
+  author: ProjectContact;
+  /** Rendered label — "12 August 2026". Stored formatted; see determinism above. */
+  date: string;
+  /** The note itself. One or two sentences, never a paragraph. */
+  body: string;
+}
+
+/**
+ * One photo on the project record. No real project photography can appear in
+ * this public repo — a photo of a real site is exactly the kind of asset mock
+ * data must not borrow — so a photo here is its RECORD: what it shows, when it
+ * was taken, and a seed the gallery uses to pick a deterministic stock
+ * stand-in (a curated Unsplash landscape; the pools live in the gallery
+ * component, the presentation half of this contract). The caption is the
+ * datum a real tenant stores with an upload, and it is what the gallery reads
+ * aloud.
+ */
+export interface ProjectPhoto {
+  /** What the photo shows. A noun phrase of the work, never a sentence. */
+  caption: string;
+  /** Rendered label — "June 2025". Stored formatted; see determinism above. */
+  date: string;
+  /** What kind of ground is in frame — picks the gallery's stand-in pool. */
+  scene: 'stream' | 'meadow' | 'forest' | 'channel';
+  /**
+   * Deterministic pick within the scene's pool. Sibling photos on one record
+   * are spaced 11 apart (see buildPhotos), which the gallery relies on: 11 is
+   * coprime with its pool lengths, so one project's gallery never shows the
+   * same stand-in twice.
+   */
+  seed: number;
+}
+
+/**
+ * One logged change to the project record — who touched it, when, and what
+ * they did. This is the record-level change log the always-editable stance
+ * owes its readers (the brief's §7 names it as the open debt of "no Save"):
+ * a site with no edit mode has no moment where a change is announced, so the
+ * account of what changed has to live somewhere a reader can open.
+ */
+export interface AuditEntry {
+  /** Rendered label — "12 August 2026". Stored formatted; see determinism above. */
+  date: string;
+  /** Who made the change. Always one of the record's own contacts. */
+  user: string;
+  /** What changed, named by the record's own field vocabulary. One sentence. */
+  change: string;
 }
 
 /** Everything the detail page renders beyond the row already in `projects`. */
@@ -161,6 +325,14 @@ export interface ProjectDetail {
   funding: FundingSource[];
   expenditures: ExpenditureYear[];
   milestones: Milestone[];
+  /** Who to call about this project. Always three; see buildContacts. */
+  contacts: ProjectContact[];
+  /** Notes on the record, newest first. May be empty — that is a real state. */
+  comments: ProjectComment[];
+  /** Photos of the work, oldest first. May be empty — a proposal has little to show. */
+  photos: ProjectPhoto[];
+  /** The record's change log, newest first. Never empty — creation is a change. */
+  audit: AuditEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -377,33 +549,79 @@ const accrualWeights = (yearCount: number): number[] => {
 };
 
 /**
+ * Spread `total` across an explicit set of year INDICES, proportional to each
+ * one's own accrual weight, so a total running ahead of or behind an even pace
+ * still tracks the plan's shape rather than a flat average. The last index
+ * absorbs the rounding remainder, via the caller's own `round`, so the spread
+ * always sums to `total` exactly.
+ *
+ * INDICES RATHER THAN STATUSES, because Measures and Expenditures no longer
+ * select the same years. Money accrues in every elapsed year; a measure only
+ * carries a value in the years a report was actually filed, which is a smaller
+ * and differently-shaped set (see buildMeasures). The CURVE is still shared —
+ * both callers weight with accrualWeights() — and the curve was the thing worth
+ * sharing. `weights` and the returned array are parallel, one entry per year.
+ */
+const spreadAcrossIndices = (
+  total: number,
+  weights: number[],
+  indices: number[],
+  round: (n: number) => number,
+): number[] => {
+  const values = weights.map(() => 0);
+  if (indices.length === 0 || total <= 0) return values;
+  const weightSum = indices.reduce((sum, i) => sum + weights[i], 0);
+
+  // CUMULATIVE TARGETS, DIFFERENCED — not per-period shares with the remainder
+  // dumped on the last one. Each period gets the difference between the running
+  // total rounded at its own end and the running total rounded at the previous
+  // one, which has two properties the naive version does not:
+  //
+  //   1. NO PERIOD CAN GO NEGATIVE. The cumulative target is non-decreasing
+  //      (every weight is positive), so every difference is >= 0. The old shape
+  //      rounded each period independently and gave the last one `total -
+  //      allocated`, so a long window could round its way past the total and
+  //      hand the final period the overshoot as a NEGATIVE reading — a
+  //      twenty-five-year project reported "-2 pools" in its closing year, which
+  //      is not a thing that can happen and read as exactly the kind of made-up
+  //      figure invented data must never produce. It stayed hidden while every
+  //      project was six years or fewer: it needs enough periods for the
+  //      per-period rounding error to accumulate past one whole unit.
+  //   2. THE SUM IS STILL EXACT. The final cumulative target is `round(total)`,
+  //      and `total` already arrives at the caller's precision, so the
+  //      differences telescope to it.
+  //
+  // The difference goes through `round` as noise removal, not a second rounding:
+  // both operands are already at the caller's precision, and it is binary
+  // floating point that turns 1.7 - 1.6 into 0.09999999999999987.
+  let allocated = 0;
+  let cumulativeWeight = 0;
+  indices.forEach((i) => {
+    cumulativeWeight += weights[i];
+    const cumulativeTarget = round((total * cumulativeWeight) / weightSum);
+    values[i] = round(cumulativeTarget - allocated);
+    allocated = cumulativeTarget;
+  });
+  return values;
+};
+
+/**
  * Spread `total` across the years that have actually happened — a year whose
- * `status` is 'upcoming' gets none of it — proportional to each elapsed
- * year's own accrual weight, so a total running ahead of or behind an even
- * pace still tracks the plan's shape rather than a flat average. The last
- * elapsed year absorbs the rounding remainder, via the caller's own `round`,
- * so the spread always sums to `total` exactly. `weights` and `statuses` are
- * parallel arrays, one entry per year.
+ * `status` is 'upcoming' gets none of it. buildExpenditures' selection rule,
+ * unchanged; the arithmetic itself now lives in spreadAcrossIndices above.
  */
 const spreadAcrossElapsedYears = (
   total: number,
   weights: number[],
   statuses: ('complete' | 'current' | 'upcoming')[],
   round: (n: number) => number,
-): number[] => {
-  const values = weights.map(() => 0);
-  const elapsedIndices = weights.map((_, i) => i).filter((i) => statuses[i] !== 'upcoming');
-  if (elapsedIndices.length === 0 || total <= 0) return values;
-  const elapsedWeightSum = elapsedIndices.reduce((sum, i) => sum + weights[i], 0);
-  let allocated = 0;
-  elapsedIndices.forEach((i, position) => {
-    const last = position === elapsedIndices.length - 1;
-    const amount = last ? total - allocated : round((total * weights[i]) / elapsedWeightSum);
-    allocated += amount;
-    values[i] = amount;
-  });
-  return values;
-};
+): number[] =>
+  spreadAcrossIndices(
+    total,
+    weights,
+    weights.map((_, i) => i).filter((i) => statuses[i] !== 'upcoming'),
+    round,
+  );
 
 // ---------------------------------------------------------------------------
 // Measures
@@ -430,7 +648,38 @@ const stageCompletion = (stage: ProjectStage, progress: number): number => {
 // Measures within one project do not move in lockstep — acres treated can run
 // ahead of structures installed. A fixed factor per measure position keeps that
 // texture without randomness.
-const MEASURE_SKEW = [1, 0.9, 1.06, 0.82];
+//
+// EIGHT FACTORS, NOT FOUR, and the first four are unchanged. At four indexed
+// `i % 4`, a project's fifth measure drew the same skew as its first — so on an
+// eight-measure project rows 1 and 5, 2 and 6, 3 and 7, 4 and 8 filled their
+// rings to the identical percent and reported the identical ratio, on a card
+// whose whole job is comparing delivery ACROSS measures. That reads as a data
+// bug, and it only became reachable once a project could author more than four.
+// Holding the first four fixed means every project that authored three or four
+// renders exactly the figures it rendered before.
+const MEASURE_SKEW = [1, 0.9, 1.06, 0.82, 0.95, 1.12, 0.74, 1.02];
+
+/**
+ * How often this measure is reported, in years. Annual is the norm; every third
+ * measure in a project's list runs on a two-year cycle, which is what a
+ * survey-based measure — a redd count, a vegetation transect, a survival check —
+ * actually costs to run.
+ *
+ * DERIVED, NEVER STORED. docs/measure-model.md models a period as a COORDINATE
+ * of a reported result (`ReportedResult = (project, period, concept, aspect,
+ * value, …)`), not as a property of the measure, and its rule 4 evicts workflow
+ * state from the model outright. So there is no `frequency` field to read here
+ * and there should not be one: the cadence a reader sees is whatever the filed
+ * periods imply. Indexed off the measure's position for the same reason
+ * MEASURE_SKEW is — a fixed factor per slot gives the list texture with no
+ * randomness.
+ *
+ * (What a real product WOULD eventually need is a reporting obligation on the
+ * project↔measure link, because "no report filed" and "no report due" are
+ * different states and only the first is late. That is not a property of the
+ * measure either, and it is not modelled here.)
+ */
+const reportingInterval = (i: number): number => (i % 3 === 2 ? 2 : 1);
 
 // Units a partial value can legitimately carry a decimal in. Everything else a
 // project measures is a COUNT — trees, structures, crossings, volunteer hours,
@@ -452,24 +701,58 @@ const buildMeasures = (
   const weights = accrualWeights(years.length);
   const statuses = years.map((year) => milestoneStatus(year, stage));
 
+  // A PERIOD A REPORT CAN EXIST FOR: one that has CLOSED. isClosedPeriod holds
+  // the rule and its own doc comment explains why the year test is not redundant
+  // with the status test; the matrix cells and the data table ask it too.
+  //
+  // This is also, on its own, the whole of "the current period is not reported
+  // yet", and it is ALWAYS rather than usually: a period that has not closed
+  // cannot carry a final reported value, and making it sometimes-filed would
+  // invent a mid-period filing rule the model has no field for and a reader
+  // could not infer. Every in-progress project's year table therefore ends with
+  // a period reading "Not reported", which is the honest, visible form of that
+  // fact rather than a caveat sentence about it.
+  const closedIndices = years
+    .map((_, i) => i)
+    .filter((i) => isClosedPeriod({ year: years[i], status: statuses[i] }));
+
   return authored.map(([name, unit, expected], i) => {
     const fraction = Math.min(1, base * MEASURE_SKEW[i % MEASURE_SKEW.length]);
-    const raw = expected * fraction;
     // A decimal on a continuous unit, but only while the number is small enough
     // for the tenth to mean anything — "3,100 acre-feet" does not want ".4".
     const decimal = CONTINUOUS_UNITS.has(unit) && expected < 1000;
     const round = (n: number) => (decimal ? Number(n.toFixed(1)) : Math.round(n));
-    const reported = round(raw);
 
-    // REPORTED BY YEAR — the reporting period ProjectFirma actually stores,
-    // not a single running total re-guessed at render time. Spread across
-    // the years work could have reached, on the same accrual curve
-    // buildExpenditures uses, so a measure's per-year shape agrees with the
+    // WHICH PERIODS CARRY A REPORT. Two gates, and they answer different
+    // questions. `base > 0` is whether this PROJECT has reported at all: a
+    // Proposal or Planning & Design project has filed nothing, so every period
+    // is null rather than a row of zeros claiming somebody filed a report that
+    // said nothing was done — which is what the old all-zeros series quietly
+    // asserted. The interval is the CADENCE.
+    const interval = reportingInterval(i);
+    const reportedIndices =
+      base > 0 ? closedIndices.filter((_, k) => k % interval === 0) : [];
+
+    // `reported` IS THE SUM OF WHAT WAS FILED, so a measure with no filed
+    // periods reports 0 no matter what its stage fraction says. Deriving it the
+    // other way round would let the headline figure disagree with the year table
+    // underneath it, which is the one disagreement this section cannot survive.
+    const reported = reportedIndices.length === 0 ? 0 : round(expected * fraction);
+
+    // REPORTED BY PERIOD — the reporting period ProjectFirma actually stores,
+    // not a single running total re-guessed at render time. Spread across the
+    // periods a report was filed for, on the same accrual curve
+    // buildExpenditures uses, so a measure's per-period shape agrees with the
     // project's own spend curve rather than telling a separate story.
-    const spread = spreadAcrossElapsedYears(reported, weights, statuses, round);
+    const spread = spreadAcrossIndices(reported, weights, reportedIndices, round);
+    const filed = new Set(reportedIndices);
+    // An INCIDENTAL zero stays a zero, deliberately: if a long spread rounds one
+    // period's share of a count measure down to 0, that is a report that was
+    // filed and said zero — exactly the state `value: number | null` exists to
+    // express, and distinct from the null beside it.
     const series: MeasureYear[] = years.map((year, yi) => ({
       year,
-      value: spread[yi],
+      value: filed.has(yi) ? spread[yi] : null,
       status: statuses[yi],
     }));
 
@@ -545,21 +828,12 @@ const buildExpenditures = (project: Project, progress: number): ExpenditureYear[
   const weights = accrualWeights(years.length);
   const statuses = years.map((year) => milestoneStatus(year, stage));
 
-  // BUDGETED — the plan. Every year but the last rounds to the nearest $500;
-  // the last absorbs the remainder, so the column sums to estimatedTotalCost
-  // to the dollar. Same rounding buildFunding uses, for the same reason: the
-  // two totals — what was promised in funding, what is planned to be spent —
-  // have to agree exactly, not to the nearest rounding error.
-  const budgeted: number[] = [];
-  {
-    let allocated = 0;
-    weights.forEach((weight, i) => {
-      const last = i === weights.length - 1;
-      const amount = last ? total - allocated : Math.round((total * weight) / 500) * 500;
-      allocated += amount;
-      budgeted.push(amount);
-    });
-  }
+  // NO BUDGETED COLUMN. `estimatedTotalCost` is a whole-project figure and
+  // this module does not slice it into annual allocations — see the note on
+  // ExpenditureYear for why the old per-year `budgeted` was a plan nobody
+  // wrote. The curve below still uses the total, because how MUCH has been
+  // spent is a fraction of it; what the curve no longer does is claim the
+  // shape was ever committed to.
 
   // SPENT — the accrual. Total spent to date is the SAME completion fraction
   // the measures section reports against (stageCompletion, above): a project
@@ -568,14 +842,14 @@ const buildExpenditures = (project: Project, progress: number): ExpenditureYear[
   //
   // Spread across the years that have actually happened, on the same shared
   // curve buildMeasures uses for its own per-year series — see
-  // spreadAcrossElapsedYears above. $500 steps, matching buildFunding's and
-  // this function's own BUDGETED rounding.
+  // spreadAcrossElapsedYears above. $500 steps, matching buildFunding's own
+  // rounding, so a year's expenditure reads like a filed figure rather than a
+  // number carried to the dollar by arithmetic.
   const totalSpent = Math.round(total * stageCompletion(stage, progress));
   const spent = spreadAcrossElapsedYears(totalSpent, weights, statuses, (n) => Math.round(n / 500) * 500);
 
   return years.map((year, i) => ({
     year,
-    budgeted: budgeted[i],
     spent: spent[i],
     status: statuses[i],
   }));
@@ -621,6 +895,10 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       ['Acres of riparian habitat restored', 'acres', 62],
       ['Stream miles revegetated', 'miles', 4.1],
       ['Native trees and shrubs planted', 'plants', 18400],
+      ['Acres of invasive vegetation removed', 'acres', 28],
+      ['Miles of livestock exclusion fencing', 'miles', 5.8],
+      ['Volunteer hours contributed', 'hours', 2400],
+      ['Native seed collected', 'pounds', 240],
     ],
     funders: [
       ['Watershed Resilience Grant Program', 0.62],
@@ -664,6 +942,9 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       ['Acres of tidal marsh restored', 'acres', 240],
       ['Acres of upland transition zone graded', 'acres', 31],
       ['Cubic yards of sediment placed', 'cubic yards', 410000],
+      ['Linear feet of levee breached', 'linear feet', 1850],
+      ['Acres of invasive cordgrass treated', 'acres', 46],
+      ['Water control structures installed', 'structures', 7],
     ],
     funders: [
       ['Coastal Wetlands Conservation Fund', 0.44],
@@ -749,6 +1030,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       ['Acres mechanically thinned', 'acres', 2900],
       ['Acres treated with prescribed fire', 'acres', 1300],
       ['Miles of shaded fuel break completed', 'miles', 17],
+      ['Acres surveyed for cultural resources', 'acres', 4200],
+      ['Miles of road decommissioned', 'miles', 12],
+      ['Landowner agreements signed', 'agreements', 34],
+      ['Slash piles burned', 'piles', 1450],
+      ['Defensible space assessments completed', 'assessments', 380],
     ],
     funders: [
       ['Wildfire Resilience Block Grant', 0.58],
@@ -769,8 +1055,6 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     ],
     measures: [
       ['Miles of shaded fuel break completed', 'miles', 9.2],
-      ['Acres treated', 'acres', 640],
-      ['Structures within the protected footprint', 'structures', 310],
     ],
     funders: [
       ['Wildfire Resilience Block Grant', 0.72],
@@ -791,7 +1075,6 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     measures: [
       ['Stream miles treated with large wood', 'miles', 5.3],
       ['Log structures installed', 'structures', 140],
-      ['Pools created or deepened', 'pools', 88],
     ],
     funders: [
       ['Anadromous Fisheries Recovery Fund', 0.6],
@@ -942,7 +1225,6 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     measures: [
       ['Acres of riparian forest planted', 'acres', 14],
       ['Native trees planted', 'trees', 2600],
-      ['Volunteer hours contributed', 'hours', 1900],
     ],
     funders: [
       ['Watershed Resilience Grant Program', 0.6],
@@ -986,6 +1268,8 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       ['Cold-water refugia sites enhanced', 'sites', 8],
       ['Stream miles shaded', 'miles', 8.6],
       ['Acres of riparian canopy established', 'acres', 130],
+      ['Miles of stream fenced from grazing', 'miles', 6.4],
+      ['Instream flow agreements signed', 'agreements', 4],
     ],
     funders: [
       ['Anadromous Fisheries Recovery Fund', 0.45],
@@ -1069,8 +1353,6 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     ],
     measures: [
       ['Acres of inset floodplain created', 'acres', 96],
-      ['Stream miles regraded', 'miles', 2.5],
-      ['Acres of riparian forest planted', 'acres', 62],
     ],
     funders: [
       ['Watershed Resilience Grant Program', 0.58],
@@ -1127,6 +1409,411 @@ const AUTHORED: Record<string, AuthoredDetail> = {
 };
 
 // ---------------------------------------------------------------------------
+// Contacts and comments
+// ---------------------------------------------------------------------------
+
+// INVENTED PEOPLE, INVENTED NOTES, INVENTED DOMAINS. Nobody named below exists,
+// no address below resolves, and no note below was written by anyone about any
+// real project. This is the part of the mock data that would be most damaging to
+// source from life, so it is the part most deliberately made up: the names are
+// assembled to be plausibly Californian and plausibly diverse, the domains are
+// acronyms of already-invented organizations, and the notes are the shape of
+// project coordination without the substance of any.
+//
+// DERIVED, NOT AUTHORED, for the same reason the funding table is: 24 projects
+// × 3 contacts is 72 hand-typed rows that each have to agree with the record
+// they sit on — the sponsor's lead has to work for the sponsor, the grant
+// manager has to work for a funder that actually funds this project. A seeded
+// pick off the project's OWN name cannot get that wrong, and it renders
+// identically on every build.
+
+/** A stable, non-negative hash of a string. The same seed for the life of the
+ *  record's name — which is the point: a project's people do not change because
+ *  the site was rebuilt. Same construction esa-avatar uses for its hue. */
+const hashOf = (value: string): number => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (value.charCodeAt(i) + ((hash << 5) - hash)) | 0;
+  }
+  return Math.abs(hash);
+};
+
+// 12 names, so three picks off one project never collide (the stride below is
+// coprime with the length) and two projects rarely share a whole roster.
+//
+// NONE OF THEM IS THE SIGNED-IN USER. AppLayout's account menu says "Dana
+// Whitfield", and that name was in this pool until it turned up as a field
+// contact at a watershed district on one project and a grant manager at a
+// funder on another — the reader's own account, holding two jobs neither of
+// which is theirs. A mock that contradicts the chrome around it is worse than a
+// mock with one fewer name in it.
+const PEOPLE = [
+  'Renata Alvarez',
+  'Thomas Okafor',
+  'Priya Raman',
+  'Gabriel Sandoval',
+  'Marcus Lindqvist',
+  'Ivy Nakamura',
+  'Cole Barrera',
+  'Simone Achebe',
+  'Nadia Fontaine',
+  'Benjamin Kowalczyk',
+  'Alma Reyes',
+  'Theo Brandt',
+];
+
+// The three roles every ProjectFirma record carries, and WHOSE payroll each sits
+// on. `sponsor` is the project's lead organization — the body doing the work.
+// `funder` is the administering body behind the grant, which is a different
+// organization and a different phone call: a question about the work goes to the
+// sponsor, a question about the money goes to the funder.
+const CONTACT_ROLES: { role: string; at: 'sponsor' | 'funder' }[] = [
+  { role: 'Project lead', at: 'sponsor' },
+  { role: 'Grant manager', at: 'funder' },
+  { role: 'Field contact', at: 'sponsor' },
+];
+
+/** first-initial.lastname@<org acronym>.org — the shape a work address actually
+ *  takes, on a domain built from an organization that is itself invented. */
+const emailFor = (name: string, organization: string): string => {
+  const parts = name.toLowerCase().split(' ');
+  const domain = organization
+    .split(/\s+/)
+    .filter((word) => !/^(of|the|and|for|&)$/i.test(word))
+    .map((word) => word[0])
+    .join('')
+    .toLowerCase();
+  return `${parts[0][0]}.${parts[parts.length - 1]}@${domain}.org`;
+};
+
+const buildContacts = (project: Project, funding: FundingSource[]): ProjectContact[] => {
+  // The first funder that is NOT the sponsor itself. Every project's last
+  // funding source is its own local match, whose organization resolves to the
+  // lead org — so taking funding[0] blindly would give a project whose only
+  // outside funder sits second a "Grant manager" at the sponsor's own address.
+  const funderOrg =
+    funding.find((source) => source.organization !== project.leadOrganization)?.organization ??
+    funding[0].organization;
+
+  const seed = hashOf(project.projectName);
+  return CONTACT_ROLES.map((entry, i) => {
+    const organization = entry.at === 'sponsor' ? project.leadOrganization : funderOrg;
+    // Stride 5 against a pool of 12: coprime, so three consecutive picks are
+    // always three different people.
+    const name = PEOPLE[(seed + i * 5) % PEOPLE.length];
+    return { name, role: entry.role, organization, email: emailFor(name, organization) };
+  });
+};
+
+// Notes that hold for a project at ANY stage, which is the constraint that
+// decided every one of them: a seeded pick cannot know whether this record has
+// broken ground, so a note about reconciling invoices would land on a proposal.
+// What survives that test is coordination — access, permits, scheduling,
+// budget mechanics — and that is what project comments mostly are anyway.
+const COMMENT_NOTES = [
+  'Access agreement with the downstream landowner is signed. No further constraint on the lower units.',
+  'Permit condition on the in-water work window is unchanged: 15 June to 15 October.',
+  'Budget amendment approved — the sponsor match moved onto the capital line.',
+  'Survey crew is booked for the fall window. Reported values stay provisional until they close out.',
+  'Coordination call with the county is set for the first week of the month. Agenda is the haul route.',
+  'Landowner outreach on the upper parcel is still open — two owners have not responded.',
+];
+
+// Newest first, pinned to the same 2026 the rest of this module treats as the
+// present. Fixed dates rather than offsets from a clock, for the determinism
+// reason stated at the top of the file.
+const COMMENT_DATES = ['12 August 2026', '30 June 2026', '4 May 2026'];
+
+const buildComments = (project: Project, contacts: ProjectContact[]): ProjectComment[] => {
+  const seed = hashOf(project.projectName);
+  // 0 TO 3, AND THE ZERO IS DELIBERATE. A quarter of the portfolio has no notes
+  // on it, because that is true of every real record set and because an empty
+  // state nobody can reach is an empty state nobody reviews.
+  const count = seed % 4;
+  return Array.from({ length: count }, (_, i) => {
+    // The conversation alternates between the two people who would actually be
+    // having it: the sponsor's lead and the funder's grant manager.
+    return {
+      author: contacts[i % 2],
+      date: COMMENT_DATES[i],
+      body: COMMENT_NOTES[(seed + i * 3) % COMMENT_NOTES.length],
+    };
+  });
+};
+
+// ---------------------------------------------------------------------------
+// Photos
+// ---------------------------------------------------------------------------
+
+// Captions in the order the WORK produces them — site before, mobilization,
+// treatment, result — because the prefix a project is allowed to show is how the
+// gallery stays honest. A Proposal has only the "before" photo to show; an
+// Implementation project can show the crew but not the finished reach; only a
+// completed project reaches the end of its pool. Taking a stage-bounded PREFIX
+// of a chronologically-ordered pool makes a contradiction (a proposal showing
+// finished work) unrepresentable, the same way deriving reported values from
+// stage does.
+const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: string[] }> = {
+  'Riparian Revegetation': {
+    scene: 'stream',
+    captions: [
+      'Bare streambank on the lower corridor, before planting',
+      'Container stock staged at the site access',
+      'Volunteer crew planting willow stakes',
+      'Browse protection installed on first-season plantings',
+      'Irrigation line run to the upland buffer',
+      'Second-season growth along the planted reach',
+    ],
+  },
+  'Fish Passage': {
+    scene: 'stream',
+    captions: [
+      'The barrier before removal',
+      'Site access and staging area',
+      'Crew relocating fish ahead of dewatering',
+      'Excavator placing boulders in the roughened channel',
+      'Reconnected channel at first fall flow',
+      'Adult salmon holding above the former barrier site',
+    ],
+  },
+  'Meadow & Wetland Restoration': {
+    scene: 'meadow',
+    captions: [
+      'Incised channel before treatment',
+      'Baseline vegetation transect',
+      'Channel plug under construction',
+      'Ponded water behind the first plug after fall rains',
+      'Sedge plugs going into the rewetted surface',
+      'Meadow surface holding water into early summer',
+    ],
+  },
+  'Aquatic Habitat Restoration': {
+    scene: 'stream',
+    captions: [
+      'The reach before treatment, at summer base flow',
+      'Log structures staged at the site access',
+      'Excavator anchoring large wood in the mainstem',
+      'Side-channel excavation in progress',
+      'Completed structure at summer base flow',
+      'Survey crew at the post-project cross-section',
+    ],
+  },
+  'Forest Health & Fuels': {
+    scene: 'forest',
+    captions: [
+      'Pre-treatment stand density',
+      'Crew briefing at the north unit landing',
+      'Hand crew thinning ladder fuels',
+      'Masticator working the ridge unit',
+      'Pile burning in the first treatment unit',
+      'The completed fuel break, looking down the alignment',
+    ],
+  },
+  'Stormwater & Water Quality': {
+    scene: 'channel',
+    captions: [
+      'The channel margin before conversion',
+      'Native container stock staged for planting',
+      'Infiltration basin excavation',
+      'Bioswale planting along the terrace',
+      'First storm flows entering the treatment train',
+      'The completed basin holding runoff after a winter storm',
+    ],
+  },
+};
+
+// Field season months, cycled by position — restoration photography is as
+// seasonal as its milestones, and six photos all dated January read as
+// placeholder data.
+const PHOTO_MONTHS = ['April', 'July', 'September', 'June', 'October', 'May'];
+
+// How many photos a record at each stage carries, and how far into the pool's
+// arc it may reach. `limit` is the honesty bound (see PHOTO_POOLS); `count` is
+// seeded so the portfolio has texture — including proposals with NO photos,
+// because an empty gallery is a real state and one nobody can reach is one
+// nobody reviews.
+const photoCount = (stage: ProjectStage, seed: number): { count: number; limit: number } => {
+  switch (stage) {
+    case 'Proposal':
+      return { count: seed % 2, limit: 1 };
+    case 'Planning & Design':
+      return { count: 1 + (seed % 2), limit: 2 };
+    case 'Implementation':
+      return { count: 3 + (seed % 3), limit: 5 };
+    case 'Deferred':
+      return { count: 2 + (seed % 2), limit: 3 };
+    case 'Post-Implementation':
+    case 'Completed':
+      return { count: 4 + (seed % 3), limit: 6 };
+  }
+};
+
+const buildPhotos = (project: Project): ProjectPhoto[] => {
+  const pool = PHOTO_POOLS[project.program];
+  if (!pool) {
+    throw new Error(`No photo pool for program "${project.program}"`);
+  }
+
+  const seed = hashOf(project.projectName);
+  const { count, limit } = photoCount(project.stage, seed);
+  const taken = Math.min(count, limit);
+  if (taken === 0) return [];
+
+  // Dated across the record's own span, oldest first: the "before" photo lands
+  // around site assessment (start − 2, same anchor the milestones use) and the
+  // latest never postdates the prototype's pinned present. A proposal whose
+  // start year is still ahead therefore dates its site photo in the past, which
+  // is when an assessment photo is actually taken.
+  const { implementationStartYear: start, completionYear: end } = project;
+  const firstYear = Math.min(PRESENT_YEAR, start - 2);
+  const lastYear = Math.min(PRESENT_YEAR, end);
+
+  return Array.from({ length: taken }, (_, i) => {
+    const t = taken === 1 ? 0 : i / (taken - 1);
+    const year = Math.round(firstYear + t * (lastYear - firstYear));
+    return {
+      caption: pool.captions[i],
+      date: `${PHOTO_MONTHS[i % PHOTO_MONTHS.length]} ${year}`,
+      scene: pool.scene,
+      seed: seed + i * 11,
+    };
+  });
+};
+
+// ---------------------------------------------------------------------------
+// Change log
+// ---------------------------------------------------------------------------
+
+// Whole dollars in a change string, matching how every component renders money.
+// Local rather than imported from lib/format: the data module stays
+// dependency-free, and the format is one option object either way.
+const AUDIT_CURRENCY = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+});
+
+// Ascending, because they are assigned by position WITHIN a year (see the end
+// of buildAudit): the log is sorted by year, and a month cycle that ignored
+// year boundaries dated November before March inside the same year. A seeded
+// offset per year keeps every run from opening on February.
+const AUDIT_MONTHS = ['January', 'March', 'May', 'July', 'September', 'November'];
+
+// When the record's CURRENT stage was set, per stage — the newest entry in the
+// log has to agree with the pill in the page header, and its date has to agree
+// with the timeline. Clamped to the pinned present everywhere below.
+const stageSetYear = (project: Project): number => {
+  const { implementationStartYear: start, completionYear: end, stage } = project;
+  switch (stage) {
+    case 'Proposal':
+      return start - 2;
+    case 'Planning & Design':
+      return start - 1;
+    case 'Implementation':
+      return start;
+    case 'Deferred':
+      return PRESENT_YEAR;
+    case 'Post-Implementation':
+    case 'Completed':
+      return end;
+  }
+};
+
+/**
+ * The record's change log, derived from the record itself so no entry can
+ * contradict the page it sits behind: the stage entry names the stage the
+ * header shows, the cost entry ends at the cost the rail shows, the funding
+ * entry names a funder from the table, and "Reported value filed" only appears
+ * on a project that has actually reported. Users are the record's own contacts
+ * — the people who would be editing it — with the sponsor's lead carrying the
+ * record work, the grant manager the money, and the field contact the ground.
+ */
+const buildAudit = (
+  project: Project,
+  contacts: ProjectContact[],
+  funding: FundingSource[],
+  measures: PerformanceMeasure[],
+  firstAreaLabel: string,
+): AuditEntry[] => {
+  const seed = hashOf(project.projectName);
+  const { implementationStartYear: start, estimatedTotalCost: total } = project;
+  const [lead, grantManager, fieldContact] = contacts;
+
+  // The prior cost, seeded to a $500 step like every figure in the funding
+  // table, in either direction — budgets get revised up and down.
+  const delta = 500 * (8 + (seed % 24));
+  const previousCost = seed % 2 === 0 ? total - delta : total + delta;
+
+  const outsideFunder =
+    funding.find((source) => source.organization !== project.leadOrganization) ?? funding[0];
+
+  // Chronological, oldest first; reversed on return. Years clamp to the pinned
+  // present so no change postdates the prototype's "now".
+  const year = (y: number): number => Math.min(PRESENT_YEAR, y);
+  const entries: { year: number; user: string; change: string }[] = [
+    { year: year(start - 2), user: lead.name, change: 'Project created' },
+    { year: year(start - 2), user: lead.name, change: 'Description updated' },
+    {
+      year: year(start - 1),
+      user: grantManager.name,
+      change: `Funding source added: ${outsideFunder.name}`,
+    },
+    {
+      year: year(start - 1),
+      user: grantManager.name,
+      change: `Estimated total cost changed from ${AUDIT_CURRENCY.format(previousCost)} to ${AUDIT_CURRENCY.format(total)}`,
+    },
+    {
+      year: year(start),
+      user: fieldContact.name,
+      change: `Work area boundary revised: ${firstAreaLabel}`,
+    },
+  ];
+
+  // Only a project that has reported has a filing to log — same gate the
+  // measures section renders under, read from the same derived data.
+  const reportedMeasure = measures.find((measure) => measure.reported > 0);
+  if (reportedMeasure) {
+    const latest = latestReport(reportedMeasure.series);
+    if (latest) {
+      entries.push({
+        year: latest.year,
+        user: lead.name,
+        change: `Reported value filed: ${reportedMeasure.name}, ${latest.year}`,
+      });
+    }
+  }
+
+  entries.push({
+    year: year(stageSetYear(project)),
+    user: lead.name,
+    change: `Stage set to ${project.stage}`,
+  });
+
+  // A derived year can land out of sequence (a Completed project's stage entry
+  // predates its last filing's year, say) — sort restores the chronology, and
+  // the sort is stable so same-year entries keep their authored order.
+  entries.sort((a, b) => a.year - b.year);
+
+  // Months ascend WITHIN each year-run, so the rendered dates agree with the
+  // order the list presents them in — the one thing a change log cannot get
+  // wrong. The per-year seeded offset varies which month a year opens on;
+  // runs are at most three entries, so the index never leaves the list.
+  let runStart = 0;
+  return entries
+    .map((entry, i) => {
+      if (i > 0 && entries[i - 1].year !== entry.year) runStart = i;
+      const month = AUDIT_MONTHS[((seed + entry.year) % 3) + (i - runStart)];
+      return {
+        date: `${1 + ((seed + i * 7) % 27)} ${month} ${entry.year}`,
+        user: entry.user,
+        change: entry.change,
+      };
+    })
+    .reverse();
+};
+
+// ---------------------------------------------------------------------------
 // Assembly
 // ---------------------------------------------------------------------------
 
@@ -1135,6 +1822,15 @@ const buildDetail = (project: Project): ProjectDetail => {
   if (!authored) {
     throw new Error(`No authored detail for "${project.projectName}"`);
   }
+  // Hoisted out of the literal below: the contacts read the funding table to
+  // find which body administers this project's grant, the comments read the
+  // contacts to find who is talking, and the change log reads all of it — its
+  // entries name the funders, measures and work areas the page renders, which
+  // is what keeps the log unable to contradict the record it accounts for.
+  const funding = buildFunding(project, authored.funders);
+  const contacts = buildContacts(project, funding);
+  const measures = buildMeasures(project, authored.measures, authored.progress);
+
   return {
     project,
     projectDescription: authored.description,
@@ -1151,10 +1847,14 @@ const buildDetail = (project: Project): ProjectDetail => {
         area.nudge,
       ),
     })),
-    measures: buildMeasures(project, authored.measures, authored.progress),
-    funding: buildFunding(project, authored.funders),
+    measures,
+    funding,
     expenditures: buildExpenditures(project, authored.progress),
     milestones: buildMilestones(project),
+    contacts,
+    comments: buildComments(project, contacts),
+    photos: buildPhotos(project),
+    audit: buildAudit(project, contacts, funding, measures, authored.areas[0].label),
   };
 };
 
@@ -1169,6 +1869,29 @@ const buildDetail = (project: Project): ProjectDetail => {
 export const projectDetails: Map<string, ProjectDetail> = new Map(
   projects.map((project) => [project.projectName, buildDetail(project)]),
 );
+
+/**
+ * How many projects in the portfolio carry this person as a contact — the fact
+ * that makes a contact's hover card worth raising, exactly as the project count
+ * is what makes a classification's worth raising. Keyed by EMAIL rather than by
+ * name: an address is the identifier a directory would actually dedupe on, and
+ * two people can share a name.
+ *
+ * Reads `projectDetails`, which is already fully built by the time any page
+ * calls this (the map above is eager, for the build-time-failure reason stated
+ * on it), so there is no ordering hazard and no cycle — this module never
+ * imports a component.
+ */
+export const contactProjectCount = (email: string): number => {
+  let count = 0;
+  for (const detail of projectDetails.values()) {
+    if (detail.contacts.some((contact) => contact.email === email)) count += 1;
+  }
+  return count;
+};
+
+/** How many projects there are, for the "3 of 24" denominator on that card. */
+export const projectCount = (): number => projects.length;
 
 /** Detail for one project. Throws rather than returning undefined: every
  *  project in the portfolio has detail, by the invariant above. */

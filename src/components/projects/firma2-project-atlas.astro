@@ -1,0 +1,614 @@
+---
+// firma2-project-atlas — the project record with the MAP AS THE PAGE. Same
+// record, same sections, same components; the difference is which one is the
+// ground and which ones are laid on it.
+//
+// WHAT THIS IS AN ALTERNATIVE TO. The project detail page reads the record as a
+// DOCUMENT: a column of sections in the order a reader judges delivery, with the
+// map last because "where" is not the question that page owes an answer to. That
+// argument is written out at length in that page's own header and it is still
+// correct for the reader it was written for — someone checking whether a project
+// is on track. This is the same record for the reader who arrives with the other
+// question: a field or program lead who is looking at PLACE first, and wants the
+// numbers as annotations on it rather than the other way round. Neither ordering
+// is a fix for the other; they are two readings, and the record is one.
+//
+// SO THE MAP IS NOT A SECTION HERE. It is the pane, edge to edge and top to
+// bottom, and every other part of the record floats on it: the index card on the
+// leading edge, the tracked sections on the trailing edge. Nothing is laid out
+// AROUND the map, which is the property that makes the last control work — the
+// panels can all leave and there is no gap where they were, because they never
+// took any room. That is why they are floating panels and not a second and third
+// layout track: a docked column that collapses re-flows the map every time it
+// moves, and a map that re-frames on every click is the thing this screen most
+// has to avoid.
+//
+// THE ONE CONTROL. "Hide details" takes the record, the sections AND the page
+// header band off the screen in one click, and puts them back in the next. It is
+// one toggle rather than a collapse affordance per panel because the state a
+// reader actually wants is a MODE — "let me look at this" — and three separate
+// two-state controls make them ask for it three times. The map's own chrome
+// stays: the section title, Add area and the legend are the MAP, not details
+// about the project, and the legend is also this surface's text alternative —
+// the one part of the screen a reader who cannot see the shapes is reading. A
+// "clear everything" that took the legend would be clearing the content.
+//
+// THE TOOLBAR NEVER COLLAPSES, for the reason every full-screen mode has to be
+// escapable by the affordance that entered it. It keeps the same corner in both
+// states so the way back is where the way in was, and Escape exits as well.
+//
+// WHAT IT DOES NOT DO: resize the map. Hiding the panels reveals map that was
+// already drawn under them. The one thing that does change size is the pane
+// itself when the header band goes, and the map is told about that — see the
+// reflow in the script, and firma2-project-map's listener for why an event is
+// the right seam between two islands that share no module.
+//
+// bcn-lego-checked: nothing in the catalog is a map workspace, and this file
+// hand-rolls no primitive — it is a manifest. The surface is
+// firma2-project-map (variant="canvas"); the three floating regions are
+// firma2-map-panel, the shared component written for exactly this; the record's
+// tabs are firma2-project-rail and the four sections are the same
+// firma2-project-* components the document reading of this page renders, passed
+// the same props. The toggle is esa-button. The only CSS here is the pane's own
+// geometry — the height it takes from the fold, the bleed through the content
+// pane's padding, and the two reservations it publishes to the map so the map's
+// chrome clears the panels. Walked the catalog for a full-bleed pane primitive
+// (esa-container is a max-width content column; `.frame` in layouts.css is a
+// ratio-locked media box, and this is the opposite — a box whose ratio is
+// whatever the window is). Beacon is not cloned on this machine.
+import Firma2MapPanel from '../shared/firma2-map-panel.astro';
+import Firma2ProjectMap from './firma2-project-map.astro';
+import Firma2ProjectRail from './firma2-project-rail.astro';
+import Firma2ProjectMeasures from './firma2-project-measures.astro';
+import Firma2ProjectExpenditures from './firma2-project-expenditures.astro';
+import Firma2ProjectFunding from './firma2-project-funding.astro';
+import Firma2ProjectTimeline from './firma2-project-timeline.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { projectSlug } from '../../data/firma2-projects';
+import type { ProjectDetail } from '../../data/firma2-project-detail';
+
+interface Props {
+  /** The whole record. Every panel takes its own slice of it, the same slices
+   *  the document reading of this page passes to the same components. */
+  detail: ProjectDetail;
+}
+
+const { detail } = Astro.props;
+---
+<!-- `data-chrome` IS THE MODE, and it is on the outermost element because all
+     three things it governs are in different places: the band is a child here,
+     the panels are two components down, and the map's plate reservation is a
+     custom property that has to inherit past both. One attribute at the top is
+     the only place all three can be reached from. -->
+<div class="firma2-project-atlas" data-chrome="shown">
+  <!-- THE BAND IS INSIDE THE ATLAS, not above it on the page, and that is the
+       whole reason this component takes a slot instead of the page rendering the
+       header itself. "Hide details" has to reach it — the band is the last thing
+       between the map and the top of the window — and a component cannot hide a
+       sibling it does not contain without reaching through a page's stylesheet
+       to do it. Slotted, it is simply a child that gets displayed or not.
+
+       It keeps firma2-page-header's own bleed and its own sticky rule, both of
+       which are inert here and harmless: nothing scrolls on this page, so a
+       sticky box with nowhere to travel is just a box. -->
+  <div class="firma2-project-atlas__band">
+    <slot name="header" />
+  </div>
+
+  <!-- THE STAGE IS THE POSITIONED BOX EVERYTHING ELSE IS PLACED AGAINST, and it
+       has to be exactly one box for that to work: the map fills it, the three
+       panels are absolute against it, and the two reservations below are custom
+       properties that inherit from it down into the map. -->
+  <div class="firma2-project-atlas__stage">
+    <Firma2ProjectMap detail={detail} variant="canvas" />
+
+    <!-- FIRST OF THE THREE IN THE DOM, AND LAST OF THEM ON THE SCREEN'S
+         READING ORDER — which is the right way round. It is absolutely
+         positioned, so source order costs the layout nothing, and it buys a
+         keyboard reader the control that governs the whole screen a couple of
+         Tabs after the header instead of past two panels of record. The one
+         affordance that can clear the page should not be behind everything the
+         page is about.
+
+         ON A PLATE AND NOT ON THE TILES: esa-button's `chrome`
+         variant is transparent until hovered and takes its focus ring from
+         currentColor — it is built for a dark app bar, and on a basemap it would
+         be a label lying on a road. The plate is what gives it a ground, and it
+         is the same plate the map draws under its own Add area button, from the
+         same component, so the two read as one toolbar in two corners.
+
+         `width: auto` because a toolbar is as wide as its control. No `label` on
+         the panel: a complementary landmark per button makes the landmark list
+         longer without making it more useful, and the button names itself.
+
+         NO data-atlas-collapsible — see the module header. -->
+    <Firma2MapPanel side="end" width="auto" gap="xs" class="firma2-project-atlas__tools">
+      <!-- THE LABEL FLIPS. A toggle that keeps one label and reports its state
+           through aria-pressed alone is correct markup and the wrong copy here:
+           the state it is reporting is that most of the screen has just gone,
+           and the reader's next question is how to get it back. Naming the
+           action in both directions answers that without their having to work
+           out that this is the control that did it. aria-pressed rides along
+           regardless — it is what a screen reader announces, before a reader has
+           to infer anything from a label that changed under them.
+
+           BOTH LABELS ARE TWELVE CHARACTERS, which is not a coincidence worth
+           losing: a toolbar plate is sized to its content, and a control that
+           changed width on click would move the one affordance still on screen.
+
+           NO ICON, and that is a deletion rather than an omission. `expand` was
+           right for the outbound half — more map — and there is no glyph in the
+           hub's registry that is its honest inverse, so the pair would have been
+           one accurate icon and one decorative one. design-principles: if an
+           element carries no information, cut it. The label is unambiguous on
+           its own and the plate is what makes it legible over tiles. -->
+      <EsaButton variant="chrome" size="md" data-atlas-toggle aria-pressed="false">
+        Hide details
+      </EsaButton>
+    </Firma2MapPanel>
+
+    <!-- THE RECORD, FLOATING. Identical content and identical component to the
+         rail on the document reading of this page — three tabs, Key facts
+         leading — because it is answering the identical question there and here:
+         what IS this project, who do I call about it, what has been said about
+         it. Only the surface it sits on changed.
+
+         Tabs earn their keep harder on this screen than on that one. There, the
+         rail was competing with a scroll; here it is competing with the MAP, and
+         every row of record on screen is a row of the thing the reader came for
+         covered up. Three peers behind one 22rem column is the smallest this
+         content comes. -->
+    <Firma2MapPanel side="start" label="Project record" data-atlas-collapsible>
+      <Firma2ProjectRail detail={detail} />
+    </Firma2MapPanel>
+
+    <!-- THE TRACKED SECTIONS, IN THE ORDER THEY ALWAYS RUN: what was built, what
+         it cost, who paid for it, when it happened. The order is not this
+         screen's decision to make — it is the record's, and re-ordering it here
+         would mean the same project reads two ways depending on which page you
+         opened.
+
+         `surface="bare"`: each of these four is already an esa-card, a white box
+         with an edge. A plate behind them would put four boxes inside a fifth.
+
+         It starts below the toolbar rather than at the top of the surface. The
+         alternative was to move the toolbar, and every other corner is spoken
+         for — the record has the leading top, the map's legend the leading foot,
+         Leaflet's attribution the trailing foot. -->
+    <Firma2MapPanel
+      side="end"
+      label="Progress and funding"
+      surface="bare"
+      style="--firma2-map-panel-inset-block-start: var(--firma2-atlas-sections-top); --firma2-map-panel-width: var(--firma2-atlas-sections-width)"
+      data-atlas-collapsible
+    >
+      <Firma2ProjectMeasures measures={detail.measures} projectSlug={projectSlug(detail.project)} />
+      <Firma2ProjectExpenditures
+        expenditures={detail.expenditures}
+        estimatedTotalCost={detail.project.estimatedTotalCost}
+      />
+      <Firma2ProjectFunding
+        funding={detail.funding}
+        estimatedTotalCost={detail.project.estimatedTotalCost}
+      />
+      <Firma2ProjectTimeline milestones={detail.milestones} />
+    </Firma2MapPanel>
+
+  </div>
+</div>
+
+<style>
+  /* ---- THE PANE ------------------------------------------------------------
+     THIS SCREEN DOES NOT SCROLL, and everything below is in service of that.
+     The map is the page and a map you have to scroll to see the bottom of is a
+     map in a box. So the atlas is exactly the height of what is left of the
+     window under the app bar, and the stage takes whatever the band does not.
+
+     THE HEIGHT IS MEASURED, NOT COMPUTED. The fallback below is a real number
+     and it is wrong on most windows: what sits above this element is the app
+     bar (content-sized, and the shell exposes no token for it) plus the content
+     pane's padding, and neither is knowable from CSS here. The script measures
+     the element's own distance from the top of the viewport and publishes it,
+     which is right by construction at every width and on every resize — and,
+     unlike a chain of subtractions, cannot drift when something upstream
+     changes its padding.
+
+     This is the same problem firma2-project-map solves in `section` variant by
+     subtracting --firma2-band-height, and the reason that map hands the
+     arithmetic over in `canvas` variant: doing it in both places is two answers
+     that agree until they do not. */
+  .firma2-project-atlas {
+    --_bleed: var(--spacing-500, 1.5rem);
+    display: flex;
+    flex-direction: column;
+    block-size: var(--firma2-atlas-height, calc(100dvh - 10rem));
+
+    /* THE BLOCK-END BLEED IS ON THE PANE, NOT ON THE STAGE, and the difference
+       is measurable rather than stylistic — it was on the stage first and cost
+       this screen 24px of document scroll.
+       A negative margin does not shrink the box it is on; it pulls what comes
+       AFTER it up. On the stage, "after it" is the end of this element, whose
+       height is fixed — so nothing moved, and the content pane still added its
+       own bottom padding under a full-height pane, which is exactly one step of
+       overflow. Here, "after it" is the pane's bottom padding, which is the
+       thing that had to move. The pane's padding is given back, the document
+       ends on the fold, and the map reaches the bottom of the window.
+       The inline bleed stays on the stage — see the note there for why it cannot
+       be on this element. */
+    margin-block-end: calc(var(--_bleed) * -1);
+  }
+
+  /* The band brings its own full-bleed and its own sticky rule from
+     firma2-page-header; this wrapper only exists so the mode has something to
+     hide. `flex: none` so it keeps its measured height and the stage takes the
+     rest — without it a flex child with no basis would share the column. */
+  .firma2-project-atlas__band {
+    flex: none;
+  }
+
+  .firma2-project-atlas[data-chrome='hidden'] .firma2-project-atlas__band {
+    display: none;
+  }
+
+  /* ---- THE STAGE -----------------------------------------------------------
+     THE BOX THE MAP FILLS AND THE PANELS ARE PLACED AGAINST. `position:
+     relative` is what makes the panels' `position: absolute` mean "this
+     surface"; `min-block-size: 0` is what lets a flex child with a tall
+     scrolling panel inside it actually shrink to its share of the column
+     instead of being sized by its content.
+
+     THE INLINE BLEED IS HERE AND NOT ON THE ATLAS, and that is not a stylistic
+     choice: firma2-page-header ALREADY bleeds a step past its column on both
+     inline edges, and the band is a child of the atlas. A negative inline margin
+     up there would compound with the band's own and push it two steps out, past
+     the pane and under the app's nav rail. The band keeps its bleed; this one
+     reaches through the pane's padding for everything below it.
+
+     The BLOCK-end bleed is the atlas's, for the opposite reason — see the note
+     there. Same value on both, from the same token, because it is the same one
+     literal: esa-app-shell's `padding: var(--spacing-500)` on its content
+     region, which the shell does not expose as a hook (the /request-lego for
+     `--app-shell-content-padding` is filed in firma2-page-header's own note, and
+     would retire the restatement in all three files at once).
+
+     `isolation: isolate` even though the map opens a stacking context of its
+     own. That one contains Leaflet; this one contains the panels, which are
+     positioned siblings of it. Without it the two are ordered against whatever
+     the page's ancestors happen to have created. */
+  .firma2-project-atlas__stage {
+    /* WHAT THE MAP HAS TO CLEAR, PUBLISHED AS A CUSTOM PROPERTY BECAUSE THAT IS
+       THE ONLY THING THAT INHERITS. firma2-project-map draws its own chrome at
+       the leading edge — the section title and Add area at the top, the legend
+       at the foot — and the record panel is sitting on both of those corners.
+       The map exposes the leading inset as a knob for exactly this; the atlas is
+       the only component that knows how wide the panel is, so the arithmetic
+       lives here. One panel width, two gutters: the panel's own inset from the
+       edge, and a second so the plates are not touching it.
+
+       --firma2-atlas-panel-width is declared once and read twice for the same
+       reason: a panel that got wider and a reservation that did not would put a
+       plate under it, which is the one failure a map-as-backdrop has that a
+       map-in-a-card does not. */
+    --firma2-atlas-panel-width: 22rem;
+
+    /* THE TWO PANELS ARE NOT THE SAME WIDTH, and the difference is the brief's
+       rail test doing its job rather than an inconsistency. 22rem is what the
+       record's cards were written for and measure at everywhere in this spoke —
+       they are scalars, one label over one value, and they read fine in a narrow
+       column. The tracked sections are the content that was taken OUT of the
+       rail for failing that test, and the funding table is the specific reason:
+       four columns, two of them organization names, with a measured minimum of
+       441px. At 22rem it does not overflow gracefully, it draws a horizontal
+       scrollbar inside a card — which is exactly the failure that moved it back
+       to the main column on the document reading of this record.
+       28rem is the first step that clears 441px plus esa-card's own padding,
+       measured in the browser rather than reasoned about. Expenditures' chart
+       clears at 24rem and Measures and Milestones at 22rem, so funding is the
+       binding constraint and this number is its. */
+    --firma2-atlas-sections-width: 28rem;
+
+    --firma2-atlas-gutter: var(--spacing-400, 1rem);
+    --firma2-map-plate-inset-inline-start: calc(
+      var(--firma2-atlas-gutter) * 2 + var(--firma2-atlas-panel-width)
+    );
+
+    /* AND THE PANELS TAKE THEIR WIDTH FROM THE SAME DECLARATION. firma2-map-panel
+       reads this off its surface rather than carrying a width of its own,
+       precisely so the panel and the reservation above cannot be changed
+       independently. The toolbar is the exception and says so where it is
+       rendered: it passes `width="auto"`, which is an inline style and outranks
+       this. */
+    --firma2-map-panel-width: var(--firma2-atlas-panel-width);
+
+    /* WHERE THE SECTIONS PANEL STARTS: under the toolbar. The value is written
+       by the script, off the toolbar's RENDERED height, and the fallback here is
+       what it comes out at today — one gutter above the toolbar, 75px of
+       toolbar, one gutter below.
+
+       IT IS MEASURED BECAUSE IT WAS COMPUTED FIRST AND THE ARITHMETIC WAS WRONG.
+       The computed version added the app's 40px control rung to the plate's
+       padding and its two hairlines and got 66px for a box that renders at 75:
+       esa-button's md rung is its own (padding plus a label composite's line
+       box), not the 40px AppLayout pins the FIELD controls to, and there is no
+       token for either. Nine pixels is not a rounding error when it is the gap
+       between two floating panels. The toolbar is a real box on the page and the
+       browser already knows how tall it is; asking it cannot be wrong, and does
+       not go stale when the label or the control size changes. */
+    --firma2-atlas-sections-top: 107px;
+
+    position: relative;
+    flex: 1;
+    min-block-size: 0;
+    margin-inline: calc(var(--_bleed) * -1);
+    isolation: isolate;
+  }
+
+  /* THE PLATES COME BACK TO THE EDGE WHEN THE PANEL COVERING THEM LEAVES. One
+     declaration, and it is the reason the map took a knob instead of a constant:
+     with the record gone there is nothing at the leading edge, and a title plate
+     still standing 24rem in would read as an alignment bug. firma2-project-map
+     transitions the inset, so the plates travel rather than jump. */
+  .firma2-project-atlas[data-chrome='hidden'] .firma2-project-atlas__stage {
+    --firma2-map-plate-inset-inline-start: var(--firma2-atlas-gutter);
+
+    /* AND THE MAP TAKES THE BAND'S ROOM. The band bleeds a step ABOVE this
+       element (firma2-page-header's own `margin-block-start`), so hiding it
+       leaves that step of page canvas between the app bar and the map. Reaching
+       back through it puts the map against the bar, which is what "only see the
+       map" has to mean at the top edge as much as at the other three. Flex
+       counts margins in its free-space arithmetic, so the stage grows by exactly
+       what it reaches back through — the height is not overrun. */
+    margin-block-start: calc(var(--_bleed) * -1);
+  }
+
+  /* The toolbar's own corner: the trailing top, one gutter in, which is the same
+     step every panel and plate on this surface keeps. It is the one region that
+     is in the same place in both modes. */
+  .firma2-project-atlas__tools {
+    --firma2-map-panel-inset-block-start: var(--firma2-atlas-gutter);
+  }
+
+  /* THE PANELS NARROW BEFORE THEY MEET IN THE MIDDLE. Two 22rem columns and
+     three gutters need 47rem before a single tile of map shows between them, and
+     a window that narrow closes the gap while the app's nav is still taking its
+     own 18rem out of the same width — at which point the record and the sections
+     are not floating ON anything, they are a two-column layout with a texture
+     behind it.
+
+     18rem is the same floor `.sidebar` takes as its own default track and holds
+     every row in the record's Key facts on one line; 64rem is the width
+     firma2-record-rail unpins itself at, for the same reason and with the same
+     caveat written out there — it is a viewport query standing in for a
+     container one, because the pane's width also depends on whether the app's
+     nav is collapsed and a container query needs `container-type` on a box this
+     component does not own.
+
+     ONE DECLARATION MOVES THE RECORD PANEL AND THE MAP'S RESERVATION FOR IT,
+     which is the whole point of their sharing a name: they cannot come out of
+     step at a breakpoint.
+
+     THIS IS THE SECOND HALF OF A PAIR: the script opens the page collapsed at
+     the same breakpoint, so these widths are what the panels come back at when
+     the reader asks for them, not what they land on. See the matchMedia at the
+     foot of the script for why that is one state rather than a third mode.
+
+     WHAT NARROWING COSTS, STATED RATHER THAN HIDDEN: at 22rem the sections panel
+     is back under the funding table's 441px minimum, so that one card scrolls
+     horizontally inside itself, and the two panels are close enough to cover the
+     map's own title plate. Both are real regressions and both are the price of
+     showing a whole record at this width; the alternatives are a layout that
+     decides for the reader which half of their record to drop, or panels wide
+     enough to overlap each other. The reader who wants neither has the toolbar,
+     and the document reading of the same record one crumb away — that page is
+     built for a column this narrow and this one is not. */
+  @media (max-width: 64rem) {
+    .firma2-project-atlas__stage {
+      --firma2-atlas-panel-width: 18rem;
+      --firma2-atlas-sections-width: 22rem;
+    }
+  }
+</style>
+
+<script>
+  // ── THE MODE ───────────────────────────────────────────────────────────────
+  //
+  // One attribute drives all of it (`data-chrome` on the atlas), and this script
+  // owns exactly three things beyond flipping it: the two panels' own collapsed
+  // attribute, the toggle's label and pressed state, and telling the map its box
+  // changed. Everything visual is a stylesheet rule keyed on those attributes —
+  // no styles are written from here, and no markup is authored.
+
+  const LABEL = { hide: 'Hide details', show: 'Show details' } as const;
+
+  function initAtlas(atlas: HTMLElement): void {
+    // esa-button FORWARDS data-* TO THE NATIVE CONTROL and keeps `class` on its
+    // styled wrapper — documented in the lego, and the reason these are two
+    // lookups rather than one. `toggle` is the real <button>: it takes the
+    // click, the accessible name and aria-pressed. `chrome` is the <span> the
+    // stylesheet's variant rules are written against, so the pressed LOOK has to
+    // go there. Reaching for either one alone silently half-works.
+    const toggle = atlas.querySelector<HTMLButtonElement>('button[data-atlas-toggle]');
+    const chrome = toggle?.closest<HTMLElement>('.esa-button');
+    const stage = atlas.querySelector<HTMLElement>('.firma2-project-atlas__stage');
+    const map = atlas.querySelector<HTMLElement>('.firma2-project-map');
+    const panels = atlas.querySelectorAll<HTMLElement>('[data-atlas-collapsible]');
+    if (!toggle || !stage) return;
+
+    // THE HEIGHT, MEASURED. See the note on the pane in the stylesheet: what sits
+    // above this element is the app bar plus the content pane's padding, neither
+    // of which CSS here can read.
+    //
+    // ZEROED BEFORE MEASURING, and that is the line that makes this correct
+    // rather than nearly correct. getBoundingClientRect().top is relative to the
+    // VIEWPORT, so it is only the layout position while nothing has scrolled —
+    // and the thing most likely to make this page scroll is this element being a
+    // few pixels too tall from the previous measurement. Collapsing it first
+    // guarantees the document is shorter than the window at the moment the
+    // reading is taken. The write forces the layout; the read is then exact.
+    const sizePane = (): void => {
+      atlas.style.setProperty('--firma2-atlas-height', '0px');
+      const top = atlas.getBoundingClientRect().top;
+      atlas.style.setProperty('--firma2-atlas-height', `${Math.round(window.innerHeight - top)}px`);
+
+      // AND WHERE THE SECTIONS PANEL CLEARS THE TOOLBAR. Measured for the reason
+      // written out in the stylesheet: the computed form got this 9px wrong,
+      // because esa-button's md height is padding plus a type composite's line
+      // box and no token names it. Both insets come from the same declaration
+      // the toolbar itself uses, so the gap under it is the gap beside it.
+      const tools = stage.querySelector<HTMLElement>('.firma2-project-atlas__tools');
+      if (tools) {
+        const box = tools.getBoundingClientRect();
+        // The gutter is not restated either — it is read as the distance the
+        // toolbar already keeps from the top of the surface, which is the same
+        // step every panel and plate on this map takes. So the space UNDER the
+        // toolbar is the space ABOVE it, by construction rather than by two
+        // declarations agreeing.
+        const gutter = Math.round(box.top - stage.getBoundingClientRect().top);
+        stage.style.setProperty(
+          '--firma2-atlas-sections-top',
+          `${gutter * 2 + Math.round(box.height)}px`,
+        );
+      }
+    };
+
+    // LEAFLET CACHES ITS CONTAINER'S SIZE. Hiding the band gives the map another
+    // band's worth of height and Leaflet paints tiles for the size it last knew,
+    // so it has to be told — and once it is being told, it may as well re-frame:
+    // the shapes were fitted into the room LEFT OVER by the panels, and with the
+    // panels gone that framing is off-centre by two panel widths.
+    //
+    // The reservation is measured off the panels themselves rather than restated
+    // here. They are the boxes that do the covering, and their width is a CSS
+    // value this file does not own.
+    const reflow = (): void => {
+      if (!map) return;
+
+      // COLLAPSED, THE MAP GOES BACK TO ITS OWN RESERVATION — an event with no
+      // detail, which is what firma2-project-map's defaults are for. There is
+      // nothing left on the surface but the map's own plates, and those are the
+      // boxes it already fits itself around. Restating their numbers here would
+      // be a second copy that goes stale on the commit that moves them.
+      if (atlas.dataset.chrome === 'hidden') {
+        map.dispatchEvent(new CustomEvent('firma2-map:reflow'));
+        return;
+      }
+
+      // SHOWN, THE RESERVATION IS MEASURED OFF THE PANELS THEMSELVES. Not
+      // computed from the width token: what has to be cleared is the panel's far
+      // edge plus the gutter it keeps from the surface, and both of those are
+      // CSS this file does not own — the panel picks its own inset, the media
+      // query above moves its width, and `max-inline-size` can override the lot
+      // on a narrow window. The DOM already holds the answer; asking it is one
+      // line and cannot drift.
+      const surface = stage.getBoundingClientRect();
+      let start = 0;
+      let end = 0;
+      panels.forEach((panel) => {
+        const box = panel.getBoundingClientRect();
+        if (panel.dataset.side === 'start') {
+          // The panel's far edge, plus its own inset again so the shapes are not
+          // fitted flush against it.
+          start = Math.max(start, Math.round(box.right - surface.left + (box.left - surface.left)));
+        } else {
+          end = Math.max(end, Math.round(surface.right - box.left + (surface.right - box.right)));
+        }
+      });
+
+      // The block axis stays the map's own: its title plate takes the top of the
+      // surface and its legend the foot, in both modes, and the panels are
+      // inside those bounds. The two numbers are the map's own defaults, restated
+      // only because Leaflet's asymmetric form takes the corners as a pair and
+      // this call is overriding the inline half of each.
+      map.dispatchEvent(
+        new CustomEvent('firma2-map:reflow', {
+          detail: { paddingTopLeft: [start, 96], paddingBottomRight: [end, 132] },
+        }),
+      );
+    };
+
+    const setMode = (hidden: boolean): void => {
+      // FOCUS CANNOT BE LEFT INSIDE SOMETHING THAT IS ABOUT TO BE HIDDEN. The
+      // panels leave with `visibility: hidden`, which takes them out of the tab
+      // order and out of the accessibility tree — and a keyboard reader who was
+      // on a tab or an Add button in one of them would be left focused on a box
+      // that no longer exists, with the next Tab starting again from the top of
+      // the document. The toggle is where they should be: it is the control that
+      // just acted, and it is the way back.
+      if (hidden && document.activeElement instanceof HTMLElement) {
+        const inside = Array.from(panels).some((panel) => panel.contains(document.activeElement));
+        if (inside) toggle.focus();
+      }
+
+      atlas.dataset.chrome = hidden ? 'hidden' : 'shown';
+      panels.forEach((panel) => panel.toggleAttribute('data-collapsed', hidden));
+
+      // aria-pressed is what a screen reader announces; .esa-button--active is
+      // the lego's OWN class for a pressed toggle, so the look comes from the
+      // design system rather than from a colour written here.
+      toggle.setAttribute('aria-pressed', String(hidden));
+      const text = toggle.querySelector('.esa-button__label') ?? toggle;
+      text.textContent = hidden ? LABEL.show : LABEL.hide;
+      chrome?.classList.toggle('esa-button--active', hidden);
+
+      // Order matters. The band's display change has to be in the layout before
+      // the map is asked how big it is, and one frame is what guarantees that.
+      requestAnimationFrame(() => {
+        sizePane();
+        reflow();
+      });
+    };
+
+    toggle.addEventListener('click', () => setMode(atlas.dataset.chrome !== 'hidden'));
+
+    // EVERY FULL-SCREEN MODE IS ESCAPABLE BY Escape. It is the key a reader
+    // presses without being told, and the alternative — hunting for the one
+    // control still on screen — is the failure mode of every kiosk view.
+    // Focus goes back to the toggle so a keyboard reader is not dropped on the
+    // map with no idea what just happened.
+    document.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || atlas.dataset.chrome !== 'hidden') return;
+      setMode(false);
+      toggle.focus();
+    });
+
+    sizePane();
+
+    // A WINDOW TOO NARROW FOR THIS LAYOUT OPENS IN THE MODE THAT FITS IT.
+    // Two panels and the gutters between them need about 47rem of pane, and the
+    // pane is the window less the app's nav rail — so under 64rem they meet in
+    // the middle, cover the map's own title plate, and leave a strip of basemap
+    // too thin to read a shape in. The layout has not degraded at that point, it
+    // has stopped being a map screen.
+    //
+    // So it starts collapsed there, which is the same state the toggle produces
+    // and the same one click out of it. That is deliberately NOT a third mode
+    // with rules of its own: a reader gets a full-screen map and a labelled
+    // control that says "Show details", and pressing it gives them everything —
+    // panels overlapping the map's plates, which is what it costs at that width
+    // and is at least an honest stacking order rather than a broken one.
+    //
+    // Matched ONCE, at load, and never re-run. It is the opening state, not a
+    // responsive rule: a reader who has asked for their record and then resized
+    // the window has said what they want, and taking it away again would be the
+    // layout overruling them.
+    if (window.matchMedia('(max-width: 64rem)').matches) setMode(true);
+
+    // THE MAP FRAMES ITSELF BEFORE IT KNOWS THE PANELS ARE THERE, and this is
+    // the correction. Its Leaflet module waits on a CDN script, so it finishes
+    // long after this one and its first fit reserves only its own plates — which
+    // on this screen puts a work area under the sections panel. It announces
+    // itself when it is up; the answer is the same reflow a click sends, with
+    // the panels' measured boxes in it. Listening rather than polling, and no
+    // ordering assumption in either direction: if this handler is attached after
+    // the map is up the click still corrects it, and if the map never loads
+    // nothing is waiting on it.
+    map?.addEventListener('firma2-map:ready', reflow);
+
+    window.addEventListener('resize', () => {
+      sizePane();
+      reflow();
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-atlas').forEach(initAtlas);
+</script>

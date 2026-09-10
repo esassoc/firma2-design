@@ -154,9 +154,9 @@ public is a real audience for these screens or an assumption we inherited.*
 Stated as jobs, because a job survives a redesign and a feature list does not.
 
 - **Judge delivery.** "Is this project doing what it said it would?" — promised
-  against delivered, budgeted against spent, planned against reached. This is the
-  question the project detail page is organized around, and the one an executive
-  and a member of the public turn out to share.
+  against delivered, planned against reached, spent against the budget it was
+  given. This is the question the project detail page is organized around, and
+  the one an executive and a member of the public turn out to share.
 - **Place a record.** "Whose is this, under what program, where, over what
   years?" Nobody comes for these facts, and nobody can read the numbers without
   them.
@@ -234,9 +234,10 @@ can be read in full where it was written.
 ### Sort content by whether it has a history
 
 A **series** has an account over time worth reading — what was delivered against
-what was expected, spent against budgeted, reached against planned. A **scalar**
-is a fact that can be corrected but has no interesting history: lead
-organization, program, county, the description.
+what was expected, reached against planned, drawn down year after year. A
+**scalar** is a fact that can be corrected but has no interesting history: lead
+organization, program, county, the description — and the budget, which is
+authored once for the whole project (see the next principle).
 
 Series lead. Scalars go in the rail — present, because the numbers cannot be read
 without them; not prominent, because they are not why anyone opened the page.
@@ -244,6 +245,27 @@ without them; not prominent, because they are not why anyone opened the page.
 *Proved on: project detail. Tested twice — the description moved out of the rail
 and came back (the argument was about reading ORDER but the position bought
 PROMINENCE), and funding sources moved out and stayed out.*
+
+### Only compare two things the record actually holds
+
+A paired bar, a percentage, a variance — every comparison asserts that both
+sides of it are facts somebody committed to. If one side is derived to make the
+comparison possible, the comparison is the component's opinion wearing the
+record's clothes, and a reader cannot tell the difference.
+
+Expenditures spent a release charting a per-year "budgeted" bar beside a
+per-year "spent" bar. The spent figures are real; the budgeted ones were
+`estimatedTotalCost` sliced by an accrual curve, because a project is budgeted
+ONCE, for the whole of itself, and nothing in the record divides it into annual
+allocations. The chart was inviting a reader to call 2024 "behind plan" against
+a plan nobody wrote. The budget is now stated once as a figure, and the chart
+carries only what genuinely varies year to year.
+
+The test before pairing anything: *who authored the other side, and when?* If
+the answer is "this component, just now", state the two facts separately.
+
+*Proved on: project detail — expenditures. The same question is worth asking of
+every progress ring and every "x of y" on the page.*
 
 ### The rail's test is scalar AND short AND narrow
 

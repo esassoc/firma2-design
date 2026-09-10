@@ -3,6 +3,11 @@
 // page title (plus whatever actions the page hangs off them), held at the top of
 // the viewport while the rest of the page scrolls underneath.
 //
+// Slots: "actions" (the page's workflow, trailing the title), "toolbar"
+// (record-level utilities, trailing the BREADCRUMB — crumbed pages only; see
+// the note in the markup) and "status" (what STATE the record is in — a pill
+// or two, under the title).
+//
 // WHY IT IS PINNED AND THE APP BAR IS NOT. AppLayout scrolls the DOCUMENT, so
 // the bar with the omnibox and the account menu rides up and out of the way —
 // it is chrome for the app, and once you are reading a record you are done with
@@ -64,8 +69,13 @@ interface Props {
 
 const { title, crumbs, editableTitle } = Astro.props;
 const hasCrumbs = (crumbs?.length ?? 0) > 0;
+const hasStatus = Astro.slots.has('status');
+const hasToolbar = Astro.slots.has('toolbar');
 ---
-<div class="firma2-page-header">
+{/* THE BAND IS A STACK so the status row below the title takes the same 8px
+    step esa-page-header puts between its own eyebrow and its h1 — the status
+    reads as part of the title block rather than as a second row of chrome. */}
+<div class="firma2-page-header stack" data-gap="xs">
   {/* TWO BRANCHES, not one with a conditional inside. esa-page-header decides
       whether to render its breadcrumbs container with Astro.slots.has(), and a
       slot counts as FILLED as soon as an element carrying `slot="breadcrumbs"`
@@ -78,7 +88,26 @@ const hasCrumbs = (crumbs?.length ?? 0) > 0;
       zero-width flex box on the bar's trailing edge and changes nothing. */}
   {hasCrumbs ? (
     <EsaPageHeader title={title}>
-      <EsaBreadcrumbs slot="breadcrumbs" items={crumbs} />
+      {/* THE CRUMB ROW IS ALSO THE TOOLBAR ROW. Two slots, two kinds of act:
+          "actions" trails the TITLE and is for the page's workflow (the
+          catalog's primary "New measure"); "toolbar" trails the CRUMB and is
+          for record-level utilities — smaller, quieter, chrome rather than
+          workflow (the project page's Share · Fact sheet · History). The
+          crumb and the toolbar share one .repel because they are the same
+          kind of thing: the strip above the title is the page's frame — the
+          way out on its leading edge, the things you can do WITH the page on
+          its trailing edge — and the title below stays the record's own.
+          Requires crumbs: the toolbar rides the crumb row, and a top-level
+          page (no crumbs) has no such row to ride — its actions belong
+          beside the title. */}
+      <div slot="breadcrumbs" class="repel" data-gap="md">
+        <EsaBreadcrumbs items={crumbs} />
+        {hasToolbar && (
+          <div class="firma2-page-header__toolbar cluster" data-gap="xs">
+            <slot name="toolbar" />
+          </div>
+        )}
+      </div>
       <slot name="actions" slot="actions" />
     </EsaPageHeader>
   ) : (
@@ -105,6 +134,32 @@ const hasCrumbs = (crumbs?.length ?? 0) > 0;
       as="page-title"
       required
     />
+  )}
+
+  {/* THE RECORD'S STATUS, UNDER ITS NAME — not trailing it in the actions
+      cluster, which is where it sat because that is the only slot
+      esa-page-header offers beside the title. Two things were wrong with that
+      seat. A stage pill is not an action: it sits in the one cluster whose
+      every other occupant is a control, on the far side of a bar that can be
+      1200px wide, so the fact it qualifies is separated from the name it
+      qualifies by the whole width of the screen. Under the title it is read in
+      the same glance as the name, in the reading order a record has anyway —
+      what it is, then what state it is in.
+
+      It renders here, after the header rather than inside the title column,
+      because the lego has no slot there (the same gap the editable title works
+      around, and the same /request-lego). Nothing has to move it: with the
+      status out of the actions cluster the bar holds only the title, so the row
+      directly under the header IS the row directly under the title, and it
+      lands on the title's own left edge with no adoption script to fail.
+
+      A .cluster, so several status pills — or a pill and a timestamp — sit in a
+      row and wrap on a narrow window without this component learning anything
+      about what the page put in it. */}
+  {hasStatus && (
+    <div class="firma2-page-header__status cluster" data-gap="xs">
+      <slot name="status" />
+    </div>
   )}
 </div>
 
@@ -322,8 +377,21 @@ const hasCrumbs = (crumbs?.length ?? 0) > 0;
 
      :global() because the column belongs to esa-page-header and carries its
      scope hash; contained by .firma2-page-header, so no other header on any page
-     can be reached. */
+     can be reached.
+
+     BASIS 0, NOT auto, and the difference only shows once the actions cluster
+     has occupants again (the project page's record actions were the first).
+     The lego's bar is flex-wrap: wrap, and wrap happens at flex-BASIS: with
+     `auto`, a title whose content width plus the actions' width overflows the
+     bar wraps the whole cluster onto a second row — buttons stacked under the
+     h1, above the status pill — before the title's min-width: 0 ever gets the
+     chance to let it shrink. At basis 0 the line is laid out from the actions'
+     width alone, so the cluster keeps the first row's trailing edge and the
+     title takes what remains, balance-wrapping onto two lines when the name
+     really is wider than its share. On a page with no actions nothing changes:
+     the column still grows to the full bar. */
   .firma2-page-header :global(.esa-page-header__titles) {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
   }
 </style>

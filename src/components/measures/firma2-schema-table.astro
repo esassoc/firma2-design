@@ -1,0 +1,333 @@
+---
+// firma2-schema-table — the Subcategory schemas view: every option list the
+// tenant can divide a measure's entries by, in one searchable table.
+//
+// A schema is a NAME plus a LIST plus an ORIGIN, and the origin is the fact
+// that decides what a reader can do with the row: User schemas are authored
+// and edited here; Imported ones mirror an external standard and change with
+// it; System ones are maintained by the product (map layers, record fields,
+// entry history) and cost a reporter nothing to attach. "Used by" is the blast
+// radius — how many measures' reports change if this list changes — and it is
+// on the row precisely so nobody edits a list without seeing that number.
+//
+// A user schema's NAME edits in place on double-click, like the measure
+// grid's cells; imported and system names belong to their sources and stay read-only.
+// Every row carries the hover peek button that opens the schema sidesheet
+// (options editing, the read-only facts, the used-by list) via
+// data-open-schema and the sheet's delegated listener. No navigation; this
+// catalog is the whole surface.
+//
+// bcn-lego-checked: same verdict as firma2-measure-table — ecology has no
+// table/grid lego (esa-grid is a doc page), Beacon is not cloned, AG Grid +
+// shared/firma2-data-grid-chrome.css is this spoke's established tabular
+// surface. Search is esa-text-field, the empty state esa-empty-state.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { SCHEMAS, measures, measuresUsingSchema } from '../../data/firma2-performance-measures';
+import type { SubcategorySchema } from '../../data/firma2-performance-measures';
+
+/** One grid row: the schema flattened, with its usage precomputed. */
+interface SchemaRow {
+  id: string;
+  name: string;
+  origin: SubcategorySchema['origin'];
+  standard?: string;
+  description?: string;
+  options: string[];
+  usedBy: number;
+  usedByNames: string[];
+}
+
+// Lucide `panel-right` — same registry gap and same `paths` escape hatch as
+// firma2-measure-table; keep the two copies of this string identical.
+const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>';
+
+const rows: SchemaRow[] = SCHEMAS.map((s) => {
+  const users = measuresUsingSchema(s.id, measures);
+  return {
+    id: s.id,
+    name: s.name,
+    origin: s.origin,
+    standard: s.standard,
+    description: s.description,
+    options: s.options,
+    usedBy: users.length,
+    usedByNames: users.map((m) => m.name),
+  };
+});
+---
+<section class="firma2-schema-table stack" data-gap="md">
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__search">
+      <esa-text-field
+        label="Search schemas"
+        placeholder="Name or option"
+        size="md"
+        data-schemas-search
+      ></esa-text-field>
+    </div>
+  </div>
+
+  <div class="firma2-data-grid__grid" data-schemas-grid></div>
+
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-schemas-count>
+      {rows.length} schemas
+    </span>
+  </footer>
+
+  <div data-schemas-empty hidden aria-hidden="true">
+    <EsaEmptyState size="sm" title="No matching schemas" description="Try a different search." />
+  </div>
+
+  <!-- The peek affordance — a real esa-button, server-rendered once and cloned
+       into every Schema cell; it opens the schema sidesheet. Same clone trick,
+       reveal contract and panel-right glyph as the measure table (see its
+       PANEL_RIGHT note — registry gap, supplied via esa-icon's `paths`). -->
+  <div data-schemas-peek-template hidden aria-hidden="true">
+    <EsaButton variant="chrome" size="sm" aria-label="Open schema">
+      <EsaIcon name="panel-right" size="sm" paths={PANEL_RIGHT} />
+    </EsaButton>
+  </div>
+
+  <script type="application/json" data-schemas-data set:html={JSON.stringify(rows)}></script>
+</section>
+
+<style>
+  /* bcn-lego-checked: layout rules for the Schema cell (editable text + the
+     cloned esa-button peek) — no bespoke control; same cell grammar, reveal
+     contract and 28px pin as firma2-measure-table's Measure column. */
+  .firma2-schema-table :global(.firma2-grid-namecell) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-200, 0.5rem);
+    inline-size: 100%;
+  }
+
+  .firma2-schema-table :global(.firma2-grid-namecell__text) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .firma2-schema-table :global(.firma2-grid-peek) {
+    opacity: 0;
+    transition: opacity 120ms ease;
+    flex: none;
+    line-height: 0;
+  }
+
+  .firma2-schema-table :global(.ag-row-hover .firma2-grid-peek),
+  .firma2-schema-table :global(.firma2-grid-peek:focus-within) {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .firma2-schema-table :global(.firma2-grid-peek) {
+      opacity: 1;
+    }
+  }
+
+  .firma2-schema-table :global(.firma2-grid-peek .esa-button__native) {
+    block-size: 28px;
+    inline-size: 28px;
+    padding: 0;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import { SCHEMA_ORIGIN_LABEL, measures, measuresUsingSchema, measureDisplayName } from '../../data/firma2-performance-measures';
+  import { allSchemas, emitSchemaChange, SCHEMA_CHANGE_EVENT, writeLocalSchema } from '../../lib/schema-draft';
+  import { draftedSlugs, isLocalMeasureSlug, MEASURE_CHANGE_EVENT, mergeDraft, readDraft, withDraft } from '../../lib/measure-draft';
+  import type { PerformanceMeasureDefinition, SubcategorySchema } from '../../data/firma2-performance-measures';
+  import type { ColDef } from 'ag-grid-community';
+
+  // Same shape the frontmatter serializes. Duplicated rather than imported
+  // because .astro frontmatter exports are not importable from a client script.
+  interface SchemaRow {
+    id: string;
+    name: string;
+    origin: SubcategorySchema['origin'];
+    standard?: string;
+    description?: string;
+    options: string[];
+    usedBy: number;
+    usedByNames: string[];
+  }
+
+  const UNSET = '—';
+
+  /** The options cell for a system schema with an open list. */
+  const OPEN_LIST = 'Resolved by the system';
+
+  // User → Imported → System: who edits it here first, who never does last.
+  const rankByOrigin = (a: string, b: string) => {
+    const order = ['user', 'imported', 'system'];
+    const at = order.indexOf(a);
+    const bt = order.indexOf(b);
+    return (at === -1 ? order.length : at) - (bt === -1 ? order.length : bt);
+  };
+
+  function initSchemaTable(root: HTMLElement) {
+    const emptyState = root.querySelector<HTMLElement>('[data-schemas-empty] > *');
+    const seedNode = root.querySelector<HTMLElement>('[data-schemas-data]');
+    const peekHTML = root.querySelector('[data-schemas-peek-template]')?.innerHTML ?? '';
+
+    // The peek opens the schema sheet and only the sheet — the sheet's
+    // document-capture listener has already fired; stopping here keeps the
+    // click from also starting an inline name edit.
+    root.addEventListener(
+      'click',
+      (event) => {
+        if ((event.target as Element).closest('.firma2-grid-peek')) event.stopPropagation();
+      },
+      true,
+    );
+
+    // True for the synchronous span of an inline edit's own emitSchemaChange.
+    let selfEdit = false;
+
+    // Rows recomputed from live state: local schemas shadow seeds, and usage
+    // counts run over seeds-with-drafts plus browser-minted measures — the
+    // same record list the measures view shows.
+    const currentMeasures = (): PerformanceMeasureDefinition[] => [
+      ...measures.map((seed) => mergeDraft(seed, readDraft(seed.slug))),
+      ...draftedSlugs().filter(isLocalMeasureSlug).map((slug) => withDraft(slug)),
+    ];
+    const currentRows = (): SchemaRow[] => {
+      const records = currentMeasures();
+      return allSchemas().map((s) => {
+        const users = measuresUsingSchema(s.id, records);
+        return {
+          id: s.id,
+          name: s.name,
+          origin: s.origin,
+          standard: s.standard,
+          description: s.description,
+          options: s.options,
+          usedBy: users.length,
+          usedByNames: users.map((m) => measureDisplayName(m)),
+        };
+      });
+    };
+
+    if (seedNode) seedNode.textContent = JSON.stringify(currentRows());
+
+    const handle = wireDataGrid<SchemaRow>({
+      root,
+      gridSelector: '[data-schemas-grid]',
+      dataSelector: '[data-schemas-data]',
+      searchSelector: '[data-schemas-search]',
+      countSelector: '[data-schemas-count]',
+      countNoun: 'schemas',
+      csvFileName: 'projectfirma-subcategory-schemas.csv',
+      // Editable grid: the cell focus ring is the keyboard user's cursor.
+      suppressCellFocus: false,
+      columnDefs: [
+        // Clicking the text edits the name in place — USER schemas only; an
+        // imported or system name belongs to its source. The peek opens the
+        // sheet on every row, since read-only rows still have facts to show.
+        {
+          headerName: 'Schema', field: 'name', colId: 'name',
+          flex: 1, minWidth: 200,
+          // Editability is per ROW here, and the ink says which is which: a
+          // user schema's name keeps the default ink, an imported or system
+          // name — owned by its source — steps back a rung with the rest of
+          // the read-only cells.
+          cellClass: (p) =>
+            p.data?.origin === 'user' ? 'firma2-grid-name' : 'firma2-grid-name firma2-grid-readonly',
+          editable: (p) => p.data?.origin === 'user',
+          cellEditor: 'agTextCellEditor',
+          valueSetter: (p) => {
+            if (!p.data) return false;
+            const name = String(p.newValue ?? '').trim();
+            if (!name) return false;
+            p.data.name = name;
+            return true;
+          },
+          getQuickFilterText: (p) => p.data?.name ?? '',
+          cellRenderer: (p: { data?: SchemaRow }) => {
+            if (!p.data) return '';
+            const name = esc(p.data.name);
+            const peek = peekHTML.replace('aria-label="Open schema"', `aria-label="Open ${name}"`);
+            return (
+              `<span class="firma2-grid-namecell"><span class="firma2-grid-namecell__text">${name}</span>` +
+              `<span class="firma2-grid-peek" data-open-schema="${esc(p.data.id)}">${peek}</span></span>`
+            );
+          },
+        },
+        // The one fact that decides what a reader can DO with the row. The
+        // imported rows name their standard in the tooltip — the cell stays
+        // one word so the column scans.
+        {
+          headerName: 'Origin', field: 'origin', colId: 'origin', width: 120,
+          cellClass: 'firma2-grid-readonly',
+          headerTooltip: 'User schemas are edited here. Imported ones mirror an external standard. System ones are maintained automatically from the map, the record, or entry history.',
+          comparator: rankByOrigin,
+          tooltipValueGetter: (p) => p.data?.standard || p.data?.description || undefined,
+          valueFormatter: (p) => SCHEMA_ORIGIN_LABEL[p.value as keyof typeof SCHEMA_ORIGIN_LABEL] ?? p.value,
+        },
+        // The list itself, joined — which words a reporter will pick from is
+        // the schema's substance, and a count cannot be compared for meaning.
+        // A system schema with an open list says who resolves it instead.
+        {
+          headerName: 'Options', colId: 'options',
+          cellClass: 'firma2-grid-readonly',
+          flex: 2, minWidth: 260,
+          valueGetter: (p) =>
+            p.data ? (p.data.options.length > 0 ? p.data.options.join(', ') : '') : '',
+          getQuickFilterText: (p) => p.value ?? '',
+          tooltipValueGetter: (p) => p.value || undefined,
+          valueFormatter: (p) => p.value || (p.data?.origin === 'system' ? OPEN_LIST : UNSET),
+        },
+        // The blast radius. Numeric so the column sorts by exposure; the
+        // measures themselves ride in the tooltip.
+        {
+          headerName: 'Used by', field: 'usedBy', colId: 'usedBy', width: 110,
+          headerTooltip: 'Measures whose entries this schema divides. Editing a schema changes what all of them report.',
+          cellClass: 'firma2-grid-num firma2-grid-readonly',
+          tooltipValueGetter: (p) => (p.data?.usedByNames ?? []).join(', ') || undefined,
+          valueFormatter: (p) => (p.value > 0 ? String(p.value) : UNSET),
+        },
+      ] satisfies ColDef[],
+      gridOptions: {
+        overlayNoRowsTemplate: emptyState?.outerHTML,
+        // Double-click to edit, matching the measures grid beside it.
+        // A committed name edit writes the local schema — a seed's id shadows
+        // the seed, same rule as the sheet's Save.
+        onCellValueChanged: (event) => {
+          const row = event.data as SchemaRow;
+          const schema = allSchemas().find((s) => s.id === row.id);
+          if (!schema || schema.origin !== 'user') return;
+          writeLocalSchema({ ...schema, name: row.name });
+          selfEdit = true;
+          emitSchemaChange();
+          selfEdit = false;
+          event.api.refreshCells({ rowNodes: [event.node], force: true });
+        },
+      },
+    });
+    if (!handle) return;
+    const { gridApi, countState } = handle;
+
+    // Any write — a schema edited in its sheet, a measure saved with a freshly
+    // minted list, a local measure deleted — re-derives the whole view. An
+    // inline edit's own write is skipped: the row already holds it, and
+    // resetting rowData would throw the editor's focus away.
+    const repaint = () => {
+      if (selfEdit) return;
+      const rows = currentRows();
+      countState.total = rows.length;
+      gridApi.setGridOption('rowData', rows);
+    };
+    document.addEventListener(SCHEMA_CHANGE_EVENT, repaint);
+    document.addEventListener(MEASURE_CHANGE_EVENT, repaint);
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-schema-table').forEach(initSchemaTable);
+</script>

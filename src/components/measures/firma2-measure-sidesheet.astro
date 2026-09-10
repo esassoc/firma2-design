@@ -1,0 +1,975 @@
+---
+// firma2-measure-sidesheet — the ONE editing surface for a performance
+// measure: creating and editing happen in the same sheet, over the catalog.
+//
+// It replaced a whole setup page (claim sentence, edit-in-place rows, split
+// chart). The model got flat enough that a page stopped earning its
+// navigation: a measure is now a fixed attribute list — name, type,
+// classifications, definition, guidance, unit, counting rule, precision — plus
+// the subcategory schemas that divide its entries. A list of ten decisions is
+// a form, and a form over a table is a side sheet, not a destination.
+//
+// EXPLICIT SAVE. Save writes, Cancel (and Esc, and the backdrop) discards.
+// One rule, stated by the two buttons — and it covers the SCHEMAS too: name
+// and option edits made in the rows below land in the shared schema store
+// only when the sheet saves, so Cancel means what it says everywhere.
+//
+// STATUS IS NOT HERE. Draft/Active/Retired is a lifecycle the CATALOG runs:
+// the grid's Status cell edits it in place and carries the completeness gate
+// (Active is simply absent until outstandingFields() is empty). Repeating the
+// field in the sheet gave the same decision two homes and made a definition
+// form look like a publishing wizard. The sheet defines the measure; the row
+// says whether it is collecting. Save preserves the stored status untouched.
+//
+// SCHEMAS ARE EDITED WHERE THEY LAY. Each attached schema is a full in-place
+// editor: its NAME is a firma2-editable-field (text at rest, field on click),
+// its OPTIONS are a bcn-tag-editor (chips you rename in place, drag into
+// order, remove, and extend from the ghost slot). System and imported schemas
+// render the same rows read-only; editing "Watershed" by hand is exactly the
+// copy-drift failure the shared-schema model exists to prevent.
+//
+// EVERY ROW SAYS WHAT IT COSTS TO EDIT IT — the origin marker. Five schemas
+// stacked in identical boxes read as five of the same thing, and they are
+// not: renaming a SHARED list silently rewrites what eight other measures
+// report, renaming one used only here costs nothing, and a system list cannot
+// be renamed at all. So each row wears a quiet pill — Automatic · Standard ·
+// Shared · Only here · New — over one line naming the consequence. It is the
+// catalog's Used by column, priced at the moment of the edit rather than in a
+// table nobody is looking at.
+//
+// ADDING ONE IS TWO ACTS, NOT ONE LIST. Reusing an existing schema and
+// inventing one are different decisions; the old picker buried the second as
+// "New schema…" at the bottom of the first — an ACTION hidden in a list of
+// DATA. The picker now offers only what exists, GROUPED BY WHO MAINTAINS IT
+// (Your schemas · From a standard · Filled in automatically), so the reporter
+// cost of a pick is legible before it is made. The button beside it is the
+// other path, named the same as the catalog's own New schema action.
+//
+// PERSISTENCE is the localStorage draft store (src/lib/measure-draft.ts) for
+// the measure and the local schema store (src/lib/schema-draft.ts) for edited
+// schemas — browser-local only, and the UI never pretends otherwise.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import Firma2EditableField from '../shared/firma2-editable-field.astro';
+import BcnTagEditor from '../shared/bcn-tag-editor.astro';
+
+// The sheet is queried by class inside this component's root, so a page can
+// only carry one — which is the design: every row and the header button open
+// the same instance.
+---
+<div class="firma2-measure-sidesheet">
+  <esa-side-dialog class="firma2-measure-sidesheet__sheet" heading="New measure" size="lg" position="right">
+    <div class="firma2-measure-sidesheet__layout">
+      <!-- THE REPORTER'S SIDE, derived live from the definition being edited.
+           The product brief's hard-won rule (§4, "never simulate someone
+           else's UI") is about making a mockup the EDITOR — wells that look
+           like inputs but take no input, invented figures that read as data.
+           This panel is neither: the form on the right stays the editor, and
+           this is a LABELLED, INERT derivation of what the definition costs a
+           reporter — the compliance loop priced where the admin can see it.
+           `inert` keeps every control unfocusable and unclickable; no example
+           values are invented. -->
+      <aside class="firma2-measure-sidesheet__preview">
+        <h3 class="firma2-measure-sidesheet__group typography-label-md">What reporters see</h3>
+        <p class="firma2-measure-sidesheet__lede typography-meta">
+          One entry, as reporters will file it. A live example — it updates as you edit.
+        </p>
+        <div class="firma2-measure-sidesheet__preview-card" data-preview-card inert></div>
+        <p class="firma2-measure-sidesheet__preview-cost typography-meta" data-preview-cost></p>
+      </aside>
+
+      <div class="firma2-measure-sidesheet__form stack" data-gap="lg" data-sheet-form>
+      <esa-text-field data-field="name" label="Name" size="md" placeholder="e.g. Acres of riparian habitat restored"></esa-text-field>
+
+      <esa-select
+        data-field="kind"
+        label="Type"
+        size="md"
+        help-text="Outputs record work a project did. Outcomes record a condition a monitoring effort measured."
+      ></esa-select>
+
+      <!-- A multi-select whose picks render as chips — not a checkbox group.
+           Seven always-visible checkboxes spent a fieldset of room on what is
+           usually one or two picks, and chips are this sheet's language for
+           "a set of named things". -->
+      <esa-select
+        data-field="classifications"
+        label="Classifications"
+        size="md"
+        multiple
+        chip-mode
+        placeholder="Pick classifications"
+      ></esa-select>
+
+      <esa-textarea
+        data-field="definition"
+        label="Definition"
+        size="md"
+        placeholder="What counts toward this measure, and what does not."
+      ></esa-textarea>
+
+      <esa-textarea
+        data-field="reporterGuidance"
+        label="Reporter guidance"
+        size="md"
+        placeholder="Shown at the moment a value is entered."
+      ></esa-textarea>
+
+      <!-- The number. Same heading the retired setup page used for the same
+           three facts, so the vocabulary survives the surface change. -->
+      <section class="stack" data-gap="md">
+        <h3 class="firma2-measure-sidesheet__group typography-label-md">What is counted</h3>
+        <esa-select data-field="unit" label="Unit" size="md" placeholder="Pick a unit"></esa-select>
+        <esa-select data-field="countingRule" label="Counting rule" size="md" placeholder="Pick a counting rule"></esa-select>
+        <esa-select data-field="decimalPlaces" label="Decimal places" size="md"></esa-select>
+      </section>
+
+      <section class="stack" data-gap="md">
+        <h3 class="firma2-measure-sidesheet__group typography-label-md">Subcategory schemas</h3>
+        <!-- The one policy sentence this block owes the reader: what these
+             are for, and that none is demanded — the forced-slot filler
+             failure is the thing the model exists to avoid. -->
+        <p class="firma2-measure-sidesheet__lede typography-meta">
+          Option lists this measure's entries are divided by. None are required.
+        </p>
+
+        <ul class="firma2-measure-sidesheet__schemas stack" data-gap="sm" data-schema-list></ul>
+
+        <!-- Reuse on the left, invent on the right. The picker lists only
+             schemas that already exist, grouped by who maintains them; the
+             button is the other act, and it carries the same name the catalog
+             gives it so one vocabulary covers both surfaces. -->
+        <div class="firma2-measure-sidesheet__add cluster" data-gap="sm">
+          <esa-select data-add-schema label="Add an existing schema" size="md" placeholder="Pick a schema"></esa-select>
+          <EsaButton variant="secondary" appearance="outline" size="md" data-new-schema>New schema</EsaButton>
+        </div>
+      </section>
+      </div>
+    </div>
+
+    <div slot="footer" class="firma2-measure-sidesheet__footer repel">
+      <EsaButton variant="danger" appearance="outline" size="md" data-sheet-delete hidden>Delete draft</EsaButton>
+      <div class="cluster" data-gap="xs">
+        <EsaButton variant="ghost" size="md" data-sheet-cancel>Cancel</EsaButton>
+        <EsaButton variant="primary" size="md" data-sheet-save>Save</EsaButton>
+      </div>
+    </div>
+  </esa-side-dialog>
+
+  <!-- One attached schema, cloned per row by the script. Two shapes in one
+       template: the editable name field OR the static name span (the script
+       shows one), the ORIGIN MARKER every row wears, a meta line naming what
+       an edit here costs, an error line only a failed save uses, and the tag
+       editor — set read-only for the origins nobody edits here, and dropped
+       entirely when a system list has no closed set of options to show. -->
+  <template data-schema-row>
+    <li class="firma2-measure-sidesheet__schema" data-schema-id="" data-origin="">
+      <div class="firma2-measure-sidesheet__schema-head">
+        <Firma2EditableField
+          field="schema-name"
+          label="Schema name"
+          labelHidden
+          value=""
+          control="text"
+          placeholder="Name this schema"
+        />
+        <span class="firma2-measure-sidesheet__schema-name-static typography-label-sm" data-schema-name-static hidden></span>
+        <!-- The origin, in the chip family the catalog's Status column already
+             speaks. One neutral variant for all five: an origin is not a
+             severity, and the word plus the line below it is the whole
+             signal. The script writes the label into the pill's own span. -->
+        <span class="firma2-measure-sidesheet__schema-marker" data-schema-marker>
+          <EsaPill label="" size="sm" removable={false} />
+        </span>
+        <EsaButton
+          class="firma2-measure-sidesheet__schema-remove"
+          variant="chrome"
+          iconOnly
+          icon="x"
+          size="md"
+          aria-label="Remove schema"
+        >Remove schema</EsaButton>
+      </div>
+      <p class="firma2-measure-sidesheet__schema-meta typography-meta" data-schema-meta hidden></p>
+      <p class="firma2-measure-sidesheet__schema-error typography-meta" data-schema-error hidden></p>
+      <BcnTagEditor label="Options" labelHidden placeholder="Add an option" class="firma2-measure-sidesheet__schema-options" />
+    </li>
+  </template>
+</div>
+
+<style>
+  /* bcn-lego-checked: layout-only rules around composed legos and the two
+     shared editors (firma2-editable-field for the name, bcn-tag-editor for
+     the options); what is bespoke here is the schema ROW's arrangement, which
+     is measure-sheet grammar, not a general primitive. The origin marker is
+     esa-pill (a status marker in the chip family the catalog already uses —
+     esa-badge is a saturated fill, too loud five to a screen), the add row is
+     esa-select + esa-button inside the `cluster` primitive with its own
+     --align knob, and the picker's group headers are esa-select's own disabled
+     options — no lego has an optgroup, and inventing a bcn- picker to get one
+     would fork the control the rest of this sheet speaks. Checked Beacon: not
+     cloned on this machine. */
+
+  /* Two columns now — the reporter preview beside the form — so the panel
+     takes the room both need. The lego's own width token pierces the shadow
+     root (no shadow surgery), and its width rule already clamps to the
+     viewport on narrow screens. */
+  .firma2-measure-sidesheet__sheet {
+    --side-dialog-width-lg: 1080px;
+  }
+
+  /* Preview left, form right. The preview is sticky inside the sheet's own
+     scroll container, so the reporter's form stays in view while the admin
+     scrolls a long definition. On a narrow viewport the columns stack and
+     the FORM leads — it is the surface being operated. */
+  .firma2-measure-sidesheet__layout {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    gap: var(--spacing-500, 1.5rem);
+    align-items: start;
+  }
+
+  .firma2-measure-sidesheet__preview {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-300, 0.75rem);
+    padding: var(--spacing-400, 1rem);
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+    border-radius: var(--radius-md, 8px);
+  }
+
+  @media (max-width: 1160px) {
+    .firma2-measure-sidesheet__layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .firma2-measure-sidesheet__preview {
+      position: static;
+      order: 2;
+    }
+  }
+
+  /* The example entry, on the raised surface a real form card sits on. Inert
+     (the attribute does the disabling); no dimming — the point is to see it
+     as reporters will, and the panel's own label says it is an example. */
+  .firma2-measure-sidesheet__preview-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-300, 0.75rem);
+    padding: var(--spacing-400, 1rem);
+    background: var(--color-background-elevation-raised, #fff);
+    border: 1px solid var(--color-border-default, #d9d9d9);
+    border-radius: var(--radius-md, 8px);
+  }
+
+  .firma2-measure-sidesheet__preview-title {
+    margin: 0;
+  }
+
+  .firma2-measure-sidesheet__preview-meta,
+  .firma2-measure-sidesheet__preview-cost {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-measure-sidesheet__group,
+  .firma2-measure-sidesheet__lede {
+    margin: 0;
+  }
+
+  .firma2-measure-sidesheet__lede {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-measure-sidesheet__schemas {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Empty list collapses entirely — the picker below is the affordance, and a
+     bordered empty box would be furniture. */
+  .firma2-measure-sidesheet__schemas:empty {
+    display: none;
+  }
+
+  /* THE ROW SITS ON THE PANEL'S OWN SURFACE. It used to read
+     `--color-surface-default` — a custom property that exists in NO token file
+     (the roles are `--color-background-elevation-*`), so every row fell
+     through to the literal `#fff` fallback and stayed paper-white while the
+     rest of the sheet went dark. The elevation role esa-side-dialog paints its
+     panel with is the correct one: identical in light, and it follows the
+     scheme. The border is what separates the row, as it always was. */
+  .firma2-measure-sidesheet__schema {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-200, 0.5rem);
+    padding: var(--spacing-300, 0.75rem);
+    border: 1px solid var(--color-border-default, #d9d9d9);
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-background-elevation-raised, #fcfcfc);
+  }
+
+  /* Name takes the room; the remove button docks right. The editable field's
+     display is the row's title at rest and its editor on click — same box. */
+  .firma2-measure-sidesheet__schema-head {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200, 0.5rem);
+  }
+
+  .firma2-measure-sidesheet__schema-head > :global([data-editable-field]),
+  .firma2-measure-sidesheet__schema-name-static {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  /* The marker never shrinks and never wraps — a clipped "Only here" reads as
+     a different word. line-height 0 keeps the inline pill from adding leading
+     to a row whose height is set by the 40px name editor. */
+  .firma2-measure-sidesheet__schema-marker {
+    flex: none;
+    line-height: 0;
+  }
+
+  .firma2-measure-sidesheet__schema-meta {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* The one error a row can raise (a schema needs a name and a real list),
+     in the danger ink the form controls use. */
+  .firma2-measure-sidesheet__schema-error {
+    margin: 0;
+    color: var(--color-content-utility-danger, #ce2c31);
+  }
+
+  /* 40px, the one control height in this app. */
+  .firma2-measure-sidesheet__schema :global(.firma2-measure-sidesheet__schema-remove .esa-button__native) {
+    block-size: 40px;
+    inline-size: 40px;
+  }
+
+  /* Picker and button share a row and must sit on the same baseline, so the
+     cluster's own --align knob goes to flex-end: the select is taller by its
+     label, and centring would float the button into the label's line. Both
+     controls are md — the one control height in this app. */
+  .firma2-measure-sidesheet__add {
+    --align: flex-end;
+  }
+
+  .firma2-measure-sidesheet__add > :global(esa-select) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .firma2-measure-sidesheet__add > :global(.esa-button) {
+    flex: none;
+  }
+
+  .firma2-measure-sidesheet__footer {
+    inline-size: 100%;
+  }
+
+  /* Keep Cancel/Save anchored right even when Delete draft is hidden and the
+     repel is down to one child. */
+  .firma2-measure-sidesheet__footer > :global(.cluster) {
+    margin-inline-start: auto;
+  }
+
+  /* MAKE `hidden` MEAN HIDDEN. The script toggles visibility with the hidden
+     attribute, and half the things it toggles carry an author display rule
+     (esa-button's native, the layout utilities) that outranks the UA's
+     [hidden] { display: none } — the same trap the measure table documents on
+     esa-filter-clear-button. One rule restores the attribute's contract for
+     everything inside this component. */
+  .firma2-measure-sidesheet :global([hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-select';
+
+  import {
+    CLASSIFICATIONS,
+    DECIMALS_LABELS,
+    MEASURE_KINDS,
+    UNITS,
+    countingRulesFor,
+    measureDisplayName,
+    measureKind,
+    measures,
+    measuresUsingSchema,
+  } from '../../data/firma2-performance-measures';
+  import type {
+    CountingRule,
+    MeasureKind,
+    MeasureStatus,
+    MeasureUnit,
+    PerformanceMeasureDefinition,
+    SchemaOrigin,
+    SubcategorySchema,
+  } from '../../data/firma2-performance-measures';
+  import {
+    clearDraft,
+    emitMeasureChange,
+    isLocalMeasureSlug,
+    mergeDraft,
+    nextLocalMeasureSlug,
+    persistMeasure,
+    readDraft,
+    draftedSlugs,
+    withDraft,
+  } from '../../lib/measure-draft';
+  import { allSchemas, emitSchemaChange, nextLocalSchemaId, writeLocalSchema } from '../../lib/schema-draft';
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
+
+  type Control = HTMLElement & {
+    value?: unknown;
+    options?: unknown;
+  };
+  type TagEditor = HTMLElement & { value: string[] };
+  type Dialog = HTMLElement & { show: () => void; close: () => void; heading?: string };
+
+  const ERR_NAME = 'Name this schema.';
+  const ERR_OPTIONS = 'Add at least two options — one option splits nothing.';
+
+  /**
+   * THE PICKER'S GROUPS, in the order the data module declares them. A header
+   * is a DISABLED option — esa-select's keyboard walk skips disabled entries
+   * and its click handler refuses them, so the row behaves as a label while
+   * costing no lego change. (The lego has no optgroup; a flat alphabetical
+   * list is what made this control unreadable, and encoding the origin into
+   * every label instead would repeat one word down the whole list.)
+   */
+  const GROUPS: ReadonlyArray<{ origin: SchemaOrigin; header: string }> = [
+    { origin: 'user', header: 'Your schemas' },
+    { origin: 'imported', header: 'From a standard' },
+    { origin: 'system', header: 'Filled in automatically' },
+  ];
+
+  /**
+   * THE FIVE ORIGIN MARKERS — the pill's word, and the one line under it that
+   * says what editing this row actually does. The distinction the model cares
+   * about is not `origin` alone: two user schemas differ enormously depending
+   * on whether anything ELSE references them, which is the shared-list blast
+   * radius the catalog otherwise only shows as a number in a column.
+   */
+  const MARK_SYSTEM = 'Automatic';
+  const MARK_STANDARD = 'Standard';
+  const MARK_SHARED = 'Shared';
+  const MARK_ONLY = 'Only here';
+  const MARK_NEW = 'New';
+
+  const NOTE_SYSTEM = 'Filled in by the system — reporters are never asked.';
+  const NOTE_ONLY = 'Used only by this measure — edits affect nothing else.';
+  const NOTE_NEW = 'Saving the measure adds it to your schemas for reuse.';
+  const noteShared = (n: number): string =>
+    `Used by ${n} other measure${n === 1 ? '' : 's'} — edits here change all of them.`;
+  const importedNote = (standard?: string): string =>
+    `Mirrors ${standard ?? 'an external standard'} — its options change with the standard, not here.`;
+
+  function initSheet(root: HTMLElement) {
+    const sheet = root.querySelector<Dialog>('.firma2-measure-sidesheet__sheet');
+    const form = root.querySelector<HTMLElement>('[data-sheet-form]');
+    const rowTemplate = root.querySelector<HTMLTemplateElement>('template[data-schema-row]');
+    const schemaList = root.querySelector<HTMLElement>('[data-schema-list]');
+    const addPicker = root.querySelector<Control>('[data-add-schema]');
+    const newSchemaBtn = root.querySelector<HTMLElement>('[data-new-schema]');
+    if (!sheet || !form || !rowTemplate || !schemaList || !addPicker) return;
+    void fixSideDialog(sheet);
+
+    const field = (name: string): Control | null => form.querySelector<Control>(`[data-field="${name}"]`);
+
+    // The slug being edited. Everything else lives in the controls and the
+    // schema rows themselves — the sheet's DOM IS the working state, so
+    // paint and save are the only sync points.
+    let slug = '';
+
+    // THE STATUS THE SHEET DOES NOT EDIT. It is still on the record, and the
+    // catalog's Status cell is where it changes — so the sheet carries the
+    // stored value across a save rather than resetting a live measure to Draft
+    // because its definition was tweaked.
+    let status: MeasureStatus = 'Draft';
+
+    // Unique editable-field keys across every row ever cloned this session —
+    // the field key doubles as a DOM id inside the component, so reuse would
+    // collide.
+    let rowSeq = 0;
+
+    // ---- options that never change --------------------------------------
+    const kindField = field('kind');
+    if (kindField) kindField.options = MEASURE_KINDS.map((k) => ({ label: k.name, value: k.id }));
+    const classField = field('classifications');
+    if (classField) classField.options = CLASSIFICATIONS.map((c) => ({ label: c, value: c }));
+    const unitField = field('unit');
+    if (unitField) unitField.options = UNITS.map((u) => ({ label: u, value: u }));
+    const decimalsField = field('decimalPlaces');
+    if (decimalsField)
+      decimalsField.options = DECIMALS_LABELS.map((label, i) => ({ label, value: String(i) }));
+
+    // ---- reading and painting -------------------------------------------
+    const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+    const schemaById = (id: string): SubcategorySchema | undefined =>
+      allSchemas().find((s) => s.id === id);
+
+    /**
+     * Every measure as it currently stands — seeds patched with their drafts,
+     * plus measures minted in this browser. Same reader the schema sheet's
+     * "Used by" line uses, so the two surfaces cannot disagree about how far
+     * an edit reaches.
+     */
+    const currentMeasures = (): PerformanceMeasureDefinition[] => [
+      ...measures.map((seed) => mergeDraft(seed, readDraft(seed.slug))),
+      ...draftedSlugs().filter(isLocalMeasureSlug).map((s) => withDraft(s)),
+    ];
+
+    /** How many OTHER measures divide their entries by this list. */
+    const otherUsers = (id: string): number =>
+      measuresUsingSchema(id, currentMeasures()).filter((m) => m.slug !== slug).length;
+
+    /**
+     * The row's origin marker: the pill's word and the line under it. A user
+     * schema splits in two here — Shared or Only here — because that, not the
+     * `origin` field, is what decides whether renaming it is free.
+     */
+    const markerFor = (schema: SubcategorySchema | null): { label: string; note: string } => {
+      if (!schema) return { label: MARK_NEW, note: NOTE_NEW };
+      if (schema.origin === 'system')
+        return { label: MARK_SYSTEM, note: schema.description ?? NOTE_SYSTEM };
+      if (schema.origin === 'imported')
+        return { label: MARK_STANDARD, note: importedNote(schema.standard) };
+      const n = otherUsers(schema.id);
+      return n > 0
+        ? { label: MARK_SHARED, note: noteShared(n) }
+        : { label: MARK_ONLY, note: NOTE_ONLY };
+    };
+
+    const rows = (): HTMLElement[] => [...schemaList.querySelectorAll<HTMLElement>('[data-origin]')];
+
+    const rowName = (row: HTMLElement): string =>
+      row.dataset.origin === 'user'
+        ? (row.querySelector<HTMLElement>('[data-editable-field]')?.dataset.raw ?? '').trim()
+        : row.querySelector('[data-schema-name-static]')?.textContent?.trim() ?? '';
+
+    const rowOptions = (row: HTMLElement): string[] =>
+      (row.querySelector<TagEditor>('.firma2-measure-sidesheet__schema-options')?.value ?? [])
+        .map((o) => o.trim())
+        .filter(Boolean);
+
+    /** Attached ids as the rows currently stand — saved rows only. */
+    const attachedIds = (): string[] =>
+      rows()
+        .map((r) => r.dataset.schemaId ?? '')
+        .filter(Boolean);
+
+    /** The record as the form currently states it. */
+    const readForm = (): PerformanceMeasureDefinition => {
+      const kind = (str(field('kind')?.value) || 'output') as MeasureKind;
+      const unit = str(field('unit')?.value);
+      const rule = str(field('countingRule')?.value);
+      const decimalsRaw = Number(str(field('decimalPlaces')?.value));
+      const classes = field('classifications')?.value;
+      return {
+        slug,
+        kind,
+        name: str(field('name')?.value),
+        definition: str(field('definition')?.value),
+        classifications: (Array.isArray(classes) ? classes : []) as PerformanceMeasureDefinition['classifications'],
+        unit: unit ? (unit as MeasureUnit) : undefined,
+        decimalPlaces: Number.isInteger(decimalsRaw) ? decimalsRaw : 0,
+        countingRule: rule ? (rule as CountingRule) : undefined,
+        subcategorySchemaIds: attachedIds(),
+        reporterGuidance: str(field('reporterGuidance')?.value),
+        status,
+      };
+    };
+
+    /**
+     * The counting-rule options legal for the current type. They depend on the
+     * type field, so they are rebuilt on every change rather than reasoned
+     * about — and the preview follows, since the rule changes what it says.
+     */
+    const syncDependentOptions = () => {
+      const record = readForm();
+
+      const ruleField = field('countingRule');
+      if (ruleField) {
+        const legal = countingRulesFor(record.kind);
+        ruleField.options = legal.map((r) => ({ label: r.name, value: r.id }));
+        // A rule from the other type is not merely unlikely, it is meaningless
+        // — clear it rather than storing a rule the picker no longer offers.
+        if (record.countingRule && !legal.some((r) => r.id === record.countingRule)) {
+          ruleField.value = '';
+        }
+      }
+
+      paintPreview();
+    };
+
+    /**
+     * THE REPORTER'S FORM, derived from the definition as it currently
+     * stands — unsaved edits included, because the rows themselves are read.
+     * THE ANATOMY MIRRORS THE REAL ENTRY SHEET (firma2-project-measures'
+     * record flow: period, figure, the measure's questions, the automatic
+     * splits named) — the entry surface is the design of record and this
+     * preview follows it, not the other way around. Real legos, inert card;
+     * no example value is invented (the "1,240" lesson — a figure that
+     * passes for data is the one lie a preview cannot afford).
+     */
+    const paintPreview = () => {
+      const card = root.querySelector<HTMLElement>('[data-preview-card]');
+      const cost = root.querySelector<HTMLElement>('[data-preview-cost]');
+      if (!card || !cost) return;
+      const record = readForm();
+      const rowData = rows().map((row) => ({
+        origin: row.dataset.origin ?? 'user',
+        name: rowName(row),
+        options: rowOptions(row),
+      }));
+      // A row without a name yet asks nothing yet — it appears the moment it
+      // is named, which is itself useful feedback while authoring.
+      const asked = rowData.filter((r) => r.origin !== 'system' && r.name);
+      const free = rowData.filter((r) => r.origin === 'system' && r.name);
+
+      card.replaceChildren();
+
+      const title = document.createElement('h4');
+      title.className = 'firma2-measure-sidesheet__preview-title typography-label-md';
+      title.textContent = measureDisplayName(record);
+      card.append(title);
+
+      const filedBy = document.createElement('p');
+      filedBy.className = 'firma2-measure-sidesheet__preview-meta typography-meta';
+      filedBy.textContent = `Filed by ${measureKind(record.kind).reportedBy}.`;
+      card.append(filedBy);
+
+      // The period — the entry sheet's first question. Which years exist is
+      // the project's business, not this definition's, so the picker shows
+      // its invitation rather than an invented list.
+      const period = document.createElement('esa-select');
+      period.setAttribute('label', 'Reporting year');
+      period.setAttribute('size', 'md');
+      period.setAttribute('placeholder', 'Pick a year');
+      card.append(period);
+
+      // The figure — the one REQUIRED answer. Guidance rides as the field's
+      // help text, which is exactly where the model says it surfaces.
+      const amount = document.createElement('esa-text-field');
+      amount.setAttribute('label', 'Amount');
+      amount.setAttribute('size', 'md');
+      amount.setAttribute('inputmode', 'decimal');
+      amount.setAttribute('required', '');
+      if (record.unit) amount.setAttribute('suffix', record.unit);
+      const guidance = record.reporterGuidance.trim();
+      if (guidance) amount.setAttribute('help-text', guidance);
+      card.append(amount);
+
+      // One dropdown per subcategory the reporter answers by hand. All
+      // optional — the placeholder says so, in the place the answer goes.
+      for (const q of asked) {
+        const select = document.createElement('esa-select') as Control;
+        select.setAttribute('label', q.name);
+        select.setAttribute('size', 'md');
+        select.setAttribute('placeholder', 'Optional');
+        select.options = q.options.map((o) => ({ label: o, value: o }));
+        card.append(select);
+      }
+
+      // What the reporter is NOT asked — the leverage, named.
+      if (free.length > 0) {
+        const autos = document.createElement('p');
+        autos.className = 'firma2-measure-sidesheet__preview-meta typography-meta';
+        autos.textContent = `Added automatically: ${free.map((f) => f.name).join(', ')}.`;
+        card.append(autos);
+      }
+
+      const n = asked.length;
+      cost.textContent =
+        (n === 0
+          ? 'Asks nothing beyond the figure'
+          : `Asks ${n} question${n === 1 ? '' : 's'} beyond the figure`) +
+        (free.length > 0
+          ? ` · ${free.length} split${free.length === 1 ? '' : 's'} arrive free.`
+          : '.');
+    };
+
+    /**
+     * The picker offers what already exists, under a disabled header per
+     * origin group; an empty group is omitted rather than shown empty. The
+     * "new schema" act left this control entirely — it is the button beside
+     * it, because an action in a list of data is a thing people scroll past.
+     */
+    const refreshPicker = () => {
+      const attached = new Set(attachedIds());
+      const free = allSchemas().filter((s) => !attached.has(s.id));
+      const options: { label: string; value: string; disabled?: boolean }[] = [];
+      for (const group of GROUPS) {
+        const mine = free.filter((s) => s.origin === group.origin);
+        if (mine.length === 0) continue;
+        options.push({ label: group.header, value: `__group-${group.origin}`, disabled: true });
+        options.push(...mine.map((s) => ({ label: s.name, value: s.id })));
+      }
+      addPicker.options = options;
+      addPicker.value = '';
+    };
+
+    /**
+     * Build one schema row: an in-place editor for a user schema (or a blank
+     * new one, schema = null), read-only facts for system/imported. Appended
+     * to the list, then the editable-field inside is hydrated by re-firing
+     * astro:page-load — the same seam Astro itself uses.
+     */
+    const appendRow = (schema: SubcategorySchema | null): HTMLElement => {
+      const row = rowTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const editable = !schema || schema.origin === 'user';
+      row.dataset.schemaId = schema?.id ?? '';
+      row.dataset.origin = schema?.origin ?? 'user';
+
+      // The editable-field's key doubles as its hint id — renumber both so
+      // clones cannot collide.
+      const key = `schema-${(rowSeq += 1)}-name`;
+      const nameField = row.querySelector<HTMLElement>('[data-editable-field]')!;
+      nameField.dataset.field = key;
+      const hint = nameField.querySelector('[id^="f2-edit-hint-"]');
+      const hintId = `f2-edit-hint-${key}`;
+      hint?.setAttribute('id', hintId);
+      nameField.querySelector('[data-field-display]')?.setAttribute('aria-describedby', hintId);
+
+      const staticName = row.querySelector<HTMLElement>('[data-schema-name-static]')!;
+      const meta = row.querySelector<HTMLElement>('[data-schema-meta]')!;
+      const tags = row.querySelector<TagEditor>('.firma2-measure-sidesheet__schema-options')!;
+
+      // THE MARKER, on every row including a blank new one — the word goes
+      // into the pill's own label span, so the chip stays the lego.
+      const marker = markerFor(schema);
+      const markerLabel = row.querySelector<HTMLElement>('[data-schema-marker] .esa-pill__label');
+      if (markerLabel) markerLabel.textContent = marker.label;
+      meta.hidden = false;
+      meta.textContent = marker.note;
+
+      if (editable) {
+        staticName.hidden = true;
+      } else {
+        nameField.hidden = true;
+        staticName.hidden = false;
+        staticName.textContent = schema!.name;
+        // Before insertion, so the element wires itself read-only on connect.
+        tags.setAttribute('readonly', '');
+        // A system list with no closed set (every project, every year) has no
+        // chips to show, and an empty chip row reads as a rendering fault. No
+        // replacement sentence: the meta line directly above already says
+        // where the value comes from, and repeating it is text about the row.
+        if (schema!.options.length === 0) tags.hidden = true;
+      }
+
+      row
+        .querySelector('.firma2-measure-sidesheet__schema-remove button')
+        ?.setAttribute('aria-label', `Remove ${schema?.name ?? 'schema'}`);
+
+      schemaList.append(row);
+      // Safe even before bcn-tag-editor's module has defined the element: its
+      // connectedCallback reclaims a value assigned pre-upgrade.
+      tags.value = schema ? [...schema.options] : [];
+
+      // Hydrate the freshly landed editable-field, then seed its value —
+      // through the component's outside-write seam AND directly into its
+      // documented DOM contract (data-raw is the truth the editor opens
+      // from, data-field-value the resting text), because the seam's
+      // document-level listener may not have loaded yet on a very early
+      // first open and a dispatched event cannot be replayed.
+      document.dispatchEvent(new Event('astro:page-load'));
+      if (editable && schema) {
+        nameField.dataset.raw = schema.name;
+        const valueEl = nameField.querySelector<HTMLElement>('[data-field-value]');
+        if (valueEl) {
+          valueEl.textContent = schema.name;
+          valueEl.classList.remove('firma2-editable-field__value--unset');
+        }
+        document.dispatchEvent(
+          new CustomEvent('firma2:field-set', { detail: { field: key, raw: schema.name } }),
+        );
+      }
+      return row;
+    };
+
+    const rowError = (row: HTMLElement, message: string | null) => {
+      const p = row.querySelector<HTMLElement>('[data-schema-error]');
+      if (!p) return;
+      p.hidden = !message;
+      p.textContent = message ?? '';
+      if (message) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+
+    const paint = (record: PerformanceMeasureDefinition) => {
+      sheet.heading = isLocalMeasureSlug(record.slug) && !record.name.trim()
+        ? 'New measure'
+        : measureDisplayName(record);
+      status = record.status;
+      field('name')!.value = record.name;
+      field('kind')!.value = record.kind;
+      field('classifications')!.value = [...record.classifications];
+      field('definition')!.value = record.definition;
+      field('reporterGuidance')!.value = record.reporterGuidance;
+      field('unit')!.value = record.unit ?? '';
+      field('countingRule')!.value = record.countingRule ?? '';
+      field('decimalPlaces')!.value = String(record.decimalPlaces);
+
+      schemaList.replaceChildren();
+      for (const id of record.subcategorySchemaIds) {
+        const schema = schemaById(id);
+        if (schema) appendRow(schema);
+      }
+      refreshPicker();
+      syncDependentOptions();
+
+      // Deleting is offered only for measures minted in this browser: seeds
+      // ship with the build and a static site cannot truly remove one.
+      const del = root.querySelector<HTMLElement>('[data-sheet-delete]');
+      if (del) del.hidden = !isLocalMeasureSlug(record.slug);
+    };
+
+    // ---- open ------------------------------------------------------------
+    // The delegated seam: anything carrying data-open-measure opens this
+    // sheet. "new" mints a browser-local slug; anything else is a record.
+    // CAPTURE phase, deliberately: the grids stop propagation on their peek
+    // buttons so a click that opens the sheet cannot also start an inline
+    // cell edit — document capture runs before any of that.
+    document.addEventListener(
+      'click',
+      (event) => {
+        const trigger = (event.target as Element).closest<HTMLElement>('[data-open-measure]');
+        if (!trigger) return;
+        const target = trigger.dataset.openMeasure ?? '';
+        slug = target === 'new' || target === '' ? nextLocalMeasureSlug() : target;
+        paint(withDraft(slug));
+        sheet.show();
+      },
+      true,
+    );
+
+    // ---- live dependencies ----------------------------------------------
+    form.addEventListener('change', (event) => {
+      // The add picker is handled below; its change is an action, not a field.
+      if ((event.target as HTMLElement).closest('[data-add-schema]')) return;
+      syncDependentOptions();
+    });
+
+    // Schema NAME edits commit through the editable-field's own event, not
+    // 'change' — the preview's dropdown labels follow them.
+    form.addEventListener('firma2:field-save', () => paintPreview());
+
+    addPicker.addEventListener('change', () => {
+      const picked = str(addPicker.value);
+      // A group header is disabled, so the lego will not hand it over — the
+      // guard is here anyway because a hand-set .value would bypass that.
+      if (!picked || picked.startsWith('__group-')) return;
+      const schema = schemaById(picked);
+      if (schema) appendRow(schema);
+      refreshPicker();
+      paintPreview();
+    });
+
+    /**
+     * KEEP THE OPEN LIST ON SCREEN. The picker is the last control in a long
+     * form, so its dropdown opens past the bottom of the sheet's scroller and
+     * the group headers — the whole point of the list — fall off the edge. The
+     * lego renders the dropdown only while open, so its presence IS the open
+     * state; if it overflows the scroller, bring the row up until it does not.
+     *
+     * rAF because the click that opens it runs the lego's own handler first:
+     * the panel is in the DOM by the next frame. Every lookup is optional —
+     * a renamed internal degrades to "no scroll", never to a thrown error.
+     * (Reaching into the lego's shadow root is this sheet's established seam;
+     * src/lib/side-dialog-fix.ts adopts a stylesheet into the same one.)
+     */
+    addPicker.addEventListener('click', () => {
+      requestAnimationFrame(() => {
+        const list = addPicker.shadowRoot?.querySelector('.dropdown');
+        const body = sheet.shadowRoot?.querySelector('.body');
+        if (!list || !body) return;
+        if (list.getBoundingClientRect().bottom > body.getBoundingClientRect().bottom) {
+          root.querySelector('.firma2-measure-sidesheet__add')?.scrollIntoView({ block: 'center' });
+        }
+      });
+    });
+
+    // The other act. A blank row, edited where it lands — the name editor
+    // opens itself, so the click leaves the cursor in the only empty field.
+    newSchemaBtn?.addEventListener('click', () => {
+      const row = appendRow(null);
+      refreshPicker();
+      paintPreview();
+      row.querySelector<HTMLElement>('[data-field-display]')?.click();
+    });
+
+    schemaList.addEventListener('click', (event) => {
+      const row = (event.target as Element)
+        .closest('.firma2-measure-sidesheet__schema-remove')
+        ?.closest<HTMLElement>('[data-origin]');
+      if (!row) return;
+      row.remove();
+      refreshPicker();
+      paintPreview();
+    });
+
+    // ---- save / cancel / delete -------------------------------------------
+    root.querySelector('[data-sheet-cancel]')?.addEventListener('click', () => sheet.close());
+
+    root.querySelector('[data-sheet-save]')?.addEventListener('click', () => {
+      // Schemas first: every user row must stand as a real vocabulary before
+      // the measure can reference it. New rows left entirely blank are simply
+      // dropped — an abandoned blank is not an error, it is a change of mind.
+      const finalIds: string[] = [];
+      let schemasChanged = false;
+      for (const row of rows()) {
+        if (row.dataset.origin !== 'user') {
+          if (row.dataset.schemaId) finalIds.push(row.dataset.schemaId);
+          continue;
+        }
+        const name = rowName(row);
+        const options = rowOptions(row);
+        const isNew = !row.dataset.schemaId;
+        if (isNew && !name && options.length === 0) continue;
+        if (!name) {
+          rowError(row, ERR_NAME);
+          return;
+        }
+        if (options.length < 2) {
+          rowError(row, ERR_OPTIONS);
+          return;
+        }
+        rowError(row, null);
+        const id = row.dataset.schemaId || nextLocalSchemaId(name);
+        const stored = schemaById(id);
+        if (!stored || stored.name !== name || stored.options.join(' ') !== options.join(' ')) {
+          writeLocalSchema({ id, name, origin: 'user', options });
+          schemasChanged = true;
+        }
+        finalIds.push(id);
+      }
+
+      const record = readForm();
+      record.subcategorySchemaIds = finalIds;
+      persistMeasure(record);
+      if (schemasChanged) emitSchemaChange();
+      emitMeasureChange(record);
+      sheet.close();
+    });
+
+    root.querySelector('[data-sheet-delete]')?.addEventListener('click', () => {
+      clearDraft(slug);
+      emitMeasureChange(readForm());
+      sheet.close();
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-sidesheet').forEach(initSheet);
+</script>

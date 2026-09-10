@@ -1,0 +1,118 @@
+---
+// firma2-project-rail — WHAT THE PROJECT RECORD'S RAIL HOLDS, arranged as three
+// tabs: Key facts, Contacts, Comments.
+//
+// WHY TABS, AND NOT A THIRD AND FOURTH STACKED SECTION. The rail is pinned to
+// the fold for the whole page, which is its entire reason for existing: the
+// numbers a reader needs in order to READ the main column must not scroll away
+// from it. A rail that stacks three sections spends that guarantee — the facts
+// hold the fold, and everything under them is below it again, so contacts and
+// comments would be a scroll inside a column that exists so you do not have to
+// scroll. Tabs keep every one of the three ONE CLICK from the fold instead of
+// one, two and three screens down.
+//
+// THE THREE ARE PEERS, WHICH IS THE TEST TABS HAVE TO PASS. Tabs are the wrong
+// control for a primary thing plus two secondary ones — they hide the primary
+// half the time. These three are genuinely alternatives: WHAT this project is
+// (the scalars), WHO to call about it, and WHAT has been said about it. A
+// reader arrives wanting exactly one of them and knows which before the page
+// loads. Key facts leads because it is the one the main column is read against.
+//
+// THE ORDER IS THE FREQUENCY ORDER, not a taxonomy. Facts are consulted on
+// every visit; contacts on the visit where something needs doing; comments on
+// the visit where a number looks wrong. That is also decreasing tie to the
+// page's own question, which is why it survives both readings.
+//
+// THE COMMENT COUNT RIDES ON THE TAB, and it is the one badge in here. A tab
+// whose content might be EMPTY needs to say so from the outside — otherwise the
+// only way to learn there is nothing to read is to go and look. Contacts takes
+// no badge: it is always three, so a count there is a number that never moves.
+// Key facts takes none for the same reason. The badge only renders above zero;
+// a "0" would be the same wasted trip with an extra glyph.
+//
+// EVERY PANEL IS A COMPONENT, and this file is their manifest — it owns the tab
+// wiring and nothing else. No panel knows it is in a tab except in the one way
+// it has to: each hides its own heading, because the tab label already says it.
+//
+// bcn-lego-checked: esa-tab-layout IS the lego and this composes it rather than
+// re-implementing it — the ARIA tablist, the roving Arrow/Home/End keyboard
+// navigation, the active-tab state, the badges and the panel swap are all the
+// lego's. It is a Lit web component (`.ts` in the catalog), so it is registered
+// in a client script and used as a custom element; the panels are slotted light
+// DOM, which is what lets three .astro components live inside a runtime tab
+// control with no runtime rendering of their own. The only bespoke line here is
+// the :not(:defined) guard — see the note on it below.
+import Firma2ProjectFacts from './firma2-project-facts.astro';
+import Firma2ProjectContacts from './firma2-project-contacts.astro';
+import Firma2ProjectComments from './firma2-project-comments.astro';
+import type { ProjectDetail } from '../../data/firma2-project-detail';
+
+interface Props {
+  detail: ProjectDetail;
+}
+
+const { detail } = Astro.props;
+---
+<!-- `size="md"` is the app's control rung — the same 40-ish step every field and
+     button in this spoke is pinned to, so the tab row reads as chrome of the
+     same weight as the controls under it rather than as a smaller sub-navigation.
+     `underline` is the default appearance and the right one here: the segmented
+     appearance draws a filled track, which would put a second surface inside a
+     rail that is already a surface. -->
+<esa-tab-layout
+  class="firma2-project-rail"
+  size="md"
+  appearance="underline"
+  data-record-tabs
+  data-comment-count={detail.comments.length}
+>
+  <div slot="panel-0">
+    <Firma2ProjectFacts detail={detail} />
+  </div>
+  <div slot="panel-1">
+    <Firma2ProjectContacts contacts={detail.contacts} />
+  </div>
+  <div slot="panel-2">
+    <Firma2ProjectComments comments={detail.comments} />
+  </div>
+</esa-tab-layout>
+
+<style>
+  /* BEFORE THE CUSTOM ELEMENT UPGRADES there is no shadow root and therefore no
+     panel switching, so all three panels are just three divs in the document —
+     the whole rail's content at once, for however long the module takes to
+     arrive. `:defined` is the platform's own hook for that window: until the
+     element is registered, everything but the first panel is hidden, and the
+     moment it is, this rule stops matching and the lego's slot takes over. The
+     first panel stays visible throughout, so the rail never renders empty and
+     nothing moves when the upgrade lands.
+
+     This is the guard, not a re-implementation of the control: it names no
+     tab, holds no state, and does nothing after the element is defined. */
+  .firma2-project-rail:not(:defined) > [slot^='panel-']:not([slot='panel-0']) {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-tab-layout';
+
+  // `tabs` is an ARRAY PROPERTY on the lego, not an attribute — it cannot be
+  // expressed in markup, which is why the labels live here rather than beside
+  // the panels they name. They must stay in step with each panel's own hidden
+  // heading (firma2-rail-section's `titleHidden`): the heading is what a screen
+  // reader announces for the region, the label is what everyone else reads, and
+  // they should be the same word.
+  customElements.whenDefined('esa-tab-layout').then(() => {
+    document.querySelectorAll<HTMLElement>('esa-tab-layout[data-record-tabs]').forEach((el) => {
+      const comments = Number(el.dataset.commentCount ?? 0);
+      (el as HTMLElement & { tabs: unknown }).tabs = [
+        { label: 'Key facts' },
+        { label: 'Contacts' },
+        // Above zero only — see the module header on why an empty thread is the
+        // one thing in here worth announcing from outside.
+        comments > 0 ? { label: 'Comments', badge: comments } : { label: 'Comments' },
+      ];
+    });
+  });
+</script>

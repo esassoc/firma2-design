@@ -1,0 +1,127 @@
+---
+// firma2-contact-card — A PERSON, ANYWHERE THE APP NAMES ONE: their name, live
+// as a mailto, raising a card of who they are on hover or focus.
+//
+// IT IS THE CLASSIFICATION CHIP'S ARGUMENT APPLIED TO PEOPLE, and since
+// firma2-hover-card was extracted it is now literally the same object rather
+// than a second one that resembles it. A classification is not a string, it is
+// an ENTITY the record points at — so it wears a chip, the chip is a real link,
+// and hovering it raises a card with the fact that places it in the portfolio.
+// A contact is the same kind of thing and had been treated as the other kind:
+// three flat lines of name, organization and address, stacked under a label,
+// repeated per person. That spends four lines of a 22rem column on one person
+// and still leaves the reader nothing to click.
+//
+// SO THE NAME CARRIES EVERYTHING. One line on the page; the rest of the person
+// is one hover away. What that buys, beyond the space:
+//
+//   - THE MOST-WANTED ACT GETS THE CLICK. A contacts panel exists to be acted
+//     on, and the act is "email this person" — so the name IS the mailto, not a
+//     label above one. Same resolution the classification chip takes (the chip
+//     navigates; editing moved elsewhere), for the same reason: an entity's
+//     common act is reaching it, and it should not cost a second target.
+//   - THE SAME PERSON READS THE SAME WAY EVERYWHERE. The Contacts tab and the
+//     Comments thread render one component, so a commenter's role and
+//     organization are available in the thread without the thread printing them
+//     under every note. That is the whole reason this is a shared component and
+//     not markup inside the contacts panel.
+//   - THE CARD CAN CARRY WHAT THE ROW CANNOT. "Contact on 3 of 24 projects" is
+//     a portfolio fact — it is not on this record at all, it is derived across
+//     every record — and there is nowhere in a rail row to put it. It is also
+//     the exact counterpart of the line the classification card carries, which
+//     is a good sign the two are one object.
+//
+// THIS FILE IS NOW ONLY THE PERSON. Every question about how a card is placed,
+// how wide it is, why it has no arrow and why the pointer can reach it belongs
+// to firma2-hover-card and is answered there at length. What is left here is
+// what a contact IS: a role, a name, an organization, an address, and how much
+// of the portfolio they turn up on.
+//
+// NAME EDITING IS NOT OFFERED HERE, and that is the same trade the
+// classification row documents rather than an omission. A row cannot both
+// click-to-edit and click-to-act — nested interactive content is invalid in
+// HTML and in ARIA — so each row picks the act a reader actually performs. For
+// a typed scalar (a county, a cost) that is correction; for an entity (a goal,
+// a person) it is reaching it. A real ProjectFirma edits its contacts on the
+// organization's own screen, where the person is the record rather than a field
+// on someone else's.
+//
+// bcn-lego-checked: the card is firma2-hover-card, which composes esa-popover
+// and states its own lookup. Nothing here is a primitive: the trigger is a
+// plain <a>, the ink comes from tokens, and there is no layout in this file at
+// all. The one rule below is the link's colour.
+import Firma2HoverCard from './firma2-hover-card.astro';
+import { contactProjectCount, projectCount } from '../../data/firma2-project-detail';
+import type { ProjectContact } from '../../data/firma2-project-detail';
+
+interface Props {
+  contact: ProjectContact;
+  /**
+   * Typography composite for the NAME on the page. The card's own type is
+   * fixed; this is the trigger, and it has to sit at whatever role its
+   * surroundings use — `body-md` beside a label in the Contacts tab, the
+   * stronger `label-sm-strong` at the head of a comment. Default is the
+   * Contacts tab's.
+   */
+  nameClass?: string;
+}
+
+const { contact, nameClass = 'typography-body-md' } = Astro.props;
+
+// The portfolio roll-up, computed across every record rather than read off this
+// one — the counterpart of the classification card's "11 of 24 projects work
+// toward this goal". Rendered only above 1: "Contact on 1 of 24 projects" says
+// "this person is on the project you are looking at", which the reader can see.
+const onProjects = contactProjectCount(contact.email);
+
+// The address is a LINE rather than a second link. The name above it is already
+// the mailto, and two targets for one destination inside a 300px card is a
+// choice a reader should not have to make; here it is the fact you want when
+// you are about to write the address down somewhere else.
+//
+// WHICH IS WHY IT IS THE COPYABLE ONE. "Write it down somewhere else" is the
+// second thing anyone does with a contact — into a grant portal, a cc line, a
+// spreadsheet — and it is the one act the mailto cannot serve. Selecting the
+// text by hand is not an option here: the card closes when the pointer leaves
+// it. Nothing else on the card is worth a control; the organization is a name
+// you already know and the roll-up is a sentence, not a value.
+//
+// The button's name says what lands on the clipboard rather than where the
+// button is ("Copy email address", not "Copy"), because it is also the hover
+// tooltip and an icon-only control has no other way to say it.
+const lines = [
+  contact.organization,
+  { text: contact.email, copy: 'Copy email address' },
+  ...(onProjects > 1 ? [`Contact on ${onProjects} of ${projectCount()} projects`] : []),
+];
+---
+<Firma2HoverCard kind={contact.role} title={contact.name} lines={lines}>
+  <!-- THE TRIGGER IS THE ACT. A real <a href="mailto:">, so it is focusable
+       without a tabindex, announced as a link, and offers the browser's whole
+       link grammar (copy address, open in a mail client) — none of which a span
+       with a handler would. esa-popover writes aria-expanded onto it, and it is
+       what makes the card keyboard-reachable. -->
+  <a class:list={['firma2-contact-card__name', nameClass]} href={`mailto:${contact.email}`}>
+    {contact.name}
+  </a>
+  <!-- Passed straight through to the card's byline row — the Comments thread
+       puts the date here. See firma2-hover-card for why it cannot simply sit
+       beside this component instead. -->
+  <slot name="trailing" slot="trailing" />
+</Firma2HoverCard>
+
+<style>
+  /* THE NAME READS AS A LINK, QUIETLY. Brand ink and no rest-state underline —
+     the house treatment for a link inside a data row rather than inside prose,
+     the same one firma2-editable-field gives the ↗ it docks in a field. The
+     underline arrives with the interaction, which is also when the card does. */
+  .firma2-contact-card__name {
+    color: var(--color-content-brand, #2a7e3b);
+    text-decoration: none;
+  }
+  .firma2-contact-card__name:hover,
+  .firma2-contact-card__name:focus-visible {
+    text-decoration: underline;
+  }
+
+</style>

@@ -119,160 +119,178 @@ for (let i = 0; i < leftover; i += 1) {
        inside this section are not built yet. -->
   <EsaButton slot="actions" variant="chrome" size="sm" icon="plus">Add source</EsaButton>
 
-  <!-- bcn-lego-checked: no esa- lego renders a table. Walked the full catalog at
-       node_modules/@esa/ecology/src/components/ — there is no esa-table, and the
-       nearest candidates do not fit: esa-card/esa-stat hold one figure each and
-       would turn four columns of parallel data into three stacked boxes that lose
-       the alignment doing the work; esa-link-column is a list of links; esa-chart
-       plots a series and cannot show the administering organization or the exact
-       dollars. Beacon is not cloned on this machine, so tier 2 was skipped.
-       AG Grid is this spoke's tabular precedent but is scoped to the portfolio
-       table (reasons in the frontmatter). A native <table> IS the semantic
-       primitive here — real <th scope> headers are what make the amounts
-       navigable — so the honest answer is markup, not a component. It stays a
-       one-off rather than a bcn-table because a reusable table lego is a hub
-       concern, filed as a /request-lego candidate, not something to invent in a
-       spoke off a single three-row use. -->
-  <table class="firma2-project-funding">
-    <caption class="visually-hidden">Funding sources</caption>
-    <thead>
-      <tr>
-        <th scope="col" class="typography-label-md-strong">Source</th>
-        <!-- "Administered by", not "Agency" or "Organization": the funders are a
-             mix of boards, trusts and alliances, and a Local Sponsor Match is
-             administered by the project's own lead organization. The relationship
-             is the fact worth naming; the entity type is not. -->
-        <th scope="col" class="typography-label-md-strong">Administered by</th>
-        <th scope="col" class="firma2-project-funding__num typography-label-md-strong">Amount</th>
-        <!-- "Share of total" rather than "Share" — it names the denominator, so
-             the percentage is readable before the reader reaches the total row. -->
-        <th scope="col" class="firma2-project-funding__num typography-label-md-strong">Share of total</th>
-      </tr>
-    </thead>
-    <tbody>
-      {funding.map((source, index) => (
-        <tr>
-          <!-- The funder names the row, so it is a row header, not a cell: it is
-               what a screen reader reads back to place you when you arrow across
-               into the amount. -->
-          <th scope="row">{source.name}</th>
-          <td>{source.organization}</td>
-          <td class="firma2-project-funding__num">{currency.format(source.amount)}</td>
-          <td class="firma2-project-funding__num">{percents[index]}%</td>
-        </tr>
-      ))}
-    </tbody>
-    <tfoot>
-      <tr>
-        <!-- Named for what the sum IS, not that it is a sum. "Total" would only
-             tell the reader the column was added up, which they can see; naming
-             it the estimated total cost says the committed funding covers the
-             project's estimate — the fact the section exists to deliver. -->
-        <th scope="row" colspan="2" class="typography-label-md-strong">Estimated total cost</th>
-        <td class="firma2-project-funding__num typography-label-md-strong">{currency.format(estimatedTotalCost)}</td>
-        <td class="firma2-project-funding__num typography-label-md-strong">100%</td>
-      </tr>
-    </tfoot>
-  </table>
-</EsaCard>
+  <!-- AN AG GRID, not the hand-rolled <table> this was. The earlier note here
+       walked the Ecology catalog, found no esa-table, and concluded "a native
+       <table> IS the semantic primitive" — which was right about Ecology and
+       wrong about the spoke, because AG Grid is a first-class dependency with a
+       house wrapper (shared/grid-chrome.ts) and a token-mapped theme. That note
+       also said the grid was "scoped to the portfolio table"; it is not scoped,
+       it was simply unused here.
+       The reason to move is consistency rather than capability: this table is
+       four columns and three rows and needs nothing AG Grid provides. The
+       project detail page is adopting the grid for its measures section, which
+       genuinely does need pinned columns and toggleable ones, so the page pays
+       for the runtime either way — and one tabular surface on a page reads
+       better than three hand-rolled ones that each solved alignment, numeric
+       formatting and total rows their own way.
+       The COLUMN SEMANTICS are unchanged: the funder still names its row, the
+       amounts still align to their end, and the estimated total cost still sits
+       under them as a footer rather than a fourth data row. -->
+  <div class="firma2-project-funding">
+    <div class="firma2-project-funding__grid" data-firma2-funding-grid></div>
+
+    <script
+      type="application/json"
+      data-firma2-funding-rows
+    set:html={JSON.stringify({
+      rows: funding.map((source, index) => ({
+        name: source.name,
+        organization: source.organization,
+        amount: source.amount,
+        share: percents[index],
+      })),
+      estimatedTotalCost,
+      })}
+    ></script>
+  </div>
+
+  </EsaCard>
 
 <style>
-  /* No .stack or .grid here: the card body holds exactly one child and a table
-     lays itself out. A layout primitive wrapping a single element would be
-     spacing nothing against nothing. */
-  .firma2-project-funding {
-    width: 100%;
-    /* Collapsed so each row is separated by ONE hairline rule rather than a pair
-       of adjacent borders — the doubled line reads as a heavier band than the
-       token intends and makes a quiet table look striped. */
-    border-collapse: collapse;
-    /* Deliberately `auto`: the two text columns need to absorb long grant and
-       agency names ("Watershed Resilience Grant Program", "California Watershed
-       Restoration Board") by wrapping. That wrapping is what removes the need for
-       a horizontally scrolling wrapper at narrow widths — and a scroll container
-       would have to be focusable to be keyboard-operable, which is a whole extra
-       tab stop bought for four columns. */
-    table-layout: auto;
-    /* Type is inherited from esa-card's body (.typography-body-md). Not downshifted
-       to body-sm: at the small end of the fluid scale that lands under the 14px
-       dense floor, and three rows are not dense enough to need it. */
+  /* The grid draws its own surface from firma2GridTheme, which is already mapped
+     onto this spoke's tokens, so there is nothing left to style but the box. No
+     border and no radius: it sits inside a card that has both, and grid-chrome's
+     theme turns AG Grid's own wrapper border off for exactly this reason.
+     Everything the old stylesheet here did — collapsed borders, tabular numerals,
+     shrink-to-fit numeric columns, the nowrap floor under the numeric headers —
+     is now the theme's job or a column definition's. */
+  .firma2-project-funding__grid {
+    inline-size: 100%;
   }
 
-  /* Header cells carry `typography-label-md-strong` in the MARKUP — the same
-     rung as the body text beside them, at label weight. The weight used to be a
-     raw --font-weight-semibold here, which is the adoption debt the composites
-     exist to retire: a weight on its own is an ingredient, not a role, and
-     assembling type out of ingredients is how a surface drifts off the scale.
-     Only colour is left for CSS, because no composite carries colour. */
-  .firma2-project-funding thead th {
-    color: var(--color-content-default-secondary, #646464);
-    /* THE NUMERIC HEADERS STAY `nowrap`, and the alternative was tried. Letting
-       them wrap is what a header should do — it is a label, and "Share of total"
-       on one line sets a 111px floor under a column whose widest value is "65%".
-       But the numeric columns are `width: 1%` (shrink-to-fit, see below), so a
-       header allowed to wrap collapses all the way to its MIN-content and
-       renders as "Share / of / total" stacked three deep beside two-line-tall
-       rows. The floor is the point: it is what holds those columns open.
-       This only matters at a width this table does not have here. It was
-       measured in the 22rem record rail, where four such floors made the table
-       434px wide in a 352px column and it overflowed — which is one of the two
-       reasons this section is back in the main column rather than a reason to
-       change the rule. */
-    /* The rule under the header band is the one structural line in the table;
-       everything else is a hairline between rows. */
-    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
-  }
+  /* KNOWN, UNRESOLVED: AG Grid enforces a 150px floor under an auto-height
+     grid's body so its "no rows" overlay has somewhere to sit, and on a card
+     with two funding sources that leaves ~32px of empty band between the last
+     row and the total. It is set from JS during the auto-height layout pass and
+     survives everything CSS can say about it — min-height and height, with
+     !important, on .ag-body and .ag-body-viewport, all computed correctly and
+     changed nothing. Those attempts are removed rather than left in place as
+     dead weight. A card grid always has rows, so the floor buys nothing here;
+     the fix belongs upstream or in a grid option, not in more CSS.
+     (If a third card grid appears, the wrap rule below belongs in the shared
+     grid stylesheet rather than repeated per component.) */
 
-  .firma2-project-funding th,
-  .firma2-project-funding td {
-    /* Text left, always — the funder and the agency are strings, and centring
-       either would break the left edge the eye scans down. */
-    text-align: start;
-    vertical-align: baseline;
+  /* WRAPPED CELLS NEED THEIR OWN LINE-HEIGHT, and this is not cosmetic tuning.
+     AG Grid sets a cell's `line-height` to the ROW HEIGHT so single-line text
+     centres vertically without flex — a sound trick until `wrapText` turns the
+     cell into real prose, at which point that same value becomes the leading
+     between every wrapped line. Measured here: 39px of leading under 14px text,
+     so "Watershed Resilience / Grant Program" rendered as two lines a thumb
+     apart. An explicit line-height restores normal prose leading, and the
+     vertical padding is what `autoHeight` then measures the row against. */
+  .firma2-project-funding :global(.ag-cell-wrap-text) {
+    line-height: 1.45;
     padding-block: var(--spacing-200, 0.5rem);
-    padding-inline: var(--spacing-300, 0.75rem);
   }
 
-  /* The outer columns lose their outer padding so the table's text aligns with
-     the card header's text above it. Without this the table sits visibly inset
-     from its own title. */
-  .firma2-project-funding th:first-child,
-  .firma2-project-funding td:first-child { padding-inline-start: 0; }
-  .firma2-project-funding th:last-child,
-  .firma2-project-funding td:last-child { padding-inline-end: 0; }
-
-  .firma2-project-funding tbody th {
-    /* A row header is a label for its row, not a heading shouting over it — same
-       weight as the data beside it, so the row reads as one line of facts. */
-    font-weight: inherit;
-  }
-
-  .firma2-project-funding tbody tr + tr th,
-  .firma2-project-funding tbody tr + tr td {
-    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
-  }
-
-  /* Numeric columns: right-aligned so place values stack, tabular figures so the
-     digits sit in fixed-width cells and $1,240,000 lines up under $985,500
-     column by column. `nowrap` because a dollar figure broken across two lines
-     is unreadable — the text columns do the wrapping instead. The header cell
-     carries the same class so it follows its column's alignment. */
-  .firma2-project-funding__num {
-    text-align: end;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    /* Shrink-to-fit against `table-layout: auto` — the 1% is not a real width,
-       it is the standard way to tell auto layout "take only what the content
-       needs", which hands the leftover space to the two wrapping text columns. */
-    width: 1%;
-  }
-
-  .firma2-project-funding tfoot th,
-  .firma2-project-funding tfoot td {
-    /* The total is separated from the rows it sums by a full-strength rule — the
-       same weight as the header's, so the body reads as bracketed between them.
-       Weight is what marks it as the total; no fill, no tint. Containers stay
-       neutral, and a shaded footer on a three-row table is decoration. */
+  /* The total row is a SUMMATION, not a fourth funding source, so it reads at
+     label weight against the same hairline the old <tfoot> drew. AG Grid renders
+     a pinned bottom row into its own section; this is the only thing that
+     section needs said about it. */
+  .firma2-project-funding :global(.ag-floating-bottom) {
+    font-weight: var(--font-weight-semibold, 600);
     border-block-start: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
   }
 </style>
+
+<script>
+  import { createCardGrid, gridCurrencyFormatter as currency } from '../shared/grid-chrome';
+  import type { ColDef } from 'ag-grid-community';
+
+  interface FundingRow {
+    name: string;
+    organization: string;
+    amount: number;
+    share: number;
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-funding').forEach((root) => {
+    const host = root.querySelector<HTMLElement>('[data-firma2-funding-grid]');
+    const payload = root.querySelector<HTMLScriptElement>('[data-firma2-funding-rows]');
+    if (!host || !payload) return;
+
+    const { rows, estimatedTotalCost } = JSON.parse(payload.textContent ?? '{}') as {
+      rows: FundingRow[];
+      estimatedTotalCost: number;
+    };
+
+    const columnDefs: ColDef<FundingRow>[] = [
+      // The funder names the row. `flex` on the two text columns, because grant
+      // programs and administering bodies are long and variable and the numbers
+      // beside them are not — the same division of space the old table's
+      // `table-layout: auto` plus `width: 1%` numeric columns achieved.
+      // WRAP, DO NOT TRUNCATE. The old table used `table-layout: auto` precisely
+      // so "Watershed Resilience Grant Program" and "California Watershed
+      // Restoration Board" could wrap instead of forcing a horizontal scroller,
+      // and an ellipsis in a funder's name is worse than a second line: it is
+      // the identifying field. `autoHeight` lets the row grow to fit.
+      {
+        headerName: 'Source', field: 'name', colId: 'name',
+        flex: 2, minWidth: 160, wrapText: true, autoHeight: true,
+      },
+      // "Administered by", not "Agency" or "Organization": the funders are a mix
+      // of boards, trusts and alliances, and a Local Sponsor Match is
+      // administered by the project's own lead organization. The relationship is
+      // the fact worth naming; the entity type is not.
+      {
+        headerName: 'Administered by', field: 'organization', colId: 'organization',
+        flex: 2, minWidth: 160, wrapText: true, autoHeight: true,
+      },
+      {
+        headerName: 'Amount', field: 'amount', colId: 'amount',
+        width: 140, type: 'rightAligned',
+        valueFormatter: (p) => (p.value == null ? '' : currency.format(Number(p.value))),
+      },
+      // "Share of total" rather than "Share" — it names the denominator, so the
+      // percentage is readable before the reader reaches the total row.
+      {
+        headerName: 'Share of total', field: 'share', colId: 'share',
+        width: 140, type: 'rightAligned',
+        valueFormatter: (p) => (p.value == null ? '' : `${p.value}%`),
+      },
+    ];
+
+    createCardGrid<FundingRow>(host, {
+      rowData: rows,
+      columnDefs,
+      // This grid never scrolls sideways — four columns, two of them flexed —
+      // so the reserved scrollbar gutter was pure empty band between the last
+      // funder and the total row. Set per call, not in createCardGrid: the
+      // measures grid's whole point is horizontal scrolling.
+      suppressHorizontalScroll: true,
+      // RE-MEASURE ONCE THE ROWS EXIST. `autoHeight` columns are measured from
+      // rendered text, but the grid sizes its body viewport before that text has
+      // been laid out — so it kept a stale 150px viewport over 118px of actual
+      // rows and left an empty band above the total. The CSS min-height override
+      // is not enough on its own: this height is set from JS, not a stylesheet.
+      onFirstDataRendered: (e) => {
+        e.api.resetRowHeights();
+      },
+      // Named for what the sum IS, not that it is a sum. "Total" would only tell
+      // the reader the column was added up, which they can see; naming it the
+      // estimated total cost says the committed funding covers the project's
+      // estimate — the fact this section exists to deliver.
+      //
+      // A pinned bottom row rather than a fourth data row: it is not a funding
+      // source, and the old markup made the same distinction with <tfoot>.
+      pinnedBottomRowData: [
+        {
+          name: 'Estimated total cost',
+          organization: '',
+          amount: estimatedTotalCost,
+          share: 100,
+        },
+      ],
+    });
+  });
+</script>

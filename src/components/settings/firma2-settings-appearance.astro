@@ -1,0 +1,99 @@
+---
+// firma2-settings-appearance — the colour-scheme control, and the only setting
+// on this screen that actually does something.
+//
+// THREE OPTIONS, NOT A SWITCH. A two-state toggle can express "light" and
+// "dark" and cannot express "whatever my machine is doing", which is the option
+// most people are already living with — the OS flips at sunset and every other
+// app follows. Dropping it would make this app the one that does not. So the
+// control is one-of-three, and the third value is a DELEGATION rather than a
+// colour: see src/lib/scheme.ts for why that forces a stored preference and a
+// resolved scheme to be two separate facts.
+//
+// NO PREVIEW SWATCHES. The first draft put a light card and a dark card side by
+// side to pick between. They are a picture of the thing the reader is looking
+// at: the page repaints the instant a segment is chosen, so a swatch showing
+// what dark mode looks like, next to a page that has already gone dark, is
+// design-principles' "text about the page" in pixel form. The page is the
+// preview. Polish is subtractive.
+//
+// NO SAVE BUTTON, here or anywhere on this screen. The product brief's
+// always-editable / always-saved rule: see something you want to change, change
+// it, in the fewest steps possible. A scheme you have to confirm is a scheme you
+// have already seen applied and then have to agree to.
+//
+// bcn-lego-checked: esa-button-toggle IS this control and is the whole of the
+// markup — a form-associated one-of-N segmented select, with the radiogroup
+// keyboard pattern, the group label, and per-segment icons all its own. Nothing
+// here re-implements a button, a segment, or a selected state. Walked the
+// catalog (`ls node_modules/@esa/ecology/src/components/`) for a scheme/theme
+// control specifically: there is none — the hub's own DocsShell hand-rolls a
+// `.scheme-toggle` <button> for its docs site, which is exactly the bespoke
+// primitive this spoke must not copy, and it is two-state so it could not carry
+// System anyway. esa-radio-group would also express one-of-three but reads as a
+// form question rather than a display control. Beacon is not cloned on this
+// machine. The card is esa-card; the only local element is the <esa-button-toggle>
+// tag itself, so this component has no <style> block at all.
+
+// The spoke's card-as-section convention: drops esa-card's internal rule under
+// the title, because a bordered card stacked down a page already says where its
+// section starts and the second line inside it draws a boundary the reader can
+// see without it. Imported per component, the way all six project-detail
+// sections import it, so the component carries the convention in isolation.
+import '../shared/firma2-card-section.css';
+import EsaCard from '@esa/ecology/esa-card.astro';
+---
+<EsaCard title="Appearance">
+  {/* Options are an ARRAY, so they are set as a property from the script below
+      rather than as an attribute — the same contract esa-select and
+      esa-sidebar-nav use. The element renders empty for the one frame before
+      hydration, which is why it carries no fallback content: a row of segments
+      that briefly says something else is worse than a row that briefly says
+      nothing. */}
+  <esa-button-toggle id="firma2-scheme" label="Theme" size="md"></esa-button-toggle>
+</EsaCard>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import { readScheme, setScheme, type SchemePreference } from '../../lib/scheme';
+
+  // Lucide inner markup — the `paths` convention esa-button-toggle documents for
+  // its `icon` field: the children only, no <svg> wrapper, which the component
+  // supplies with its own viewBox and inherits currentColor through. These three
+  // are not in the hub's icon-registry (it ships 26 names and none of them are a
+  // sun), and registering an icon is a HUB change, not a spoke one — so they are
+  // inlined here rather than smuggled into the registry from outside.
+  const SUN =
+    '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/>' +
+    '<path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/>' +
+    '<path d="M2 12h2"/><path d="M20 12h2"/>' +
+    '<path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>';
+  const MOON = '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>';
+  const MONITOR =
+    '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>';
+
+  // Light first, then dark, then the delegation. Ordered as a RAMP — lightest to
+  // darkest, with "follow the machine" after both because it is not a third
+  // colour, it is a deferral to the two that precede it.
+  const OPTIONS: Array<{ label: string; value: SchemePreference; icon: string }> = [
+    { label: 'Light', value: 'light', icon: SUN },
+    { label: 'Dark', value: 'dark', icon: MOON },
+    { label: 'System', value: 'system', icon: MONITOR },
+  ];
+
+  type ToggleEl = HTMLElement & { options: unknown[]; value: string };
+
+  const toggle = document.getElementById('firma2-scheme') as ToggleEl | null;
+  if (toggle) {
+    toggle.options = OPTIONS;
+    // Seeded from STORAGE, not from the resolved data-scheme attribute. A reader
+    // on System with a dark machine has data-scheme="dark"; seeding from that
+    // would select Dark and quietly convert their delegation into a hard choice
+    // the first time they touched anything else on the page.
+    toggle.value = readScheme();
+    toggle.addEventListener('change', (event) => {
+      const value = (event as CustomEvent<{ value: string }>).detail?.value;
+      if (value === 'light' || value === 'dark' || value === 'system') setScheme(value);
+    });
+  }
+</script>

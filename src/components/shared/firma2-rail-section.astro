@@ -6,9 +6,12 @@
 // WHY THE RAIL'S SECTIONS ARE NOT CARDS. They were, and the card was doing real
 // work while these sat in a scrolling column: a border is what says where one
 // section ends and the next begins when there is nothing else to say it. In a
-// rail there IS something else — the rail is itself a bordered, filled surface
-// with a hairline down its content edge, so every card inside it drew a second
-// box immediately inside the first. Two nested containers with one step of
+// rail there IS something else — the rail is its own column, ruled off from the
+// content by a hairline down its leading edge, so every card inside it drew a
+// second box immediately inside the first. (The rail was a filled surface when
+// that was first written and has since taken the content pane's own background;
+// the argument did not depend on the fill, only on the column being already
+// bounded, which the rule still does.) Two nested containers with one step of
 // padding between them is the boxes-inside-boxes read that firma2-card-section
 // already deleted one line to avoid, and here it was a whole extra border on
 // every section. The rail says "this column is the record". The sections inside
@@ -40,9 +43,33 @@ import type { HTMLAttributes } from 'astro/types';
 interface Props extends HTMLAttributes<'section'> {
   /** The section's name. Renders as the <h3>, at esa-card's own title role. */
   title: string;
+  /**
+   * Keep the heading in the document and take it off the screen.
+   *
+   * FOR ONE CASE ONLY: the section is inside a TAB, and the tab's label is
+   * already the section's name in the reader's eye. Rendering both puts
+   * "Contacts" twice on one 22rem column, one line apart — the redundancy
+   * design-principles cuts. Deleting the heading instead would be the wrong
+   * trade: esa-tab-layout's panel is not associated with its tab (no
+   * aria-labelledby — a real lego gap), so the heading is the only thing naming
+   * this region in the heading list a screen-reader user navigates by. Hidden,
+   * it costs a sighted reader nothing and keeps that name.
+   */
+  titleHidden?: boolean;
 }
 
-const { title, class: className, ...rest } = Astro.props;
+const { title, titleHidden = false, class: className, ...rest } = Astro.props;
+
+// a11y.css's clip-rect pattern, global from @esa/tokens. Not `display: none`,
+// which would take the heading out of the accessibility tree — the one thing
+// this mode exists to keep.
+const titleClass = [
+  'firma2-rail-section__title',
+  'typography-title-sm-strong',
+  titleHidden && 'visually-hidden',
+]
+  .filter(Boolean)
+  .join(' ');
 
 // The action row only renders when a page actually passes one. An empty .repel
 // is a zero-width flex box, so this is not about layout — it is about not
@@ -64,11 +91,11 @@ const hasActions = Astro.slots.has('actions');
          instead of a card header: same two things, same arrangement, no band and
          no rule under it. -->
     <div class="firma2-rail-section__head repel">
-      <h3 class="firma2-rail-section__title typography-title-sm-strong">{title}</h3>
+      <h3 class={titleClass}>{title}</h3>
       <slot name="actions" />
     </div>
   ) : (
-    <h3 class="firma2-rail-section__title typography-title-sm-strong">{title}</h3>
+    <h3 class={titleClass}>{title}</h3>
   )}
 
   <slot />

@@ -45,6 +45,68 @@
 // time is the reason the page exists, and a 22rem column cannot hold a table
 // with four columns and a chart.
 //
+// ---- TWO CONTROLS, ONE JOB EACH (added 2026-08-24) ----
+//
+// THE TOP holds a collapse button: an always-visible icon at the rail's leading
+// corner, on the row the tab strip occupies. THE EDGE holds a bcn-edge-handle:
+// a 2px bar at the middle of the fold that changes the rail's width when dragged.
+// Neither does the other's job.
+//
+// THAT SPLIT IS STRIPE'S, ADOPTED ON PURPOSE (user-directed, after reading how
+// docs.stripe.com does it). The first version of this put both jobs on the edge
+// grip — click to collapse, drag to resize — and it worked, at the cost of
+// classifying every press by how far it travelled and of a mark that had to
+// promise two things at once. Stripe's docs sidebar splits them: collapse is a
+// plain icon button INSIDE the panel at the top, visible at rest, and there is no
+// edge control at all because their sidebar does not resize. Taking the split and
+// keeping the resize gives each control one meaning and one gesture.
+//
+// WHAT IT COSTS, stated because it is the real trade: the collapse control is now
+// a persistent 40px button on a surface that is otherwise all content, where
+// before there was nothing to see until you went to the edge. Discoverability
+// bought with a little ink. The reader who wants the rail gone no longer has to
+// find a 2px line to learn that they can.
+//
+// THE GLYPH IS THE HUB'S, NOT STRIPE'S. Stripe draws an arrow running into a bar
+// (an edge, and the way it will move) — a better mark than a bare chevron,
+// because it names the thing that travels. The icon registry has no such glyph
+// (26 icons; `ls` it) and adding one is a hub change, so this uses
+// `chevrons-right`, which IS the hub's collapse mark — esa-sidebar-nav's own
+// toggle renders it for exactly this action on the other side of the screen.
+// Worth a /request-lego for `panel-right-close`; until then, matching the app's
+// own rail beats matching another company's.
+//
+// WHY A PINNED RAIL NEEDS A WAY OUT AT ALL. Everything above argues that this
+// column is worth its width for as long as the page lasts, and that argument is
+// about the DEFAULT, not about every reader on every visit. A reader comparing
+// two expenditure tables side by side, or reading the funding table at its full
+// width, wants the 25rem back for a minute — and until now the only way to get
+// it was to make the window wider. The rail keeps its default and stops being a
+// tax on the one reader who does not want it.
+//
+// COLLAPSED IS A STRIP, NOT NOTHING, and the strip is sized by the control it
+// has to hold. 3rem of the rail's own surface stays, with its hairline and the
+// same button on it, now pointing the other way. A rail that collapsed to zero
+// would take its own reopen control off the screen and leave the reader hunting
+// for a way back into a column they just shut. The strip is also what keeps the
+// collapse READABLE as a collapse: an edge that is still there, with something on
+// it, says "shut" — a column that vanished says "gone".
+//
+// It was 1.5rem when the reopen lived on the edge grip, which needed 18px and no
+// more. A 40px button needs 48px of column, which is also — not by accident —
+// about what Stripe's collapsed docs sidebar reserves for the same purpose.
+//
+// WIDTH IS NEGOTIABLE, THE CONTENT'S FLOOR IS NOT. The bounds are 25rem to 34rem
+// (400-544px), so the rail's default IS its minimum and the drag only ever opens
+// it. That is not a soft choice: rendered narrower, the tab row's third tab and
+// the right-hand edge of every fact clip, because a flex item cannot go below
+// its content's min-content width whatever basis it is given (measured:
+// 400.78px). A reader who wants the width back has the collapse button, which is
+// the honest answer — 352px of clipped facts is not a narrower rail, it is a
+// broken one. The ceiling is where a column of scalars stops reading as a rail and
+// starts competing with the main column for the eye: past ~34rem the two look
+// like a two-pane layout with no primary.
+//
 // bcn-lego-checked: no esa- lego is a page-level rail. Walked the catalog
 // (`ls node_modules/@esa/ecology/src/components/`): esa-sidebar-nav is the APP's
 // navigation rail — it takes a nav model, renders links, owns a collapse state
@@ -55,28 +117,108 @@
 // for the two-column arrangement and the page uses it — but it is a LAYOUT, not
 // a surface: it sizes tracks and exposes no alignment knob (already filed in the
 // improvement ledger), so the pinning and the surface have to live on the aside
-// itself. Beacon is not cloned on this machine. This file is the reusable home
-// for the pattern; a second record page with a rail composes it rather than
-// restating these rules.
+// itself. The edge control is bcn-edge-handle, the spoke's own reusable grip —
+// its file carries the lookup for that half. Beacon is not cloned on this
+// machine. This file is the reusable home for the pattern; a second record page
+// with a rail composes it rather than restating these rules.
+
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+interface Props {
+  /**
+   * What this rail HOLDS, in the reader's words — it becomes the edge handle's
+   * accessible name on both of its controls — the grip's "Resize project
+   * details" and the head button's "Collapse project details". The default is the
+   * generic one, correct for any record page that has not named its rail.
+   */
+  label?: string;
+}
+
+const { label = 'the side panel' } = Astro.props;
 ---
 <!-- An <aside>, so a screen reader announces a complementary landmark and offers
      to skip past it in a keystroke. No aria-label: the region is immediately
      followed by its own "Key facts" heading and there is only one complementary
      region in the page's content, so a name here would be that heading said
-     twice. -->
-<aside class="firma2-record-rail">
-  <!-- THE STACK IS INSIDE, NOT ON THE ASIDE. The aside is the scroll container —
-       it has to be, because it is the box with the fixed height — and a scroll
-       container that is also the flex column would put its padding INSIDE the
-       scrolled area, so the last card's bottom padding would only appear once
-       you had scrolled to it. An inner stack keeps the padding on the frame and
-       the rhythm on the content.
+     twice.
+
+     The id is not decoration: the handle points aria-controls at it, so a screen
+     reader on the splitter can be told what it is splitting. -->
+<aside class="firma2-record-rail" id="firma2-record-rail">
+  <!-- THE STACK IS INSIDE, NOT ON THE ASIDE, and it is also THE SCROLLER.
+       The aside cannot be the scroll container any more, and the reason is the
+       handle: an absolutely positioned child of a scroll container is positioned
+       against the scrolled content, so the grip would drift up the edge as the
+       rail scrolled and be clipped the moment it straddled the border. Moving
+       `overflow-y` one level in fixes both and costs nothing that was being
+       bought before — the padding stays on the frame, which is the reason the
+       inner element existed in the first place, so the last card's bottom
+       padding is still visible without scrolling to it.
 
        `xl` matches the card-to-card rhythm the main column keeps, so the two
        columns read at one interval rather than each at its own. -->
+  <!-- THE COLLAPSE CONTROL, ON THE EDGE, LEVEL WITH THE FIRST ROW.
+       It spent an hour in a header row of its own above the tab strip and that
+       row was the problem: 54px of the most expensive space on the page — the top
+       of a column that exists to hold the fold — spent on one glyph. The tab strip
+       has no slack to lend it either (three tabs plus their gaps measure 352px in
+       a 352px content box), so there was nothing to share.
+
+       THE EDGE HAS INFINITE ROOM AND COSTS NOTHING. Mounted on the border, the
+       button takes no layout space at all: the rail's content starts at the top
+       of the padding box exactly as it did before this control existed. It is
+       still at the top, still always visible, still the first thing at the rail's
+       leading corner — everything the placement was for — minus the row.
+
+       TWO CONTROLS ON ONE EDGE, and they do not collide because they are in
+       different places: this at the top, level with the tab row; the resize grip
+       at the middle of the fold, half a screen below. Nothing has to guess which
+       one a press meant.
+
+       `size="xs"` (32px rendered), a deliberate step below the app's `md` rung.
+       design-principles asks controls to err one step BIGGER and icons one step
+       SMALLER, and this is the second kind: a glyph floating over a border, not a
+       control in a row of controls with siblings to match. At md (46px) it read
+       as a button parked on the seam rather than a mark belonging to it. -->
+  <div class="firma2-record-rail__toggle">
+    <!-- `iconOnly` + `label` is esa-button's contract for a glyph control: it
+         sets aria-label AND title, so the button carries a name for a screen
+         reader and a native tooltip for everyone else — which is what pays for a
+         control with no text sitting on its own. The script keeps both in step
+         with the state. -->
+    <EsaButton
+      variant="chrome"
+      iconOnly
+      icon="chevrons-right"
+      label={`Collapse ${label}`}
+      size="xs"
+      data-rail-toggle
+      aria-expanded="true"
+      aria-controls="firma2-record-rail"
+    />
+  </div>
+
   <div class="firma2-record-rail__inner stack" data-gap="xl">
     <slot />
   </div>
+
+  <!-- THE EDGE, WHICH IS A RESIZE GRIP AND NOTHING ELSE. `edge="start"` because
+       the rail is on the trailing side of the page, so the grip rides its LEADING
+       edge — the one that faces the content and is the one that moves. The width it writes is
+       the `.sidebar` primitive's own --sidebar-width, on the primitive's element
+       (`size-host="parent"`), which is the single knob that sizes this track;
+       nothing here keeps a second copy of the number. The storage key is the
+       ROLE, not the page, so a reader who narrows the rail on one record finds
+       it narrowed on the next. -->
+  <bcn-edge-handle
+    edge="start"
+    size-var="--sidebar-width"
+    size-host="parent"
+    min="400"
+    max="544"
+    label={label}
+    storage-key="record-rail"
+  ></bcn-edge-handle>
 </aside>
 
 <style>
@@ -88,6 +230,21 @@
        reason, and the same /request-lego would retire both. */
     --_bleed: var(--spacing-500, 1.5rem);
 
+    /* THE SHUT WIDTH, AND IT IS SET BY THE CONTROL THE STRIP HAS TO HOLD.
+       One --spacing-500, the same step as the bleed and therefore exactly the
+       pane's own padding: shut, the rail occupies the gutter it was already
+       reaching through and nothing else.
+
+       IT DOES NOT HAVE TO HOLD THE REOPEN CONTROL, which is why it can be this
+       narrow. The toggle is mounted ON the border rather than inside the column,
+       so it arrives at the strip's edge on its own and needs no width from it.
+       The strip briefly grew to 56px to carry a 46px button in the flow; both
+       numbers went when the button moved to the edge.
+
+       A strip is the floor, not a preference: collapsing to zero would take the
+       reopen control off the screen with the column it belongs to. */
+    --_collapsed: var(--spacing-500, 1.5rem);
+
     /* HOLDS THE FOLD. See the module header: both declarations are required, and
        `align-self` is the one that is easy to drop and hard to debug — without
        it the flex parent stretches this to the full page height and a sticky box
@@ -97,6 +254,12 @@
     align-self: start;
     block-size: 100dvh;
 
+    /* A COLUMN, so the inner stack can take the leftover height and scroll inside
+       it. `min-block-size: 0` goes on the inner, not here — this box is already
+       sized by the 100dvh above. */
+    display: flex;
+    flex-direction: column;
+
     /* ABOVE THE MAP, UNDER THE HEADER BAND. --z-sidebar is the role, and it is
        the correct one twice over: this IS a sidebar, and the app's own nav rail
        on the opposite edge sits at the same rung. Nothing on the page needs to
@@ -104,7 +267,22 @@
        column, which is exactly the layout's gutter, so both stop ON this edge
        rather than under it. The rung is claimed so that a future full-bleed
        neighbour lands the right way round without a second argument about it. */
-    z-index: var(--z-sidebar, 100);
+    /* ABOVE THE MAP, AND NOW ABOVE THE HEADER BAND TOO — which is a change, and
+       the reason is the toggle on the border. This rail sat at --z-sidebar,
+       deliberately a rung UNDER --z-header, on the argument that nothing needed
+       painting over: the map and the band each bleed exactly one gutter past
+       their column, so both stop ON this edge rather than under it.
+
+       The toggle broke that symmetry by straddling the edge. Its outer half lands
+       in the gutter, which at the top of the page is precisely where the band's
+       own bleed paints — and because this element carries a z-index it is a
+       stacking context, so no z-index on a CHILD can lift the button out of it.
+       The rail itself has to clear the band, or the button loses its left half to
+       a white rectangle.
+
+       Nothing is painted over by the move: the two still only ever meet along
+       this border, and the band's bleed ends exactly on it. */
+    z-index: calc(var(--z-header, 200) + 1);
 
     /* REACHES THROUGH THE PANE'S PADDING on the two edges that meet the frame:
        up to the top of the viewport, out to the window's right edge. The block
@@ -114,6 +292,62 @@
     margin-inline-end: calc(var(--_bleed) * -1);
     padding: var(--_bleed);
 
+    /* ---- THE TRACK, AND THE CEILING THE LAYOUT PUTS ON IT ----
+       This overrides the primitive's own `.sidebar > :first-child { flex-basis:
+       var(--sidebar-width); flex-grow: 1 }`, and both halves are changed for a
+       reason a drag exposed.
+
+       flex-grow: 0. With the primitive's `1` against the main column's `999` the
+       rail collected a thousandth of the free space and came out at 401px when it
+       had been given 400 — invisible until a width became a number a reader sets,
+       at which point the rail is never quite the width it was dragged to and the
+       handle's own clamp can never settle.
+
+       THE min() IS A GUARDRAIL, AND IT IS THE ONE THING HERE THAT IS NOT
+       COSMETIC. `.sidebar` wraps its aside below the content the moment the two
+       tracks plus the gutter no longer fit — that is the primitive working
+       correctly, and it is how the rail becomes two cards under the page on a
+       narrow window. Under a DRAG it is a cliff: nothing stops --sidebar-width
+       being pushed past the point where the main column can still hold
+       --sidebar-content-min, and one drag too far dropped a 100dvh sticky rail
+       full-width to the bottom of a 3000px page. Capping the basis at "the
+       container, less what the main column is owed, less the gutter" makes that
+       state unreachable by dragging while leaving the honest wrap — the one a
+       narrow WINDOW causes — exactly as it was.
+
+       It reads --sidebar-content-min, which is the primitive's own knob and the
+       page's own number, so there is no second copy of the floor to keep in step.
+       The subtraction is correct in both forms that knob takes: a length (this
+       page passes 40rem) subtracts directly, and the primitive's own 60% default
+       leaves `40% − gutter`, which is the same statement. The gutter is named as
+       --spacing-500 rather than the primitive's --gap because --gap is registered
+       `inherits: false` — deliberately, to stop nested primitives inheriting each
+       other's rhythm — so a child cannot read it. It is the primitive's own
+       default for `.sidebar`, and the page does not override it.
+
+       The max() floor is what keeps the wrap available: once the container is too
+       narrow to give both tracks their minimums, the basis stops shrinking, the
+       line overflows, and the aside wraps below — which is the behaviour the
+       container query at the foot of this file then dresses.
+
+       25rem IS THE FLOOR, AND IT IS MEASURED RATHER THAN CHOSEN. It was written
+       as 22rem — the width the cards inside were drawn at — and that was wrong by
+       one step of arithmetic: 22rem is the CONTENT box, and the track has to
+       carry 3rem of padding and a border on top of it. Rendered at 352px the tab
+       row's third tab and the right-hand edge of every fact clipped, because a
+       flex item's automatic minimum size holds it at its content's min-content
+       width (measured: 400.78px) no matter what basis it is given. So the track
+       floor, the handle's `min`, and the width the rail actually renders at are
+       now one number instead of three that disagreed silently. */
+    flex-basis: max(
+      25rem,
+      min(
+        var(--sidebar-width, 25rem),
+        calc(100% - var(--sidebar-content-min, 60%) - var(--spacing-500, 1.5rem) - 1px)
+      )
+    );
+    flex-grow: 0;
+
     /* THE CARDS INSIDE COME OUT AT 22rem, which is what they were written for
        and what they measured in every previous arrangement. The arithmetic is
        worth stating because it is the reason the page passes --sidebar-width:
@@ -121,8 +355,70 @@
        A negative margin does NOT widen a box; it lets the box overflow its
        track. So the bleed contributes nothing to the width and the whole of the
        padding comes out of the track: 25rem − 3rem of padding − 1px of border
-       lands the cards at 351px, which is 22rem to within a rounding step. */
+       lands the cards at 351px, which is 22rem to within a rounding step.
+
+       The handle's 352px floor is that same number, arrived at from the other
+       direction: it is the narrowest track whose content box still holds the
+       22rem the cards were drawn at. */
     box-sizing: border-box;
+
+    /* THE HANDLE STRADDLES THIS EDGE, so the rail must not clip it — half the
+       grip is over the neighbouring pane by design. Nothing else in here
+       overflows: the scroll moved to the inner element. */
+    overflow: visible;
+
+    /* A LINE, NOT A SURFACE — the hairline is now the whole of what makes this
+       read as a rail, and it is enough. The rail takes THE CONTENT PANE'S OWN
+       BACKGROUND, so the two columns are one sheet of paper with a rule down
+       it rather than two panels of different paper butted together.
+
+       THE VALUE IS THE PANE'S, NOT A MATCH FOR IT. The content pane paints
+       nothing of its own — `.esa-app-shell__content` has no background rule, so
+       what shows through it is the shell's `--color-background-default`. That
+       is the token named here, which means the two cannot drift: re-point the
+       app's background in theme-firma2.css and the rail follows on the same
+       commit rather than on the one where somebody notices.
+
+       WHAT THIS RETIRED, and why the note is worth keeping. The rail spent
+       three releases looking for a fill: `elevation-raised` (gray-1) was the
+       canvas value and made it invisible; `elevation-sunken` (gray-3) was a
+       surface but a heavy one, sized for a well with cards floating in it; and
+       gray-2, the step between, had no semantic role at all — a documented
+       tier-1 read into the raw ramp, taken because the elevation axis has no
+       rung for chrome that sits BESIDE content rather than under it. Matching
+       the pane answers that question by dissolving it: there is no rung to
+       reach for, because there is no second surface. The /request-lego for a
+       beside-content elevation rung is no longer needed by this file.
+
+       The hairline still goes on the one edge that faces content, and nothing
+       on the outer three, which meet the window rather than the page. */
+    background: var(--color-background-default, #fcfcfc);
+    border-inline-start: var(--border-width-default, 1px) solid
+      var(--color-border-default-subtle, #d9d9d9);
+
+    /* THE TRACK ANIMATES, THE DRAG DOES NOT. --sidebar-width lands on this box
+       as flex-basis (the primitive's own rule), so that is the property the
+       transition has to name. --transition-base is the token whose whole
+       documented role is "a change big enough to want to be watched — a panel
+       resizing", and it is already zeroed under prefers-reduced-motion at the
+       token layer, so there is no media query to write here.
+
+       `data-resizing` is set by the handle for the length of a pointer drag and
+       for the frame in which a stored width is restored. Both are cases where an
+       ease is wrong: during a drag it is lag between the pointer and the edge,
+       and on load it is the layout appearing to settle. */
+    transition: flex-basis var(--transition-base, 200ms ease);
+  }
+  .firma2-record-rail[data-resizing] {
+    transition: none;
+  }
+
+  .firma2-record-rail__inner {
+    /* Takes the height the frame's padding leaves, and scrolls inside it.
+       `min-block-size: 0` is the half that is easy to miss: without it a flex
+       item is floored at its content height and the scroll never engages. */
+    flex: 1;
+    min-block-size: 0;
 
     /* THE RECORD CAN BE TALLER THAN THE FOLD, and a rail that simply overran
        would push its last card off the bottom of the screen with no way to reach
@@ -131,30 +427,104 @@
        that escapes the rail takes the reader somewhere they did not ask to go. */
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
 
-    /* A SURFACE, NOT A GUTTER — this is what makes it read as a rail rather than
-       as a column of cards that happen to be on the right. The hairline goes on
-       the one edge that faces content; nothing on the outer three, which meet
-       the window rather than the page.
+  /* ---- SHUT: A STRIP WITH A HANDLE ON IT ----
+     `collapsed` is set on this element by bcn-edge-handle and by nothing else,
+     which is the same contract esa-sidebar-nav honours on the opposite edge of
+     the screen — one attribute, the DOM as the only copy of the state.
 
-       ONE STEP OFF THE PAGE, NOT TWO — AND IT IS A TIER-1 READ, KNOWINGLY. This
-       started at `elevation-raised` (gray-1), which is the CANVAS value, so the
-       rail was invisible; it then went to `elevation-sunken` (gray-3), which was
-       a surface but a heavy one, sized for a well with cards floating in it. The
-       sections in here are no longer cards, so there is nothing to float and
-       gray-3 reads as a grey slab beside a pale map.
-       gray-2 is the step between, and there is NO SEMANTIC ROLE ON IT: the
-       background ramp runs raised/floating at gray-1 and sunken at gray-3, and
-       nothing in @esa/tokens resolves to gray-2. So this reaches past tier 2 to
-       the primitive, which is normally the wrong move and is the wrong move here
-       too — the right fix is a fourth rung on the elevation axis for chrome that
-       sits beside content rather than under it (a rail, a toolbar, a sidebar),
-       and it is worth a /request-lego. Until that lands, the choice is a raw
-       ramp step or a wrong role, and a documented tier-1 read is the more honest
-       of the two. Re-point this the day the rung exists. */
-    background: var(--color-gray-2, #f9f9f9);
-    border-inline-start: var(--border-width-default, 1px) solid
-      var(--color-border-default-subtle, #d9d9d9);
+     flex-basis AND flex-grow, because the primitive sets both: `.sidebar > :first
+     -child` gives the aside `flex-basis: var(--sidebar-width); flex-grow: 1`, so
+     overriding the basis alone would leave the strip collecting a thousandth of
+     the free space and drifting a pixel or two wide with the window.
+
+     The padding goes, the margins stay. The trailing bleed is what keeps the
+     strip flush against the window rather than floating one gutter in from it,
+     so shut, the rail is exactly the pane's own padding column — which is space
+     the content was never going to use anyway. */
+  /* ---- THE COLLAPSE CONTROL, MOUNTED ON THE EDGE ----
+     Out of the flow entirely, so the rail's content starts where it always did
+     and the control costs no vertical space (see the note on the markup for what
+     it cost when it had a row).
+
+     CENTRED ON THE BORDER, not stood off it like the resize grip. The grip is a
+     2px mark and had to clear the line or it read as a nick in it; a 38px button
+     is unmistakably an object, and sitting ON the seam is what says it belongs to
+     that seam rather than floating in the content beside it.
+
+     Level with the first row's middle — see the inset note below. */
+  .firma2-record-rail__toggle {
+    position: absolute;
+    /* LEVEL WITH THE FIRST ROW'S MIDDLE, not its top. The rail's padding inset
+       alone put the 32px glyph's centre 6px above the centre of the 45px tab row
+       beside it, which reads as a control that missed its line. The extra step is
+       --spacing-150 (6px), which lands the two centres together.
+
+       The 6px is tuned to a ~45px first row, which is what esa-tab-layout renders
+       and what this rail's two callers both lead with. --firma2-rail-toggle-inset
+       is the hook for a rail whose first row is a different height; nothing in
+       this component can measure a row it only holds a slot for. */
+    inset-block-start: var(
+      --firma2-rail-toggle-inset,
+      calc(var(--_bleed) + var(--spacing-150, 0.375rem))
+    );
+    inset-inline-start: 0;
+    translate: -50% 0;
+    /* Inside the rail's own stacking context, this only has to beat its siblings.
+       Clearing the HEADER BAND is what the rail's raised z-index below is for. */
+    z-index: 1;
+    /* No size of its own: an absolutely positioned box shrink-wraps, so it is
+       exactly the button and `translate: -50%` is exactly half the button. A
+       fixed 38px box here (the xs rung as measured on a clone) put the real
+       32px button 2px off the border — the rung a lego RENDERS at is not always
+       the rung a stylesheet names. */
+  }
+
+  /* SHUT, THE SAME GLYPH POINTS THE OTHER WAY. A rotation rather than a second
+     icon: esa-button renders its glyph at compile time, so swapping `icon` at
+     runtime would mean rewriting the lego's inner SVG — and `chevrons-right`
+     turned through half a turn IS `chevrons-left`, exactly, because the mark is
+     symmetric about its own centre. One button, one tab stop, no icon swap, and
+     the turn is animated so the state change reads as one movement rather than a
+     substitution.
+
+     Nothing else moves: the control is mounted on the border, and the border is
+     what travels, so it arrives at the strip's edge without being repositioned. */
+  .firma2-record-rail__toggle :global(.esa-button) {
+    transition: rotate var(--transition-base, 200ms ease);
+  }
+  .firma2-record-rail[collapsed] .firma2-record-rail__toggle :global(.esa-button) {
+    rotate: 180deg;
+  }
+
+  .firma2-record-rail[collapsed] {
+    flex-basis: var(--_collapsed);
+    flex-grow: 0;
+    padding-inline: 0;
+  }
+  /* display: none rather than [hidden] or visibility — the content has to leave
+     the layout AND the accessibility tree, and at 24px anything still in flow
+     would try to lay itself out and overflow the strip. */
+  .firma2-record-rail[collapsed] .firma2-record-rail__inner {
+    display: none;
+  }
+
+  /* THE PRIMITIVE IS THE THING TO MEASURE, so it is made a container.
+     :global because the element belongs to the PAGE — it is the `.sidebar` spine
+     the page composes, not markup this component renders — and `:has()` keeps the
+     declaration to sidebars that actually hold a record rail, so no other use of
+     the primitive anywhere in the spoke is touched. A component reaching one
+     level up is a smell and this one is worth the cost: the alternative is page
+     CSS, which is banned, and the rule it buys is the difference between a rail
+     that knows when it has stopped being one and a rail that guesses.
+
+     The right home for it is `.sidebar` itself, in @esa/tokens/layouts.css — a
+     wrapping primitive that cannot be queried about whether it has wrapped is a
+     gap in the lego, and this file has now paid for it twice (see the note the
+     old viewport query left below). /request-lego, and then this rule goes. */
+  :global(.sidebar:has(> .firma2-record-rail)) {
+    container: firma2-record-rail-track / inline-size;
   }
 
   /* WHEN THE PRIMITIVE WRAPS, THE RAIL STOPS BEING A RAIL. `.sidebar` drops its
@@ -164,16 +534,51 @@
      height and the surface all come off and it goes back to being what it is at
      that width: two cards under the page.
 
-     A VIEWPORT QUERY IS AN APPROXIMATION OF A CONTAINER ONE, and knowingly so:
-     the primitive wraps on ITS width, not the window's, and the app's nav rail
-     between them can be collapsed. 64rem is the window width at which the page
-     sets the wrap going with the rail's own track and the nav expanded — the
-     conservative end. A container query is the correct tool and needs
-     `container-type: inline-size` on the `.sidebar` element, which belongs to
-     the primitive in the hub rather than to this file. */
-  @media (max-width: 64rem) {
+     THE EDGE CONTROL GOES WITH THEM, and so does the shut state. A handle that
+     resizes an inline column has nothing to resize, and a strip 24px tall
+     stacked under the content would be a sliver with no edge to belong to. The
+     collapsed rules are therefore UNDONE here rather than merely overruled —
+     restated selector for selector so the later source order settles the tie —
+     which also means a reader who arrives on a narrow window with a stored
+     collapsed state gets their content back instead of a mystery sliver. Widen
+     the window and the strip and its handle both return.
+
+     A CONTAINER QUERY, AND IT HAD TO BECOME ONE. This was a viewport query at
+     64rem, described in its own comment as a knowing approximation — the
+     primitive wraps on ITS width, not the window's, and the app's nav rail
+     between them can be collapsed. What made the approximation affordable was
+     that the nav's width was a constant, so the two were a fixed distance apart.
+     The edge handle ends that: the nav is now anything from 200px to 400px, so
+     the window width at which this track wraps moves by 200px depending on a
+     drag. Measured before it was fixed, the gap that opened up was not
+     theoretical — at a 1280px window the track wrapped and the rail kept its
+     pinning, its 100dvh and its surface, which is a full-width sticky slab
+     dropped at the foot of a 3000px page.
+
+     1064px IS THE WRAP POINT, ARITHMETIC RATHER THAN TASTE: the rail's own floor
+     (25rem) + the primitive's gutter (1.5rem) + the main column's floor
+     (40rem, --sidebar-content-min, set by the page). Below that the flex line
+     cannot hold both tracks and the aside wraps, so the query and the wrap turn
+     over at the same width instead of 300-odd pixels apart.
+
+     `<=`, AND THE -1px IN THE CAP ABOVE, ARE THE SAME BUG CAUGHT TWICE. Capping
+     the basis at exactly what is left over makes the flex line add up to exactly
+     the container, and a line that fits exactly is one rounding step from not
+     fitting — measured wrapping at a 1366px window while every number said it
+     should fit. A pixel of slack in the cap, and a query that claims the boundary
+     rather than leaving it to the other branch, put the two on the same side of
+     the edge case.
+
+     The one number here that belongs to a caller is the 40rem. It is the project
+     page's --sidebar-content-min and a second record page could pass another; a
+     container query cannot read a custom property in its condition, so this is a
+     coupling rather than a derivation. The old 64rem had the same coupling and
+     hid it — this at least states it. A page that changes that floor changes this
+     line with it. */
+  @container firma2-record-rail-track (width <= 1064px) {
     .firma2-record-rail {
       position: static;
+      display: block;
       block-size: auto;
       margin-block-start: 0;
       margin-inline-end: 0;
@@ -181,6 +586,76 @@
       overflow: visible;
       background: none;
       border-inline-start: none;
+      transition: none;
+    }
+    .firma2-record-rail__inner {
+      overflow: visible;
+    }
+    .firma2-record-rail bcn-edge-handle,
+    .firma2-record-rail__toggle {
+      display: none;
+    }
+    .firma2-record-rail[collapsed] {
+      flex-basis: auto;
+      flex-grow: 1;
+      padding-inline: 0;
+    }
+    .firma2-record-rail[collapsed] .firma2-record-rail__inner {
+      display: flex;
     }
   }
 </style>
+
+<script>
+  // Registers <bcn-edge-handle>. The element upgrades in place: before it
+  // arrives the tag is an unstyled inline box with no children and no size, so
+  // there is nothing to guard against and nothing that moves when it lands.
+  import '../shared/bcn-edge-handle';
+
+  // ---- THE COLLAPSE TOGGLE ----
+  //
+  // ONE ATTRIBUTE IS THE STATE, and this flips it. Everything that depends on
+  // collapse reads it off the DOM: the rail's own stylesheet draws the strip, and
+  // the edge grip watches the same attribute to take itself off a shut rail. So
+  // there is no second copy of the state and nothing here holds a reference to
+  // the grip except to ask it to write the change down.
+  //
+  // WHY THE GRIP DOES THE WRITING. The rail's stored geometry is one record —
+  // width and collapsed together, under one key — and the grip is the element
+  // that owns it (see its module header). A toggle that also wrote to storage
+  // would be two components persisting two halves of one panel's layout, and the
+  // one that loaded last would win.
+  type Persistable = HTMLElement & { persist?: () => void };
+
+  document.querySelectorAll<HTMLElement>('.firma2-record-rail').forEach((rail) => {
+    const toggle = rail.querySelector<HTMLButtonElement>('[data-rail-toggle]');
+    if (!toggle) return;
+
+    // The accessible name is the ACTION, and it has to change with the state or
+    // it is wrong half the time — the glyph rotates, and a name that said
+    // "Collapse" over a button that expands is worse than no name. esa-button
+    // renders `label` into aria-label AND title (the native tooltip), so both
+    // move together. The noun is the rail's own `label` prop, recovered from the
+    // rendered string so this script needs no second copy of it.
+    const noun = (toggle.getAttribute('aria-label') || 'Collapse the side panel').replace(/^Collapse\s+/, '');
+
+    const sync = (): void => {
+      const collapsed = rail.hasAttribute('collapsed');
+      const name = `${collapsed ? 'Expand' : 'Collapse'} ${noun}`;
+      toggle.setAttribute('aria-label', name);
+      toggle.setAttribute('title', name);
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+    };
+
+    toggle.addEventListener('click', () => {
+      rail.toggleAttribute('collapsed');
+      sync();
+      (rail.querySelector('bcn-edge-handle') as Persistable | null)?.persist?.();
+    });
+
+    // Once at start-up, because the grip may have restored a collapsed state from
+    // storage before this ran — in which case the button is already pointing the
+    // right way and only its name is stale.
+    sync();
+  });
+</script>
