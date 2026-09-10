@@ -1,0 +1,1 @@
+const r=new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0});function c(e){return e.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}export{r as c,c as e};

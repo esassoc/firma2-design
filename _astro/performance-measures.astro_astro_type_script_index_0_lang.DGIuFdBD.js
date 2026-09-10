@@ -1,0 +1,1 @@
+import"./esa-tab-layout.BgvdUuFa.js";import"./lit-element.D8DSg5zn.js";import"./typography.KBHeYOQc.js";const n=document.querySelector(".firma2-measures-views"),o=document.querySelectorAll("[data-view-action]");n?.addEventListener("tabchange",t=>{const i=t.detail?.index??0;o.forEach(e=>{e.hidden=Number(e.dataset.viewAction)!==i})});

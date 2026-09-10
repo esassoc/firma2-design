@@ -1,0 +1,1 @@
+import"./firma2-settings-notifications.astro_astro_type_script_index_0_lang.CFoa9nkt.js";import"./lit-element.D8DSg5zn.js";import"./typography.KBHeYOQc.js";const t=document.getElementById("sw-form");t?.addEventListener("submit",e=>{e.preventDefault();const n=new FormData(t);document.getElementById("sw-out").textContent="alerts = "+JSON.stringify(n.get("alerts"))});

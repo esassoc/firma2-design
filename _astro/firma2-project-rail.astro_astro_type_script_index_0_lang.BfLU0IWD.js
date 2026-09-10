@@ -1,0 +1,1 @@
+import"./esa-tab-layout.BgvdUuFa.js";import"./lit-element.D8DSg5zn.js";import"./typography.KBHeYOQc.js";customElements.whenDefined("esa-tab-layout").then(()=>{document.querySelectorAll("esa-tab-layout[data-record-tabs]").forEach(t=>{const e=Number(t.dataset.commentCount??0);t.tabs=[{label:"Key facts"},{label:"Contacts"},e>0?{label:"Comments",badge:e}:{label:"Comments"}]})});

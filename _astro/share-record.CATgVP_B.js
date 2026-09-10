@@ -1,0 +1,1 @@
+async function i({title:e,url:a},r){if(navigator.share)try{await navigator.share({title:e,url:a});return}catch(t){if(t.name==="AbortError")return}try{await navigator.clipboard.writeText(a),r?.show({message:"Link copied",variant:"success"})}catch{r?.show({message:"Copy failed — use the address bar link",variant:"danger"})}}export{i as s};
