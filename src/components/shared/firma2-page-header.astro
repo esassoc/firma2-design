@@ -65,16 +65,9 @@ interface Props {
    * name, not a screen's name. Omit on every page whose title is a route.
    */
   editableTitle?: EditableTitle;
-  /**
-   * Whether the band pins to the top of the scroll. Default true: on an app
-   * page the band IS the page's own top chrome. False inside the setup layer,
-   * where SetupLayout's bar already holds the top and two pinned bands would
-   * stack, the second one sliding under the first.
-   */
-  sticky?: boolean;
 }
 
-const { title, crumbs, editableTitle, sticky = true } = Astro.props;
+const { title, crumbs, editableTitle } = Astro.props;
 const hasCrumbs = (crumbs?.length ?? 0) > 0;
 const hasStatus = Astro.slots.has('status');
 const hasToolbar = Astro.slots.has('toolbar');
@@ -82,7 +75,7 @@ const hasToolbar = Astro.slots.has('toolbar');
 {/* THE BAND IS A STACK so the status row below the title takes the same 8px
     step esa-page-header puts between its own eyebrow and its h1 — the status
     reads as part of the title block rather than as a second row of chrome. */}
-<div class="firma2-page-header stack" data-gap="xs" data-sticky={sticky ? undefined : 'false'}>
+<div class="firma2-page-header stack" data-gap="xs">
   {/* TWO BRANCHES, not one with a conditional inside. esa-page-header decides
       whether to render its breadcrumbs container with Astro.slots.has(), and a
       slot counts as FILLED as soon as an element carrying `slot="breadcrumbs"`
@@ -171,36 +164,24 @@ const hasToolbar = Astro.slots.has('toolbar');
 </div>
 
 <script>
-  // FOCUS MUST NOT LAND UNDER THE BAND. WCAG 2.4.11 (Focus Not Obscured, AA in
-  // 2.2) fails the moment a sticky region covers the element that just took
-  // focus — and that is the default behaviour here: Tab to a control sitting
-  // just below the fold and the browser scrolls it flush to the top of the
-  // scrollport, which is now underneath this header. The same applies to any
-  // in-page anchor and to find-in-page.
-  //
-  // scroll-padding on the SCROLL CONTAINER is the one declaration that fixes all
-  // three at once — the browser honours it for every scroll-into-view it
-  // performs, so nothing has to be annotated element by element. AppLayout
-  // scrolls the document, so the container is the root element.
-  //
-  // Measured rather than hard-coded, because the band is not one height: it is
-  // taller with a breadcrumb than without, and taller again if a long title
-  // wraps at a narrow width. The observer covers the wrap case, which is a live
-  // resize and not something a build-time constant could know.
-  //
-  // THE SAME MEASUREMENT IS PUBLISHED AS A CUSTOM PROPERTY, because it is not
-  // only scroll-padding that needs it. Any section sized against the FOLD has to
-  // subtract whatever this band is currently occupying, and the band's height is
-  // a runtime fact — one line of title or two, crumb or no crumb. Writing it to
+  // THE BAND'S HEIGHT IS PUBLISHED AS A CUSTOM PROPERTY. Any section sized
+  // against the FOLD has to subtract whatever this band occupies above it, and
+  // the band's height is a runtime fact — one line of title or two, crumb or no
+  // crumb, taller again if a long title wraps at a narrow width. Writing it to
   // :root turns "how tall is the header" into something CSS can read, so a
   // full-bleed section states `calc(100dvh - var(--firma2-band-height) - …)` and
   // re-solves it on every resize instead of carrying a constant that is right at
-  // one width. The project detail page's map is the first consumer.
+  // one width. The project detail page's map is the first consumer. The
+  // observer covers the wrap case, which is a live resize.
+  //
+  // The band used to pin to the top of the scroll and this script also set
+  // scroll-padding on the root so focus never landed beneath it. It scrolls
+  // with the page now (it covered the content passing under it), so nothing is
+  // ever obscured and the scroll-padding went with the pinning.
   const band = document.querySelector<HTMLElement>('.firma2-page-header');
   if (band) {
     const sync = (): void => {
       const h = Math.round(band.getBoundingClientRect().height);
-      document.documentElement.style.scrollPaddingBlockStart = `${h}px`;
       document.documentElement.style.setProperty('--firma2-band-height', `${h}px`);
     };
     sync();
@@ -242,7 +223,7 @@ const hasToolbar = Astro.slots.has('toolbar');
     // THE EDITOR KEEPS THE TITLE'S TYPE. Left alone, opening the title swaps a
     // 30px two-line heading for a 40px box of 15px text — the record's name
     // shrinks to half size at the exact moment someone is working on it, and
-    // the band collapses under the sticky header. The input takes the h1's own
+    // the band collapses around it. The input takes the h1's own
     // COMPUTED type instead (measured, not restated — the heading's composite
     // class stays the single source of truth), and the control's box goes
     // height:auto so it fits what it now holds.
@@ -295,19 +276,11 @@ const hasToolbar = Astro.slots.has('toolbar');
 </script>
 
 <style>
+  /* THE BAND SCROLLS WITH THE PAGE. It was `position: sticky` at --z-header
+     until 2026-09-11, and it came off at the author's direction: pinned, it
+     sat over whatever content was passing beneath it. The band is the page's
+     own top, so it leaves with the page. */
   .firma2-page-header {
-    position: sticky;
-    top: 0;
-    /* The header role from the z scale, not a hand-picked number. It has to
-       outrank ordinary page content (unpositioned, so effectively 0) and the
-       layers the two embedded libraries paint inside it. Verified rendered
-       rather than reasoned: the project grid's rows and the work-area map —
-       including Leaflet's zoom control, whose own z-index is 800 — both clip
-       cleanly under the band as they scroll past, because each library scopes
-       its stack inside a container of its own. If one ever leaks, the fix is
-       `isolation: isolate` on that container, not a higher bid here. */
-    z-index: var(--z-header, 200);
-
     /* FULL BLEED, then pad back. esa-app-shell's content pane carries
        `padding: var(--spacing-500)`, so a band that respected it would stop
        short of the rail and the right edge and read as a floating card rather
@@ -325,9 +298,8 @@ const hasToolbar = Astro.slots.has('toolbar');
        runs to the window's right edge wants both, and that is the default. A
        page with something ELSE on that edge — the project detail page pins a
        full-height record rail there — wants the band to stop at the column it
-       belongs to, because the band is `position: sticky` at --z-header and the
-       rail sits a rung below at --z-sidebar: 24px of bleed is 24px of band
-       painted over the rail's top corner. Set `--firma2-band-bleed-end: 0px` on
+       belongs to, or 24px of bleed is 24px of band reaching into the rail's
+       top corner. Set `--firma2-band-bleed-end: 0px` on
        any ancestor to close it. There is no matching hook on the leading edge
        because nothing has ever needed one — the rail is on the other side and
        the app's nav is outside the pane entirely. */
@@ -339,26 +311,15 @@ const hasToolbar = Astro.slots.has('toolbar');
     padding-inline-end: var(--firma2-band-bleed-end, var(--_bleed));
     padding-block: var(--spacing-400, 1rem);
 
-    /* Opaque, or the content scrolling beneath shows straight through. The
-       CANVAS role — the same surface the pane is painted with, so the band is
-       not a second elevation stacked on the page but the page's own top.
+    /* The CANVAS role — the same surface the pane is painted with, so the band
+       is not a second elevation stacked on the page but the page's own top.
 
-       NO HAIRLINE. There was a 1px rule along the bottom edge, and it did two
-       jobs: it read as the rule under a page title at rest, and it marked where
-       content disappeared once the page was moving. The first job is now wrong —
-       the project's description sits directly under the band, and a line drawn
-       between a record's name and the sentence saying what that record IS
-       separates two halves of one thought. The second is a cost worth paying:
-       the band is opaque, so content still passes cleanly beneath it, and what
-       is lost is the seam, not the legibility. Removed 2026-08-20 at the
-       author's direction. */
+       NO HAIRLINE. There was a 1px rule along the bottom edge; it read as the
+       rule under a page title, and the project's description sits directly
+       under the band, so a line drawn between a record's name and the sentence
+       saying what that record IS separated two halves of one thought. Removed
+       2026-08-20 at the author's direction. */
     background: var(--color-background-default, #fcfcfc);
-  }
-
-  /* Unpinned: the band keeps its bleed and its hairline and simply scrolls
-     with the page, which is the setup layer's case (see the `sticky` prop). */
-  .firma2-page-header[data-sticky='false'] {
-    position: static;
   }
 
   /* THE TITLE COLUMN TAKES THE BAR'S SLACK. ALWAYS — not, as it did until now,
