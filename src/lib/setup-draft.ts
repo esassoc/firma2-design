@@ -307,10 +307,14 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
   return result;
 };
 
-/** Fraction of journeys this slice can mark confirmed, for the hub's meter. Measures is excluded: it is Mission 6's. */
+/**
+ * Fraction of milestones confirmed, for the hub's meter. Every milestone counts,
+ * measures included: the hub collects all eleven, and setup is not stood up
+ * until Mission 6's screen confirms that one too, so the total tops out at
+ * ten of eleven from this slice alone. That is the honest number.
+ */
 export const setupCompletion = (draft: SetupDraft = readSetupDraft()): { done: number; total: number } => {
   const statuses = journeyStatuses(draft);
-  const ours = journeys.filter((j) => !j.external);
-  const done = ours.filter((j) => statuses[j.key].status === 'confirmed').length;
-  return { done, total: ours.length };
+  const done = journeys.filter((j) => statuses[j.key].status === 'confirmed').length;
+  return { done, total: journeys.length };
 };

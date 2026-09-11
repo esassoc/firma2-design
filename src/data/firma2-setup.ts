@@ -87,6 +87,15 @@ export interface SetupJourney {
   unit: string;
   /** esa-icon registry name. */
   icon: string;
+  /**
+   * The milestone's colour, as an oklch hue angle. Eleven milestones, one
+   * spectrum: hub order (section by section) walks red to magenta in equal
+   * steps of 30 degrees, starting at 25 so the fifth milestone lands on the
+   * brand's own green. The emblem derives every fill and outline from the brand
+   * tokens with only this angle swapped, so each colour is the brand at a
+   * different hue rather than eleven hand-picked values.
+   */
+  hue: number;
   /** Owned by another team this hackathon. Renders on the map as the seam, not as ours to fill. */
   external?: 'mission-6';
 }
@@ -106,6 +115,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: 0, r: -2 },
     unit: 'documents',
     icon: 'upload',
+    hue: 25,
   },
   {
     key: 'program-shape',
@@ -116,6 +126,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: 1, r: -2 },
     unit: 'decisions',
     icon: 'settings',
+    hue: 55,
   },
   {
     key: 'organizations',
@@ -127,6 +138,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: -1, r: -1 },
     unit: 'organizations',
     icon: 'users',
+    hue: 115,
   },
   {
     key: 'funding-sources',
@@ -137,6 +149,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: 0, r: -1 },
     unit: 'funding sources',
     icon: 'database',
+    hue: 175,
   },
   {
     key: 'classifications',
@@ -147,6 +160,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: 1, r: -1 },
     unit: 'classifications',
     icon: 'filter',
+    hue: 205,
   },
   {
     key: 'lifecycle',
@@ -157,6 +171,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: -1, r: 0 },
     unit: 'stages',
     icon: 'activity',
+    hue: 235,
   },
   {
     key: 'spatial-areas',
@@ -167,6 +182,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: 0, r: 0 },
     unit: 'areas',
     icon: 'map-pin',
+    hue: 265,
   },
   {
     key: 'appearance',
@@ -177,6 +193,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: 1, r: 0 },
     unit: 'settings',
     icon: 'pencil',
+    hue: 85,
   },
   {
     key: 'people',
@@ -187,6 +204,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: -1, r: 1 },
     unit: 'people',
     icon: 'user',
+    hue: 145,
   },
   {
     key: 'first-project',
@@ -198,6 +216,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: 0, r: 1 },
     unit: 'projects',
     icon: 'folder',
+    hue: 295,
   },
   {
     key: 'measures',
@@ -209,6 +228,7 @@ export const journeys: SetupJourney[] = [
     hex: { q: 1, r: 1 },
     unit: 'measures',
     icon: 'trending-up',
+    hue: 325,
     external: 'mission-6',
   },
 ];

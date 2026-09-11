@@ -1,53 +1,52 @@
 ---
-// firma2-setup-progress — the hub's one aggregate: how much of setup is done,
-// as a fraction you read and a segmented bar you glance at.
+// firma2-setup-progress — the hub's one aggregate: the collection of milestone
+// emblems, and the fraction of them earned.
 //
-// ONE SEGMENT PER MILESTONE, NOT ONE BAR PER PERCENT. A percentage bar answers
-// "how far along" and stops there. This answers "how far along, and which parts"
-// in the same object: eleven boxes in the order the cards below appear, spaced
-// into the five subject groups those cards are grouped by, each box wearing its
-// own milestone's status. So the bar and the grid are the same picture at two
-// magnifications, and a reader who spots the one filled box on the left knows
+// THE SASH. Every milestone's emblem, small, in one row at the top of the hub,
+// in the order the cards below appear and spaced into the same five subject
+// groups. Confirmed ones are solid; every other one is an outline, so the row
+// reads as a collection with its gaps showing. It is the card grid seen at a
+// glance: the same eleven marks in the same colours at a fraction of the size,
+// which is what lets a reader who spots the one filled hexagon on the left know
 // where to scroll before reading a word.
 //
-// THE FRACTION LEADS, BECAUSE THE FRACTION IS WHAT SOMEBODY REPORTS. "6 of 10
-// milestones confirmed" is the sentence a program admin says out loud; the
-// percentage is arithmetic performed on it. The bar is the redundant half and is
-// therefore aria-hidden: every status it draws is stated in words by the card
-// grid beneath it, so announcing it again would read the whole hub twice.
+// THE FRACTION IS WHAT SOMEBODY REPORTS. "6 of 11 milestones confirmed" is the
+// sentence a program admin says out loud; the percentage is arithmetic performed
+// on it. The sash is the redundant half and is therefore aria-hidden: every
+// status it draws is stated in words by the card grid beneath it, so announcing
+// it again would read the whole hub twice.
 //
-// MEASURES IS NOT IN THE TOTAL. setupCompletion() excludes external milestones
-// because Mission 6 owns performance measures and this slice cannot confirm it.
-// The segments follow the same rule rather than drawing an eleventh box that can
-// never fill, which would make the bar disagree with the fraction above it.
+// MEASURES IS IN THE TOTAL. Mission 6 owns performance measures, so this slice
+// cannot confirm it, and the fraction tops out at ten of eleven here. That is
+// the honest number: setup is not stood up until measures is, and a sash that
+// left the eleventh badge off would disagree with the grid that shows it.
 //
 // STATUS IS DERIVED, NEVER STORED. The server renders the ZERO state and the
 // script re-applies the real one on load and on every `setup-draft-change` —
 // same contract as the card grid, reading the same two functions, so the meter
 // and the cards can never disagree.
 //
-// bcn-lego-checked: esa-progress-bar is the lego for this and was read before
+// bcn-lego-checked: esa-progress-bar is the lego for a meter and was read before
 // building (node_modules/@esa/ecology/src/components/esa-progress-bar.astro). It
-// is ONE track and ONE fill sized by an inline width percentage — there is no
-// `segments`, `steps` or `parts` prop, no per-segment state, and its four
-// variants colour the whole fill at once, so eleven of them side by side would
-// be eleven progressbar roles and eleven accessible names for one aggregate.
-// esa-pagination and esa-chip-group are the only other "row of small equal
-// boxes" in the catalog and both are controls. Beacon is not cloned on this
-// machine, so tier 2 is unavailable. firma2-setup-progress is the reusable home
-// for the whole meter, fraction and bar together, because the two are one fact
-// and splitting them is how they drift apart.
+// is ONE track and ONE fill sized by an inline width percentage — no per-step
+// state, no per-step colour — and this meter is eleven distinct marks each in
+// its own colour and state. The marks are firma2-setup-milestone-emblem, the
+// same object the grid draws large, laid in a .cluster; nothing here is a
+// primitive of its own. Beacon is not cloned on this machine, so tier 2 is
+// unavailable. firma2-setup-progress is the reusable home for the whole meter,
+// fraction and sash together, because the two are one fact and splitting them
+// is how they drift apart.
 import { journeys, milestoneSections } from '../../data/firma2-setup';
-import type { JourneyStatus } from '../../data/firma2-setup';
 import { journeyStatuses, setupCompletion } from '../../lib/setup-draft';
+import Firma2SetupMilestoneEmblem from './firma2-setup-milestone-emblem.astro';
 
-// The bar's reading order IS the grid's reading order: sections in their
+// The sash's reading order IS the grid's reading order: sections in their
 // declared order, milestones in theirs. `sectionStart` is what opens the wider
-// gap that makes five groups out of ten boxes.
-const segments = milestoneSections.flatMap((section) =>
+// gap that makes five groups out of eleven marks.
+const marks = milestoneSections.flatMap((section) =>
   journeys
-    .filter((journey) => !journey.external && journey.section === section.key)
-    .map((journey, index) => ({ key: journey.key, sectionStart: index === 0 })),
+    .filter((journey) => journey.section === section.key)
+    .map((journey, index) => ({ journey, sectionStart: index === 0 })),
 );
 
 // The zero state, resolved at build time. journeyStatuses() and setupCompletion()
@@ -56,7 +55,7 @@ const segments = milestoneSections.flatMap((section) =>
 const initial = journeyStatuses();
 const completion = setupCompletion();
 ---
-<div class="firma2-setup-progress stack" data-gap="sm">
+<div class="firma2-setup-progress repel" data-gap="md" data-align="center">
   <p class="firma2-setup-progress__fraction cluster" data-gap="xs" data-align="baseline">
     <span class="typography-display-sm firma2-setup-progress__done" data-setup-progress-done>{completion.done}</span>
     <span class="typography-title firma2-setup-progress__rest"
@@ -64,22 +63,29 @@ const completion = setupCompletion();
     >
   </p>
 
-  <div class="firma2-setup-progress__bar" aria-hidden="true">
+  <ul class="firma2-setup-progress__sash cluster" data-gap="xs" aria-hidden="true">
     {
-      segments.map((segment) => (
-        <span
-          class="firma2-setup-progress__segment"
-          data-setup-segment={segment.key}
-          data-section-start={segment.sectionStart ? '' : undefined}
-          data-status={initial[segment.key].status}
-        />
+      marks.map(({ journey, sectionStart }) => (
+        <li
+          class="firma2-setup-progress__mark"
+          data-setup-mark={journey.key}
+          data-section-start={sectionStart ? '' : undefined}
+          title={journey.title}
+        >
+          <Firma2SetupMilestoneEmblem
+            icon={journey.icon}
+            hue={journey.hue}
+            status={initial[journey.key].status}
+            size="sm"
+          />
+        </li>
       ))
     }
-  </div>
+  </ul>
 </div>
 
 <script>
-  // The meter's one job after render: keep the fraction and every segment honest
+  // The meter's one job after render: keep the fraction and every mark honest
   // about a draft that lives in this browser. Both functions are the ones the
   // server rendered from, so this is a re-derivation rather than a second opinion.
   import { journeyStatuses, setupCompletion } from '../../lib/setup-draft';
@@ -98,9 +104,14 @@ const completion = setupCompletion();
       if (done) done.textContent = String(completion.done);
       if (total) total.textContent = String(completion.total);
 
-      root.querySelectorAll<HTMLElement>('[data-setup-segment]').forEach((segment) => {
-        const progress = statuses[segment.dataset.setupSegment as JourneyKey];
-        if (progress) segment.dataset.status = progress.status;
+      root.querySelectorAll<HTMLElement>('[data-setup-mark]').forEach((mark) => {
+        const progress = statuses[mark.dataset.setupMark as JourneyKey];
+        if (!progress) return;
+        const emblem = mark.querySelector<HTMLElement>('[data-milestone-emblem]');
+        if (!emblem) return;
+        emblem.dataset.status = progress.status;
+        const seal = emblem.querySelector<HTMLElement>('[data-emblem-seal]');
+        if (seal) seal.hidden = progress.status !== 'confirmed';
       });
     };
 
@@ -127,72 +138,20 @@ const completion = setupCompletion();
     font-variant-numeric: tabular-nums;
   }
 
-  /* The bar is a row of equal boxes that consumes the full width, which no
-     layout primitive expresses: .cluster wraps and does not grow its children,
-     .grid needs a column count this component would have to compute from the
-     data. One flex row with `flex: 1` segments is the honest form, and it is the
-     only rule in this file that is not a colour. */
-  .firma2-setup-progress__bar {
+  .firma2-setup-progress__sash {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-setup-progress__mark {
     display: flex;
-    align-items: stretch;
-    gap: var(--spacing-100);
   }
 
-  .firma2-setup-progress__segment {
-    --_segment-fill: var(--color-background-elevation-sunken);
-    --_segment-border: transparent;
-
-    flex: 1 1 0;
-    block-size: var(--spacing-300);
-    border: var(--border-width-default) solid var(--_segment-border);
-    border-radius: var(--radius-sm);
-    background: var(--_segment-fill);
-  }
-
-  /* The group seam. A wider gap before each section's first box is the whole of
-     the grouping: five labelled rows under a ten-box bar would be text about the
-     bar, and the headings below already name every group. */
-  .firma2-setup-progress__segment[data-section-start]:not(:first-child) {
+  /* The group seam. A wider gap before each section's first mark is the whole of
+     the grouping: five labelled rows under an eleven-mark row would be text about
+     the row, and the headings below already name every group. */
+  .firma2-setup-progress__mark[data-section-start]:not(:first-child) {
     margin-inline-start: var(--spacing-300);
-  }
-
-  /* SUGGESTED is an outline, matching the emblem's suggested ring exactly: a
-     brand edge around an empty box. */
-  .firma2-setup-progress__segment[data-status='suggested'] {
-    --_segment-fill: var(--color-background-brand-muted);
-    --_segment-border: var(--color-border-brand);
-  }
-
-  /* IN PROGRESS is literally half filled, in the reading direction, so the box
-     says the same thing the emblem's half-drawn arc says. */
-  .firma2-setup-progress__segment[data-status='in-progress'] {
-    --_segment-fill: linear-gradient(
-      to right,
-      var(--color-background-brand) 50%,
-      var(--color-background-brand-muted) 50%
-    );
-    --_segment-border: var(--color-border-brand);
-  }
-
-  .firma2-setup-progress__segment[data-status='confirmed'] {
-    --_segment-fill: var(--color-background-brand);
-    --_segment-border: var(--color-background-brand);
-  }
-
-  /* FORCED COLORS. Every segment is a background and nothing else, so all ten
-     flatten to Canvas and the bar reads as empty at every value. A real border on
-     the track and CanvasText on the filled ones restores the two states the
-     reader actually needs to tell apart; suggested and in-progress cannot be
-     distinguished here for the same reason esa-progress-bar's four variants
-     cannot, and the card grid below states each one in words. */
-  @media (forced-colors: active) {
-    .firma2-setup-progress__segment {
-      border-color: CanvasText;
-      background: Canvas;
-    }
-    .firma2-setup-progress__segment[data-status='confirmed'],
-    .firma2-setup-progress__segment[data-status='in-progress'] {
-      background: CanvasText;
-    }
   }
 </style>
