@@ -55,6 +55,7 @@
 // wrapping the lego, taking the page's own focus ring from tokens/focus.css, and
 // the only rules below it are the hover edge and the inert dim.
 import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
 import Firma2SetupMilestoneEmblem from './firma2-setup-milestone-emblem.astro';
 import { journeys, milestoneSections } from '../../data/firma2-setup';
 import { MILESTONE_DOTS, journeyStatuses, milestoneDotsFilled } from '../../lib/setup-draft';
@@ -87,6 +88,7 @@ const initial = journeyStatuses();
               const progress = initial[journey.key];
               const navigable = !!journey.route && progress.status !== 'locked';
               const filled = milestoneDotsFilled(progress);
+              const complete = progress.status === 'confirmed';
               const Tag = journey.route ? 'a' : 'div';
               const linkProps = journey.route
                 ? { href: withBase(journey.route), 'data-milestone-link': '' }
@@ -122,7 +124,10 @@ const initial = journeyStatuses();
                         <h3 class="typography-title-strong firma2-setup-milestone-grid__title">{journey.title}</h3>
 
                         {/* The dots are decoration over the emblem's state for a
-                            sighted reader and one sentence for everyone else. */}
+                            sighted reader and one sentence for everyone else.
+                            A complete milestone swaps the row for one check in
+                            the success colour: done is done, in the same green
+                            on every card, not a full row in eleven colours. */}
                         <div
                           class="firma2-setup-milestone-grid__dots cluster"
                           data-gap="xs"
@@ -130,10 +135,20 @@ const initial = journeyStatuses();
                           data-milestone-dots
                           role="img"
                           aria-label={`${filled} of ${MILESTONE_DOTS} complete`}
+                          hidden={complete}
                         >
                           {DOTS.map((i) => (
                             <span class="firma2-setup-milestone-grid__dot" data-filled={i < filled ? '' : undefined} />
                           ))}
+                        </div>
+                        <div
+                          class="firma2-setup-milestone-grid__done"
+                          data-milestone-done
+                          role="img"
+                          aria-label="Complete"
+                          hidden={!complete}
+                        >
+                          <EsaIcon name="circle-check" size="md" />
                         </div>
                       </div>
                     </EsaCard>
@@ -195,8 +210,12 @@ const initial = journeyStatuses();
         }
 
         const filled = milestoneDotsFilled(progress);
+        const complete = progress.status === 'confirmed';
+        const done = card.querySelector<HTMLElement>('[data-milestone-done]');
+        if (done) done.hidden = !complete;
         const dots = card.querySelector<HTMLElement>('[data-milestone-dots]');
         if (dots) {
+          dots.hidden = complete;
           dots.setAttribute('aria-label', `${filled} of ${MILESTONE_DOTS} complete`);
           dots.querySelectorAll<HTMLElement>('.firma2-setup-milestone-grid__dot').forEach((dot, i) => {
             dot.toggleAttribute('data-filled', i < filled);
@@ -235,6 +254,15 @@ const initial = journeyStatuses();
     grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr));
     list-style: none;
     padding: 0;
+  }
+
+  /* THE CARD WEARS ITS MILESTONE. The two brand roles the card reads (the hover
+     edge, the dots) are re-pointed to the milestone's hue at the same primitive
+     step the theme reads them from, the way SetupLayout does for a milestone
+     page. Everything inside then takes the colour without naming it. */
+  .firma2-setup-milestone-grid__card {
+    --color-background-brand: oklch(from var(--firma2-brand-9) l c var(--milestone-hue));
+    --color-border-brand: oklch(from var(--firma2-brand-6) l c var(--milestone-hue));
   }
 
   /* The card is the whole target, so the anchor is the whole card: full height
@@ -278,8 +306,8 @@ const initial = journeyStatuses();
      milestone's border step, the way its emblem does, so a row that has not
      begun still says which colour it will fill in. */
   .firma2-setup-milestone-grid__dots {
-    --_dot-fill: oklch(from var(--firma2-brand-9) l c var(--milestone-hue));
-    --_dot-line: oklch(from var(--firma2-brand-6) l c var(--milestone-hue));
+    --_dot-fill: var(--color-background-brand);
+    --_dot-line: var(--color-border-brand);
     --_dot-empty: var(--color-border-default);
   }
 
@@ -298,6 +326,19 @@ const initial = journeyStatuses();
   .firma2-setup-milestone-grid__dot[data-filled] {
     background: var(--_dot-fill);
     box-shadow: none;
+  }
+
+  /* .cluster sets display:flex, which beats the UA's [hidden] rule, so the row
+     restates it for the runtime toggle. */
+  .firma2-setup-milestone-grid__dots[hidden] {
+    display: none;
+  }
+
+  /* The done mark is the utility success role, the one colour on the hub that
+     is not a milestone's own: complete means the same thing on every card. */
+  .firma2-setup-milestone-grid__done {
+    color: var(--color-content-utility-success);
+    line-height: 0;
   }
 
   /* Only a LOCKED milestone dims: its dependency is unmet and the card says so.
