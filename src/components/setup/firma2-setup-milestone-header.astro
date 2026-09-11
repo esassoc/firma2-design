@@ -1,0 +1,91 @@
+---
+// firma2-setup-milestone-header — the band at the top of every milestone page:
+// the milestone's emblem, its name, and whatever the page puts beside or under
+// them. It is the setup layer's counterpart to firma2-page-header, and it does
+// the same job the hub's "Setup" band does there: it stays on every screen of
+// the milestone, so a reader who lands on the fourth question of Start still
+// knows which milestone they are inside.
+//
+// THE EMBLEM IS LIVE. It is the same object the hub draws on the card, at md,
+// and it wears the milestone's derived status: the script re-applies it on
+// load and on every draft change, so a confirmed milestone shows its solid
+// plate here the moment it is confirmed.
+//
+// bcn-lego-checked: esa-page-header is the lego for a page band and was read
+// before building. It takes its title as a string prop and renders the h1
+// itself, with an `icon` that only appears inside an `eyebrow` line — there is
+// no slot before the h1 to put a 3rem emblem in, and firma2-page-header inherits
+// the same limit (its own header comment files the /request-lego for a title
+// slot). Composing the emblem BESIDE an esa-page-header would put two bars side
+// by side and break its actions cluster. So the band is composed here from the
+// primitives the lego itself uses: a .repel for the row, a .cluster for the
+// emblem and title, the heading-lg composite for the h1, and .cluster for the
+// status row under the title, mirroring firma2-page-header's status slot.
+import Firma2SetupMilestoneEmblem from './firma2-setup-milestone-emblem.astro';
+import { journeyByKey } from '../../data/firma2-setup';
+import type { JourneyKey } from '../../data/firma2-setup';
+import { journeyStatuses } from '../../lib/setup-draft';
+
+interface Props {
+  /** Which milestone this page belongs to. Title, emblem and colour all come off the record. */
+  milestone: JourneyKey;
+}
+
+const { milestone } = Astro.props;
+const journey = journeyByKey(milestone);
+const initial = journeyStatuses()[milestone];
+const hasStatus = Astro.slots.has('status');
+---
+<header class="firma2-setup-milestone-header stack" data-gap="xs" data-milestone-header={milestone}>
+  <div class="repel" data-gap="md" data-align="center">
+    <div class="cluster" data-gap="sm" data-align="center">
+      <Firma2SetupMilestoneEmblem icon={journey.icon} hue={journey.hue} status={initial.status} size="md" />
+      <h1 class="typography-heading-lg firma2-setup-milestone-header__title">{journey.title}</h1>
+    </div>
+    <div class="cluster typography-label-md" data-gap="xs">
+      <slot name="actions" />
+    </div>
+  </div>
+
+  {hasStatus && (
+    <div class="firma2-setup-milestone-header__status cluster" data-gap="xs">
+      <slot name="status" />
+    </div>
+  )}
+</header>
+
+<script>
+  import { journeyStatuses } from '../../lib/setup-draft';
+  import type { JourneyKey } from '../../data/firma2-setup';
+
+  document.querySelectorAll<HTMLElement>('[data-milestone-header]').forEach((header) => {
+    const key = header.dataset.milestoneHeader as JourneyKey;
+    const emblem = header.querySelector<HTMLElement>('[data-milestone-emblem]');
+    const seal = header.querySelector<HTMLElement>('[data-emblem-seal]');
+    if (!emblem) return;
+
+    const apply = (): void => {
+      const progress = journeyStatuses()[key];
+      if (!progress) return;
+      emblem.dataset.status = progress.status;
+      if (seal) seal.hidden = progress.status !== 'confirmed';
+    };
+
+    apply();
+    document.addEventListener('setup-draft-change', apply);
+  });
+</script>
+
+<style>
+  .firma2-setup-milestone-header__title {
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  /* The status row sits on the title's left edge, under it, as it does in
+     firma2-page-header: the emblem's width is the indent that lines it up with
+     the name rather than the mark. */
+  .firma2-setup-milestone-header__status {
+    padding-inline-start: calc(var(--spacing-700) + var(--spacing-300));
+  }
+</style>

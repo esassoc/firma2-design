@@ -3,26 +3,52 @@
 // section inside it: no sidebar, no search, no nav for records that do not
 // exist yet. One thin bar names the mode and the tenant and offers the way
 // out, then a centred column holds the page. Every setup page (the hub, the
-// start steps, each journey) renders through this layout, so leaving setup is
-// always the same act: the bar's "Exit setup" link.
+// start steps, each milestone) renders through this layout.
+//
+// TWO WAYS OUT, ONE PER LEVEL. The hub's bar says "Exit setup" and leaves the
+// mode for the app. A milestone page's bar says "Finish later" and returns to
+// the hub with the draft kept: from inside a milestone the way out is up one
+// level, not out of setup altogether, and the hub is where the next milestone
+// is picked. Each page therefore has exactly one such control, in the bar, and
+// no page repeats it in its own content.
+//
+// A MILESTONE PAGE WEARS ITS MILESTONE. Pass `milestone` and the layout renders
+// the milestone's band (emblem, name, live status) above the page, on every
+// screen of it, and re-points the brand roles inside the column to the
+// milestone's hue. Every lego on the page — the selected chip, the primary
+// button, the tinted icon circle, the focus ring — then reads in that colour
+// without knowing anything happened, because they all read the same roles.
 //
 // bcn-lego-checked: esa-app-shell is the app chrome this layer deliberately
 // removes; esa-app-bar is the bar; the centred column is the `.center`
-// primitive with its width knob. The only styling here is the frame that
-// stacks bar over column, which no lego owns.
+// primitive with its width knob; the band is firma2-setup-milestone-header.
+// The only styling here is the frame that stacks bar over column, which no
+// lego owns, and the hue scope: a block of brand-role re-points that is the
+// token-first way to recolour a region (design-principles § Token-first) and
+// has no lego to belong to.
 import BaseLayout from './BaseLayout.astro';
 import EsaAppBar from '@esa/ecology/esa-app-bar.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupMilestoneHeader from '../components/setup/firma2-setup-milestone-header.astro';
 import { withBase } from '../lib/base';
-import { tenantOrganization } from '../data/firma2-setup';
+import { journeyByKey, tenantOrganization } from '../data/firma2-setup';
+import type { JourneyKey } from '../data/firma2-setup';
 
 interface Props {
   title: string;
-  /** Column width ceiling. `narrow` for one-question steps, `wide` for the hub and journeys. */
+  /** Column width ceiling. `narrow` for one-question steps, `wide` for the hub and milestones. */
   width?: 'narrow' | 'wide';
+  /** The milestone this page belongs to. Omit on the hub. */
+  milestone?: JourneyKey;
 }
 
-const { title, width = 'wide' } = Astro.props;
+const { title, width = 'wide', milestone } = Astro.props;
+const journey = milestone ? journeyByKey(milestone) : undefined;
+const hasStatus = Astro.slots.has('status');
+
+// The hue rides the column as a custom property so the scope below can derive
+// every brand role from it in one place.
+const hueStyle = journey ? `--milestone-hue: ${journey.hue}` : undefined;
 ---
 <BaseLayout title={title}>
   <div class="firma2-setup-layer">
@@ -30,10 +56,33 @@ const { title, width = 'wide' } = Astro.props;
       <EsaAppBar as="header" tone="surface" ariaLabel="Setup">
       <span slot="start" class="typography-label-md-strong">Setup</span>
       <span class="typography-label-md">{tenantOrganization.name}</span>
-      <EsaButton slot="end" variant="ghost" size="sm" href={withBase('/prototypes/projects')}>Exit setup</EsaButton>
+      {journey ? (
+        <EsaButton slot="end" variant="ghost" size="sm" href={withBase('/prototypes/setup')}>Finish later</EsaButton>
+      ) : (
+        <EsaButton slot="end" variant="ghost" size="sm" href={withBase('/prototypes/projects')}>Exit setup</EsaButton>
+      )}
       </EsaAppBar>
     </div>
-    <main class={`center firma2-setup-layer__column firma2-setup-layer__column--${width}`}>
+    <main
+      class={`center firma2-setup-layer__column firma2-setup-layer__column--${width}`}
+      data-milestone={milestone}
+      style={hueStyle}
+    >
+      {/* Two calls rather than one with a conditional slot inside: a forwarded
+          `<slot name="status" slot="status" />` counts as FILLED in the band's
+          own slots.has() even when nothing was passed, and an empty status row
+          would open a gap under the title. */}
+      {journey && hasStatus && (
+        <Firma2SetupMilestoneHeader milestone={journey.key}>
+          <slot name="actions" slot="actions" />
+          <slot name="status" slot="status" />
+        </Firma2SetupMilestoneHeader>
+      )}
+      {journey && !hasStatus && (
+        <Firma2SetupMilestoneHeader milestone={journey.key}>
+          <slot name="actions" slot="actions" />
+        </Firma2SetupMilestoneHeader>
+      )}
       <slot />
     </main>
   </div>
@@ -44,16 +93,41 @@ const { title, width = 'wide' } = Astro.props;
     min-block-size: 100dvh;
     background: var(--color-background-default);
   }
-  /* The bar stays put while a long journey scrolls, so the way out never leaves the screen. */
+  /* The bar stays put while a long milestone scrolls, so the way out never leaves the screen. */
   .firma2-setup-layer__bar {
     position: sticky;
     inset-block-start: 0;
     z-index: var(--z-header);
   }
   .firma2-setup-layer__column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-600);
     padding-block: var(--spacing-800) var(--spacing-1000);
     padding-inline: var(--spacing-600);
   }
   .firma2-setup-layer__column--wide { --center-max: 64rem; }
   .firma2-setup-layer__column--narrow { --center-max: 40rem; }
+
+  /* THE HUE SCOPE. Each brand role is re-pointed to the same primitive step it
+     already reads in the theme, with only the hue swapped for the milestone's
+     (relative colour syntax keeps l and c). The ladder the theme was
+     contrast-checked at is preserved step for step, which is why this reads the
+     spoke's own --firma2-brand-N primitives rather than the roles: a role
+     re-pointed to itself is a cycle. The ring is re-pointed as
+     --focus-ring-color, the local hook design-principles names for a region
+     whose ground the theme's ring cannot serve, never as
+     --color-border-default-focus. */
+  .firma2-setup-layer__column[data-milestone] {
+    --color-background-brand: oklch(from var(--firma2-brand-9) l c var(--milestone-hue));
+    --color-background-brand-hover: oklch(from var(--firma2-brand-10) l c var(--milestone-hue));
+    --color-background-brand-active: oklch(from var(--firma2-brand-10) l c var(--milestone-hue));
+    --color-background-brand-subtle: oklch(from var(--firma2-brand-1) l c var(--milestone-hue));
+    --color-background-brand-muted: oklch(from var(--firma2-brand-3) l c var(--milestone-hue));
+    --color-background-brand-muted-hover: oklch(from var(--firma2-brand-4) l c var(--milestone-hue));
+    --color-border-brand: oklch(from var(--firma2-brand-6) l c var(--milestone-hue));
+    --color-content-brand: oklch(from var(--firma2-brand-11) l c var(--milestone-hue));
+    --color-content-on-brand-muted: oklch(from var(--firma2-brand-12) l c var(--milestone-hue));
+    --focus-ring-color: oklch(from var(--firma2-brand-10) l c var(--milestone-hue));
+  }
 </style>
