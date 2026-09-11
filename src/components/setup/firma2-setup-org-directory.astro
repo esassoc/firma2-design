@@ -10,204 +10,182 @@
 // times under four spellings, and the reporter meeting that dropdown (product brief
 // §5.2) is the one who pays. Typing invents a record. Picking resolves one.
 //
-// THE MARK IS THE POINT, not decoration. Forty-seven names in a grid all look alike
-// at a glance; forty-seven emblems do not. The shape carries the level (shield for
-// an agency, hex for a district, square for a city, disc for a trust or a fund), so
-// the eye sorts the results before it reads a word of them.
+// A GRID, NOT TILES. Forty-seven records is a table's scale: the reader is hunting
+// one name among many, and a row per record with the level, kind and jurisdiction
+// in their own columns is what lets the eye run down a column instead of reading
+// forty-seven cards. The whole directory is on the page from the start, ordered
+// top of the governance stack down and then by name, so the search narrows a list
+// the reader can already see rather than conjuring one. The curated "common for
+// programs like yours" opening set came off with the cards on 2026-09-11: it
+// existed because a card grid could not show forty-seven, and a grid can.
 //
-// EMPTY IS NOT BLANK. With no query this shows the eight organizations a Central
-// Oregon program almost always names, because a search box with nothing under it
-// teaches nobody what is in here and is the reason people go back to typing.
+// THE MARK RIDES THE NAME. The emblem's shape carries the level (shield for an
+// agency, hex for a district, square for a city, disc for a trust or a fund), so
+// the eye sorts the rows before it reads a word of them.
 //
-// ADDING KEEPS THE PLACE. A tile that has been added swaps its Add for an Added
+// ADDING KEEPS THE PLACE. A row that has been added swaps its Add for an Added
 // badge in place — the grid never reshuffles under the cursor — and focus moves to
-// the next tile's Add, so a keyboard user adds five partners without a single Tab.
+// the next row's Add, so a keyboard user adds five partners without a single Tab.
+//
+// THE SPOKE'S GRID, WITH TWO PIECES OF ITS CHROME LEFT OFF. Search and the record
+// count are here; the download action is not, because a program picks from this
+// directory and never exports it, and a button that does nothing useful is chrome
+// for chrome's sake. The clear-filters control is the level chip group's own
+// deselect.
 //
 // bcn-lego-checked: every control here is a lego — esa-text-field for the search,
-// esa-chip-group for the level filter, esa-card for the result tile, esa-button for
-// Add, esa-badge for Added, esa-empty-state for no matches. The bespoke parts are
-// two: the RESULT TILE's internal arrangement (a mark beside a two-line identity
-// with an action pinned to the bottom edge — esa-card's own header takes a title, a
-// meta pair list and an actions slot, none of which hold an SVG emblem, so the
-// composition goes in the card's body slot where a caller is meant to put it), and
-// the equal-height rule that makes a row of those cards line their Add buttons up.
-// Checked esa-entity-search (an overlay typeahead that returns ONE record, not a
-// browsable grid) and esa-search-panel (a fixed-position overlay, same objection).
-// Beacon is not cloned on this machine.
+// esa-chip-group for the level filter, esa-button for Add, esa-badge for Added,
+// esa-empty-state for no matches. The tabular surface is AG Grid through
+// shared/grid-chrome.ts and shared/firma2-data-grid-chrome.css, this spoke's
+// vetted precedent for a table (there is no esa-table; firma2-project-grid is the
+// pattern this follows). The Add button and the Added badge are server-rendered
+// legos cloned into cells, the same trick the project grid uses for its stage
+// pills, so the cell IS the lego rather than a hand-rolled copy of it. Beacon is
+// not cloned on this machine.
 import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
-import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
-import Firma2OrgMark from './firma2-org-mark.astro';
-import { directoryById, levelLabels, organizationLevels } from '../../data/firma2-org-directory';
+import '../shared/firma2-data-grid-chrome.css';
+import { byLevelThenName, levelLabels, organizationDirectory, organizationLevels } from '../../data/firma2-org-directory';
 
 const headingId = 'firma2-setup-org-directory-heading';
-const resultsId = 'firma2-setup-org-directory-results';
 
-// "All" first, then the governance stack top down — the same order the results
-// themselves come back in, so the filter row and the grid agree about what is above
-// what.
+// "All" first, then the governance stack top down — the same order the rows come
+// in, so the filter row and the grid agree about what is above what.
 const levelOptions = [
   { value: 'all', label: 'All' },
   ...organizationLevels.map((level) => ({ value: level, label: levelLabels[level] })),
 ];
 
-// The master copy's emblem is a real record's, not a placeholder: the template is
-// server-rendered, so this is also what ships the mark component's styles to the
-// page. The script overwrites it per result.
-const templateMark = directoryById.get('metolius-land-trust')?.mark;
+// Row data, in the order the grid opens with. The level label is resolved here so
+// the cell and the quick filter read the word the chip row shows.
+const rows = [...organizationDirectory].sort(byLevelThenName).map((entry) => ({
+  id: entry.id,
+  name: entry.name,
+  level: entry.level,
+  levelLabel: levelLabels[entry.level],
+  kind: entry.kind,
+  jurisdiction: entry.jurisdiction,
+}));
 ---
 <section class="firma2-setup-org-directory stack" data-gap="md" aria-labelledby={headingId}>
   <h2 id={headingId} class="typography-title-strong">Add from the directory</h2>
 
-  <div class="stack" data-gap="sm">
-    <esa-text-field
-      class="firma2-setup-org-directory__search"
-      label="Search organizations"
-      placeholder="Search by name, county or agency type"
-      size="lg"
-      data-part="search"
-    ></esa-text-field>
+  <!-- The control row is the data grid's: search at the leading edge, the level
+       filter beside it. md on both, the rung where the two legos' labels agree
+       (the project grid documents the sm mismatch). -->
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__controls-filters cluster">
+      <div class="firma2-data-grid__search">
+        <esa-text-field
+          label="Search organizations"
+          placeholder="Name, jurisdiction or kind"
+          size="md"
+          data-part="search"
+        ></esa-text-field>
+      </div>
 
-    <esa-chip-group
-      label="Level"
-      size="sm"
-      value="all"
-      data-part="levels"
-      options={JSON.stringify(levelOptions)}
-    ></esa-chip-group>
-  </div>
-
-  <div class="stack" data-gap="sm">
-    <h3 id={resultsId} class="typography-label-lg-strong" data-part="results-heading">
-      Common for programs like yours
-    </h3>
-
-    <!-- Filled by the script: which records match is client state. The tile's MARKUP
-         is still authored, not built in JS — the script clones the master copy below. -->
-    <ul class="firma2-setup-org-directory__grid grid" data-gap="md" data-part="grid" aria-labelledby={resultsId}></ul>
-
-    <!-- A plain <div> takes the `hidden`: esa-empty-state's props are a closed set
-         with no `hidden` among them, and a div with no author display rule is the one
-         element [hidden] still works on. -->
-    <div data-part="no-matches" hidden>
-      <EsaEmptyState title="No matches" description="Try fewer words, or choose a different level." size="sm" />
+      <esa-chip-group
+        label="Level"
+        size="md"
+        value="all"
+        data-part="levels"
+        options={JSON.stringify(levelOptions)}
+      ></esa-chip-group>
     </div>
   </div>
 
-  {/* The master copy every result is cloned from. Inert until the script clones it,
-      and authored here so the tile cannot drift into a template literal. */}
-  <template data-directory-result>
-    <li>
-      <EsaCard variant="outlined" padding="compact">
-        <div class="firma2-setup-org-directory__result stack" data-gap="sm" data-split>
-          <div class="cluster" data-gap="sm" data-split>
-            <span data-part="mark">{templateMark && <Firma2OrgMark mark={templateMark} size="md" />}</span>
-            <span class="stack" data-gap="3xs">
-              <span class="typography-label-md-strong" data-part="name"></span>
-              <span class="firma2-setup-org-directory__line typography-body-sm" data-part="line"></span>
-            </span>
-          </div>
+  <!-- AG Grid mounts here. autoHeight grows with rows so the page owns vertical
+       scroll; the wrapper owns the framed surface. -->
+  <div class="firma2-data-grid__grid" data-part="grid"></div>
 
-          {/* Both states are wrapped in a bare <span>, and the wrapper is what takes
-              the `hidden`. esa-button's own root sets display:inline-flex, and an
-              AUTHOR display rule beats the UA's [hidden] whatever the specificity —
-              hiding the lego directly leaves an empty box holding the row open. The
-              same trap the page header's Continue action documents. */}
-          <div class="cluster" data-gap="xs">
-            <span data-part="add-action">
-              <EsaButton variant="secondary" size="sm" icon="plus" data-part="add">Add</EsaButton>
-            </span>
-            <span data-part="added" hidden><EsaBadge value="Added" variant="success" size="sm" /></span>
-          </div>
-        </div>
-      </EsaCard>
-    </li>
-  </template>
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-part="count">{rows.length} organizations</span>
+  </footer>
+
+  {/* The two states of the action cell, server-rendered once and cloned per row.
+      Both are the lego; neither is re-authored in the script. */}
+  <div data-part="add-template" hidden aria-hidden="true">
+    <EsaButton variant="secondary" size="sm" icon="plus" data-org-id="">Add</EsaButton>
+  </div>
+  <div data-part="added-template" hidden aria-hidden="true">
+    <EsaBadge value="Added" variant="success" size="sm" />
+  </div>
+
+  <!-- The no-match state, handed to AG Grid as its overlayNoRowsTemplate so the
+       grid never falls back to its own "No Rows To Show". -->
+  <div data-part="empty" hidden aria-hidden="true">
+    <EsaEmptyState size="sm" title="No matches" description="Try fewer words, or choose a different level." />
+  </div>
+
+  <script type="application/json" data-part="rows" set:html={JSON.stringify(rows)}></script>
 </section>
 
 <style>
-  .firma2-setup-org-directory > h2,
-  .firma2-setup-org-directory h3 {
+  .firma2-setup-org-directory > h2 {
     margin: 0;
   }
 
-  /* A search box is a sentence's worth of target, not a page's worth. Full bleed at
-     the lg rung reads as a form field for a paragraph. */
-  .firma2-setup-org-directory__search {
-    display: block;
-    max-inline-size: 36rem;
+  /* The name cell holds the emblem beside the name, on ONE line. The cluster
+     primitive wraps by default, and a name too long for the column wrapped
+     under the mark, where the row's fixed height hid it entirely. So: no wrap,
+     the mark never shrinks, and the name truncates with the full text in the
+     cell's tooltip. Runtime-built markup carries no scope hash, hence :global. */
+  .firma2-setup-org-directory :global(.firma2-setup-org-directory__org) {
+    block-size: 100%;
+    flex-wrap: nowrap;
+    --align: center;
+  }
+  .firma2-setup-org-directory :global(.firma2-setup-org-directory__org .firma2-org-mark) {
+    flex: none;
+  }
+  .firma2-setup-org-directory :global(.firma2-setup-org-directory__org > span) {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  /* .grid is the layout engine; this only strips the list chrome that comes with
-     choosing <ul> for its semantics, and sets the tile's floor. 17rem lands three
-     across the content region and folds to one on a phone with no media query. */
-  .firma2-setup-org-directory__grid {
-    --grid-min: 17rem;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  /* EQUAL HEIGHT, so every Add in a row sits on one line. .grid already stretches
-     the <li>; the card and its body have to pass that height down to the stack
-     inside, and the stack's own data-split knob pushes the action row to the floor.
-     Without this a tile whose name wraps to two lines puts its button 20px lower
-     than its neighbour's, which is the difference between a directory and a form. */
-  .firma2-setup-org-directory__grid > li {
-    display: grid;
-  }
-
-  .firma2-setup-org-directory__grid > li :global(.esa-card),
-  .firma2-setup-org-directory__grid > li :global(.esa-card__body) {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-  }
-
-  .firma2-setup-org-directory__result {
-    flex: 1;
-  }
-
-  .firma2-setup-org-directory__line {
-    color: var(--color-content-default-secondary);
-  }
-
-  /* .stack owns display on the heading's parent, not on the heading, but the type
-     composite is a class and [hidden] is an attribute selector at equal weight —
-     spelling it out is cheaper than depending on source order. */
-  .firma2-setup-org-directory [data-part='results-heading'][hidden],
-  .firma2-setup-org-directory__grid[hidden] {
-    display: none;
+  /* The action cell centres its control vertically, the same way the project
+     grid's status cell centres its pill. */
+  .firma2-setup-org-directory :global(.firma2-setup-org-directory__action) {
+    display: inline-flex;
+    align-items: center;
+    block-size: 100%;
   }
 </style>
 
 <script>
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-chip-group';
+  import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import type { ColDef } from 'ag-grid-community';
   import { addOrganizations, listOrganizations, setOrganizationStatus } from '../../lib/setup-draft';
-  import {
-    commonOrganizations,
-    directoryById,
-    directoryLine,
-    searchDirectory,
-    toOrganization,
-  } from '../../data/firma2-org-directory';
-  import type { DirectoryOrganization, OrganizationLevel } from '../../data/firma2-org-directory';
+  import { directoryById, toOrganization } from '../../data/firma2-org-directory';
+  import type { OrganizationLevel } from '../../data/firma2-org-directory';
   import { orgMarkSvg } from '../../lib/org-mark';
+
+  interface DirectoryRow {
+    id: string;
+    name: string;
+    level: OrganizationLevel;
+    levelLabel: string;
+    kind: string;
+    jurisdiction: string;
+  }
 
   type ValueElement = HTMLElement & { value: string };
 
-  const section = document.querySelector<HTMLElement>('.firma2-setup-org-directory');
-  const search = section?.querySelector<ValueElement>('[data-part="search"]');
-  const levels = section?.querySelector<ValueElement>('[data-part="levels"]');
-  const heading = section?.querySelector<HTMLElement>('[data-part="results-heading"]');
-  const grid = section?.querySelector<HTMLElement>('[data-part="grid"]');
-  const noMatches = section?.querySelector<HTMLElement>('[data-part="no-matches"]');
-  const template = section?.querySelector<HTMLTemplateElement>('template[data-directory-result]');
+  const root = document.querySelector<HTMLElement>('.firma2-setup-org-directory');
+  const levels = root?.querySelector<ValueElement>('[data-part="levels"]');
+  const gridHost = root?.querySelector<HTMLElement>('[data-part="grid"]');
+  const addHTML = root?.querySelector('[data-part="add-template"]')?.innerHTML ?? '';
+  const addedHTML = root?.querySelector('[data-part="added-template"]')?.innerHTML ?? '';
+  // outerHTML of the element itself: overlayNoRowsTemplate takes HTML with a
+  // SINGLE root element, and the wrapper's innerHTML would hand it whitespace too.
+  const emptyState = root?.querySelector<HTMLElement>('[data-part="empty"] > *');
 
-  if (section && search && levels && heading && grid && noMatches && template) {
-    let query = '';
+  if (root && levels && gridHost) {
     let level: OrganizationLevel | 'all' = 'all';
 
     /**
@@ -219,126 +197,111 @@ const templateMark = directoryById.get('metolius-land-trust')?.mark;
      * Add, and pressing it IS the answer — the same write the picker's Add makes,
      * so the tile up there drops out and the row appears in the roster.
      */
-    const addedIds = (): Set<string> =>
-      new Set(listOrganizations().filter((org) => org.status === 'confirmed').map((org) => org.id));
-
-    /** True while nothing has been asked for — the state the curated eight are for. */
-    const browsing = (): boolean => query.trim() === '' && level === 'all';
-
-    const matches = (): DirectoryOrganization[] => {
-      if (browsing()) return commonOrganizations();
-      return searchDirectory(query, level === 'all' ? undefined : level);
+    let added = new Set<string>();
+    const readAdded = (): void => {
+      added = new Set(listOrganizations().filter((org) => org.status === 'confirmed').map((org) => org.id));
     };
+    readAdded();
 
-    /** Added means the Add is spent: the badge replaces it, and the tile keeps its place in the grid. */
-    const setItemState = (item: HTMLElement, added: boolean): void => {
-      const addAction = item.querySelector<HTMLElement>('[data-part="add-action"]');
-      const addedBadge = item.querySelector<HTMLElement>('[data-part="added"]');
-      if (addAction) addAction.hidden = added;
-      if (addedBadge) addedBadge.hidden = !added;
-    };
+    const columnDefs: ColDef<DirectoryRow>[] = [
+      // The identifying column carries the row: emblem, then name. Escaped even
+      // though every name is a literal in our own data module — the renderer takes
+      // a string of HTML, and the moment this data comes from anywhere else an
+      // unescaped interpolation is an injection point.
+      {
+        headerName: 'Organization', field: 'name', colId: 'name',
+        flex: 2, minWidth: 220, cellClass: 'firma2-grid-name', tooltipField: 'name',
+        getQuickFilterText: (p) => p.data?.name ?? '',
+        cellRenderer: (p: { data?: DirectoryRow }) => {
+          if (!p.data) return '';
+          const entry = directoryById.get(p.data.id);
+          const mark = entry ? orgMarkSvg(entry.mark, 'sm') : '';
+          return `<span class="firma2-setup-org-directory__org cluster" data-gap="xs">${mark}<span>${esc(p.data.name)}</span></span>`;
+        },
+      },
+      {
+        headerName: 'Level', field: 'levelLabel', colId: 'level', width: 110,
+      },
+      {
+        headerName: 'Kind', field: 'kind', colId: 'kind', width: 170,
+        getQuickFilterText: (p) => p.data?.kind ?? '',
+      },
+      {
+        headerName: 'Jurisdiction', field: 'jurisdiction', colId: 'jurisdiction', flex: 1, minWidth: 150,
+        getQuickFilterText: (p) => p.data?.jurisdiction ?? '',
+      },
+      // The action. Added rows keep their place and show the badge; open rows show
+      // the button with the organization's name in its accessible name, because
+      // "Add" alone is the same name on every row.
+      {
+        headerName: '', field: 'id', colId: 'action', width: 104, sortable: false, resizable: false,
+        cellClass: 'firma2-setup-org-directory__action',
+        cellRenderer: (p: { data?: DirectoryRow }) => {
+          if (!p.data) return '';
+          if (added.has(p.data.id)) return addedHTML;
+          return addHTML
+            .replace('data-org-id=""', `data-org-id="${esc(p.data.id)}" aria-label="Add ${esc(p.data.name)}"`);
+        },
+      },
+    ];
 
-    /** The Add buttons still on offer, in grid order. The wrapper is what carries the hidden, not the button. */
-    const openAdds = (): HTMLElement[] =>
-      [...grid.querySelectorAll<HTMLElement>('[data-part="add"]')].filter(
-        (button) => button.closest<HTMLElement>('[data-part="add-action"]')?.hidden === false,
-      );
-
-    const buildItem = (entry: DirectoryOrganization, added: boolean): HTMLLIElement => {
-      const fragment = template.content.cloneNode(true) as DocumentFragment;
-      const item = fragment.querySelector('li') as HTMLLIElement;
-      const part = (name: string): HTMLElement | null => item.querySelector<HTMLElement>(`[data-part="${name}"]`);
-
-      item.dataset.orgEntry = entry.id;
-
-      const mark = part('mark');
-      if (mark) mark.innerHTML = orgMarkSvg(entry.mark, 'md');
-
-      const name = part('name');
-      if (name) name.textContent = entry.name;
-
-      const line = part('line');
-      if (line) line.textContent = directoryLine(entry);
-
-      const addButton = part('add');
-      if (addButton) {
-        // "Add" alone is the same name on every tile; a screen reader reading the
-        // action list needs to hear WHICH organization it would add.
-        addButton.setAttribute('aria-label', `Add ${entry.name}`);
-        addButton.dataset.orgId = entry.id;
-      }
-
-      setItemState(item, added);
-      return item;
-    };
-
-    const render = (): void => {
-      const entries = matches();
-      const added = addedIds();
-
-      grid.replaceChildren(...entries.map((entry) => buildItem(entry, added.has(entry.id))));
-      grid.hidden = entries.length === 0;
-      heading.hidden = entries.length === 0;
-      noMatches.hidden = entries.length > 0;
-      heading.textContent = browsing() ? 'Common for programs like yours' : 'Results';
-    };
-
-    /**
-     * A status change does NOT rebuild the grid.
-     *
-     * replaceChildren would destroy the tile the user just acted on, taking focus to
-     * the document body with it, and would reshuffle nothing visible in exchange. The
-     * roster and the header counts listen to the same event and DO rebuild, because
-     * that is where the change actually shows.
-     */
-    const syncAdded = (): void => {
-      const added = addedIds();
-      for (const item of grid.querySelectorAll<HTMLElement>('[data-org-entry]')) {
-        setItemState(item, added.has(item.dataset.orgEntry ?? ''));
-      }
-    };
-
-    search.addEventListener('change', () => {
-      query = search.value;
-      render();
+    const handle = wireDataGrid<DirectoryRow>({
+      root,
+      gridSelector: '[data-part="grid"]',
+      dataSelector: '[data-part="rows"]',
+      searchSelector: '[data-part="search"]',
+      countSelector: '[data-part="count"]',
+      countNoun: 'organizations',
+      csvFileName: 'organization-directory.csv',
+      suppressCellFocus: true,
+      columnDefs,
+      gridOptions: {
+        overlayNoRowsTemplate: emptyState?.outerHTML,
+        isExternalFilterPresent: () => level !== 'all',
+        doesExternalFilterPass: (node) => node.data?.level === level,
+      },
     });
 
-    // Enter is the gesture that says "I have typed enough". It puts the hands on the
-    // results rather than submitting anything — there is no form here to submit.
-    search.addEventListener('keydown', (event) => {
-      if ((event as KeyboardEvent).key !== 'Enter') return;
-      event.preventDefault();
-      openAdds()[0]?.focus();
-    });
+    if (handle) {
+      const { gridApi } = handle;
 
-    // A chip group in single-select mode can be toggled back off, which reads as All.
-    levels.addEventListener('change', () => {
-      level = (levels.value || 'all') as OrganizationLevel | 'all';
-      render();
-    });
+      // A chip group in single-select mode can be toggled back off, which reads as All.
+      levels.addEventListener('change', () => {
+        level = (levels.value || 'all') as OrganizationLevel | 'all';
+        gridApi.onFilterChanged();
+      });
 
-    // Delegated, so the grid can be replaced wholesale without rewiring anything.
-    grid.addEventListener('click', (event) => {
-      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-org-id]');
-      const id = button?.dataset.orgId;
-      if (!id) return;
-      const entry = directoryById.get(id);
-      if (!entry) return;
+      /** The Add buttons still on offer, in row order. */
+      const openAdds = (): HTMLElement[] => [...gridHost.querySelectorAll<HTMLElement>('[data-org-id]')];
 
-      // Where the next Add sits is decided BEFORE the write, while this tile still
-      // has one: adding chains, so the hands stay on the grid.
-      const buttons = openAdds();
-      const next = buttons[buttons.indexOf(button as HTMLElement) + 1];
+      // Delegated on the host, because AG Grid rebuilds cells as it pleases.
+      gridHost.addEventListener('click', (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLElement>('[data-org-id]');
+        const id = button?.dataset.orgId;
+        if (!button || !id) return;
+        const entry = directoryById.get(id);
+        if (!entry) return;
 
-      // Two writes on purpose: addOrganizations mints the record as suggested, the
-      // status write is the confirmation just given by pressing this.
-      addOrganizations([toOrganization(entry)]);
-      setOrganizationStatus(id, 'confirmed');
+        // Where the next Add sits is decided BEFORE the write, while this row still
+        // has one: adding chains, so the hands stay on the grid.
+        const buttons = openAdds();
+        const nextId = buttons[buttons.indexOf(button) + 1]?.dataset.orgId;
 
-      next?.focus();
-    });
+        // Two writes on purpose: addOrganizations mints the record as suggested, the
+        // status write is the confirmation just given by pressing this.
+        addOrganizations([toOrganization(entry)]);
+        setOrganizationStatus(id, 'confirmed');
 
-    document.addEventListener('setup-draft-change', syncAdded);
-    render();
+        if (nextId) gridHost.querySelector<HTMLElement>(`[data-org-id="${nextId}"]`)?.focus();
+      });
+
+      // A status change redraws the action column only. The roster and the header
+      // counts listen to the same event and rebuild themselves, because that is
+      // where the change actually shows.
+      document.addEventListener('setup-draft-change', () => {
+        readAdded();
+        gridApi.refreshCells({ columns: ['action'], force: true });
+      });
+    }
   }
 </script>

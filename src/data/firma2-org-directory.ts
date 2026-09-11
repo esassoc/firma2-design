@@ -514,67 +514,12 @@ export const directoryById: Map<string, DirectoryOrganization> = new Map(
 );
 
 /**
- * The line under a name in a result tile: WHERE it answers for, unless the name
- * already says so, in which case WHAT it is.
- *
- * One line, never two glued together. "Deschutes County" over a tile reading
- * "Deschutes County" is a wasted line, and "County government, Deschutes County"
- * is the kind of separator-joined string that reads as a database dump.
+ * The directory's one order: governance level, then name. Never relevance — a
+ * list that reshuffles per keystroke cannot be pointed at. The grid opens in this
+ * order and a search only narrows it.
  */
-export const directoryLine = (entry: DirectoryOrganization): string =>
-  entry.name.toLowerCase().includes(entry.jurisdiction.toLowerCase()) ? entry.kind : entry.jurisdiction;
-
-/** Sort key: governance level, then name. Never relevance — a list that reshuffles per keystroke cannot be pointed at. */
-const byLevelThenName = (a: DirectoryOrganization, b: DirectoryOrganization): number =>
+export const byLevelThenName = (a: DirectoryOrganization, b: DirectoryOrganization): number =>
   levelRank[a.level] - levelRank[b.level] || a.name.localeCompare(b.name);
-
-/** Every word a record can be found by: its name, its jurisdiction, its kind. */
-const haystack = (entry: DirectoryOrganization): string[] =>
-  `${entry.name} ${entry.jurisdiction} ${entry.kind}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-
-/**
- * Matches on WORD PREFIXES, and every typed word has to hit one.
- *
- * Prefix rather than substring because "son" matching "Jefferson" is noise, while
- * "desch" matching "Deschutes" is the thing an admin two letters into a name
- * expects. All-words-must-hit is what lets "sisters irrigation" find the district
- * without also returning every organization in Sisters.
- */
-export const searchDirectory = (query: string, level?: OrganizationLevel): DirectoryOrganization[] => {
-  const pool = level ? organizationDirectory.filter((entry) => entry.level === level) : organizationDirectory;
-  const terms = query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  const matched = terms.length
-    ? pool.filter((entry) => {
-        const words = haystack(entry);
-        return terms.every((term) => words.some((word) => word.startsWith(term)));
-      })
-    : [...pool];
-  return matched.sort(byLevelThenName);
-};
-
-/**
- * What a Central Oregon restoration program almost always ends up naming: the two
- * funders it applies to, the county and its conservation district, the watershed
- * council and land trust it implements with, the irrigation district it negotiates
- * water with, and the forest most of the ground belongs to. Eight, because the
- * point of an opening set is that it can be read without scrolling.
- */
-export const commonOrganizationIds: string[] = [
-  'cascade-national-forest',
-  'state-fish-and-wildlife',
-  'state-watershed-enhancement-board',
-  'deschutes-county',
-  'deschutes-county-swcd',
-  'three-sisters-irrigation-district',
-  'upper-deschutes-watershed-council',
-  'deschutes-basin-land-trust',
-];
-
-export const commonOrganizations = (): DirectoryOrganization[] =>
-  commonOrganizationIds
-    .map((id) => directoryById.get(id))
-    .filter((entry): entry is DirectoryOrganization => Boolean(entry))
-    .sort(byLevelThenName);
 
 /**
  * A directory record as the program's own record of it.
