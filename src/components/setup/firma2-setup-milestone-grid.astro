@@ -22,12 +22,15 @@
 // `setup-draft-change`. That is why the grid, the meter above it and the hex map
 // can never disagree: all three read the same function and none keeps a copy.
 //
-// ALL FIVE STATUS BADGES ARE SERVER-RENDERED PER CARD and the script swaps which
-// one is `hidden`. The alternative — one badge whose variant class is rewritten
-// at runtime — depends on the lego's scoped stylesheet shipping every variant
-// rule whether or not the page used it. Toggling `hidden` on a plain <span>
-// wrapper has no such dependency: a bare span carries no author display rule, so
-// the UA's [hidden] applies.
+// PROGRESS IS A ROW OF MARKS, NOT A WORD. Under each title sit five dots in the
+// milestone's colour, filled as far as the milestone has got: screens answered
+// on the start step, records resolved on a record milestone. The emblem already
+// says which state the milestone is in (outline, tinted plate, solid plate with
+// its seal), so a status badge beside it repeated the emblem in text, and a
+// count line under that repeated the same fact a third time in a number that
+// meant something different on every card. The dots are the one thing the
+// emblem cannot show, how far along, and milestoneDotsFilled() is the single
+// rule for it on both server and client.
 //
 // A CARD WITH NO ROUTE IS INERT, NOT A DEAD LINK — the rule AppLayout applies to
 // the sidenav, for the same reason: a route this spoke has not built is a route
@@ -37,10 +40,12 @@
 // unlocks first-project in the same tick that fires setup-draft-change, and the
 // link has to come straight back. Same mechanic firma2-setup-hex-map uses.
 //
-// bcn-lego-checked: the card IS esa-card (variant="outlined"), the status and
-// seam marks ARE esa-badge, the emblem is firma2-setup-milestone-emblem and the
-// layout is .grid / .stack / .cluster with their own gap and --grid-min knobs.
-// What is written here and nowhere else is the WHOLE-CARD LINK: esa-card is a
+// bcn-lego-checked: the card IS esa-card (variant="outlined"), the emblem is
+// firma2-setup-milestone-emblem and the layout is .grid / .stack / .cluster
+// with their own gap and --grid-min knobs. The progress row is five dots and
+// nothing in the catalog draws one: esa-progress-bar is one track and one fill
+// with no steps, esa-pagination is navigation, esa-badge is a word. What is
+// written here and nowhere else is that row and the WHOLE-CARD LINK: esa-card is a
 // <div> with a closed prop set (title/meta/icon/variant/padding) and no href, no
 // anchor and no interactive state, and esa-button href renders a button-shaped
 // anchor rather than a card-shaped one. Walked the catalog for a clickable card
@@ -49,40 +54,13 @@
 // cloned on this machine, so tier 2 is unavailable. So the link is a real <a>
 // wrapping the lego, taking the page's own focus ring from tokens/focus.css, and
 // the only rules below it are the hover edge and the inert dim.
-import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaCard from '@esa/ecology/esa-card.astro';
 import Firma2SetupMilestoneEmblem from './firma2-setup-milestone-emblem.astro';
 import { journeys, milestoneSections } from '../../data/firma2-setup';
-import type { JourneyStatus } from '../../data/firma2-setup';
-import { journeyStatuses } from '../../lib/setup-draft';
-import { milestoneCountLine } from '../../lib/setup-milestone-copy';
+import { MILESTONE_DOTS, journeyStatuses, milestoneDotsFilled } from '../../lib/setup-draft';
 import { withBase } from '../../lib/base';
 
-type BadgeVariant = 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'info';
-
-// The status word, one per JourneyStatus, in the model's own vocabulary so the
-// badge on a card, the segment in the meter and the hex on the map are saying
-// the same thing.
-const STATUS_WORD: Record<JourneyStatus, string> = {
-  locked: 'Locked',
-  untouched: 'Not started',
-  suggested: 'Suggested',
-  'in-progress': 'In progress',
-  confirmed: 'Confirmed',
-};
-
-// Two quiet states (nothing has happened), one informational (candidates are
-// waiting), one in-flight, one done. Locked and untouched share a variant on
-// purpose: they differ in CAUSE, not in how much attention they deserve.
-const STATUS_VARIANT: Record<JourneyStatus, BadgeVariant> = {
-  locked: 'secondary',
-  untouched: 'secondary',
-  suggested: 'info',
-  'in-progress': 'warning',
-  confirmed: 'success',
-};
-
-const STATUSES = Object.keys(STATUS_WORD) as JourneyStatus[];
+const DOTS = Array.from({ length: MILESTONE_DOTS }, (_, i) => i);
 
 // The zero state, resolved at build time. readSetupDraft() is SSR-safe (no
 // localStorage on the server, so it returns the empty draft), which means this
@@ -108,11 +86,7 @@ const initial = journeyStatuses();
             {cards.map((journey) => {
               const progress = initial[journey.key];
               const navigable = !!journey.route && progress.status !== 'locked';
-              // The documents milestone's confirmed count folds in the intent answers,
-              // so a count line there would name a number of documents that is not
-              // one. It carries status only.
-              const countable = journey.key !== 'documents';
-              const hasCounts = countable && (progress.suggested > 0 || progress.confirmed > 0);
+              const filled = milestoneDotsFilled(progress);
               const Tag = journey.route ? 'a' : 'div';
               const linkProps = journey.route
                 ? { href: withBase(journey.route), 'data-milestone-link': '' }
@@ -121,9 +95,9 @@ const initial = journeyStatuses();
                 <li
                   class="firma2-setup-milestone-grid__card"
                   data-milestone={journey.key}
-                  data-unit={journey.unit}
                   data-inert={navigable ? undefined : ''}
                   data-status={progress.status}
+                  style={`--milestone-hue: ${journey.hue}`}
                 >
                   <Tag class="firma2-setup-milestone-grid__link" {...linkProps}>
                     {/* esa-card is the whole surface: border, radius, background
@@ -147,43 +121,19 @@ const initial = journeyStatuses();
 
                         <h3 class="typography-title-strong firma2-setup-milestone-grid__title">{journey.title}</h3>
 
-                        <div class="cluster" data-gap="xs" data-justify="center">
-                          {STATUSES.map((status) => (
-                            <span data-milestone-status={status} hidden={status !== progress.status}>
-                              <EsaBadge value={STATUS_WORD[status]} variant={STATUS_VARIANT[status]} size="sm" />
-                            </span>
-                          ))}
-
-                          {/* The seam with the other hackathon mission, stated on
-                              the card that crosses it. It is a fact about
-                              ownership, so it sits beside the status rather than
-                              replacing it. */}
-                        </div>
-
-                        {/* Two counts, two elements, each carrying its own noun
-                            and its own unit. A single "4 suggested, 3 confirmed"
-                            string would make one datum out of two and truncate as
-                            one. */}
+                        {/* The dots are decoration over the emblem's state for a
+                            sighted reader and one sentence for everyone else. */}
                         <div
-                          class="stack firma2-setup-milestone-grid__counts"
-                          data-gap="3xs"
-                          data-milestone-counts
-                          hidden={!hasCounts}
+                          class="firma2-setup-milestone-grid__dots cluster"
+                          data-gap="xs"
+                          data-justify="center"
+                          data-milestone-dots
+                          role="img"
+                          aria-label={`${filled} of ${MILESTONE_DOTS} complete`}
                         >
-                          <span
-                            class="typography-body-md"
-                            data-milestone-count="suggested"
-                            hidden={progress.suggested === 0}
-                          >
-                            {milestoneCountLine(progress.suggested, 'suggested', journey.unit)}
-                          </span>
-                          <span
-                            class="typography-body-md"
-                            data-milestone-count="confirmed"
-                            hidden={progress.confirmed === 0}
-                          >
-                            {milestoneCountLine(progress.confirmed, 'confirmed', journey.unit)}
-                          </span>
+                          {DOTS.map((i) => (
+                            <span class="firma2-setup-milestone-grid__dot" data-filled={i < filled ? '' : undefined} />
+                          ))}
                         </div>
                       </div>
                     </EsaCard>
@@ -203,9 +153,7 @@ const initial = journeyStatuses();
   // lives in this browser. journeyStatuses() is the same function the server
   // rendered from, so "apply" is a re-render of the same derivation rather than
   // a second opinion about it.
-  import { journeyStatuses } from '../../lib/setup-draft';
-  import { milestoneCountLine } from '../../lib/setup-milestone-copy';
-  import type { MilestoneCountNoun } from '../../lib/setup-milestone-copy';
+  import { MILESTONE_DOTS, journeyStatuses, milestoneDotsFilled } from '../../lib/setup-draft';
   import type { JourneyKey } from '../../data/firma2-setup';
 
   const root = document.querySelector<HTMLElement>('.firma2-setup-milestone-grid');
@@ -236,11 +184,6 @@ const initial = journeyStatuses();
       root.querySelectorAll<HTMLElement>('[data-milestone]').forEach((card) => {
         const progress = statuses[card.dataset.milestone as JourneyKey];
         if (!progress) return;
-        const unit = card.dataset.unit ?? '';
-
-        card.querySelectorAll<HTMLElement>('[data-milestone-status]').forEach((badge) => {
-          badge.hidden = badge.dataset.milestoneStatus !== progress.status;
-        });
 
         // The emblem is one element with five CSS states; the seal inside it is
         // server-rendered and toggled, never authored here.
@@ -251,20 +194,13 @@ const initial = journeyStatuses();
           if (seal) seal.hidden = progress.status !== 'confirmed';
         }
 
-        const counts: [MilestoneCountNoun, number][] = [
-          ['suggested', progress.suggested],
-          ['confirmed', progress.confirmed],
-        ];
-        for (const [noun, value] of counts) {
-          const line = card.querySelector<HTMLElement>(`[data-milestone-count="${noun}"]`);
-          if (!line) continue;
-          line.textContent = milestoneCountLine(value, noun, unit);
-          line.hidden = value === 0;
-        }
-        const countGroup = card.querySelector<HTMLElement>('[data-milestone-counts]');
-        if (countGroup) {
-          countGroup.hidden =
-            card.dataset.milestone === 'documents' || (progress.suggested === 0 && progress.confirmed === 0);
+        const filled = milestoneDotsFilled(progress);
+        const dots = card.querySelector<HTMLElement>('[data-milestone-dots]');
+        if (dots) {
+          dots.setAttribute('aria-label', `${filled} of ${MILESTONE_DOTS} complete`);
+          dots.querySelectorAll<HTMLElement>('.firma2-setup-milestone-grid__dot').forEach((dot, i) => {
+            dot.toggleAttribute('data-filled', i < filled);
+          });
         }
 
         const link = card.querySelector<HTMLElement>('[data-milestone-link]');
@@ -335,15 +271,33 @@ const initial = journeyStatuses();
     text-align: center;
   }
 
-  .firma2-setup-milestone-grid__counts {
-    color: var(--color-content-default-secondary);
-    font-variant-numeric: tabular-nums;
+  /* THE DOTS. Filled ones take the milestone's fill at the same step the emblem's
+     plate reads, so a card's row and its emblem are one colour; empty ones take
+     the default border, the same grey the sash gives a milestone that has not
+     started. A suggested milestone's empty row shows its outline in the
+     milestone's border step, the way its emblem does, so a row that has not
+     begun still says which colour it will fill in. */
+  .firma2-setup-milestone-grid__dots {
+    --_dot-fill: oklch(from var(--firma2-brand-9) l c var(--milestone-hue));
+    --_dot-line: oklch(from var(--firma2-brand-6) l c var(--milestone-hue));
+    --_dot-empty: var(--color-border-default);
   }
 
-  /* .stack sets display:flex, which beats the UA's [hidden] rule, so the two
-     containers that carry a runtime toggle restate it. */
-  .firma2-setup-milestone-grid__counts[hidden] {
-    display: none;
+  .firma2-setup-milestone-grid__dot {
+    inline-size: var(--spacing-250);
+    block-size: var(--spacing-250);
+    border-radius: var(--radius-full);
+    box-shadow: inset 0 0 0 var(--border-width-emphasis) var(--_dot-empty);
+  }
+
+  .firma2-setup-milestone-grid__card:is([data-status='suggested'], [data-status='in-progress'])
+    .firma2-setup-milestone-grid__dot {
+    box-shadow: inset 0 0 0 var(--border-width-emphasis) var(--_dot-line);
+  }
+
+  .firma2-setup-milestone-grid__dot[data-filled] {
+    background: var(--_dot-fill);
+    box-shadow: none;
   }
 
   /* Only a LOCKED milestone dims: its dependency is unmet and the card says so.

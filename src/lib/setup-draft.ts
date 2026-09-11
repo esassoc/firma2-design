@@ -234,7 +234,31 @@ export interface JourneyProgress {
   confirmed: number;
   /** Candidates still awaiting review. */
   suggested: number;
+  /**
+   * How far through the milestone the admin is, in the milestone's own units:
+   * screens answered for the start step, records resolved for a record
+   * milestone. `total` is 0 when nothing is on the table yet, which is the
+   * case for every milestone this slice has not opened.
+   */
+  steps: { done: number; total: number };
 }
+
+/** The number of marks a card's progress row draws. */
+export const MILESTONE_DOTS = 5;
+
+/**
+ * How many of a card's marks are filled. A confirmed milestone fills every
+ * mark whatever its counts say, an untouched or locked one fills none, and in
+ * between the row rounds the fraction but never rounds a started milestone
+ * down to nothing or an unfinished one up to full.
+ */
+export const milestoneDotsFilled = (progress: JourneyProgress, dots = MILESTONE_DOTS): number => {
+  if (progress.status === 'confirmed') return dots;
+  const { done, total } = progress.steps;
+  if (total === 0 || done === 0) return 0;
+  if (done >= total) return dots;
+  return Math.min(dots - 1, Math.max(1, Math.round((done / total) * dots)));
+};
 
 /**
  * The hub's and the map's single source of truth.
@@ -273,6 +297,8 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
           status: done ? 'confirmed' : started ? 'in-progress' : 'untouched',
           confirmed: docs + answers,
           suggested: 0,
+          // One screen for the documents, one per intent question.
+          steps: { done: (docs > 0 ? 1 : 0) + answers, total: 1 + intentQuestions.length },
         };
         break;
       }
@@ -281,17 +307,32 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
         if (orgConfirmed > 0 && orgSuggested === 0) status = 'confirmed';
         else if (orgConfirmed > 0) status = 'in-progress';
         else if (orgSuggested > 0 || wanted.has('organizations')) status = 'suggested';
-        progress = { status, confirmed: orgConfirmed, suggested: orgSuggested };
+        progress = {
+          status,
+          confirmed: orgConfirmed,
+          suggested: orgSuggested,
+          steps: { done: orgConfirmed, total: orgConfirmed + orgSuggested },
+        };
         break;
       }
       case 'measures':
-        progress = { status: wanted.has('measures') ? 'suggested' : 'untouched', confirmed: 0, suggested: 0 };
+        progress = {
+          status: wanted.has('measures') ? 'suggested' : 'untouched',
+          confirmed: 0,
+          suggested: 0,
+          steps: { done: 0, total: 0 },
+        };
         break;
       default: {
         let suggested = counts[journey.key] ?? 0;
         if (journey.key === 'classifications') suggested += classificationsWanted;
         const relevant = suggested > 0 || wanted.has(journey.key);
-        progress = { status: relevant ? 'suggested' : 'untouched', confirmed: 0, suggested };
+        progress = {
+          status: relevant ? 'suggested' : 'untouched',
+          confirmed: 0,
+          suggested,
+          steps: { done: 0, total: suggested },
+        };
       }
     }
     result[journey.key] = progress;
@@ -308,7 +349,7 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
 };
 
 /**
- * Fraction of milestones confirmed, for the hub's meter. Every milestone counts,
+ * Fraction of milestones complete, for the hub's meter. Every milestone counts,
  * measures included: the hub collects all eleven, and setup is not stood up
  * until Mission 6's screen confirms that one too, so the total tops out at
  * ten of eleven from this slice alone. That is the honest number.
