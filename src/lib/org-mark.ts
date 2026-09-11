@@ -1,4 +1,5 @@
-// org-mark — an organization's emblem, generated from three data.
+// org-mark — an organization's emblem: its real logo when the directory holds
+// one, and initials in a shape on a hue when it does not.
 //
 // WHY THIS IS A STRING FUNCTION AND NOT ONLY A COMPONENT. The directory renders
 // its results in the BROWSER (which entries match a typed query is client state),
@@ -7,10 +8,16 @@
 // firma2-org-mark.astro pipes it through set:html, the directory's script pipes it
 // through innerHTML on a node it just built. One renderer, no drift.
 //
-// EVERY MARK IS GENERATED. No real agency's logo is copied, traced, or approximated
-// anywhere in this spoke — the mark is initials in a shape on a hue, and that is the
-// whole of it. A real build would let a tenant upload the genuine article; the shape
-// of the slot is the same.
+// THE LOGO IS THE MARK WHEN THERE IS ONE. The directory is real organizations
+// (Deschutes National Forest, ODFW, Deschutes Land Trust), and a roster of real
+// partners wearing invented emblems reads as a placeholder for the thing it is
+// meant to show. So a record may carry `logo`, a file under public/org-logos/,
+// and the renderer emits it in the same square box the generated mark would take:
+// white field, hairline, the logo fitted inside. Andy authorised real marks on
+// 2026-09-11 because the fidelity is the point of the prototype. The generated
+// mark stays as the fallback for the organizations that have no logo on file
+// (a private ranch, a grazing association, a tenant that has not uploaded one
+// yet), which is exactly the slot a real build would fill from an upload.
 //
 // THE ONE PLACE RAW COLOUR IS ALLOWED. Every other surface in this repo reads
 // var(--token). A mark cannot: its hue is DATA (one per organization, 47 of them),
@@ -21,16 +28,20 @@
 // guarantees the initials clear contrast on every hue rather than only on the
 // lucky ones.
 
+import { withBase } from './base';
+
 export type OrgMarkShape = 'circle' | 'shield' | 'hex' | 'square';
 
 export type OrgMarkSize = 'sm' | 'md' | 'lg';
 
 export interface OrgMark {
-  /** Two or three letters, set in the display face. */
+  /** Two or three letters, set in the display face. The fallback when there is no logo. */
   initials: string;
   /** 0 to 360. The only thing that varies between two marks of the same shape. */
   hue: number;
   shape: OrgMarkShape;
+  /** Root-relative path to the organization's own logo, e.g. `/org-logos/odfw.svg`. Wins over the generated mark. */
+  logo?: string;
 }
 
 /** Rendered size in px. sm rides a table row, md a result tile, lg a detail header. */
@@ -39,6 +50,13 @@ const SIZE_PX: Record<OrgMarkSize, number> = { sm: 28, md: 40, lg: 56 };
 // The emblem is drawn once at 40 units and scaled by the SVG viewBox, so a shape
 // path is written once and holds at every size.
 const BOX = 40;
+
+// EVERY MARK TAKES THE SAME LANDSCAPE BOX, 2.5 wide to 1 tall. Real logos are
+// mostly wordmarks (OWEB, NRCS, ODOT, a watershed council's name under a river),
+// and a wordmark squeezed into a square at 28px is a smudge. A seal sits centred
+// in the same box with air either side. One box for both kinds is what keeps the
+// name column aligned down a grid whose rows mix logos with generated marks.
+const WIDE = 2.5;
 
 /**
  * The three fixed values. Saturation stays low enough that a mark never competes
@@ -91,21 +109,39 @@ const clean = (initials: string): string =>
     .slice(0, 3);
 
 /**
- * The emblem, as an SVG string.
+ * The emblem, as markup: an <img> of the logo when the record has one, the
+ * generated SVG otherwise. Both carry the same class and the same box, so a
+ * caller lays out a mark without knowing which kind it got.
  *
  * Decorative on purpose: every place a mark appears, the organization's name is
  * the text beside it, and an emblem that announced "M L T" before the name would
- * make the roster twice as long to hear.
+ * make the roster twice as long to hear. The logo's alt is empty for the same reason.
  */
-export const orgMarkSvg = (mark: OrgMark, size: OrgMarkSize = 'md'): string => {
+/** Where the generated mark sits inside the landscape box. A logo always fills it. */
+export type OrgMarkAlign = 'start' | 'center';
+
+export const orgMarkHtml = (mark: OrgMark, size: OrgMarkSize = 'md', align: OrgMarkAlign = 'start'): string => {
   const px = SIZE_PX[size];
+
+  const wide = Math.round(px * WIDE);
+
+  if (mark.logo) {
+    return (
+      `<img class="firma2-org-mark firma2-org-mark--${size} firma2-org-mark--logo"` +
+      ` src="${withBase(mark.logo)}" width="${wide}" height="${px}" alt="" loading="lazy" decoding="async" />`
+    );
+  }
+
   const { field, ring, ink } = orgMarkColors(mark.hue);
   const letters = clean(mark.initials);
   const path = SHAPE_PATH[mark.shape] ?? SHAPE_PATH.circle;
 
   return [
-    `<svg class="firma2-org-mark firma2-org-mark--${size}" width="${px}" height="${px}"`,
-    ` viewBox="0 0 ${BOX} ${BOX}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">`,
+    `<svg class="firma2-org-mark firma2-org-mark--${size}" width="${wide}" height="${px}"`,
+    // The drawing is the square; the box is wide. preserveAspectRatio parks the
+    // square at the box's start beside a name, or at its centre in a grid cell.
+    ` viewBox="0 0 ${BOX} ${BOX}" preserveAspectRatio="${align === 'center' ? 'xMidYMid' : 'xMinYMid'} meet"`,
+    ` xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">`,
     `<path d="${path}" fill="${field}" stroke="${ring}" stroke-width="1" />`,
     `<text x="20" y="${TEXT_Y[mark.shape] ?? 20}" text-anchor="middle" dominant-baseline="central"`,
     ` font-size="${TEXT_SIZE(letters.length)}" font-weight="650" letter-spacing="0.2" fill="${ink}">${letters}</text>`,
