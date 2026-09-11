@@ -248,7 +248,7 @@ export const MILESTONE_DOTS = 5;
 
 /**
  * How many of a card's marks are filled. A confirmed milestone fills every
- * mark whatever its counts say, an untouched or locked one fills none, and in
+ * mark whatever its counts say, an untouched one fills none, and in
  * between the row rounds the fraction but never rounds a started milestone
  * down to nothing or an unfinished one up to full.
  */
@@ -271,7 +271,8 @@ export const milestoneDotsFilled = (progress: JourneyProgress, dots = MILESTONE_
  *                   or the intent answers call for partners
  *   other build     suggested once the documents produced candidates or an intent
  *                   answer made the journey relevant, untouched otherwise
- *   go-live         locked until every dependency is confirmed, then untouched
+ *   go-live         untouched until its own screen is built; dependsOn is for
+ *                   data entry, never for the hub, so nothing here is locked
  *   measures        suggested only when intent names performance measures;
  *                   Mission 6 owns the page, so this slice never fills it
  */
@@ -336,13 +337,6 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
       }
     }
     result[journey.key] = progress;
-  }
-
-  // Locks are applied after the pass so a dependency's status is already known.
-  for (const journey of journeys) {
-    if (journey.dependsOn.length === 0) continue;
-    const unmet = journey.dependsOn.some((dep) => result[dep].status !== 'confirmed');
-    if (unmet) result[journey.key] = { ...result[journey.key], status: 'locked' };
   }
 
   return result;

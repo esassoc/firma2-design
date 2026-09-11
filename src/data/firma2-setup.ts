@@ -63,13 +63,12 @@ export const milestoneSections: { key: MilestoneSection; heading: string }[] = [
 /**
  * A journey's state on the hub, and the hex's state on the map.
  *
- *   locked      a dependency is unmet — the hex is faint and not a link
  *   untouched   nothing known yet — flat gray
  *   suggested   documents produced candidates awaiting review — outlined
  *   in-progress some records confirmed, some still open — part filled
  *   confirmed   the journey has what the tenant needs — filled, raised
  */
-export type JourneyStatus = 'locked' | 'untouched' | 'suggested' | 'in-progress' | 'confirmed';
+export type JourneyStatus = 'untouched' | 'suggested' | 'in-progress' | 'confirmed';
 
 export interface SetupJourney {
   key: JourneyKey;
@@ -79,7 +78,7 @@ export interface SetupJourney {
   section: MilestoneSection;
   /** Root-relative, base-less. Omitted for a journey this spoke has not built — renders inert, not as a dead link. */
   route?: string;
-  /** Journeys that must be `confirmed` before this one unlocks. Empty for most: build-tier journeys are never locked. */
+  /** Journeys whose records this one's data entry reads (people belong to organizations). The hub never shows it: every card stays open, and the milestone's own screens decide what can be added. */
   dependsOn: JourneyKey[];
   /** Position on the hex map, axial coordinates. Adjacency is meaningful: neighbours depend on each other. */
   hex: { q: number; r: number };

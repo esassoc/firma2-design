@@ -12,9 +12,11 @@
 // and collect rather than a line you tick.
 //
 // SETUP IS STILL NOT A WIZARD. Nothing here numbers a step or advances a cursor.
-// Every card is its own URL, resumable, openable in any order its dependencies
-// allow, and the only ordering the grid asserts is the one the data already
-// carries: milestoneSections, then the order milestones are declared in.
+// Every card is its own URL, resumable, openable in any order, and the only
+// ordering the grid asserts is the one the data already carries:
+// milestoneSections, then the order milestones are declared in. A milestone
+// whose data needs another's (people belong to organizations) says so on its
+// own screens, at the point of entry; the hub never dims or bars a card for it.
 //
 // STATUS IS DERIVED, NEVER STORED (setup-draft.ts). The server renders the ZERO
 // state — journeyStatuses() with no draft, which is exactly what a fresh browser
@@ -34,11 +36,8 @@
 //
 // A CARD WITH NO ROUTE IS INERT, NOT A DEAD LINK — the rule AppLayout applies to
 // the sidenav, for the same reason: a route this spoke has not built is a route
-// you cannot go to, and it should say so rather than 404. A LOCKED card is inert
-// too, because a dependency is unmet. Locked is not permanent, so the href is
-// PARKED on the element rather than thrown away — confirming organizations
-// unlocks first-project in the same tick that fires setup-draft-change, and the
-// link has to come straight back. Same mechanic firma2-setup-hex-map uses.
+// you cannot go to, and it should say so rather than 404. That is the only
+// reason a card is ever inert, and it is decided at build time from the data.
 //
 // bcn-lego-checked: the card IS esa-card (variant="outlined"), the emblem is
 // firma2-setup-milestone-emblem and the layout is .grid / .stack / .cluster
@@ -53,7 +52,7 @@
 // esa-link-column are text links, esa-chip-group is a control. Beacon is not
 // cloned on this machine, so tier 2 is unavailable. So the link is a real <a>
 // wrapping the lego, taking the page's own focus ring from tokens/focus.css, and
-// the only rules below it are the hover edge and the inert dim.
+// the only rule below it is the hover edge.
 import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaIcon from '@esa/ecology/esa-icon.astro';
 import Firma2SetupMilestoneEmblem from './firma2-setup-milestone-emblem.astro';
@@ -86,7 +85,7 @@ const initial = journeyStatuses();
           <ul class="grid firma2-setup-milestone-grid__cards" data-gap="md">
             {cards.map((journey) => {
               const progress = initial[journey.key];
-              const navigable = !!journey.route && progress.status !== 'locked';
+              const navigable = !!journey.route;
               const filled = milestoneDotsFilled(progress);
               const complete = progress.status === 'confirmed';
               const Tag = journey.route ? 'a' : 'div';
@@ -174,25 +173,6 @@ const initial = journeyStatuses();
 
   const root = document.querySelector<HTMLElement>('.firma2-setup-milestone-grid');
 
-  /**
-   * A locked milestone keeps its markup and loses its destination. The href is
-   * parked on the element rather than thrown away, because locks are not
-   * permanent — see this component's header note.
-   */
-  const setLinkState = (link: HTMLElement | null, locked: boolean): void => {
-    if (!link) return;
-    const href = link.getAttribute('href') ?? link.dataset.href;
-    if (!href) return;
-    link.dataset.href = href;
-    if (locked) {
-      link.removeAttribute('href');
-      link.setAttribute('aria-disabled', 'true');
-    } else {
-      link.setAttribute('href', href);
-      link.removeAttribute('aria-disabled');
-    }
-  };
-
   if (root) {
     const apply = (): void => {
       const statuses = journeyStatuses();
@@ -219,10 +199,8 @@ const initial = journeyStatuses();
           });
         }
 
-        const link = card.querySelector<HTMLElement>('[data-milestone-link]');
-        const navigable = !!link && progress.status !== 'locked';
-        setLinkState(link, !navigable);
-        card.toggleAttribute('data-inert', !navigable);
+        // Whether a card is a link is settled at build time from its route;
+        // the draft changes its state, never its destination.
         card.dataset.status = progress.status;
       });
     };
@@ -338,10 +316,6 @@ const initial = journeyStatuses();
     line-height: 0;
   }
 
-  /* Only a LOCKED milestone dims: its dependency is unmet and the card says so.
-     A milestone this spoke has not built yet is inert but keeps full presence,
-     because on this hub every card is a thing to go and earn. */
-  .firma2-setup-milestone-grid__card[data-status='locked'] {
-    opacity: 0.6;
-  }
+  /* Nothing dims. A milestone this spoke has not built yet is inert but keeps
+     full presence, because on this hub every card is a thing to go and earn. */
 </style>

@@ -11,7 +11,7 @@
 //
 // WHY A BOARD AND NOT A BAR. setupCompletion() already gives a fraction, and a
 // linear meter would show it in one line. What a meter cannot show is WHICH
-// journeys are done, which are blocked, and which sit next to each other —
+// journeys are done, which are under way, and which sit next to each other —
 // and adjacency is load-bearing in this model ("neighbours depend on each
 // other", firma2-setup.ts). A hex board renders the fraction, the identity and
 // the dependency structure in the same picture, which is the whole reason the
@@ -219,20 +219,19 @@ const firstBaseline = (lineCount: number): number =>
 // ---------------------------------------------------------------------------
 
 /**
- * The five states, in words. Read by the legend and by the screen-reader list,
+ * The four states, in words. Read by the legend and by the screen-reader list,
  * so a tile and its list row can never name the same state differently.
  * `untouched` is the model's internal word and is not shown: "Not started" is
  * what an admin would say, and internal vocabulary does not leak into copy.
  */
 const STATUS_LABEL: Record<JourneyStatus, string> = {
-  locked: 'Locked',
   untouched: 'Not started',
   suggested: 'Suggested',
   'in-progress': 'In progress',
   confirmed: 'Confirmed',
 };
 
-const legendOrder: JourneyStatus[] = ['locked', 'untouched', 'suggested', 'in-progress', 'confirmed'];
+const legendOrder: JourneyStatus[] = ['untouched', 'suggested', 'in-progress', 'confirmed'];
 
 const SWATCH_SCALE = 0.2;
 const SWATCH_POINTS = CAP_POINTS.split(' ')
@@ -405,15 +404,6 @@ const rootVars = [
      the moment the cursor touched one.
      ------------------------------------------------------------------------- */
 
-  .firma2-setup-hex-map [data-status='locked'] {
-    --hex-lift-base: 0.08;
-    --hex-cap: var(--firma2-neutral-2);
-    --hex-edge: var(--firma2-neutral-5);
-    --hex-side-left: var(--firma2-neutral-4);
-    --hex-side-right: var(--firma2-neutral-5);
-    --hex-text: var(--color-content-default-secondary);
-  }
-
   .firma2-setup-hex-map [data-status='untouched'] {
     --hex-lift-base: 0.14;
     --hex-cap: var(--color-background-elevation-sunken);
@@ -562,12 +552,6 @@ const rootVars = [
     --hex-lift: calc(var(--hex-lift-base) + 0.22);
   }
 
-  /* A locked journey is not a destination. The script also strips the href, so
-     this only has to stop the cursor from promising one. */
-  .firma2-setup-hex-map__hex[data-status='locked'] {
-    pointer-events: none;
-  }
-
   /* -------------------------------------------------------------------------
      Legend
      ------------------------------------------------------------------------- */
@@ -657,32 +641,10 @@ const rootVars = [
   import type { JourneyKey, JourneyStatus } from '../../data/firma2-setup';
 
   const STATUS_LABEL: Record<JourneyStatus, string> = {
-    locked: 'Locked',
     untouched: 'Not started',
     suggested: 'Suggested',
     'in-progress': 'In progress',
     confirmed: 'Confirmed',
-  };
-
-  /**
-   * A locked journey keeps its markup and loses its destination. The href is
-   * parked on the element rather than thrown away, because locks are not
-   * permanent: confirming organizations unlocks first-project in the same tick
-   * that fires setup-draft-change, and the link has to come straight back.
-   */
-  const setLinkState = (link: Element | null, locked: boolean): void => {
-    if (!link) return;
-    const element = link as SVGAElement & { dataset: DOMStringMap };
-    const href = element.getAttribute('href') ?? element.dataset.href;
-    if (!href) return;
-    element.dataset.href = href;
-    if (locked) {
-      element.removeAttribute('href');
-      element.setAttribute('aria-disabled', 'true');
-    } else {
-      element.setAttribute('href', href);
-      element.removeAttribute('aria-disabled');
-    }
   };
 
   const paint = (): void => {
@@ -693,7 +655,6 @@ const rootVars = [
       const progress = key ? statuses[key] : undefined;
       if (!progress) return;
       hex.setAttribute('data-status', progress.status);
-      setLinkState(hex.closest('a'), progress.status === 'locked');
     });
 
     document.querySelectorAll<HTMLLIElement>('.firma2-setup-hex-map__item').forEach((item) => {
@@ -702,7 +663,6 @@ const rootVars = [
       if (!progress) return;
       const status = item.querySelector<HTMLElement>('.firma2-setup-hex-map__item-status');
       if (status) status.textContent = `: ${STATUS_LABEL[progress.status]}`;
-      setLinkState(item.querySelector('a'), progress.status === 'locked');
     });
   };
 
