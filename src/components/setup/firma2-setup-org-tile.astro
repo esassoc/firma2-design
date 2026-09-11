@@ -1,12 +1,15 @@
 ---
 // firma2-setup-org-tile — one organization as a large, tappable toggle. The unit
-// both the picker and the ask deal in, so it lives in one file and only one.
+// the picker deals in. It had a second caller (the free-text ask, deleted when the
+// directory replaced it) and keeps its own file anyway: a SELECTABLE record is a
+// different thing from the directory's result tile, which has an action on it
+// rather than a pressed state, and folding the two would give one component two
+// jobs.
 //
 // IT RENDERS NOTHING BY ITSELF. What it ships is three things: an inert
 // <template> holding the tile's markup, the tile's CSS, and a <firma2-org-tile>
 // custom element that clones that template and fills it. A caller creates the
-// element and sets `.org`; neither caller writes a line of tile markup, which is
-// what stops the picker's tile and the ask's tile drifting apart. Same trick
+// element and sets `.org`; no caller writes a line of tile markup. Same trick
 // bcn-tag-editor uses: a server-rendered master copy, so the scoped styles ride
 // along with the clone.
 //
@@ -33,7 +36,9 @@
 // not a record. Beacon is not cloned on this machine. So the toggle is a native
 // <button aria-pressed>, the same semantics esa-chip-group uses inside itself,
 // styled from tokens — and every mark INSIDE it is still a lego: esa-badge for
-// the roles, esa-icon for the check.
+// the roles, esa-icon for the check, and the emblem is lib/org-mark's one
+// renderer (the home firma2-org-mark.astro already filed for it), laid out by
+// the .cluster primitive rather than by any flex of this component's own.
 //
 // KEYBOARD IS THE BUTTON'S. Space and Enter toggle because it is a real
 // <button>; the focus ring is the token system's and is never touched here.
@@ -47,15 +52,21 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
         selecting cannot reflow the card it sits in. */}
     <span class="firma2-org-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
 
-    <span class="stack" data-gap="2xs">
-      <span class="firma2-org-tile__name typography-label-lg-strong" data-part="name"></span>
-      <span class="firma2-org-tile__roles cluster" data-gap="3xs" data-part="roles"></span>
-      <span class="firma2-org-tile__place typography-body-sm" data-part="place"></span>
-      {/* The document the name was found in, labelled — "Cascade Headwaters
-          Annual Report 2025.pdf" on its own is not self-evidently a source. */}
-      <span class="firma2-org-tile__source cluster typography-body-sm" data-gap="3xs" data-part="source" hidden>
-        <span class="firma2-org-tile__source-label">From:</span>
-        <span data-part="source-name"></span>
+    <span class="firma2-org-tile__body cluster" data-gap="sm">
+      {/* The emblem. Filled from the directory record, empty and hidden for an
+          organization the directory has never heard of. */}
+      <span class="firma2-org-tile__mark-slot" data-part="mark"></span>
+
+      <span class="stack" data-gap="2xs">
+        <span class="firma2-org-tile__name typography-label-lg-strong" data-part="name"></span>
+        <span class="firma2-org-tile__roles cluster" data-gap="3xs" data-part="roles"></span>
+        <span class="firma2-org-tile__place typography-body-sm" data-part="place"></span>
+        {/* The document the name was found in, labelled — "Cascade Headwaters
+            Annual Report 2025.pdf" on its own is not self-evidently a source. */}
+        <span class="firma2-org-tile__source cluster typography-body-sm" data-gap="3xs" data-part="source" hidden>
+          <span class="firma2-org-tile__source-label">From:</span>
+          <span data-part="source-name"></span>
+        </span>
       </span>
     </span>
   </button>
@@ -74,6 +85,17 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
     display: block;
     block-size: 100%;
   }
+
+  /* The emblem is written into the slot as an SVG STRING by the script below, so
+     it carries no scope attribute either — and firma2-org-mark.astro's own global
+     rule only ships on pages that render that component, which this one never
+     does. Two declarations, both about the row the mark sits in rather than the
+     mark: the emblem is sized by its width/height attributes, and `flex: none`
+     stops the .cluster squeezing it before it wraps the name beside it. */
+  firma2-org-tile .firma2-org-mark {
+    display: block;
+    flex: none;
+  }
 </style>
 
 <style>
@@ -86,10 +108,10 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
     padding: var(--spacing-400, 1rem);
     /* Room for the mark, so a long name never runs under it. */
     padding-inline-end: var(--spacing-650, 2.5rem);
-    border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #e0e0e0);
+    border: var(--border-width-default) solid var(--color-border-default-subtle);
     border-radius: var(--radius-md, 0.5rem);
-    background: var(--color-background-elevation-raised, #fcfdfc);
-    color: var(--color-content-default, #202020);
+    background: var(--color-background-elevation-raised);
+    color: var(--color-content-default);
     cursor: pointer;
     transition:
       background-color var(--transition-fast, 150ms ease),
@@ -97,8 +119,8 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
   }
 
   .firma2-org-tile__button:hover {
-    border-color: var(--color-border-default-strong, #bbbbbb);
-    background: var(--color-background-default-hover, #f0f2f0);
+    border-color: var(--color-border-default-strong);
+    background: var(--color-background-default-hover);
   }
 
   /* SELECTED: brand tint, brand ring, mark shown. The ring is the brand FILL at
@@ -106,8 +128,15 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
      hairline two values off the resting one is a picker you have to squint at.
      It is still a hairline, not a slab: the fill stays the primary action's. */
   .firma2-org-tile__button[aria-pressed='true'] {
-    border-color: var(--color-background-brand, #46a758);
-    background: var(--color-background-brand-subtle, #fbfefb);
+    border-color: var(--color-background-brand);
+    background: var(--color-background-brand-subtle);
+  }
+
+  /* The mark sits level with the NAME. A tile with roles, a location and a source
+     runs four lines tall, and a centred emblem would float halfway down it beside
+     nothing. --align is the cluster primitive's own knob. */
+  .firma2-org-tile__body {
+    --align: flex-start;
   }
 
   .firma2-org-tile__mark {
@@ -115,7 +144,7 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
     inset-block-start: var(--spacing-300, 0.75rem);
     inset-inline-end: var(--spacing-300, 0.75rem);
     display: none;
-    color: var(--color-background-brand, #46a758);
+    color: var(--color-background-brand);
   }
 
   .firma2-org-tile__button[aria-pressed='true'] .firma2-org-tile__mark {
@@ -124,7 +153,7 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
 
   .firma2-org-tile__place,
   .firma2-org-tile__source {
-    color: var(--color-content-default-secondary, #646464);
+    color: var(--color-content-default-secondary);
   }
 
   /* .cluster owns the display, so the hidden attribute needs the higher
@@ -137,6 +166,8 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
 <script>
   import { sampleDocuments } from '../../data/firma2-setup';
   import type { Organization } from '../../data/firma2-setup';
+  import { directoryById } from '../../data/firma2-org-directory';
+  import { orgMarkSvg } from '../../lib/org-mark';
 
   const TAG = 'firma2-org-tile';
 
@@ -188,6 +219,17 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
 
       const name = part('name');
       if (name) name.textContent = org.name;
+
+      // The mark is the directory's, keyed by id, so a suggestion and the same
+      // organization picked out of the directory wear the same emblem. An
+      // organization typed in as free text has no record and therefore no mark:
+      // the slot collapses rather than holding a space for a missing thing.
+      const markSlot = part('mark');
+      if (markSlot) {
+        const entry = directoryById.get(org.id);
+        if (entry) markSlot.innerHTML = orgMarkSvg(entry.mark, 'md');
+        else markSlot.hidden = true;
+      }
 
       const roles = part('roles');
       if (roles && roleTemplate) {
