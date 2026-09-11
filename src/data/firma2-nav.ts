@@ -53,6 +53,7 @@ export const navItems: Firma2NavItem[] = [
   { key: 'performance-measures', label: 'Performance Measures', href: '/prototypes/performance-measures', icon: 'trending-up', group: 'Report' },
   { key: 'funding-status', label: 'Funding Status', icon: 'credit-card', group: 'Report' },
 
+  { key: 'setup', label: 'Setup', href: '/prototypes/setup', icon: 'home', group: 'Manage' },
   { key: 'users', label: 'Users', icon: 'user', group: 'Manage' },
   { key: 'manage-organizations', label: 'Manage Organizations', icon: 'users', group: 'Manage' },
   { key: 'manage-funding-sources', label: 'Manage Funding Sources', icon: 'database', group: 'Manage' },

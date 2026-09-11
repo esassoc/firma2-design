@@ -1,0 +1,286 @@
+---
+// firma2-setup-journey-list — the setup hub's list of journeys, grouped by the
+// three tiers the model defines (foundation, build, go-live), with a single
+// completion meter above them.
+//
+// SETUP IS NOT A WIZARD, so this is a LIST and not a sequence. Every row is its
+// own URL, resumable, openable in any order the tier allows. The only ordering
+// the list asserts is the one the data already carries: tier, then the order the
+// journeys are declared in. Nothing here numbers a step or advances a cursor.
+//
+// STATUS IS DERIVED, NEVER STORED (setup-draft.ts). The server renders the ZERO
+// state — journeyStatuses() with no draft, which is exactly what a fresh browser
+// shows — and the script re-applies the real statuses on load and on every
+// `setup-draft-change`. That is why the hub and the hex map can never disagree:
+// both read the same function, neither keeps a copy.
+//
+// ALL FIVE STATUS BADGES ARE SERVER-RENDERED PER ROW and the script swaps which
+// one is `hidden`. The alternative — one badge whose variant class is rewritten
+// at runtime — depends on the lego's scoped stylesheet shipping every variant
+// rule whether or not the page used it. Toggling `hidden` on a plain <span>
+// wrapper has no such dependency: a bare span carries no author display rule, so
+// the UA's [hidden] applies. Same technique performance-measures.astro uses to
+// swap its header action.
+//
+// A ROW WITH NO ROUTE IS INERT, NOT A DEAD LINK — the rule AppLayout applies to
+// the sidenav, for the same reason: a route this spoke has not built is a route
+// you cannot go to, and it should say so rather than 404. A LOCKED row is inert
+// too, because a dependency is unmet; its badge says which state it is in.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaProgressBar from '@esa/ecology/esa-progress-bar.astro';
+import { journeys } from '../../data/firma2-setup';
+import type { JourneyStatus, JourneyTier } from '../../data/firma2-setup';
+import { journeyStatuses, setupCompletion } from '../../lib/setup-draft';
+import { withBase } from '../../lib/base';
+
+type BadgeVariant = 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'info';
+
+// The tier headings, in dependency order. They name the tier and nothing else —
+// what each tier MEANS is a property of the rows under it, not a caption.
+const TIERS: { key: JourneyTier; heading: string }[] = [
+  { key: 'foundation', heading: 'Foundation' },
+  { key: 'build', heading: 'Build' },
+  { key: 'go-live', heading: 'Go live' },
+];
+
+// The status word, one per JourneyStatus, in the model's own vocabulary so the
+// badge on a row and the hex on the map are saying the same thing.
+const STATUS_WORD: Record<JourneyStatus, string> = {
+  locked: 'Locked',
+  untouched: 'Not started',
+  suggested: 'Suggested',
+  'in-progress': 'In progress',
+  confirmed: 'Confirmed',
+};
+
+// Two quiet states (nothing has happened), one informational (candidates are
+// waiting), one in-flight, one done. Locked and untouched share a variant on
+// purpose: they differ in CAUSE, not in how much attention they deserve.
+const STATUS_VARIANT: Record<JourneyStatus, BadgeVariant> = {
+  locked: 'secondary',
+  untouched: 'secondary',
+  suggested: 'info',
+  'in-progress': 'warning',
+  confirmed: 'success',
+};
+
+const STATUSES = Object.keys(STATUS_WORD) as JourneyStatus[];
+
+// The zero state, resolved at build time. readSetupDraft() is SSR-safe (no
+// localStorage on the server, so it returns the empty draft), which means this
+// is the same picture a first-time visitor sees before the script runs — not a
+// placeholder that flickers into something else.
+const initial = journeyStatuses();
+const completion = setupCompletion();
+const initialPercent = completion.total ? Math.round((completion.done / completion.total) * 100) : 0;
+
+const meterLabelId = 'firma2-setup-meter-label';
+---
+<div class="firma2-setup-journey-list stack" data-gap="xl">
+  {/* THE METER IS ONE FACT, STATED TWICE — as a fraction anyone can read and as
+      a bar anyone can see. The bar is the redundant half, so it is aria-hidden:
+      the lego takes its accessible name from its `label` prop, and giving it one
+      would announce the same count a second time. The fraction, not a
+      percentage, because "3 of 10" is the thing a program manager is counting;
+      the percentage is arithmetic performed on it. */}
+  <div class="firma2-setup-journey-list__meter stack" data-gap="2xs">
+    <div class="repel" data-gap="sm">
+      <span class="typography-label-md" id={meterLabelId}>Journeys confirmed</span>
+      <span class="typography-label-md" data-setup-meter-fraction>{completion.done} of {completion.total}</span>
+    </div>
+    <div aria-hidden="true">
+      <EsaProgressBar value={initialPercent} showValue={false} size="sm" />
+    </div>
+  </div>
+
+  {TIERS.map((tier) => {
+    const rows = journeys.filter((journey) => journey.tier === tier.key);
+    const headingId = `firma2-setup-tier-${tier.key}`;
+    return (
+      <section class="stack" data-gap="sm" aria-labelledby={headingId}>
+        <h2 id={headingId} class="typography-label-sm-strong firma2-setup-journey-list__tier">{tier.heading}</h2>
+
+        <ul class="firma2-setup-journey-list__rows">
+          {rows.map((journey) => {
+            const progress = initial[journey.key];
+            const navigable = !!journey.route && progress.status !== 'locked';
+            return (
+              <li
+                class="firma2-setup-journey-list__row repel"
+                data-gap="md"
+                data-journey={journey.key}
+                data-inert={navigable ? undefined : ''}
+              >
+                <div class="cluster" data-gap="sm">
+                  {journey.route ? (
+                    <>
+                      <a
+                        class="firma2-setup-journey-list__name typography-label-md"
+                        href={withBase(journey.route)}
+                        data-journey-link
+                        hidden={!navigable}
+                      >{journey.title}</a>
+                      <span
+                        class="firma2-setup-journey-list__name typography-label-md"
+                        data-journey-name
+                        hidden={navigable}
+                      >{journey.title}</span>
+                    </>
+                  ) : (
+                    <span class="firma2-setup-journey-list__name typography-label-md" data-journey-name>{journey.title}</span>
+                  )}
+
+                  {/* The seam with the other hackathon mission, stated on the row
+                      that crosses it. It is a fact about ownership, so it sits
+                      beside the name rather than in the status column, which
+                      belongs to the journey's own progress. */}
+                  {journey.external === 'mission-6' && (
+                    <EsaBadge value="Owned by Mission 6" variant="secondary" size="sm" />
+                  )}
+                </div>
+
+                <div class="cluster" data-gap="sm">
+                  {/* Two counts, two elements, each carrying its own noun. A
+                      single "4 suggested, 3 confirmed" string would make one
+                      datum out of two and truncate as one. */}
+                  <span
+                    class="typography-body-sm firma2-setup-journey-list__count"
+                    data-journey-count="suggested"
+                    hidden={progress.suggested === 0}
+                  >{progress.suggested} suggested</span>
+                  <span
+                    class="typography-body-sm firma2-setup-journey-list__count"
+                    data-journey-count="confirmed"
+                    hidden={progress.confirmed === 0}
+                  >{progress.confirmed} confirmed</span>
+
+                  {STATUSES.map((status) => (
+                    <span data-journey-status={status} hidden={status !== progress.status}>
+                      <EsaBadge value={STATUS_WORD[status]} variant={STATUS_VARIANT[status]} size="sm" />
+                    </span>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    );
+  })}
+</div>
+
+<script>
+  // The list's one job after render: keep every row honest about a draft that
+  // lives in this browser. journeyStatuses() and setupCompletion() are the same
+  // functions the server rendered from, so "apply" is a re-render of the same
+  // derivation rather than a second opinion about it.
+  import { journeyStatuses, setupCompletion } from '../../lib/setup-draft';
+  import type { JourneyKey } from '../../data/firma2-setup';
+
+  const root = document.querySelector<HTMLElement>('.firma2-setup-journey-list');
+
+  if (root) {
+    const fraction = root.querySelector<HTMLElement>('[data-setup-meter-fraction]');
+    // The lego renders its fill with an inline width and its own aria-valuenow;
+    // both are updated rather than replaced, so nothing here authors markup.
+    const fill = root.querySelector<HTMLElement>('.esa-progress-bar__fill');
+    const bar = root.querySelector<HTMLElement>('[role="progressbar"]');
+
+    const apply = (): void => {
+      const statuses = journeyStatuses();
+      const { done, total } = setupCompletion();
+      const percent = total ? Math.round((done / total) * 100) : 0;
+
+      if (fraction) fraction.textContent = `${done} of ${total}`;
+      if (fill) fill.style.width = `${percent}%`;
+      if (bar) bar.setAttribute('aria-valuenow', String(percent));
+
+      root.querySelectorAll<HTMLElement>('[data-journey]').forEach((row) => {
+        const progress = statuses[row.dataset.journey as JourneyKey];
+        if (!progress) return;
+
+        row.querySelectorAll<HTMLElement>('[data-journey-status]').forEach((badge) => {
+          badge.hidden = badge.dataset.journeyStatus !== progress.status;
+        });
+
+        // A route the journey has is still not a route it can be walked: a
+        // locked journey swaps its link for the same name as plain text.
+        const link = row.querySelector<HTMLElement>('[data-journey-link]');
+        const plain = row.querySelector<HTMLElement>('[data-journey-name]');
+        const navigable = !!link && progress.status !== 'locked';
+        if (link) link.hidden = !navigable;
+        if (link && plain) plain.hidden = navigable;
+        row.toggleAttribute('data-inert', !navigable);
+
+        const counts: [string, number][] = [
+          ['suggested', progress.suggested],
+          ['confirmed', progress.confirmed],
+        ];
+        for (const [noun, value] of counts) {
+          const el = row.querySelector<HTMLElement>(`[data-journey-count="${noun}"]`);
+          if (!el) continue;
+          el.textContent = `${value} ${noun}`;
+          el.hidden = value === 0;
+        }
+      });
+    };
+
+    apply();
+    document.addEventListener('setup-draft-change', apply);
+  }
+</script>
+
+<style>
+  /* The typography composites set type only; the UA's heading margin survives
+     them and would stack on top of the .stack gap. Same note as
+     firma2-recent-projects — the spine owns spacing. */
+  .firma2-setup-journey-list__tier {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* .repel on each row is the layout; this only strips the chrome that comes
+     with choosing <ul>/<li> for the semantics of a countable set. */
+  .firma2-setup-journey-list__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* A hairline BETWEEN rows, not around them: the group already has an edge in
+     its heading, and a box per row would turn a list into eleven cards. */
+  .firma2-setup-journey-list__row {
+    padding-block: var(--spacing-300, 0.75rem);
+  }
+
+  .firma2-setup-journey-list__row + .firma2-setup-journey-list__row {
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  /* THE SAME 0.5 AppLayout GIVES AN UNBUILT NAV ROW. Unavailable and
+     indistinguishable is the worst of both, so the appearance matches the
+     behaviour: no link, dimmed. */
+  .firma2-setup-journey-list__row[data-inert] {
+    opacity: 0.5;
+  }
+
+  .firma2-setup-journey-list__count {
+    color: var(--color-content-default-secondary, #646464);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The row's name is the link, so it carries the link colour; the plain-text
+     twin beside it must not, or an inert row would read as clickable. */
+  .firma2-setup-journey-list__name {
+    color: var(--color-content-default, #202020);
+  }
+
+  a.firma2-setup-journey-list__name {
+    color: var(--color-content-link, #2a7e3b);
+    text-decoration: none;
+  }
+
+  a.firma2-setup-journey-list__name:hover {
+    text-decoration: underline;
+  }
+</style>

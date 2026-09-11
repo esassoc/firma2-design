@@ -1,0 +1,315 @@
+---
+// The start flow: context and intent, one screen at a time.
+//
+// Screen 1 takes the documents the tenant already has. Screens 2 to 7 each ask
+// one question with three or four label-only pills. The last screen reads the
+// answers back as one sentence and hands off to the hub, where the map lights
+// for the first time. No progress indicator: seven short screens and a back
+// arrow are the whole navigation. Every screen has a URL (?step=<id>) so it
+// can be resumed, and "Finish later" on every screen returns to the hub with
+// the answers so far kept.
+//
+// bcn-lego-checked: no esa-* stepper or wizard exists (ls of the catalog:
+// esa-progress-bar is the only progress lego and it is linear, not stepped);
+// checked Beacon (no ui-stepper). Each screen is composed from legos:
+// esa-chip-group for the pills (brand tone, its selected roles re-pointed to a
+// solid fill), esa-button for the arrows, esa-card for the confirm card,
+// firma2-setup-document-upload for the first screen, esa-icon in a tinted
+// circle above each prompt, firma2-setup-hex-map as the illustration on the
+// last screen. The bespoke part is the screen switching, the centred stack and
+// the icon circle, which no lego owns.
+//
+// Setup is allowed to be louder than the app: display-size prompts and a
+// brand-tinted icon per screen, where the app's own pages stay at heading-lg.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import Firma2SetupDocumentUpload from './firma2-setup-document-upload.astro';
+import Firma2SetupHexMap from './firma2-setup-hex-map.astro';
+import { intentQuestions } from '../../data/firma2-setup';
+import { withBase } from '../../lib/base';
+
+const stepIds = ['documents', ...intentQuestions.map((q) => q.id), 'confirm'];
+const hubHref = withBase('/prototypes/setup');
+---
+<div class="firma2-setup-steps" data-setup-steps data-step-ids={stepIds.join(',')}>
+  <div class="repel firma2-setup-steps__bar">
+    <div data-step-back-wrap hidden>
+      <EsaButton variant="ghost" iconOnly icon="arrow-left" label="Back" data-step-back />
+    </div>
+    <div class="firma2-setup-steps__later">
+      <EsaButton variant="ghost" size="sm" href={hubHref}>Finish later</EsaButton>
+    </div>
+  </div>
+
+  <section class="firma2-setup-steps__screen stack" data-gap="xl" data-step="documents">
+    <span class="firma2-setup-steps__icon"><EsaIcon name="upload" size="xl" /></span>
+    <h1 class="typography-display-sm firma2-setup-steps__prompt">What do you have on hand?</h1>
+    <Firma2SetupDocumentUpload />
+    <div class="stack firma2-setup-steps__advance" data-gap="sm">
+      <div class="firma2-setup-steps__arrow">
+        <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+      </div>
+      <EsaButton variant="ghost" size="sm" data-step-skip>Nothing yet</EsaButton>
+    </div>
+  </section>
+
+  {intentQuestions.map((q) => (
+    <section class="firma2-setup-steps__screen stack" data-gap="xl" data-step={q.id} hidden>
+      <span class="firma2-setup-steps__icon"><EsaIcon name={q.icon} size="xl" /></span>
+      <h1 class="typography-display-sm firma2-setup-steps__prompt">{q.prompt}</h1>
+      <div class="firma2-setup-steps__choices">
+        <esa-chip-group
+          data-intent-question={q.id}
+          label={q.prompt}
+          name={`intent-${q.id}`}
+          size="lg"
+          {...(q.multiple ? { multiple: true } : {})}
+          options={JSON.stringify(q.options.map((o) => ({ value: o.id, label: o.label, tone: 'brand' })))}
+        ></esa-chip-group>
+      </div>
+      <div class="firma2-setup-steps__advance">
+        <div class="firma2-setup-steps__arrow">
+          <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next disabled />
+        </div>
+      </div>
+    </section>
+  ))}
+
+  <section class="firma2-setup-steps__screen stack" data-gap="xl" data-step="confirm" hidden>
+    <span class="firma2-setup-steps__icon"><EsaIcon name="circle-check" size="xl" /></span>
+    <h1 class="typography-display-sm firma2-setup-steps__prompt">Does this look right?</h1>
+    <EsaCard variant="outlined" padding="spacious">
+      <div class="stack" data-gap="md">
+        <p class="typography-body-lg firma2-setup-steps__summary" data-step-summary></p>
+        <p class="typography-body-md" data-step-documents-line hidden></p>
+        <div class="cluster" data-gap="sm">
+          <EsaButton variant="secondary" size="sm" data-step-edit>Edit</EsaButton>
+        </div>
+      </div>
+    </EsaCard>
+    <div class="firma2-setup-steps__advance">
+      <div class="firma2-setup-steps__arrow">
+        <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
+      </div>
+    </div>
+    <div class="firma2-setup-steps__illustration">
+      <Firma2SetupHexMap size="sm" linked={false} legend={false} />
+    </div>
+  </section>
+
+  <script type="application/json" data-step-questions set:html={JSON.stringify(intentQuestions.map((q) => ({ id: q.id, multiple: q.multiple })))}></script>
+</div>
+
+<script>
+  import '@esa/ecology/esa-chip-group';
+  import { composeIntentSummary, sampleDocuments } from '../../data/firma2-setup';
+  import { readSetupDraft, setIntentAnswer } from '../../lib/setup-draft';
+
+  interface Question {
+    id: string;
+    multiple: boolean;
+  }
+
+  const root = document.querySelector<HTMLElement>('[data-setup-steps]');
+  if (root) {
+    const stepIds = (root.dataset.stepIds ?? '').split(',');
+    const questions: Question[] = JSON.parse(root.querySelector('[data-step-questions]')?.textContent ?? '[]');
+    const questionById = new Map(questions.map((q) => [q.id, q]));
+    const screens = Array.from(root.querySelectorAll<HTMLElement>('[data-step]'));
+    const back = root.querySelector<HTMLElement>('[data-step-back-wrap]');
+
+    const stepFromUrl = (): string => {
+      const wanted = new URLSearchParams(location.search).get('step') ?? '';
+      return stepIds.includes(wanted) ? wanted : stepIds[0];
+    };
+
+    let current = stepFromUrl();
+
+    const answered = (id: string): boolean => (readSetupDraft().intent[id] ?? []).length > 0;
+
+    const valid = (id: string): boolean => {
+      if (id === 'documents') return readSetupDraft().documentsUploaded;
+      if (id === 'confirm') return true;
+      return answered(id);
+    };
+
+    const syncChoices = () => {
+      const draft = readSetupDraft();
+      root.querySelectorAll<HTMLElement & { values: string[]; value: string }>('[data-intent-question]').forEach((el) => {
+        const id = el.dataset.intentQuestion ?? '';
+        const chosen = draft.intent[id] ?? [];
+        if (questionById.get(id)?.multiple) el.values = [...chosen];
+        else el.value = chosen[0] ?? '';
+      });
+    };
+
+    const syncSummary = () => {
+      const draft = readSetupDraft();
+      const summary = root.querySelector<HTMLElement>('[data-step-summary]');
+      if (summary) summary.textContent = composeIntentSummary(draft.intent);
+      const line = root.querySelector<HTMLElement>('[data-step-documents-line]');
+      if (line) {
+        line.hidden = !draft.documentsUploaded;
+        line.textContent = `Documents read: ${sampleDocuments.length}`;
+      }
+    };
+
+    const setNext = (id: string) => {
+      const next = root.querySelector<HTMLButtonElement>(`[data-step="${id}"] [data-step-next]`);
+      if (!next) return;
+      const ok = valid(id);
+      next.disabled = !ok;
+      next.closest('.esa-button')?.classList.toggle('esa-button--disabled', !ok);
+      const skip = root.querySelector<HTMLElement>(`[data-step="${id}"] [data-step-skip]`);
+      if (skip) skip.hidden = ok;
+    };
+
+    const show = (id: string, push: boolean) => {
+      current = id;
+      for (const screen of screens) screen.hidden = screen.dataset.step !== id;
+      const index = stepIds.indexOf(id);
+      if (back) back.hidden = index === 0;
+      setNext(id);
+      if (id === 'confirm') syncSummary();
+      const url = new URL(location.href);
+      if (index === 0) url.searchParams.delete('step');
+      else url.searchParams.set('step', id);
+      if (push) history.pushState({ step: id }, '', url);
+      else history.replaceState({ step: id }, '', url);
+      root.querySelector<HTMLElement>(`[data-step="${id}"] .firma2-setup-steps__prompt`)?.focus();
+    };
+
+    const move = (delta: number) => {
+      const index = stepIds.indexOf(current) + delta;
+      if (index < 0 || index >= stepIds.length) return;
+      show(stepIds[index], true);
+    };
+
+    root.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('[data-step-next]')) move(1);
+      else if (target.closest('[data-step-skip]')) move(1);
+      else if (target.closest('[data-step-back]')) move(-1);
+      else if (target.closest('[data-step-edit]')) show(stepIds[1], true);
+    });
+
+    root.addEventListener('change', (event) => {
+      const el = event.target as HTMLElement | null;
+      const id = el?.dataset.intentQuestion;
+      if (!id) return;
+      const detail = (event as CustomEvent<{ values?: string[]; value?: string }>).detail ?? {};
+      const chosen = questionById.get(id)?.multiple ? (detail.values ?? []) : detail.value ? [detail.value] : [];
+      setIntentAnswer(id, chosen);
+    });
+
+    document.addEventListener('setup-draft-change', () => {
+      syncChoices();
+      setNext(current);
+      if (current === 'confirm') syncSummary();
+    });
+
+    window.addEventListener('popstate', () => show(stepFromUrl(), false));
+
+    customElements.whenDefined('esa-chip-group').then(() => {
+      syncChoices();
+      show(current, false);
+    });
+  }
+</script>
+
+<style>
+  .firma2-setup-steps {
+    position: relative;
+  }
+  .firma2-setup-steps__bar {
+    margin-block-end: var(--spacing-800);
+  }
+  .firma2-setup-steps__bar > [hidden],
+  .firma2-setup-steps__advance [hidden] {
+    display: none;
+  }
+  .firma2-setup-steps__later {
+    margin-inline-start: auto;
+  }
+  .firma2-setup-steps__screen {
+    text-align: center;
+    align-items: center;
+  }
+  .firma2-setup-steps__screen > :not(.firma2-setup-steps__icon) {
+    inline-size: 100%;
+  }
+  .firma2-setup-steps__prompt {
+    margin: 0;
+    color: var(--color-content-default);
+    outline: none;
+    text-wrap: balance;
+  }
+  /* A tinted circle holding the screen's icon: the one loud element per screen.
+     The icon size is the lego's public xl token re-pointed here, not a raw override. */
+  .firma2-setup-steps__icon {
+    --icon-size-xl: 2.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 5rem;
+    block-size: 5rem;
+    border-radius: var(--radius-full);
+    background: var(--firma2-brand-3);
+    color: var(--firma2-brand-10);
+  }
+  .firma2-setup-steps__illustration {
+    display: flex;
+    justify-content: center;
+    padding-block-start: var(--spacing-600);
+  }
+  /* One choice per row, each a full-width capsule: the lego's chip radius token
+     re-pointed to the pill, the chip part stretched. The group has no justify
+     hook, so a wrapped, centred row of chips is not reachable from outside. */
+  .firma2-setup-steps__choices {
+    --radius-chip: var(--radius-pill);
+    /* The brand tone's selected chip reads these three roles; here they resolve
+       to a solid brand fill with knockout text, so the chosen answer is unmistakable. */
+    --color-background-brand-subtle: var(--color-background-brand);
+    --color-border-brand: var(--color-background-brand);
+    --color-content-brand: var(--color-content-default-knockout);
+    display: flex;
+    justify-content: center;
+  }
+  .firma2-setup-steps__choices esa-chip-group {
+    display: flex;
+    inline-size: min(100%, 26rem);
+    --_gap: var(--spacing-200);
+  }
+  .firma2-setup-steps__choices esa-chip-group::part(chip) {
+    inline-size: 100%;
+    justify-content: center;
+    padding-block: var(--spacing-300);
+    white-space: normal;
+    text-align: center;
+  }
+  .firma2-setup-steps__advance {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-200);
+    padding-block-start: var(--spacing-400);
+  }
+  /* The arrow is a circle: the lego's lg radius hook re-pointed to full, here only. */
+  .firma2-setup-steps__arrow {
+    --button-radius-lg: var(--radius-full);
+  }
+  .firma2-setup-steps__summary {
+    margin: 0;
+    text-align: start;
+  }
+  .firma2-setup-steps [data-step-documents-line] {
+    margin: 0;
+    text-align: start;
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-setup-steps__screen[hidden] {
+    display: none;
+  }
+</style>

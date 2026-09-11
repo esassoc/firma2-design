@@ -23,6 +23,15 @@ export interface Prototype {
 }
 
 export const prototypes: Prototype[] = [
+  {
+    slug: 'setup',
+    title: 'Tenant setup',
+    description:
+      'The setup hub: a hex map of every journey a new tenant stands up, fed by the documents it already has. Built for the Mission 4 hackathon slice.',
+    route: '/prototypes/setup',
+    createdAt: '2026-09-11',
+    status: 'in-progress',
+  },
   // The one screen here that is not a record. Listed because the colour-scheme
   // control on it is app-wide and live — it is the fastest way to see every
   // other prototype in this list rendered in the dark scheme.

@@ -1,0 +1,231 @@
+---
+// firma2-setup-org-tile — one organization as a large, tappable toggle. The unit
+// both the picker and the ask deal in, so it lives in one file and only one.
+//
+// IT RENDERS NOTHING BY ITSELF. What it ships is three things: an inert
+// <template> holding the tile's markup, the tile's CSS, and a <firma2-org-tile>
+// custom element that clones that template and fills it. A caller creates the
+// element and sets `.org`; neither caller writes a line of tile markup, which is
+// what stops the picker's tile and the ask's tile drifting apart. Same trick
+// bcn-tag-editor uses: a server-rendered master copy, so the scoped styles ride
+// along with the clone.
+//
+// THE CONTRACT
+//   el.org = Organization   fills the name, roles, location and source document
+//   el.orgId                the organization's id, for the caller's write
+//   el.selected             get/set — mirrors aria-pressed on the button
+//   'org-tile-toggle'       bubbling CustomEvent<{ id, selected }> on every click
+//
+// SELECTION IS NOT A WRITE. Tapping a tile changes nothing in the draft; it only
+// marks the tile. The caller's action row is what commits, which is the whole
+// point of the screen: nothing the documents proposed is written until Dana says
+// so, and she says so once for a set rather than nine times for nine records.
+//
+// bcn-lego-checked: nothing in the catalog is a SELECTABLE tile, and four legos
+// come close enough to be worth naming. esa-card is the right shape but is
+// presentational — no pressed state, no button, and a closed prop set
+// (title/subtitle/icon/variant/padding/meta) with nowhere to put a mark.
+// esa-checkbox carries exactly the right semantics and exactly the wrong target:
+// a 16px box with a label beside it, not a 200px card you can hit with a thumb.
+// esa-chip-group `multiple` is the closest BEHAVIOUR in the hub — a set of
+// aria-checked toggles with roving tabindex — but a chip is one line of nowrap
+// text and this holds four data in a stack. esa-button `active` is a control,
+// not a record. Beacon is not cloned on this machine. So the toggle is a native
+// <button aria-pressed>, the same semantics esa-chip-group uses inside itself,
+// styled from tokens — and every mark INSIDE it is still a lego: esa-badge for
+// the roles, esa-icon for the check.
+//
+// KEYBOARD IS THE BUTTON'S. Space and Enter toggle because it is a real
+// <button>; the focus ring is the token system's and is never touched here.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+---
+{/* The master copy. Inert until a <firma2-org-tile> clones it. */}
+<template data-org-tile>
+  <button type="button" class="firma2-org-tile__button" aria-pressed="false">
+    {/* The selected mark. Present in every tile, shown only when pressed, so
+        selecting cannot reflow the card it sits in. */}
+    <span class="firma2-org-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
+
+    <span class="stack" data-gap="2xs">
+      <span class="firma2-org-tile__name typography-label-lg-strong" data-part="name"></span>
+      <span class="firma2-org-tile__roles cluster" data-gap="3xs" data-part="roles"></span>
+      <span class="firma2-org-tile__place typography-body-sm" data-part="place"></span>
+      {/* The document the name was found in, labelled — "Cascade Headwaters
+          Annual Report 2025.pdf" on its own is not self-evidently a source. */}
+      <span class="firma2-org-tile__source cluster typography-body-sm" data-gap="3xs" data-part="source" hidden>
+        <span class="firma2-org-tile__source-label">From:</span>
+        <span data-part="source-name"></span>
+      </span>
+    </span>
+  </button>
+</template>
+
+{/* One role badge, cloned per role. A lego invocation rather than a span, so the
+    roles inside a tile are the same mark the roster's rows use. */}
+<template data-org-role><EsaBadge value="" variant="secondary" size="sm" /></template>
+
+<style is:global>
+  /* The host is created by script and therefore never carries this component's
+     scope attribute — the only rule it needs has to be global. Scoped by a tag
+     name this component owns. Stretching to the grid row's height is what keeps
+     a short tile clickable edge to edge beside a tall one. */
+  firma2-org-tile {
+    display: block;
+    block-size: 100%;
+  }
+</style>
+
+<style>
+  .firma2-org-tile__button {
+    position: relative;
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    text-align: start;
+    padding: var(--spacing-400, 1rem);
+    /* Room for the mark, so a long name never runs under it. */
+    padding-inline-end: var(--spacing-650, 2.5rem);
+    border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #e0e0e0);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-raised, #fcfdfc);
+    color: var(--color-content-default, #202020);
+    cursor: pointer;
+    transition:
+      background-color var(--transition-fast, 150ms ease),
+      border-color var(--transition-fast, 150ms ease);
+  }
+
+  .firma2-org-tile__button:hover {
+    border-color: var(--color-border-default-strong, #bbbbbb);
+    background: var(--color-background-default-hover, #f0f2f0);
+  }
+
+  /* SELECTED: brand tint, brand ring, mark shown. The ring is the brand FILL at
+     1px rather than the step-6 border role — a picker whose selected state is a
+     hairline two values off the resting one is a picker you have to squint at.
+     It is still a hairline, not a slab: the fill stays the primary action's. */
+  .firma2-org-tile__button[aria-pressed='true'] {
+    border-color: var(--color-background-brand, #46a758);
+    background: var(--color-background-brand-subtle, #fbfefb);
+  }
+
+  .firma2-org-tile__mark {
+    position: absolute;
+    inset-block-start: var(--spacing-300, 0.75rem);
+    inset-inline-end: var(--spacing-300, 0.75rem);
+    display: none;
+    color: var(--color-background-brand, #46a758);
+  }
+
+  .firma2-org-tile__button[aria-pressed='true'] .firma2-org-tile__mark {
+    display: block;
+  }
+
+  .firma2-org-tile__place,
+  .firma2-org-tile__source {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* .cluster owns the display, so the hidden attribute needs the higher
+     specificity to win — an org with no source document shows no source line. */
+  .firma2-org-tile__source[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import { sampleDocuments } from '../../data/firma2-setup';
+  import type { Organization } from '../../data/firma2-setup';
+
+  const TAG = 'firma2-org-tile';
+
+  /** The document a `document`-sourced suggestion came from, by name. */
+  const documentName = (id?: string): string => sampleDocuments.find((doc) => doc.id === id)?.name ?? '';
+
+  class Firma2OrgTile extends HTMLElement {
+    #org: Organization | null = null;
+    #button: HTMLButtonElement | null = null;
+    #selected = false;
+
+    /** Fills the tile. Setting it again rebuilds — there is no partial update. */
+    set org(value: Organization) {
+      this.#org = value;
+      this.#build();
+    }
+
+    get org(): Organization | null {
+      return this.#org;
+    }
+
+    get orgId(): string {
+      return this.#org?.id ?? '';
+    }
+
+    get selected(): boolean {
+      return this.#selected;
+    }
+
+    set selected(value: boolean) {
+      this.#selected = value;
+      this.#button?.setAttribute('aria-pressed', value ? 'true' : 'false');
+    }
+
+    connectedCallback(): void {
+      if (!this.#button) this.#build();
+    }
+
+    #build(): void {
+      const org = this.#org;
+      if (!org) return;
+
+      const tileTemplate = document.querySelector<HTMLTemplateElement>('template[data-org-tile]');
+      const roleTemplate = document.querySelector<HTMLTemplateElement>('template[data-org-role]');
+      if (!tileTemplate) return;
+
+      const tile = tileTemplate.content.cloneNode(true) as DocumentFragment;
+      const part = (name: string): HTMLElement | null => tile.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = org.name;
+
+      const roles = part('roles');
+      if (roles && roleTemplate) {
+        for (const role of org.roles) {
+          const badge = roleTemplate.content.cloneNode(true) as DocumentFragment;
+          const text = badge.querySelector('.esa-badge__text');
+          if (text) text.textContent = role;
+          roles.append(badge);
+        }
+      }
+
+      const place = part('place');
+      if (place) {
+        place.textContent = org.location ?? '';
+        place.hidden = !org.location;
+      }
+
+      const source = part('source');
+      const sourceName = documentName(org.sourceDocumentId);
+      const sourceValue = part('source-name');
+      if (sourceValue) sourceValue.textContent = sourceName;
+      if (source) source.hidden = !sourceName;
+
+      this.replaceChildren(tile);
+      this.#button = this.querySelector('button');
+      this.#button?.setAttribute('aria-pressed', this.#selected ? 'true' : 'false');
+      this.#button?.addEventListener('click', () => {
+        this.selected = !this.selected;
+        this.dispatchEvent(
+          new CustomEvent('org-tile-toggle', {
+            detail: { id: this.orgId, selected: this.selected },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+    }
+  }
+
+  if (!customElements.get(TAG)) customElements.define(TAG, Firma2OrgTile);
+</script>

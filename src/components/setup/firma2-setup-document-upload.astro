@@ -1,0 +1,116 @@
+---
+// firma2-setup-document-upload — the front door of the documents journey: the
+// dropzone, the path in for a reviewer with no files to hand, and the list of
+// what the tenant brought.
+//
+// THE UPLOAD IS REAL, THE READING IS CANNED. esa-file-upload accepts genuine
+// files and shows them; a static build cannot parse a PDF, so whatever lands
+// here the extraction runs against the three documents in `sampleDocuments`.
+// That is stated once, as the control's own help text, because it is a fact
+// about what this control does — not a note about the page.
+//
+// TWO WAYS IN, ON PURPOSE. A reviewer opening the deployed site has no restoration
+// grant agreement on their desktop, so "Use the sample documents" is the path that
+// always works; the dropzone is the path that shows the real gesture. Both end in
+// the same call — markDocumentsUploaded() — and the draft store fans the change
+// out to the hex map and the hub.
+//
+// EVERYTHING AFTER THE UPLOAD IS DERIVED. This component stores nothing of its
+// own: it reads `documentsUploaded` from the draft on load and on every
+// `setup-draft-change`, so a reload, a second tab, or Reset demo on the hub all
+// land it in the right state without a local copy to go stale.
+import EsaFormField from '@esa/ecology/esa-form-field.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+const headingId = 'firma2-setup-documents-read';
+---
+<div class="firma2-setup-document-upload stack" data-gap="lg">
+  {/* esa-file-upload has a label and a size limit of its own but no hint slot,
+      so the honest line rides esa-form-field's helpText — the lego whose whole
+      job is label + control + constraint. No `label` is passed: the zone already
+      renders one, and a second would name the same control twice. */}
+  <EsaFormField helpText="This prototype reads three sample documents, whatever you drop.">
+    <esa-file-upload
+      label="Upload documents"
+      accept=".pdf,.xlsx,.docx"
+      multiple
+      max-size-mb="25"
+      data-setup-upload
+    ></esa-file-upload>
+  </EsaFormField>
+
+  <div class="cluster firma2-setup-document-upload__actions" data-gap="sm">
+    <EsaButton variant="secondary" data-setup-use-samples>Use the sample documents</EsaButton>
+  </div>
+
+  {/* Hidden until there is something to list. The dropzone above stays put —
+      a tenant adds documents over weeks, so the way in does not disappear the
+      first time it is used. */}
+  <section class="firma2-setup-document-upload__read stack" data-gap="sm" aria-labelledby={headingId} data-setup-documents hidden>
+    <h2 id={headingId} class="typography-title-sm-strong firma2-setup-document-upload__heading">Documents read</h2>
+    {/* The names are set as a property from the script below: `files` is an
+        array, and an array cannot travel through an HTML attribute. Downloads
+        are switched off because there is no file behind these rows to fetch. */}
+    <esa-file-list data-setup-document-list downloadable="false"></esa-file-list>
+  </section>
+</div>
+
+<script>
+  import '@esa/ecology/esa-file-upload';
+  import '@esa/ecology/esa-file-list';
+  import { sampleDocuments } from '../../data/firma2-setup';
+  import { markDocumentsUploaded, readSetupDraft } from '../../lib/setup-draft';
+
+  const root = document.querySelector<HTMLElement>('.firma2-setup-document-upload');
+
+  if (root) {
+    const uploaded = root.querySelector<HTMLElement>('[data-setup-documents]');
+    const list = root.querySelector<HTMLElement & { files: { name: string }[] }>('[data-setup-document-list]');
+
+    const sync = (): void => {
+      const isUploaded = readSetupDraft().documentsUploaded;
+      if (uploaded) uploaded.hidden = !isUploaded;
+      if (list) list.files = isUploaded ? sampleDocuments.map((doc) => ({ name: doc.name })) : [];
+    };
+
+    // Any file landing in the zone counts as the upload, whatever it was: the
+    // lego's `change` is composed and bubbling and carries detail.files.
+    root.querySelector('[data-setup-upload]')?.addEventListener('change', (event) => {
+      const files = (event as CustomEvent<{ files: File[] }>).detail?.files ?? [];
+      if (files.length > 0) markDocumentsUploaded();
+    });
+
+    // Delegated: esa-button forwards rest props to its inner native button, so
+    // the data attribute is not on the element this selector would bind to.
+    root.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-setup-use-samples]')) markDocumentsUploaded();
+    });
+
+    sync();
+    document.addEventListener('setup-draft-change', sync);
+  }
+</script>
+
+<style>
+  .firma2-setup-document-upload__actions {
+    --justify: center;
+  }
+  .firma2-setup-document-upload__read {
+    text-align: start;
+  }
+  /* The typography composites set type only; the UA's heading margin survives
+     them and would stack on top of the .stack gap. */
+  .firma2-setup-document-upload__heading {
+    margin: 0;
+  }
+
+  /* [hidden] IS NOT ENOUGH ON A LAYOUT PRIMITIVE. The UA rule is
+     `[hidden] { display: none }` at author-origin-zero, and `.stack` sets
+     `display: flex` from a real stylesheet, which wins — so the section would
+     stay on screen with the attribute set. Restated here for the one element
+     that toggles. */
+  .firma2-setup-document-upload__read[hidden] {
+    display: none;
+  }
+</style>

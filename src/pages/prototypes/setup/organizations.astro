@@ -1,0 +1,113 @@
+---
+// Organizations — the cast of the program, picked rather than typed.
+//
+// The brief's five (docs/product-brief.md §5):
+//
+// 1. ONE QUESTION: "Which organizations are part of this program?" Not "add an
+//    organization", which is the question a form asks; the documents already
+//    named eleven, so the work is confirming a list, not composing one.
+// 2. READERS: the program admin sets this up once, in year zero, and the client
+//    decision-maker reads the roster cold. Hardest to serve is the one NOT here
+//    (§5.2): every REPORTER who will meet this list as a dropdown on every
+//    project, every year, long after today. Their burden is what "Skip the rest"
+//    is for, and why it sits beside Add at the same size rather than hiding as a
+//    link: a confirmed organization nobody works with is a wrong answer in
+//    somebody's dropdown forever, and declining is as legitimate as accepting.
+// 3. SERIES/SCALAR: one series (organizations), shown in the two states it has —
+//    proposed, and confirmed. Nothing scalar, so nothing goes in a rail.
+// 4. IRREVERSIBLE: nothing. Every action here is a status flip, and the roster
+//    carries Remove on every row it can be undone from, so none of it gets a
+//    warning band or a confirm step.
+// 5. CUT: the review QUEUE. One suggestion at a time with Confirm and Dismiss
+//    under it is the obvious build, and it turns one decision into nine identical
+//    ones. Also cut: a confidence score per suggestion (a number nobody can act
+//    on), the sentence each name was extracted from (the document's name is the
+//    part that settles trust), and the blank "Add organization" form that the ask
+//    section replaces.
+// 6. WHO MEETS IT LATER: reporters, in a dropdown. See §5.2 above.
+//
+// SETUP IS STILL NOT A WIZARD (§4). There is no step counter, no Next, and no
+// order to do this in: the picker, the ask and the roster are three ways to work
+// on one list, all live at once, and the page is finished whenever Dana says it
+// is. The header's Continue is a door, not a gate.
+//
+// The setup layer (bar + centred column) comes from SetupLayout.
+import SetupLayout from '../../../layouts/SetupLayout.astro';
+import Firma2PageHeader from '../../../components/shared/firma2-page-header.astro';
+import Firma2SetupOrgPicker from '../../../components/setup/firma2-setup-org-picker.astro';
+import Firma2SetupOrgAsk from '../../../components/setup/firma2-setup-org-ask.astro';
+import Firma2SetupOrgRoster from '../../../components/setup/firma2-setup-org-roster.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../../lib/base';
+
+const crumbs = [{ label: 'Setup', href: withBase('/prototypes/setup') }, { label: 'Organizations' }];
+---
+<!-- manifest:
+  layout: stack(2xl)
+  sections:
+    - page header  -> firma2-page-header         (counts in status, Back and Continue in actions)
+    - pick grid    -> firma2-setup-org-picker
+    - ask          -> firma2-setup-org-ask
+    - roster       -> firma2-setup-org-roster
+-->
+<SetupLayout title="Organizations">
+  <div class="stack" data-gap="2xl">
+    <Firma2PageHeader title="Organizations" crumbs={crumbs}>
+      <EsaButton slot="actions" variant="ghost" href={withBase('/prototypes/setup')}>Back to setup</EsaButton>
+
+      <!-- The way on, once there is a program to carry forward. A plain <div>
+           takes the `hidden`, because esa-button forwards rest props to its inner
+           native button whose own display beats the UA's [hidden] rule (the trap
+           the performance-measures page documents). -->
+      <div slot="actions" data-part="continue" hidden>
+        <EsaButton variant="primary" href={withBase('/prototypes/projects')}>Continue to first project</EsaButton>
+      </div>
+
+      <!-- The two numbers that say where this page stands, under the title rather
+           than in the actions cluster: they qualify the name, they are not
+           controls. Script keeps them true after every write. The <span> wrappers
+           carry the hooks because esa-badge has a closed prop set and forwards
+           nothing to its root. -->
+      <span slot="status" data-part="confirmed-count"><EsaBadge value="0 confirmed" variant="secondary" size="sm" /></span>
+      <span slot="status" data-part="review-count"><EsaBadge value="0 to review" variant="secondary" size="sm" /></span>
+    </Firma2PageHeader>
+
+    <Firma2SetupOrgPicker />
+    <Firma2SetupOrgAsk />
+    <Firma2SetupOrgRoster />
+  </div>
+</SetupLayout>
+
+<script>
+  import { listOrganizations } from '../../../lib/setup-draft';
+  import { tenantOrganization } from '../../../data/firma2-setup';
+
+  const confirmedBadge = document.querySelector<HTMLElement>('[data-part="confirmed-count"] .esa-badge__text');
+  const reviewBadge = document.querySelector<HTMLElement>('[data-part="review-count"] .esa-badge__text');
+  const continueAction = document.querySelector<HTMLElement>('[data-part="continue"]');
+
+  const sync = (): void => {
+    const organizations = listOrganizations();
+    // Confirmed counts the tenant, because the roster shows the tenant: the number
+    // in the header and the rows on the page have to be the same count.
+    const confirmed = organizations.filter((org) => org.status === 'confirmed').length;
+    // Only document suggestions can hold `suggested` on this screen — the ask
+    // stores nothing it did not also confirm.
+    const toReview = organizations.filter((org) => org.status === 'suggested').length;
+
+    if (confirmedBadge) confirmedBadge.textContent = `${confirmed} confirmed`;
+    if (reviewBadge) reviewBadge.textContent = `${toReview} to review`;
+
+    // The program is the tenant plus at least one partner; before that there is no
+    // first project to go and describe.
+    if (continueAction) {
+      continueAction.hidden = !organizations.some(
+        (org) => org.status === 'confirmed' && org.id !== tenantOrganization.id,
+      );
+    }
+  };
+
+  document.addEventListener('setup-draft-change', sync);
+  sync();
+</script>

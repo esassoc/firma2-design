@@ -1,0 +1,185 @@
+---
+// firma2-setup-org-picker — the pick grid: every organization the documents
+// proposed, as a tile you tap to keep.
+//
+// THE IDIOM IS THE MUSIC-APP ONBOARDING PICKER, not a review queue. A queue asks
+// one question nine times and makes the ninth answer feel like the first; a grid
+// asks one question once — "which of these are yours" — and lets the whole cast
+// be answered in a single pass, in whatever order the eye finds them. That is
+// also why nothing commits on tap: selection is cheap and reversible right up to
+// the moment Dana presses Add, and the press is the human review the extraction
+// is not allowed to skip.
+//
+// ORDER IS THE DATA'S. listOrganizations() returns the suggestions ordered by how
+// many projects the documents mention them on, so the organizations this program
+// works with most are the ones it sees first. Nothing here re-sorts.
+//
+// WHAT LEAVES THE GRID. A confirmed tile drops out on the next render and appears
+// in the roster below; a dismissed one drops out and does not come back (the
+// roster's Remove is what returns a document-sourced organization to this grid).
+// The grid holds only what is still unanswered, so an empty grid is a finished
+// job rather than a missing one — which is what the two empty states say.
+//
+// Composed: .grid is the layout engine (--grid-min 13rem lands four tiles across
+// the content region and folds to one on a phone without a media query),
+// firma2-setup-org-tile is the tile, esa-button the actions, esa-empty-state both
+// finished states.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupOrgTile from './firma2-setup-org-tile.astro';
+import { withBase } from '../../lib/base';
+
+const headingId = 'firma2-setup-org-picker-heading';
+---
+<section class="firma2-setup-org-picker stack" data-gap="md" aria-labelledby={headingId}>
+  <h2 id={headingId} class="typography-title-strong">Found in your documents</h2>
+
+  <!-- Filled by the script: the tiles are draft state (which suggestions are
+       still open lives in this browser), so there is nothing honest to render at
+       build time. The tile's MARKUP is still authored, not built in JS — the
+       script clones firma2-setup-org-tile's template. -->
+  <ul class="firma2-setup-org-picker__grid grid" data-gap="md" data-part="grid" hidden></ul>
+
+  <!-- The commit. It rides the bottom of the viewport while the grid is on
+       screen, so a long cast never separates the last tile from the button that
+       keeps it. -->
+  <div class="firma2-setup-org-picker__actions cluster" data-gap="sm" data-part="actions" hidden>
+    <EsaButton variant="primary" disabled data-part="add">Add organizations</EsaButton>
+    <EsaButton variant="ghost" data-part="skip">Skip the rest</EsaButton>
+  </div>
+
+  <!-- Two finished states, one cause each. Plain <div> wrappers because
+       esa-empty-state's props are a closed set with no `hidden` among them, and
+       a div with no author display rule is the one element [hidden] still
+       works on. -->
+  <div data-part="no-documents" hidden>
+    <EsaEmptyState title="No suggestions yet" description="Upload a report or spreadsheet to find organizations.">
+      <EsaButton variant="primary" href={withBase('/prototypes/setup/start')}>Start</EsaButton>
+    </EsaEmptyState>
+  </div>
+
+  <div data-part="all-reviewed" hidden>
+    <EsaEmptyState title="All suggestions reviewed" description="Add more organizations below." />
+  </div>
+
+  <Firma2SetupOrgTile />
+</section>
+
+<style>
+  /* The composites set type only; this is the spacing half they leave to the
+     spine, which the stack's gap already owns. */
+  .firma2-setup-org-picker > h2 {
+    margin: 0;
+  }
+
+  /* .grid is the layout engine; this only strips the list chrome that comes with
+     choosing <ul> for its semantics, and sets the tile's floor. */
+  .firma2-setup-org-picker__grid {
+    --grid-min: 13rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .firma2-setup-org-picker__actions {
+    position: sticky;
+    inset-block-end: 0;
+    padding-block: var(--spacing-300, 0.75rem);
+    background: var(--color-background-default, #fcfdfc);
+    /* Positioned, so the sections that come after it in the document would
+       otherwise paint over it on the way past. */
+    z-index: 1;
+  }
+
+  /* .grid and .cluster own display, so [hidden] needs the specificity to win. */
+  .firma2-setup-org-picker__grid[hidden],
+  .firma2-setup-org-picker__actions[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import { listOrganizations, readSetupDraft, setOrganizationStatus } from '../../lib/setup-draft';
+  import type { Organization } from '../../data/firma2-setup';
+
+  const TILE = 'firma2-org-tile';
+
+  type OrgTile = HTMLElement & { org: Organization; orgId: string; selected: boolean };
+
+  const section = document.querySelector<HTMLElement>('.firma2-setup-org-picker');
+  const grid = section?.querySelector<HTMLElement>('[data-part="grid"]');
+  const actions = section?.querySelector<HTMLElement>('[data-part="actions"]');
+  const addButton = section?.querySelector<HTMLButtonElement>('[data-part="add"]');
+  const skipButton = section?.querySelector<HTMLButtonElement>('[data-part="skip"]');
+  const noDocuments = section?.querySelector<HTMLElement>('[data-part="no-documents"]');
+  const allReviewed = section?.querySelector<HTMLElement>('[data-part="all-reviewed"]');
+
+  if (section && grid && actions && addButton && skipButton && noDocuments && allReviewed) {
+    /** What this grid is for: document-sourced suggestions nobody has answered yet. */
+    const open = (): Organization[] =>
+      listOrganizations().filter((org) => org.source === 'document' && org.status === 'suggested');
+
+    const picked = (): OrgTile[] => [...grid.querySelectorAll<OrgTile>(TILE)].filter((tile) => tile.selected);
+
+    // The count is IN the button because the button is where the decision is
+    // made — "Add 4 organizations" says what pressing it does, and a disabled
+    // "Add organizations" at zero says the same thing without a nonsense number.
+    const syncAddButton = (): void => {
+      const count = picked().length;
+      addButton.disabled = count === 0;
+      const label = addButton.querySelector('.esa-button__label');
+      if (label) {
+        label.textContent =
+          count === 0 ? 'Add organizations' : count === 1 ? 'Add 1 organization' : `Add ${count} organizations`;
+      }
+    };
+
+    const render = (): void => {
+      const open_ = open();
+      const uploaded = readSetupDraft().documentsUploaded;
+
+      grid.replaceChildren(
+        ...open_.map((org) => {
+          const item = document.createElement('li');
+          const tile = document.createElement(TILE) as OrgTile;
+          tile.org = org;
+          item.append(tile);
+          return item;
+        }),
+      );
+
+      grid.hidden = open_.length === 0;
+      actions.hidden = open_.length === 0;
+      noDocuments.hidden = uploaded;
+      allReviewed.hidden = !uploaded || open_.length > 0;
+      syncAddButton();
+    };
+
+    grid.addEventListener('org-tile-toggle', syncAddButton);
+
+    addButton.addEventListener('click', () => {
+      for (const tile of picked()) setOrganizationStatus(tile.orgId, 'confirmed');
+    });
+
+    // "The rest" is everything still open, selected or not — the button is the
+    // way to say "none of these", and saying it once should not require nine taps.
+    skipButton.addEventListener('click', () => {
+      for (const org of open()) setOrganizationStatus(org.id, 'dismissed');
+    });
+
+    // Every write in setup-draft.ts announces itself, so the grid, the roster and
+    // the header's counts all re-read the same draft rather than telling each
+    // other what changed.
+    let ready = false;
+    document.addEventListener('setup-draft-change', () => {
+      if (ready) render();
+    });
+
+    // The tile is a custom element: wait for its definition, or createElement
+    // hands back an unupgraded element whose `org` setter goes nowhere.
+    customElements.whenDefined(TILE).then(() => {
+      ready = true;
+      render();
+    });
+  }
+</script>
