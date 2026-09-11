@@ -25,14 +25,22 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaIcon from '@esa/ecology/esa-icon.astro';
 import Firma2SetupDocumentUpload from './firma2-setup-document-upload.astro';
-import Firma2SetupHexMap from './firma2-setup-hex-map.astro';
-import { intentQuestions } from '../../data/firma2-setup';
+import Firma2SetupStepGuide from './firma2-setup-step-guide.astro';
+import { intentQuestions, journeysForQuestion, stepGuides } from '../../data/firma2-setup';
 import { withBase } from '../../lib/base';
 
 const stepIds = ['documents', ...intentQuestions.map((q) => q.id), 'confirm'];
 const hubHref = withBase('/prototypes/setup');
 ---
-<div class="firma2-setup-steps" data-setup-steps data-step-ids={stepIds.join(',')}>
+<div class="sidebar firma2-setup-steps" data-side="end" data-setup-steps data-step-ids={stepIds.join(',')}>
+  <aside class="firma2-setup-steps__guide" aria-label="Guidance">
+    <Firma2SetupStepGuide step="documents" guide={stepGuides.documents} />
+    {intentQuestions.map((q) => (
+      <Firma2SetupStepGuide step={q.id} guide={q.guide} journeys={journeysForQuestion(q)} hidden />
+    ))}
+    <Firma2SetupStepGuide step="confirm" guide={stepGuides.confirm} hidden />
+  </aside>
+  <div class="firma2-setup-steps__main">
   <div class="repel firma2-setup-steps__bar">
     <div data-step-back-wrap hidden>
       <EsaButton variant="ghost" iconOnly icon="arrow-left" label="Back" data-step-back />
@@ -93,12 +101,10 @@ const hubHref = withBase('/prototypes/setup');
         <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
       </div>
     </div>
-    <div class="firma2-setup-steps__illustration">
-      <Firma2SetupHexMap size="sm" linked={false} legend={false} />
-    </div>
   </section>
 
   <script type="application/json" data-step-questions set:html={JSON.stringify(intentQuestions.map((q) => ({ id: q.id, multiple: q.multiple })))}></script>
+  </div>
 </div>
 
 <script>
@@ -117,6 +123,7 @@ const hubHref = withBase('/prototypes/setup');
     const questions: Question[] = JSON.parse(root.querySelector('[data-step-questions]')?.textContent ?? '[]');
     const questionById = new Map(questions.map((q) => [q.id, q]));
     const screens = Array.from(root.querySelectorAll<HTMLElement>('[data-step]'));
+    const guides = Array.from(root.querySelectorAll<HTMLElement>('[data-step-guide]'));
     const back = root.querySelector<HTMLElement>('[data-step-back-wrap]');
 
     const stepFromUrl = (): string => {
@@ -168,6 +175,7 @@ const hubHref = withBase('/prototypes/setup');
     const show = (id: string, push: boolean) => {
       current = id;
       for (const screen of screens) screen.hidden = screen.dataset.step !== id;
+      for (const guide of guides) guide.hidden = guide.dataset.stepGuide !== id;
       const index = stepIds.indexOf(id);
       if (back) back.hidden = index === 0;
       setNext(id);
@@ -221,7 +229,21 @@ const hubHref = withBase('/prototypes/setup');
 
 <style>
   .firma2-setup-steps {
-    position: relative;
+    --sidebar-width: 17rem;
+    --sidebar-content-min: 55%;
+    --gap: var(--spacing-800);
+    align-items: flex-start;
+  }
+  .firma2-setup-steps__guide {
+    position: sticky;
+    inset-block-start: var(--spacing-600);
+    padding-block-start: var(--spacing-950);
+  }
+  @media (max-width: 48rem) {
+    .firma2-setup-steps__guide {
+      position: static;
+      padding-block-start: 0;
+    }
   }
   .firma2-setup-steps__bar {
     margin-block-end: var(--spacing-800);
@@ -258,11 +280,6 @@ const hubHref = withBase('/prototypes/setup');
     border-radius: var(--radius-full);
     background: var(--firma2-brand-3);
     color: var(--firma2-brand-10);
-  }
-  .firma2-setup-steps__illustration {
-    display: flex;
-    justify-content: center;
-    padding-block-start: var(--spacing-600);
   }
   /* One choice per row, each a full-width capsule: the lego's chip radius token
      re-pointed to the pill, the chip part stretched. The group has no justify

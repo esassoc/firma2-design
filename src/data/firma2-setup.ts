@@ -601,6 +601,15 @@ export interface IntentQuestion {
   /** Words that precede the chosen phrases in the summary sentence; empty when the phrase stands alone. */
   lead: string;
   options: IntentOption[];
+  guide: StepGuide;
+}
+
+/** The side panel beside a screen: what the choice sets up, in the admin's terms. */
+export interface StepGuide {
+  title: string;
+  body: string;
+  /** Concrete instances of the thing being chosen, when naming a few helps. */
+  examples?: string[];
 }
 
 /** One screen each, in this order. Three or four choices a screen, label only. */
@@ -616,6 +625,10 @@ export const intentQuestions: IntentQuestion[] = [
       { id: 'delivers', label: 'We deliver our own projects', journeys: ['lifecycle', 'program-shape'], phrase: 'delivers its own projects' },
       { id: 'both', label: 'Both', journeys: ['funding-sources', 'organizations', 'lifecycle', 'program-shape'], phrase: 'funds and delivers projects' },
     ],
+    guide: {
+      title: 'Funder, implementer, or both',
+      body: 'A funder tracks awards, obligations and grantee reporting. An implementer tracks its own project pipeline and delivery. Both keeps the two ledgers in one program.',
+    },
   },
   {
     id: 'slices',
@@ -629,6 +642,11 @@ export const intentQuestions: IntentQuestion[] = [
       { id: 'limiting-factors', label: 'Limiting factors', journeys: ['classifications'], classification: 'Limiting factor', phrase: 'limiting factor' },
       { id: 'program-areas', label: 'Program areas', journeys: ['classifications'], classification: 'Program area', phrase: 'program area' },
     ],
+    guide: {
+      title: 'Groupings become classifications',
+      body: 'Each grouping is a tag every project carries and a filter on every list, map and report. Pick the ones your reporting already uses.',
+      examples: ['Focal species: steelhead, bull trout', 'Project type: fish passage, riparian planting', 'Limiting factor: temperature, sediment'],
+    },
   },
   {
     id: 'map',
@@ -641,6 +659,11 @@ export const intentQuestions: IntentQuestion[] = [
       { id: 'counties', label: 'Counties', journeys: ['spatial-areas'], phrase: 'county' },
       { id: 'own-boundaries', label: 'Our own boundaries', journeys: ['spatial-areas'], phrase: 'your own boundaries' },
     ],
+    guide: {
+      title: 'Areas the map is drawn by',
+      body: 'Every project sits inside these areas and totals roll up by them. Watersheds and counties come pre-drawn. Your own boundaries are uploaded as shapefiles later.',
+      examples: ['Watershed: Whychus Creek', 'County: Deschutes, Jefferson'],
+    },
   },
   {
     id: 'time',
@@ -653,6 +676,11 @@ export const intentQuestions: IntentQuestion[] = [
       { id: 'bienniums', label: 'Bienniums', journeys: ['funding-sources', 'lifecycle'], phrase: 'bienniums' },
       { id: 'calendar-years', label: 'Calendar years', journeys: [], phrase: 'calendar years' },
     ],
+    guide: {
+      title: 'The reporting period',
+      body: 'Funding, expenditures and progress are reported against this period. Bienniums follow the Oregon and Washington budget cycle. Funding years follow each award.',
+      examples: ['Biennium: 2025 to 2027', 'Funding year: FY2026'],
+    },
   },
   {
     id: 'measures',
@@ -664,6 +692,11 @@ export const intentQuestions: IntentQuestion[] = [
       { id: 'yes', label: 'Yes', journeys: ['measures'], phrase: 'reporting performance measures' },
       { id: 'not-yet', label: 'Not yet', journeys: [], phrase: 'not reporting performance measures yet' },
     ],
+    guide: {
+      title: 'Numbers each project reports',
+      body: 'A performance measure is a quantity reported per project and summed for the program, like miles of stream opened or acres treated.',
+      examples: ['Miles of stream opened', 'Acres of riparian planting', 'Fish passage barriers removed'],
+    },
   },
   {
     id: 'reporters',
@@ -675,6 +708,10 @@ export const intentQuestions: IntentQuestion[] = [
       { id: 'staff', label: 'Our staff only', journeys: ['people'], phrase: 'your staff' },
       { id: 'partners', label: 'Staff and partner organizations', journeys: ['people', 'organizations'], phrase: 'your staff and partner organizations' },
     ],
+    guide: {
+      title: 'Who gets an account',
+      body: 'Staff get full access. Partner organizations get accounts limited to their own projects, which adds every partner to the organizations roster.',
+    },
   },
 ];
 
@@ -722,4 +759,23 @@ export const classificationsFromIntent = (answers: Record<string, string[]>): st
     }
   }
   return names;
+};
+
+/** Guidance for the two screens that are not intent questions. */
+export const stepGuides: Record<'documents' | 'confirm', StepGuide> = {
+  documents: {
+    title: 'Documents worth bringing',
+    body: 'Each one names organizations, funding sources, measures and projects that setup proposes instead of asking for.',
+    examples: ['Grant agreement', 'Project tracking spreadsheet', 'Annual report', 'Partner roster'],
+  },
+  confirm: {
+    title: 'What opens next',
+    body: 'Setup opens with the journeys these answers call for marked as suggested. Any of them can be skipped or finished later.',
+  },
+};
+
+/** The journeys a question's options can light, for the guide's "Sets up" list. */
+export const journeysForQuestion = (question: IntentQuestion): SetupJourney[] => {
+  const keys = new Set(question.options.flatMap((o) => o.journeys));
+  return journeys.filter((j) => keys.has(j.key));
 };
