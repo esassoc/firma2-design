@@ -1,0 +1,292 @@
+---
+// firma2-setup-milestone-emblem — one milestone's mark: a hexagonal plate
+// holding the milestone's icon, wearing its status.
+//
+// WHY A HEXAGON. The setup model already carries `hex: {q, r}` per milestone and
+// firma2-setup-hex-map already draws each one as a pointy-top hex tile. A
+// milestone therefore already HAS a shape in this prototype, and inventing a
+// second one (a shield, a seal) would give the same record two silhouettes on
+// two screens. One shape everywhere: the plate below is the map's tile seen head
+// on, same orientation, same proportions.
+//
+// FIVE STATES, ONE LADDER. The states are not five unrelated skins — they are
+// rungs, and a reader has to be able to tell which rung is higher without
+// reading the badge beside it:
+//
+//   locked       no plate, a dashed faint ring            (a dependency is unmet)
+//   untouched    sunken plate, plain neutral ring         (nothing known yet)
+//   suggested    brand-muted plate, full brand outline    (candidates are waiting)
+//   in-progress  brand-muted plate, brand arc HALF drawn  (some of it is done)
+//   confirmed    solid brand plate, knockout icon, seal   (it is done)
+//
+// The arc is what makes `in-progress` read as a fraction rather than as a
+// different colour: one polygon with pathLength="100" and stroke-dasharray
+// "50 100", so the brand stroke traces exactly half the perimeter over the
+// full-perimeter track beneath it. Confirmed is the only state that fills the
+// plate AND stamps a seal on it, which is what makes it feel earned rather than
+// merely coloured in.
+//
+// THE COUNT IS ONE THING, ALWAYS. `count` is what is WAITING for you on this
+// milestone — candidates the documents proposed and nobody has reviewed. It is
+// the same number in `suggested` and in `in-progress`, so the chip never changes
+// meaning between states, and it is absent at zero rather than rendering "0".
+//
+// bcn-lego-checked: three legos come close and none of them is this.
+// esa-avatar is the right IDEA (a shaped plate around a glyph) and the wrong
+// prop set — it takes name/src/initials and renders a circle or a rounded
+// square, with no status channel at all beyond an online dot. esa-badge is a
+// text mark sized by its own padding; it has six variants, none of which is
+// "half complete", and no room for a 24px icon. esa-icon is the glyph INSIDE
+// this and is used as such below, but it is a glyph and nothing else: no plate,
+// no ring, no state. Walked the catalog (`ls
+// node_modules/@esa/ecology/src/components/`) for an emblem/medal/marker
+// primitive; the nearest is esa-pill, which is a removable token. Beacon is not
+// cloned on this machine, so tier 2 is unavailable.
+// firma2-setup-milestone-emblem is the reusable home: the hub grid uses it at
+// lg, and any later setup screen that needs a milestone's mark inline gets the
+// same object at sm or md rather than a second drawing of it.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import type { JourneyStatus } from '../../data/firma2-setup';
+
+type EmblemSize = 'sm' | 'md' | 'lg';
+
+interface Props {
+  /** esa-icon registry name, straight off the milestone record. */
+  icon: string;
+  /** The milestone's derived status. Drives the whole plate. */
+  status: JourneyStatus;
+  /** Candidates still awaiting review. Renders as a corner chip when above zero. */
+  count?: number;
+  /** sm inline, md beside a heading, lg on a card. */
+  size?: EmblemSize;
+}
+
+const { icon, status, count = 0, size = 'md' } = Astro.props;
+
+// The glyph is subordinate to its plate at every size: roughly two fifths of it,
+// never more. Icon sizes are the shared scale, so the glyph is the same object
+// esa-icon draws anywhere else.
+const GLYPH_SIZE: Record<EmblemSize, 'sm' | 'md' | 'lg'> = { sm: 'sm', md: 'md', lg: 'lg' };
+
+// A pointy-top hexagon inset 2 units inside a 0-100 box, so the ring's stroke has
+// ground to sit on. Width is height x sin(60deg): 96 x 0.866 = 83.1, centred, so
+// the flat edges land at 8.4 and 91.6. The plate's clip-path below repeats these
+// numbers as percentages of the same square box, which is what makes fill and
+// ring share one silhouette.
+const HEX_POINTS = '50,2 91.6,26 91.6,74 50,98 8.4,74 8.4,26';
+
+// The chip states a number the status already implies the existence of, so it is
+// dropped when there is nothing waiting rather than rendering a zero.
+const showCount = count > 0 && (status === 'suggested' || status === 'in-progress');
+---
+<span class="firma2-setup-milestone-emblem" data-status={status} data-size={size} data-milestone-emblem>
+  {/* The fill. A clipped block rather than an SVG polygon so the plate and the
+      ring stay two independently themeable surfaces. */}
+  <span class="firma2-setup-milestone-emblem__plate"></span>
+
+  <svg class="firma2-setup-milestone-emblem__ring" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+    {/* Track first, arc over it. pathLength normalises the perimeter to 100 so
+        the dash pattern is a percentage and not a number anybody has to derive
+        from the hexagon's side length. */}
+    <polygon class="firma2-setup-milestone-emblem__track" points={HEX_POINTS} pathLength="100" />
+    <polygon class="firma2-setup-milestone-emblem__arc" points={HEX_POINTS} pathLength="100" />
+  </svg>
+
+  <span class="firma2-setup-milestone-emblem__glyph">
+    <EsaIcon name={icon} size={GLYPH_SIZE[size]} />
+  </span>
+
+  {/* THE SEAL IS SERVER-RENDERED IN EVERY EMBLEM and toggled with `hidden`, the
+      same mechanic the status badges use: a stamp that has to be created at
+      runtime is a stamp that arrives one frame after the fill it belongs to. */}
+  <span class="firma2-setup-milestone-emblem__seal" data-emblem-seal hidden={status !== 'confirmed'}>
+    <EsaIcon name="check" size="xs" />
+  </span>
+
+  <span class="firma2-setup-milestone-emblem__count" data-emblem-count hidden={!showCount}>
+    <EsaBadge value={count} variant="secondary" size="xs" />
+  </span>
+</span>
+
+<style>
+  .firma2-setup-milestone-emblem {
+    /* No token names a badge plate, so the three steps are read off the spacing
+       scale rather than minted: 2.5rem / 3rem / 4rem. The glyph inside each is
+       the icon scale's sm / md / lg, which holds the plate-to-glyph ratio near
+       two fifths at every step. */
+    --_emblem-size: var(--spacing-700);
+    --_emblem-plate: transparent;
+    --_emblem-track: var(--color-border-default);
+    --_emblem-track-dash: none;
+    --_emblem-arc: transparent;
+    --_emblem-arc-width: var(--border-width-default);
+    --_emblem-arc-dash: 0 100;
+    --_emblem-glyph: var(--color-content-default-secondary);
+
+    position: relative;
+    display: inline-flex;
+    inline-size: var(--_emblem-size);
+    block-size: var(--_emblem-size);
+    flex: none;
+  }
+
+  .firma2-setup-milestone-emblem[data-size='sm'] { --_emblem-size: var(--spacing-650); }
+  .firma2-setup-milestone-emblem[data-size='lg'] { --_emblem-size: var(--spacing-900); }
+
+  /* Plate and ring occupy the same square. The plate is clipped to the hexagon
+       the ring strokes, using the same six vertices expressed as percentages. */
+  .firma2-setup-milestone-emblem__plate,
+  .firma2-setup-milestone-emblem__ring {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .firma2-setup-milestone-emblem__plate {
+    background: var(--_emblem-plate);
+    clip-path: polygon(50% 2%, 91.6% 26%, 91.6% 74%, 50% 98%, 8.4% 74%, 8.4% 26%);
+  }
+
+  /* The stroke is not scaled by the viewBox: a 1px ring on a 2.5rem emblem and a
+     1px ring on a 4rem emblem are the same hairline, which is what keeps the
+     three sizes reading as one family rather than three weights. */
+  .firma2-setup-milestone-emblem__track,
+  .firma2-setup-milestone-emblem__arc {
+    fill: none;
+    vector-effect: non-scaling-stroke;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .firma2-setup-milestone-emblem__track {
+    stroke: var(--_emblem-track);
+    stroke-width: var(--border-width-default);
+    stroke-dasharray: var(--_emblem-track-dash);
+  }
+
+  .firma2-setup-milestone-emblem__arc {
+    stroke: var(--_emblem-arc);
+    stroke-width: var(--_emblem-arc-width);
+    stroke-dasharray: var(--_emblem-arc-dash);
+  }
+
+  .firma2-setup-milestone-emblem__glyph {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--_emblem-glyph);
+  }
+
+  /* LOCKED — no plate at all, and the ring is the only mark. Dashed, because a
+     broken outline is the one ring shape that reads as "not yet a thing" without
+     needing a colour anybody has to learn. */
+  .firma2-setup-milestone-emblem[data-status='locked'] {
+    --_emblem-track: var(--color-border-disabled);
+    --_emblem-track-dash: 6 5;
+    --_emblem-glyph: var(--color-content-disabled);
+  }
+
+  /* UNTOUCHED — the plate exists and is empty. Same weight of attention as
+     locked; they differ in cause, not in urgency, which is the split the status
+     badge states in words. */
+  .firma2-setup-milestone-emblem[data-status='untouched'] {
+    --_emblem-plate: var(--color-background-elevation-sunken);
+    --_emblem-track: var(--color-border-default);
+  }
+
+  /* SUGGESTED — the brand arrives as an OUTLINE. Something is waiting, nothing
+     has been decided, so the plate stays a tint and the perimeter is fully
+     drawn. */
+  .firma2-setup-milestone-emblem[data-status='suggested'] {
+    --_emblem-plate: var(--color-background-brand-muted);
+    --_emblem-track: transparent;
+    --_emblem-arc: var(--color-border-brand);
+    --_emblem-arc-dash: 100 100;
+    --_emblem-glyph: var(--color-content-brand);
+  }
+
+  /* IN PROGRESS — the arc traces half the perimeter over a visible track, so the
+     emblem states a fraction. The track is a step of the same brand ramp rather
+     than a neutral: the unfilled half of a thing that has started is still part
+     of that thing. */
+  .firma2-setup-milestone-emblem[data-status='in-progress'] {
+    --_emblem-plate: var(--color-background-brand-muted);
+    --_emblem-track: var(--color-background-brand-muted-hover);
+    --_emblem-arc: var(--color-background-brand);
+    --_emblem-arc-width: var(--border-width-emphasis);
+    --_emblem-arc-dash: 50 100;
+    --_emblem-glyph: var(--color-content-brand);
+  }
+
+  /* CONFIRMED — solid, knocked out, and stamped. Three changes at once is the
+     point: every other state moves one channel, this one moves all of them, so
+     a finished milestone is recognisable at the edge of vision. */
+  .firma2-setup-milestone-emblem[data-status='confirmed'] {
+    --_emblem-plate: var(--color-background-brand);
+    --_emblem-track: transparent;
+    --_emblem-arc: var(--color-background-brand);
+    --_emblem-arc-width: var(--border-width-emphasis);
+    --_emblem-arc-dash: 100 100;
+    --_emblem-glyph: var(--color-content-on-brand);
+  }
+
+  /* The seal overhangs the lower trailing vertex so it sits mostly on the card
+     behind the emblem, where its own ring can separate it from whatever it lands
+     on. That ring is the surface colour, not a border colour: the seal reads as
+     punched THROUGH the card rather than outlined on it. */
+  .firma2-setup-milestone-emblem__seal {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    display: grid;
+    place-items: center;
+    padding: var(--spacing-050);
+    border-radius: var(--radius-full);
+    background: var(--color-background-brand);
+    color: var(--color-content-on-brand);
+    box-shadow: 0 0 0 var(--border-width-emphasis) var(--color-background-elevation-raised);
+    transform: translate(25%, 25%);
+  }
+
+  /* The count rides the upper trailing vertex, the corner a notification count
+     already owns everywhere else. */
+  .firma2-setup-milestone-emblem__count {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    transform: translate(35%, -25%);
+  }
+
+  /* A bare span carries no author display rule, so the UA's [hidden] applies and
+     the runtime toggle needs nothing else. The two marks below are positioned,
+     which DOES set a display, so each one restates it. */
+  .firma2-setup-milestone-emblem__seal[hidden],
+  .firma2-setup-milestone-emblem__count[hidden] {
+    display: none;
+  }
+
+  /* FORCED COLORS. Plate and arc are a background and a stroke, and both flatten;
+     the hexagon survives as a shape only if the track is a real line at every
+     status. The seal keeps its meaning because it contains a glyph rather than
+     being one colour, and the count is text. A confirmed emblem is then the one
+     wearing a check, which is the same thing the card's badge says in words. */
+  @media (forced-colors: active) {
+    .firma2-setup-milestone-emblem {
+      --_emblem-track: CanvasText;
+      --_emblem-arc: CanvasText;
+      --_emblem-glyph: CanvasText;
+    }
+    .firma2-setup-milestone-emblem[data-status='confirmed'] {
+      --_emblem-plate: Canvas;
+      --_emblem-glyph: CanvasText;
+    }
+    .firma2-setup-milestone-emblem__seal {
+      background: Canvas;
+      color: CanvasText;
+      box-shadow: 0 0 0 1px CanvasText;
+    }
+  }
+</style>

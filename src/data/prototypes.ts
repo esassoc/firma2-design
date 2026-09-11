@@ -27,7 +27,7 @@ export const prototypes: Prototype[] = [
     slug: 'setup',
     title: 'Tenant setup',
     description:
-      'The setup hub: a hex map of every journey a new tenant stands up, fed by the documents it already has. Built for the Mission 4 hackathon slice.',
+      'The setup hub: every milestone a new tenant stands up, laid out by subject and fed by the documents it already has. Built for the Mission 4 hackathon slice.',
     route: '/prototypes/setup',
     createdAt: '2026-09-11',
     status: 'in-progress',

@@ -45,6 +45,22 @@ export type JourneyKey =
 export type JourneyTier = 'foundation' | 'build' | 'go-live';
 
 /**
+ * The subject a milestone belongs to on the hub. Tiers order the work by
+ * dependency; sections group it by what the admin is thinking about, which is
+ * how the hub lays the cards out.
+ */
+export type MilestoneSection = 'program' | 'people' | 'money' | 'organizing' | 'results';
+
+/** Hub section order and headings. */
+export const milestoneSections: { key: MilestoneSection; heading: string }[] = [
+  { key: 'program', heading: 'Your program' },
+  { key: 'people', heading: 'Who is involved' },
+  { key: 'money', heading: 'Money' },
+  { key: 'organizing', heading: 'How work is organized' },
+  { key: 'results', heading: 'Results' },
+];
+
+/**
  * A journey's state on the hub, and the hex's state on the map.
  *
  *   locked      a dependency is unmet — the hex is faint and not a link
@@ -60,6 +76,7 @@ export interface SetupJourney {
   /** The hub row's name and the hex's label. */
   title: string;
   tier: JourneyTier;
+  section: MilestoneSection;
   /** Root-relative, base-less. Omitted for a journey this spoke has not built — renders inert, not as a dead link. */
   route?: string;
   /** Journeys that must be `confirmed` before this one unlocks. Empty for most: build-tier journeys are never locked. */
@@ -83,6 +100,7 @@ export const journeys: SetupJourney[] = [
     key: 'documents',
     title: 'Start',
     tier: 'foundation',
+    section: 'program',
     route: '/prototypes/setup/start',
     dependsOn: [],
     hex: { q: 0, r: -2 },
@@ -93,6 +111,7 @@ export const journeys: SetupJourney[] = [
     key: 'program-shape',
     title: 'Program shape',
     tier: 'foundation',
+    section: 'program',
     dependsOn: [],
     hex: { q: 1, r: -2 },
     unit: 'decisions',
@@ -102,6 +121,7 @@ export const journeys: SetupJourney[] = [
     key: 'organizations',
     title: 'Organizations',
     tier: 'build',
+    section: 'people',
     route: '/prototypes/setup/organizations',
     dependsOn: [],
     hex: { q: -1, r: -1 },
@@ -112,6 +132,7 @@ export const journeys: SetupJourney[] = [
     key: 'funding-sources',
     title: 'Funding sources',
     tier: 'build',
+    section: 'money',
     dependsOn: [],
     hex: { q: 0, r: -1 },
     unit: 'funding sources',
@@ -121,6 +142,7 @@ export const journeys: SetupJourney[] = [
     key: 'classifications',
     title: 'Classifications',
     tier: 'build',
+    section: 'organizing',
     dependsOn: [],
     hex: { q: 1, r: -1 },
     unit: 'classifications',
@@ -130,6 +152,7 @@ export const journeys: SetupJourney[] = [
     key: 'lifecycle',
     title: 'Project stages',
     tier: 'build',
+    section: 'organizing',
     dependsOn: [],
     hex: { q: -1, r: 0 },
     unit: 'stages',
@@ -139,6 +162,7 @@ export const journeys: SetupJourney[] = [
     key: 'spatial-areas',
     title: 'Spatial areas',
     tier: 'build',
+    section: 'organizing',
     dependsOn: [],
     hex: { q: 0, r: 0 },
     unit: 'areas',
@@ -148,6 +172,7 @@ export const journeys: SetupJourney[] = [
     key: 'appearance',
     title: 'Names and appearance',
     tier: 'build',
+    section: 'program',
     dependsOn: [],
     hex: { q: 1, r: 0 },
     unit: 'settings',
@@ -157,6 +182,7 @@ export const journeys: SetupJourney[] = [
     key: 'people',
     title: 'People',
     tier: 'go-live',
+    section: 'people',
     dependsOn: ['organizations'],
     hex: { q: -1, r: 1 },
     unit: 'people',
@@ -166,6 +192,7 @@ export const journeys: SetupJourney[] = [
     key: 'first-project',
     title: 'First project',
     tier: 'go-live',
+    section: 'results',
     route: '/prototypes/projects',
     dependsOn: ['organizations'],
     hex: { q: 0, r: 1 },
@@ -176,6 +203,7 @@ export const journeys: SetupJourney[] = [
     key: 'measures',
     title: 'Performance measures',
     tier: 'build',
+    section: 'results',
     route: '/prototypes/performance-measures',
     dependsOn: [],
     hex: { q: 1, r: 1 },
@@ -593,7 +621,7 @@ export interface IntentOption {
 
 export interface IntentQuestion {
   id: string;
-  /** One line, under 32 characters, asked as the assistant would ask it. */
+  /** One line, under 40 characters, asked as the assistant would ask it. */
   prompt: string;
   multiple: boolean;
   /** Registry icon shown above the prompt. */
@@ -602,6 +630,11 @@ export interface IntentQuestion {
   lead: string;
   options: IntentOption[];
   guide: StepGuide;
+  /**
+   * When the choices cannot be exhaustive, an "in your own words" field under
+   * them. What is typed becomes one more selected chip on this question.
+   */
+  ask?: { label: string; placeholder: string };
 }
 
 /** The side panel beside a screen: what the choice sets up, in the admin's terms. */
@@ -631,6 +664,42 @@ export const intentQuestions: IntentQuestion[] = [
     },
   },
   {
+    id: 'work',
+    prompt: 'What kind of work do you do?',
+    multiple: true,
+    icon: 'trees',
+    lead: 'working on',
+    options: [
+      { id: 'habitat', label: 'Habitat restoration', journeys: ['classifications', 'measures'], phrase: 'habitat restoration' },
+      { id: 'water', label: 'Water quality and supply', journeys: ['classifications', 'measures'], phrase: 'water quality and supply' },
+      { id: 'land', label: 'Land protection', journeys: ['classifications', 'spatial-areas'], phrase: 'land protection' },
+      { id: 'planning', label: 'Planning and monitoring', journeys: ['classifications'], phrase: 'planning and monitoring' },
+    ],
+    guide: {
+      title: 'Work types become project types',
+      body: 'Each kind of work seeds a project type and the performance measures that usually go with it. Pick every one your projects fall under.',
+      examples: ['Habitat restoration: fish passage, riparian planting', 'Water: instream flow leases, irrigation efficiency'],
+    },
+    ask: { label: 'Another kind of work', placeholder: 'Wildfire fuels reduction, outreach and education' },
+  },
+  {
+    id: 'goals',
+    prompt: 'What should ProjectFirma do for you?',
+    multiple: true,
+    icon: 'star',
+    lead: 'using ProjectFirma to',
+    options: [
+      { id: 'track-funding', label: 'Track funding and spending', journeys: ['funding-sources'], phrase: 'track funding' },
+      { id: 'report', label: 'Report to funders and the board', journeys: ['measures', 'classifications'], phrase: 'report results' },
+      { id: 'coordinate', label: 'Coordinate with partners', journeys: ['organizations', 'people'], phrase: 'coordinate partners' },
+      { id: 'share', label: 'Share our work publicly', journeys: ['appearance', 'spatial-areas'], phrase: 'share work publicly' },
+    ],
+    guide: {
+      title: 'Goals decide what opens first',
+      body: 'Tracking money opens funding sources. Reporting opens measures. Coordinating opens partner accounts. Sharing opens the public site and map.',
+    },
+  },
+  {
     id: 'slices',
     prompt: 'How do you group projects?',
     multiple: true,
@@ -647,6 +716,7 @@ export const intentQuestions: IntentQuestion[] = [
       body: 'Each grouping is a tag every project carries and a filter on every list, map and report. Pick the ones your reporting already uses.',
       examples: ['Focal species: steelhead, bull trout', 'Project type: fish passage, riparian planting', 'Limiting factor: temperature, sediment'],
     },
+    ask: { label: 'Another way you group projects', placeholder: 'Grant round, priority tier, watershed council' },
   },
   {
     id: 'map',
@@ -664,6 +734,7 @@ export const intentQuestions: IntentQuestion[] = [
       body: 'Every project sits inside these areas and totals roll up by them. Watersheds and counties come pre-drawn. Your own boundaries are uploaded as shapefiles later.',
       examples: ['Watershed: Whychus Creek', 'County: Deschutes, Jefferson'],
     },
+    ask: { label: 'Another kind of area', placeholder: 'HUC-12 subbasins, irrigation districts, reaches' },
   },
   {
     id: 'time',
@@ -681,6 +752,7 @@ export const intentQuestions: IntentQuestion[] = [
       body: 'Funding, expenditures and progress are reported against this period. Bienniums follow the Oregon and Washington budget cycle. Funding years follow each award.',
       examples: ['Biennium: 2025 to 2027', 'Funding year: FY2026'],
     },
+    ask: { label: 'A different period', placeholder: 'Water year, state fiscal year' },
   },
   {
     id: 'measures',
@@ -697,6 +769,7 @@ export const intentQuestions: IntentQuestion[] = [
       body: 'A performance measure is a quantity reported per project and summed for the program, like miles of stream opened or acres treated.',
       examples: ['Miles of stream opened', 'Acres of riparian planting', 'Fish passage barriers removed'],
     },
+    ask: { label: 'Measures you already report', placeholder: 'Acres treated, stream miles opened, barriers removed' },
   },
   {
     id: 'reporters',
@@ -719,13 +792,26 @@ const joinAnd = (parts: string[]): string =>
   parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 
 /**
+ * Options a question can be answered with: the authored ones, plus anything typed
+ * into its ask field and kept in the draft. `custom` is the draft's
+ * customIntentOptions map; callers without a draft pass nothing.
+ */
+const optionsWithCustom = (question: IntentQuestion, custom: Record<string, IntentOption[]>): IntentOption[] => [
+  ...question.options,
+  ...(custom[question.id] ?? []),
+];
+
+/**
  * One sentence composed from the answers, for the confirm screen. Only answered
  * questions contribute, in screen order; an empty answer set yields ''.
  */
-export const composeIntentSummary = (answers: Record<string, string[]>): string => {
+export const composeIntentSummary = (
+  answers: Record<string, string[]>,
+  custom: Record<string, IntentOption[]> = {},
+): string => {
   const clauses: string[] = [];
   for (const question of intentQuestions) {
-    const chosen = question.options.filter((o) => (answers[question.id] ?? []).includes(o.id));
+    const chosen = optionsWithCustom(question, custom).filter((o) => (answers[question.id] ?? []).includes(o.id));
     if (!chosen.length) continue;
     const phrases = joinAnd(chosen.map((o) => o.phrase));
     clauses.push(question.lead ? `${question.lead} ${phrases}` : phrases);
@@ -737,11 +823,14 @@ export const composeIntentSummary = (answers: Record<string, string[]>): string 
 export const intentQuestionById = (id: string): IntentQuestion | undefined => intentQuestions.find((q) => q.id === id);
 
 /** Journeys the given answers make relevant. `answers` maps question id to chosen option ids. */
-export const journeysFromIntent = (answers: Record<string, string[]>): Set<JourneyKey> => {
+export const journeysFromIntent = (
+  answers: Record<string, string[]>,
+  custom: Record<string, IntentOption[]> = {},
+): Set<JourneyKey> => {
   const keys = new Set<JourneyKey>();
   for (const question of intentQuestions) {
     const chosen = answers[question.id] ?? [];
-    for (const option of question.options) {
+    for (const option of optionsWithCustom(question, custom)) {
       if (!chosen.includes(option.id)) continue;
       for (const j of option.journeys) keys.add(j);
     }
@@ -750,11 +839,14 @@ export const journeysFromIntent = (answers: Record<string, string[]>): Set<Journ
 };
 
 /** Classifications the answers call for, by name, for the classifications hex's count. */
-export const classificationsFromIntent = (answers: Record<string, string[]>): string[] => {
+export const classificationsFromIntent = (
+  answers: Record<string, string[]>,
+  custom: Record<string, IntentOption[]> = {},
+): string[] => {
   const names: string[] = [];
   for (const question of intentQuestions) {
     const chosen = answers[question.id] ?? [];
-    for (const option of question.options) {
+    for (const option of optionsWithCustom(question, custom)) {
       if (chosen.includes(option.id) && option.classification) names.push(option.classification);
     }
   }
@@ -770,7 +862,7 @@ export const stepGuides: Record<'documents' | 'confirm', StepGuide> = {
   },
   confirm: {
     title: 'What opens next',
-    body: 'Setup opens with the journeys these answers call for marked as suggested. Any of them can be skipped or finished later.',
+    body: 'Setup opens with the milestones these answers call for marked as suggested. Any of them can be skipped or finished later.',
   },
 };
 

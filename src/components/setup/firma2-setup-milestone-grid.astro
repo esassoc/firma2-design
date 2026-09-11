@@ -1,0 +1,354 @@
+---
+// firma2-setup-milestone-grid — the setup hub's milestones, as a card per
+// milestone grouped by subject.
+//
+// WHY CARDS AND NOT ROWS. The list this replaces grouped by TIER (foundation,
+// build, go-live), which is the model's dependency order and answers "what may I
+// do next". It is the wrong question for somebody who has never stood a tenant
+// up: the first thing an admin wants is to recognise the SUBJECT — money,
+// people, the shape of the program — and pick the one they already have answers
+// for. So the grouping is by `section` and the unit is a card, sized to hold the
+// milestone's emblem at full size, because a milestone here is a thing you go
+// and collect rather than a line you tick.
+//
+// SETUP IS STILL NOT A WIZARD. Nothing here numbers a step or advances a cursor.
+// Every card is its own URL, resumable, openable in any order its dependencies
+// allow, and the only ordering the grid asserts is the one the data already
+// carries: milestoneSections, then the order milestones are declared in.
+//
+// STATUS IS DERIVED, NEVER STORED (setup-draft.ts). The server renders the ZERO
+// state — journeyStatuses() with no draft, which is exactly what a fresh browser
+// shows — and the script re-applies the real statuses on load and on every
+// `setup-draft-change`. That is why the grid, the meter above it and the hex map
+// can never disagree: all three read the same function and none keeps a copy.
+//
+// ALL FIVE STATUS BADGES ARE SERVER-RENDERED PER CARD and the script swaps which
+// one is `hidden`. The alternative — one badge whose variant class is rewritten
+// at runtime — depends on the lego's scoped stylesheet shipping every variant
+// rule whether or not the page used it. Toggling `hidden` on a plain <span>
+// wrapper has no such dependency: a bare span carries no author display rule, so
+// the UA's [hidden] applies.
+//
+// A CARD WITH NO ROUTE IS INERT, NOT A DEAD LINK — the rule AppLayout applies to
+// the sidenav, for the same reason: a route this spoke has not built is a route
+// you cannot go to, and it should say so rather than 404. A LOCKED card is inert
+// too, because a dependency is unmet. Locked is not permanent, so the href is
+// PARKED on the element rather than thrown away — confirming organizations
+// unlocks first-project in the same tick that fires setup-draft-change, and the
+// link has to come straight back. Same mechanic firma2-setup-hex-map uses.
+//
+// bcn-lego-checked: the card IS esa-card (variant="outlined"), the status and
+// seam marks ARE esa-badge, the emblem is firma2-setup-milestone-emblem and the
+// layout is .grid / .stack / .cluster with their own gap and --grid-min knobs.
+// What is written here and nowhere else is the WHOLE-CARD LINK: esa-card is a
+// <div> with a closed prop set (title/meta/icon/variant/padding) and no href, no
+// anchor and no interactive state, and esa-button href renders a button-shaped
+// anchor rather than a card-shaped one. Walked the catalog for a clickable card
+// or tile (`ls node_modules/@esa/ecology/src/components/`); esa-icon-link and
+// esa-link-column are text links, esa-chip-group is a control. Beacon is not
+// cloned on this machine, so tier 2 is unavailable. So the link is a real <a>
+// wrapping the lego, taking the page's own focus ring from tokens/focus.css, and
+// the only rules below it are the hover edge and the inert dim.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaCard from '@esa/ecology/esa-card.astro';
+import Firma2SetupMilestoneEmblem from './firma2-setup-milestone-emblem.astro';
+import { journeys, milestoneSections } from '../../data/firma2-setup';
+import type { JourneyStatus } from '../../data/firma2-setup';
+import { journeyStatuses } from '../../lib/setup-draft';
+import { milestoneCountLine } from '../../lib/setup-milestone-copy';
+import { withBase } from '../../lib/base';
+
+type BadgeVariant = 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'info';
+
+// The status word, one per JourneyStatus, in the model's own vocabulary so the
+// badge on a card, the segment in the meter and the hex on the map are saying
+// the same thing.
+const STATUS_WORD: Record<JourneyStatus, string> = {
+  locked: 'Locked',
+  untouched: 'Not started',
+  suggested: 'Suggested',
+  'in-progress': 'In progress',
+  confirmed: 'Confirmed',
+};
+
+// Two quiet states (nothing has happened), one informational (candidates are
+// waiting), one in-flight, one done. Locked and untouched share a variant on
+// purpose: they differ in CAUSE, not in how much attention they deserve.
+const STATUS_VARIANT: Record<JourneyStatus, BadgeVariant> = {
+  locked: 'secondary',
+  untouched: 'secondary',
+  suggested: 'info',
+  'in-progress': 'warning',
+  confirmed: 'success',
+};
+
+const STATUSES = Object.keys(STATUS_WORD) as JourneyStatus[];
+
+// The zero state, resolved at build time. readSetupDraft() is SSR-safe (no
+// localStorage on the server, so it returns the empty draft), which means this
+// is the same picture a first-time visitor sees before the script runs — not a
+// placeholder that flickers into something else.
+const initial = journeyStatuses();
+---
+<div class="firma2-setup-milestone-grid stack" data-gap="xl">
+  {
+    milestoneSections.map((section) => {
+      const cards = journeys.filter((journey) => journey.section === section.key);
+      if (cards.length === 0) return null;
+      const headingId = `firma2-setup-section-${section.key}`;
+      // The heading belongs to the cards under it, so the gap inside a section
+      // is a third of the gap between sections.
+      return (
+        <section class="stack" data-gap="sm" aria-labelledby={headingId}>
+          <h2 id={headingId} class="typography-heading-md firma2-setup-milestone-grid__heading">
+            {section.heading}
+          </h2>
+
+          <ul class="grid firma2-setup-milestone-grid__cards" data-gap="md">
+            {cards.map((journey) => {
+              const progress = initial[journey.key];
+              const navigable = !!journey.route && progress.status !== 'locked';
+              // The documents milestone's confirmed count folds in the intent answers,
+              // so a count line there would name a number of documents that is not
+              // one. It carries status only.
+              const countable = journey.key !== 'documents';
+              const hasCounts = countable && (progress.suggested > 0 || progress.confirmed > 0);
+              const Tag = journey.route ? 'a' : 'div';
+              const linkProps = journey.route
+                ? { href: withBase(journey.route), 'data-milestone-link': '' }
+                : {};
+              return (
+                <li
+                  class="firma2-setup-milestone-grid__card"
+                  data-milestone={journey.key}
+                  data-unit={journey.unit}
+                  data-inert={navigable ? undefined : ''}
+                  data-status={progress.status}
+                >
+                  <Tag class="firma2-setup-milestone-grid__link" {...linkProps}>
+                    {/* esa-card is the whole surface: border, radius, background
+                        and padding are all its own. Its HEADER is deliberately
+                        unused — a card header is a title band with a rule under
+                        it, and the emblem has to sit ABOVE the title rather than
+                        beside it — so the milestone fills the body slot. */}
+                    <EsaCard variant="outlined">
+                      <div class="firma2-setup-milestone-grid__panel stack" data-gap="sm">
+                        {/* The emblem is a fixed-size inline box, so it needs a
+                            block of its own to centre inside — a flex item cannot
+                            be centred by the text-align its siblings use. */}
+                        <div class="firma2-setup-milestone-grid__emblem">
+                          <Firma2SetupMilestoneEmblem
+                            icon={journey.icon}
+                            status={progress.status}
+                            size="lg"
+                          />
+                        </div>
+
+                        <h3 class="typography-title-strong firma2-setup-milestone-grid__title">{journey.title}</h3>
+
+                        <div class="cluster" data-gap="xs" data-justify="center">
+                          {STATUSES.map((status) => (
+                            <span data-milestone-status={status} hidden={status !== progress.status}>
+                              <EsaBadge value={STATUS_WORD[status]} variant={STATUS_VARIANT[status]} size="sm" />
+                            </span>
+                          ))}
+
+                          {/* The seam with the other hackathon mission, stated on
+                              the card that crosses it. It is a fact about
+                              ownership, so it sits beside the status rather than
+                              replacing it. */}
+                        </div>
+
+                        {/* Two counts, two elements, each carrying its own noun
+                            and its own unit. A single "4 suggested, 3 confirmed"
+                            string would make one datum out of two and truncate as
+                            one. */}
+                        <div
+                          class="stack firma2-setup-milestone-grid__counts"
+                          data-gap="3xs"
+                          data-milestone-counts
+                          hidden={!hasCounts}
+                        >
+                          <span
+                            class="typography-body-md"
+                            data-milestone-count="suggested"
+                            hidden={progress.suggested === 0}
+                          >
+                            {milestoneCountLine(progress.suggested, 'suggested', journey.unit)}
+                          </span>
+                          <span
+                            class="typography-body-md"
+                            data-milestone-count="confirmed"
+                            hidden={progress.confirmed === 0}
+                          >
+                            {milestoneCountLine(progress.confirmed, 'confirmed', journey.unit)}
+                          </span>
+                        </div>
+                      </div>
+                    </EsaCard>
+                  </Tag>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      );
+    })
+  }
+</div>
+
+<script>
+  // The grid's one job after render: keep every card honest about a draft that
+  // lives in this browser. journeyStatuses() is the same function the server
+  // rendered from, so "apply" is a re-render of the same derivation rather than
+  // a second opinion about it.
+  import { journeyStatuses } from '../../lib/setup-draft';
+  import { milestoneCountLine } from '../../lib/setup-milestone-copy';
+  import type { MilestoneCountNoun } from '../../lib/setup-milestone-copy';
+  import type { JourneyKey } from '../../data/firma2-setup';
+
+  const root = document.querySelector<HTMLElement>('.firma2-setup-milestone-grid');
+
+  /**
+   * A locked milestone keeps its markup and loses its destination. The href is
+   * parked on the element rather than thrown away, because locks are not
+   * permanent — see this component's header note.
+   */
+  const setLinkState = (link: HTMLElement | null, locked: boolean): void => {
+    if (!link) return;
+    const href = link.getAttribute('href') ?? link.dataset.href;
+    if (!href) return;
+    link.dataset.href = href;
+    if (locked) {
+      link.removeAttribute('href');
+      link.setAttribute('aria-disabled', 'true');
+    } else {
+      link.setAttribute('href', href);
+      link.removeAttribute('aria-disabled');
+    }
+  };
+
+  if (root) {
+    const apply = (): void => {
+      const statuses = journeyStatuses();
+
+      root.querySelectorAll<HTMLElement>('[data-milestone]').forEach((card) => {
+        const progress = statuses[card.dataset.milestone as JourneyKey];
+        if (!progress) return;
+        const unit = card.dataset.unit ?? '';
+
+        card.querySelectorAll<HTMLElement>('[data-milestone-status]').forEach((badge) => {
+          badge.hidden = badge.dataset.milestoneStatus !== progress.status;
+        });
+
+        // The emblem is one element with five CSS states; the seal inside it is
+        // server-rendered and toggled, never authored here.
+        const emblem = card.querySelector<HTMLElement>('[data-milestone-emblem]');
+        if (emblem) {
+          emblem.dataset.status = progress.status;
+          const seal = emblem.querySelector<HTMLElement>('[data-emblem-seal]');
+          if (seal) seal.hidden = progress.status !== 'confirmed';
+        }
+
+        const counts: [MilestoneCountNoun, number][] = [
+          ['suggested', progress.suggested],
+          ['confirmed', progress.confirmed],
+        ];
+        for (const [noun, value] of counts) {
+          const line = card.querySelector<HTMLElement>(`[data-milestone-count="${noun}"]`);
+          if (!line) continue;
+          line.textContent = milestoneCountLine(value, noun, unit);
+          line.hidden = value === 0;
+        }
+        const countGroup = card.querySelector<HTMLElement>('[data-milestone-counts]');
+        if (countGroup) {
+          countGroup.hidden =
+            card.dataset.milestone === 'documents' || (progress.suggested === 0 && progress.confirmed === 0);
+        }
+
+        const link = card.querySelector<HTMLElement>('[data-milestone-link]');
+        const navigable = !!link && progress.status !== 'locked';
+        setLinkState(link, !navigable);
+        card.toggleAttribute('data-inert', !navigable);
+        card.dataset.status = progress.status;
+      });
+    };
+
+    apply();
+    document.addEventListener('setup-draft-change', apply);
+  }
+</script>
+
+<style>
+  /* The typography composites set type only; the UA's heading margin survives
+     them and would stack on top of the .stack gap. The spine owns spacing. */
+  .firma2-setup-milestone-grid__heading,
+  .firma2-setup-milestone-grid__title {
+    margin: 0;
+  }
+
+  /* Three cards across the hub's 64rem column, one across a phone. 15rem is the
+     narrowest a card can be and still hold "Names and appearance" on two lines
+     under a 4rem emblem. */
+  .firma2-setup-milestone-grid__cards {
+    --grid-min: 15rem;
+    /* auto-fill, not the primitive's auto-fit: a section with one milestone keeps
+       the same card width as a section with three, so the grid reads as one set
+       of cards rather than as rows of different things. */
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr));
+    list-style: none;
+    padding: 0;
+  }
+
+  /* The card is the whole target, so the anchor is the whole card: full height
+     so a short card in a row still clicks edge to edge, and the page's own focus
+     ring (tokens/focus.css) rounded to match the corner it sits around. */
+  .firma2-setup-milestone-grid__link {
+    display: block;
+    block-size: 100%;
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-md);
+  }
+
+  .firma2-setup-milestone-grid__link > :global(.esa-card) {
+    block-size: 100%;
+  }
+
+  /* HOVER IS THE ONLY AFFORDANCE A WHOLE-CARD LINK HAS — there is no underline
+     to thicken and no button to press, so the card's own edge takes the brand
+     and the card lifts. [href] rather than a class, because the script parks the
+     href when a milestone locks: the target and the appearance of a target then
+     cannot disagree, whatever order the two updates land in. */
+  .firma2-setup-milestone-grid__link[href]:hover > :global(.esa-card) {
+    border-color: var(--color-border-brand);
+    box-shadow: var(--elevation-2);
+  }
+
+  /* Centred, because the emblem is the card's subject and a subject reads as
+     collected rather than listed when it sits on the card's axis. Text-align is
+     the whole of it: the emblem, the badges and the count lines are all inline
+     boxes inside their own blocks, so none of them needs a flex alignment of its
+     own. */
+  .firma2-setup-milestone-grid__panel {
+    text-align: center;
+  }
+
+  .firma2-setup-milestone-grid__counts {
+    color: var(--color-content-default-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* .stack sets display:flex, which beats the UA's [hidden] rule, so the two
+     containers that carry a runtime toggle restate it. */
+  .firma2-setup-milestone-grid__counts[hidden] {
+    display: none;
+  }
+
+  /* Only a LOCKED milestone dims: its dependency is unmet and the card says so.
+     A milestone this spoke has not built yet is inert but keeps full presence,
+     because on this hub every card is a thing to go and earn. */
+  .firma2-setup-milestone-grid__card[data-status='locked'] {
+    opacity: 0.6;
+  }
+</style>

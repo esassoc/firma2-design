@@ -9,15 +9,21 @@
 // can be resumed, and "Finish later" on every screen returns to the hub with
 // the answers so far kept.
 //
+// Where a question's choices cannot be exhaustive it also carries an ask field:
+// what is typed there becomes one more chip in the same group, already chosen,
+// so there is never a second kind of answer on the screen.
+//
 // bcn-lego-checked: no esa-* stepper or wizard exists (ls of the catalog:
 // esa-progress-bar is the only progress lego and it is linear, not stepped);
 // checked Beacon (no ui-stepper). Each screen is composed from legos:
 // esa-chip-group for the pills (brand tone, its selected roles re-pointed to a
-// solid fill), esa-button for the arrows, esa-card for the confirm card,
-// firma2-setup-document-upload for the first screen, esa-icon in a tinted
-// circle above each prompt, firma2-setup-hex-map as the illustration on the
-// last screen. The bespoke part is the screen switching, the centred stack and
-// the icon circle, which no lego owns.
+// solid fill), esa-text-field + esa-button for the ask row, esa-button for the
+// arrows, esa-card for the confirm card, firma2-setup-document-upload for the
+// first screen, esa-icon in a tinted circle above each prompt,
+// firma2-setup-hex-map as the illustration on the last screen. The bespoke part
+// is the screen switching, the centred stack and the icon circle, which no lego
+// owns; the ask row is the .cluster primitive inside the same centring wrapper
+// the chips already use, so it lands in their column rather than the page's.
 //
 // Setup is allowed to be louder than the app: display-size prompts and a
 // brand-tinted icon per screen, where the app's own pages stay at heading-lg.
@@ -76,6 +82,20 @@ const hubHref = withBase('/prototypes/setup');
           options={JSON.stringify(q.options.map((o) => ({ value: o.id, label: o.label, tone: 'brand' })))}
         ></esa-chip-group>
       </div>
+      {q.ask && (
+        <div class="firma2-setup-steps__ask">
+          <div class="cluster" data-gap="sm">
+            <esa-text-field
+              data-ask-field
+              data-ask-question={q.id}
+              label={q.ask.label}
+              placeholder={q.ask.placeholder}
+              size="md"
+            ></esa-text-field>
+            <EsaButton variant="ai" data-ask-add data-ask-question={q.id}>Add</EsaButton>
+          </div>
+        </div>
+      )}
       <div class="firma2-setup-steps__advance">
         <div class="firma2-setup-steps__arrow">
           <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next disabled />
@@ -109,13 +129,24 @@ const hubHref = withBase('/prototypes/setup');
 
 <script>
   import '@esa/ecology/esa-chip-group';
+  import '@esa/ecology/esa-text-field';
   import { composeIntentSummary, sampleDocuments } from '../../data/firma2-setup';
-  import { readSetupDraft, setIntentAnswer } from '../../lib/setup-draft';
+  import { addIntentOption, intentOptionsFor, readSetupDraft, setIntentAnswer } from '../../lib/setup-draft';
 
   interface Question {
     id: string;
     multiple: boolean;
   }
+
+  /** The chip group's own option shape, restated here so the script owns no lego types. */
+  interface ChipOption {
+    value: string;
+    label: string;
+    tone: string;
+  }
+
+  type ChipGroupElement = HTMLElement & { options: ChipOption[]; values: string[]; value: string };
+  type AskFieldElement = HTMLElement & { value: string };
 
   const root = document.querySelector<HTMLElement>('[data-setup-steps]');
   if (root) {
@@ -141,20 +172,32 @@ const hubHref = withBase('/prototypes/setup');
       return answered(id);
     };
 
+    // The options are rebuilt on every sync, not just the selection: a typed answer
+    // is stored as one more option on its question, so the group has to re-render
+    // with the extra chip before the selection can point at it.
     const syncChoices = () => {
       const draft = readSetupDraft();
-      root.querySelectorAll<HTMLElement & { values: string[]; value: string }>('[data-intent-question]').forEach((el) => {
+      root.querySelectorAll<ChipGroupElement>('[data-intent-question]').forEach((el) => {
         const id = el.dataset.intentQuestion ?? '';
         const chosen = draft.intent[id] ?? [];
+        el.options = intentOptionsFor(id, draft).map((o) => ({ value: o.id, label: o.label, tone: 'brand' }));
         if (questionById.get(id)?.multiple) el.values = [...chosen];
         else el.value = chosen[0] ?? '';
       });
     };
 
+    // Blank or already-taken text leaves the field alone, so what was typed is still
+    // there to see. A stored option clears it: the chip above is now the answer.
+    const submitAsk = (questionId: string) => {
+      const field = root.querySelector<AskFieldElement>(`[data-ask-field][data-ask-question="${questionId}"]`);
+      if (!field) return;
+      if (addIntentOption(questionId, field.value)) field.value = '';
+    };
+
     const syncSummary = () => {
       const draft = readSetupDraft();
       const summary = root.querySelector<HTMLElement>('[data-step-summary]');
-      if (summary) summary.textContent = composeIntentSummary(draft.intent);
+      if (summary) summary.textContent = composeIntentSummary(draft.intent, draft.customIntentOptions);
       const line = root.querySelector<HTMLElement>('[data-step-documents-line]');
       if (line) {
         line.hidden = !draft.documentsUploaded;
@@ -197,7 +240,9 @@ const hubHref = withBase('/prototypes/setup');
     root.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest('[data-step-next]')) move(1);
+      const add = target.closest<HTMLElement>('[data-ask-add]');
+      if (add) submitAsk(add.dataset.askQuestion ?? '');
+      else if (target.closest('[data-step-next]')) move(1);
       else if (target.closest('[data-step-skip]')) move(1);
       else if (target.closest('[data-step-back]')) move(-1);
       else if (target.closest('[data-step-edit]')) show(stepIds[1], true);
@@ -210,6 +255,17 @@ const hubHref = withBase('/prototypes/setup');
       const detail = (event as CustomEvent<{ values?: string[]; value?: string }>).detail ?? {};
       const chosen = questionById.get(id)?.multiple ? (detail.values ?? []) : detail.value ? [detail.value] : [];
       setIntentAnswer(id, chosen);
+    });
+
+    // Enter in an ask field is the same gesture as Add. The event is retargeted to
+    // the esa-text-field host on the way out of its shadow root, so the field is
+    // reachable with closest() and there is no inner input to reach for.
+    root.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key !== 'Enter') return;
+      const field = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-ask-field]');
+      if (!field) return;
+      event.preventDefault();
+      submitAsk(field.dataset.askQuestion ?? '');
     });
 
     document.addEventListener('setup-draft-change', () => {
@@ -305,6 +361,27 @@ const hubHref = withBase('/prototypes/setup');
     padding-block: var(--spacing-300);
     white-space: normal;
     text-align: center;
+  }
+  /* bcn-lego-checked: the ask row is esa-text-field + esa-button laid out by the
+     .cluster primitive — no bespoke flex of its own. This wrapper is the same
+     centring device __choices uses above it, and for the same reason: the screen
+     stretches its direct children to full width, so the 26rem column has to be an
+     inner element. --align is the cluster's own knob, set to flex-end so the button
+     sits on the field's box rather than centred against its label. */
+  .firma2-setup-steps__ask {
+    display: flex;
+    justify-content: center;
+  }
+  .firma2-setup-steps__ask > .cluster {
+    --align: flex-end;
+    inline-size: min(100%, 26rem);
+  }
+  /* The screen centres its text; a form control's label and value read from the
+     start edge. The field takes the leftover width beside the button. */
+  .firma2-setup-steps__ask esa-text-field {
+    flex: 1;
+    min-inline-size: 0;
+    text-align: start;
   }
   .firma2-setup-steps__advance {
     display: flex;

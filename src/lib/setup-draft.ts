@@ -18,6 +18,7 @@ import {
   askExamples,
   candidateCountByJourney,
   classificationsFromIntent,
+  intentQuestionById,
   intentQuestions,
   journeys,
   journeysFromIntent,
@@ -25,7 +26,13 @@ import {
   suggestedOrganizations,
   tenantOrganization,
 } from '../data/firma2-setup';
-import type { JourneyKey, JourneyStatus, Organization, OrganizationStatus } from '../data/firma2-setup';
+import type {
+  IntentOption,
+  JourneyKey,
+  JourneyStatus,
+  Organization,
+  OrganizationStatus,
+} from '../data/firma2-setup';
 
 const KEY_VERSION = 'v1';
 const KEY = `firma2:setup-draft:${KEY_VERSION}`;
@@ -39,9 +46,20 @@ export interface SetupDraft {
   addedOrganizations: Organization[];
   /** Intent answers: question id to the option ids chosen. A question the admin has not answered is absent. */
   intent: Record<string, string[]>;
+  /**
+   * Options typed into a question's "in your own words" field, by question id.
+   * Built-in options are never stored — only what this browser added.
+   */
+  customIntentOptions: Record<string, IntentOption[]>;
 }
 
-const EMPTY: SetupDraft = { documentsUploaded: false, organizationStatus: {}, addedOrganizations: [], intent: {} };
+const EMPTY: SetupDraft = {
+  documentsUploaded: false,
+  organizationStatus: {},
+  addedOrganizations: [],
+  intent: {},
+  customIntentOptions: {},
+};
 
 /** SSR-safe: localStorage does not exist during `astro build`, and Safari private mode throws on access. */
 const storage = (): Storage | null => {
@@ -101,6 +119,59 @@ export const setIntentAnswer = (questionId: string, optionIds: string[]): boolea
   if (optionIds.length) intent[questionId] = optionIds;
   else delete intent[questionId];
   return writeSetupDraft({ ...draft, intent });
+};
+
+/**
+ * Every option a question can show: the authored ones first, then the ones typed
+ * into its ask field in this browser. The chip group renders exactly this list,
+ * so a typed answer is one more chip rather than a second kind of control.
+ */
+export const intentOptionsFor = (questionId: string, draft: SetupDraft = readSetupDraft()): IntentOption[] => [
+  ...(intentQuestionById(questionId)?.options ?? []),
+  ...(draft.customIntentOptions[questionId] ?? []),
+];
+
+/**
+ * Turns typed text into one more option on a question, already chosen.
+ *
+ * The journeys are the UNION of everything the question's authored options light:
+ * the choices could not be exhaustive, but they do bound what the question is
+ * about, so an answer nobody anticipated opens the same milestones its siblings
+ * would. That is deliberately generous — setup suggests, the admin confirms.
+ *
+ * Returns the option, or null when there is nothing to add: blank text, or a
+ * label this question already carries.
+ */
+export const addIntentOption = (questionId: string, label: string): IntentOption | null => {
+  const question = intentQuestionById(questionId);
+  if (!question) return null;
+
+  const text = label.trim().replace(/\s+/g, ' ');
+  const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if (!slug) return null;
+  const id = `custom-${slug}`;
+
+  const draft = readSetupDraft();
+  const custom = draft.customIntentOptions[questionId] ?? [];
+  const taken = [...question.options, ...custom];
+  if (taken.some((o) => o.id === id || o.label.toLowerCase() === text.toLowerCase())) return null;
+
+  const option: IntentOption = {
+    id,
+    label: text,
+    journeys: [...new Set(question.options.flatMap((o) => o.journeys))],
+    phrase: text.toLowerCase(),
+  };
+
+  // A single-select question replaces its answer, exactly as picking another chip
+  // would; a multi-select one gains a choice.
+  const chosen = draft.intent[questionId] ?? [];
+  writeSetupDraft({
+    ...draft,
+    customIntentOptions: { ...draft.customIntentOptions, [questionId]: [...custom, option] },
+    intent: { ...draft.intent, [questionId]: question.multiple ? [...chosen, id] : [id] },
+  });
+  return option;
 };
 
 /** True once every intent question has an answer. */
@@ -182,8 +253,8 @@ export interface JourneyProgress {
  */
 export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<JourneyKey, JourneyProgress> => {
   const counts = draft.documentsUploaded ? candidateCountByJourney() : {};
-  const wanted = journeysFromIntent(draft.intent);
-  const classificationsWanted = classificationsFromIntent(draft.intent).length;
+  const wanted = journeysFromIntent(draft.intent, draft.customIntentOptions);
+  const classificationsWanted = classificationsFromIntent(draft.intent, draft.customIntentOptions).length;
   const orgs = listOrganizations(draft).filter((o) => o.id !== tenantOrganization.id);
   const orgConfirmed = orgs.filter((o) => o.status === 'confirmed').length;
   const orgSuggested = orgs.filter((o) => o.status === 'suggested').length;
