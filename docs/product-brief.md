@@ -415,6 +415,111 @@ that hid your half-finished work would defeat the point.
 nothing about measures and is meant to be reused unchanged for Organizations,
 Funding Sources and Users.*
 
+The setup milestones are stepped, and that is not a wizard either. Start,
+Organizations and Funding sources each walk three screens with one question a
+screen, because a screen that asks "which of these?" over a dozen tiles and a
+screen that asks "any we missed?" over three fields are different questions with
+different answers, and putting them on one page made neither legible. What keeps
+a stepped milestone out of wizard territory is the same four properties the
+measure draft has: the page has its own URL, the step rides the query string so
+a link reopens the screen it was copied from, Finish later keeps the draft, and
+no screen refuses to be left. The write happens on the arrow, over the whole
+cast, so there is no half-answered state to lose.
+
+*Proved on: Funding sources, after its one-page version drew "I have no sense of
+what I'm entering" (Andy, 2026-09-18). Organizations followed.*
+
+### Setup configures the vocabulary; the product makes the links
+
+Setup is where a program tells the system what exists: its organizations, its
+people, its classifications, its funding sources. Those are reference tables,
+and each one is a list the rest of the product picks from. A row that JOINS two
+of them, a project to a funding source with an amount, a project to a measure
+with a target, is not configuration; it is the ongoing use of the platform, and
+it belongs on the record that owns it, entered by the person who knows the
+number, on the day they know it. Setup that asks for those rows asks the admin
+to do the program staff's work before the program has started, with none of the
+context the record page gives.
+
+The test for a setup screen: does it produce a list, or a link? A list is setup.
+A link is a card on a record.
+
+*Proved on: Funding sources. Its first cut carried a commitments table
+(dbo.ProjectFundingSource) and a notes field beside the list of funds; Andy,
+2026-09-18: "individual data connections between a project and funding source
+feel like the ongoing maintenance and use of the platform." The commitments
+moved to the project record's Funding sources card and the notes were cut. The
+same reasoning replaced the First project milestone with Import projects: the
+portfolio's first fill is an import from the tracking spreadsheet Start already
+reads, not hand-authoring one record.*
+
+### A fixed list is asked as a preference, in the program's own words
+
+Some of what a program "sets up" is not its to define. ProjectFirma's six
+project stages are global rows no tenant adds to or renames. Setup still has a
+question there, but it is a preference over the fixed list (which of these do
+you use, which does a new record start in), never a form for authoring it. The
+program's own vocabulary is the evidence: its tracker already says "Funded" and
+"In construction", so the screen shows the fixed list with the program's words
+mapped onto it and asks for a confirm, not a cold choice.
+
+The test: if the list is the platform's, the screen asks which and where, and
+shows the tenant's words beside the platform's.
+
+*Proved on: Project stages. A teammate's 2026-09-23 mock argued the step could
+be cut because the stages are a global lookup; what survived was the subset and
+the starting stage, with the tracker's Status values as the provenance that
+pre-selects four of six.*
+
+### Suggestions come from what the tenant uploaded, never from what they said they want
+
+Intent answers name the *kind* of grouping a program uses (Focal species,
+Program area); a document names the *values* (Riparian habitat, Fish passage).
+A tile is a yes-or-no on a value, so every setup picker sources its cast from
+the documents Start took, and intent only decides whether a milestone is wanted
+at all.
+
+*Proved on: Classifications. A teammate's 2026-09-23 mock drew three
+suggestions from theme choices; the built screen drew five from the tracker's
+Program area column instead, which is how every other milestone already
+worked.*
+
+### An empty list can be the answer
+
+Some milestones are finished with nothing in them. A program with no GIS
+analyst that "just wants it on a map" has answered the spatial question fully
+when it names no areas: every project sits on its own point. So the milestone
+confirms on the answers, never on a count, and the empty roster names the
+outcome ("Point locations only") instead of apologising for a gap.
+
+The test: if zero is a legitimate configuration, completion waits on the
+decisions, and the empty state is written as a result, not a to-do.
+
+*Proved on: Spatial areas. A teammate's 2026-09-23 "Five Doors" mock made
+point-only a separate exit; aligned to the linear walk, it became the honest
+outcome of an empty roster, and the milestone confirms with zero areas once
+both preferences are answered.*
+
+### A finish reads the program back, in one paragraph
+
+A multi-part setup closes where it was worked, not on a screen of its own. At
+11 of 11 the hub raises one paragraph between the meter and the milestones,
+four or five sentences in large type. Sentence one names the program in its
+own name and says it is set up. The rest reads the program back, with each
+fact set as a token in the color of the milestone that produced it: the name
+and the noun in Names and appearance's hue, and one count per milestone with
+that milestone's icon, so each token matches the card it came from. The money
+and year rules stay prose so the paragraph does not become a wall of chips;
+the proposals answer stays off it, since the stage list already shows it. Settings about the site (who can see it, its
+accent color) are not facts about the program and stay off the paragraph;
+"Its site is Forest green" read as a place. Only
+next steps with a screen get a button. Unanswered facts drop out rather than
+print as zero.
+
+*Proved on: the setup hub's finish (2026-09-23). A separate Setup complete
+page with three columns of summary copy was built and removed the same day.
+It said less than one paragraph on the page the admin was already on.*
+
 ### Sort fields by what survives being wrong
 
 Fill-in-the-blank fields can be corrected a year in and nothing breaks.
@@ -581,6 +686,7 @@ a styling problem.
 | Report | **Measure setup** (one per measure) | built |
 | Report | Progress Dashboard, Funding Status | not built |
 | Manage | Users, Manage Organizations, Manage Funding Sources, Custom Pages | not built |
+| Setup | **Setup hub**, **Start**, **Program shape**, **Names and appearance**, **Organizations**, **Funding sources**, **Classifications**, **Project stages**, **Spatial areas**, **Import projects**, **People** | all eleven milestones built as stepped walks over a browser-local draft, grouped in three by dependency; at 11 of 11 the hub itself carries the finish, one large-type paragraph of the program's facts (2026-09-23); Performance measures is a separate prototype |
 
 The two built areas are deliberately different exercises: the project pages are
 about **reading a record**, the measure pages about **setting one up**. Most
@@ -652,6 +758,55 @@ funder X"), not ask-first.
   the row, an undo toast on commit, a record-level change log. Worth asking
   authors which failure they actually fear — the typo, or the decision they want
   back a week later — because those want different answers.
+
+- **Does a proposal need approval before it counts, and is a pending one
+  public?** Raised by a teammate's 2026-09-23 Project stages mock. ProjectFirma
+  1.0 had role-gated approval and 2.0 did not rebuild it; dbo.Project has no
+  approval or visibility column, and a public pending proposal would need an
+  anonymous read surface the app lacks. Cut from setup by agreement: it is
+  product work (a proposal workflow), and a setup question follows only once
+  there is a column to write. Both Project stages answers share that debt today:
+  no tenant-side table turns a global stage off, and no create-project endpoint
+  reads a starting stage.
+  Program shape (2026-09-23) now asks the narrower question, whether projects
+  start as proposals at all, and the answer switches the Proposal stage on
+  Project stages. Who approves one is still not asked.
+
+- **What reads the reporting year?** Program shape now asks it (2026-09-23:
+  calendar, July-to-June fiscal, federal fiscal, biennium, or a typed period),
+  pre-answered from the grant agreement. Nothing downstream reads the answer
+  yet: no report exists, and dbo.Tenant's reporting-year field is assumed, not
+  confirmed. Until a report frames its periods by this answer, any period label
+  on a report surface is still an undeclared frame.
+- **Where does an area's geometry come from, and who draws it?** Spatial areas
+  setup records the program's answer (a published source, an uploaded file, a
+  map service, or "our GIS person has it") and names the areas, but nothing
+  loads a boundary. A teammate's 2026-09-23 "Five Doors" mock carried upload
+  and map-service follow-up screens; both are product work, as is the published
+  source catalog (which watershed, county and tribal-land layers, at what
+  resolution). Until one exists, dbo.GeospatialArea rows have names and no
+  geometry, so no project can be placed in an area.
+- **What does "our GIS person has it" hand off?** The same mock returned a link
+  "back to this question with your answers intact" so the GIS person could
+  finish it. Setup has no invite or share surface, so the answer is recorded
+  and nothing is sent. Open: is the handoff a setup-scoped invite, a People
+  milestone role, or an email the admin writes?
+
+- **What is an invitation?** People setup stages a go-live list (name, email,
+  organization, role) and sends nothing; sending and sign-in are product work.
+  Open: is the list sent at go-live as one batch or person by person, what
+  happens to a person with no email, and who resends one that expires.
+  dbo.Person holds the email; nothing yet models an invitation's state.
+- **How does a role meet stewardship?** People setup records both, and nothing
+  reconciles them. A partner-organization Editor under "Our staff edit every
+  project" can edit nothing, so either the role reads as Viewer there or
+  stewardship narrows what Editor means. ProjectFirma's stewardship-by-
+  organization model suggests the second; confirm with the client.
+
+- **Does a public site show every project?** Names and appearance records one
+  site-wide flag, public or signed-in only. Programs with sensitive sites
+  (landowner parcels, cultural resources) may need a project-level override.
+  Open: is visibility per tenant only, or per tenant with project exceptions?
 
 ---
 

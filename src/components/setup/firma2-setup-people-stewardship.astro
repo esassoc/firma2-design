@@ -1,0 +1,110 @@
+---
+// firma2-setup-people-stewardship: the third screen of the People walk. The
+// tenant's one preference: who edits projects.
+//
+// PROJECT STEWARDSHIP BY ORGANIZATION. ProjectFirma's own model: either the
+// program's staff edit every project, or each partner organization edits the
+// projects it leads. Two options, the two `stewardships` holds.
+//
+// PRESELECTED, SO NEXT IS NEVER A DEAD END. The group opens on the draft's
+// answer; failing that, on Start's "Who enters project data?" answer
+// (stewardshipFromIntent); failing that, on staff. Next writes the shown value.
+// There is no skip: a preselected group is always answered.
+//
+// EACH OPTION'S CONSEQUENCE RIDES IN ITS LABEL, after a colon, the way
+// firma2-setup-classification-limit folds it: esa-radio-group's option type has
+// no per-option description (the gap firma2-entity-create-dialog filed), and the
+// consequence belongs in each radio's accessible name.
+//
+// NO LEGEND, for the reason the limit screen gives: a visible `label` would
+// repeat the display-size prompt above it, and the shell focuses the prompt
+// immediately before the group.
+//
+// Composed: firma2-setup-step-screen is the screen, esa-radio-group the question,
+// esa-button the arrow. The one style rule is the field's column.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import { stewardships } from '../../data/firma2-setup';
+
+const options = stewardships.map((option) => ({ value: option.id, label: `${option.label}: ${option.note}` }));
+---
+<Firma2SetupStepScreen
+  step="stewardship"
+  icon="users"
+  prompt="Who edits your projects?"
+  class="firma2-setup-people-stewardship"
+>
+  <div class="firma2-setup-people-stewardship__field">
+    <esa-radio-group
+      name="stewardship"
+      size="md"
+      orientation="vertical"
+      data-options={JSON.stringify(options)}
+      data-part="field-stewardship"
+    ></esa-radio-group>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The group holds the column the add screen's fields do, centered under the
+     prompt; its own text reads from the start edge, not the screen's center. */
+  .firma2-setup-people-stewardship__field {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import { readSetupDraft, setStewardship } from '../../lib/setup-draft';
+  import { stewardshipFromIntent, stewardships } from '../../data/firma2-setup';
+  import type { Stewardship } from '../../data/firma2-setup';
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  const DEFAULT: Stewardship = 'staff';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-people-stewardship[data-step]');
+  const group = screen?.querySelector<RadioGroupElement>('[data-part="field-stewardship"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && group && next) {
+    const asStewardship = (value: string | null): Stewardship =>
+      stewardships.find((option) => option.id === value)?.id ?? DEFAULT;
+
+    // The shown value: the draft's answer, else Start's, else staff.
+    const sync = (): void => {
+      const draft = readSetupDraft();
+      group.value = draft.stewardship ?? stewardshipFromIntent(draft.intent) ?? DEFAULT;
+    };
+
+    next.addEventListener('click', () => {
+      setStewardship(asStewardship(group.value));
+    });
+
+    // Only after the upgrade: a value set on the bare element would shadow the
+    // lego's own property.
+    let defined = false;
+    customElements.whenDefined('esa-radio-group').then(() => {
+      defined = true;
+      // OPTIONS ARE A PROPERTY. The attribute is the authored copy; the property
+      // is what the lego renders from.
+      group.options = JSON.parse(group.dataset.options ?? '[]');
+      sync();
+    });
+
+    // A reset or another tab can change the answer under the screen.
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) sync();
+    });
+  }
+</script>

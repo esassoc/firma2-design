@@ -1,0 +1,152 @@
+---
+// firma2-setup-funding-roster: the last screen of the Funding sources walk.
+// Every funding source this program has confirmed, from the documents and by
+// hand, and the arrow back to the hub.
+//
+// A TABLE, FOR THE SAME REASON THE ORG ROSTER IS ONE. These are chosen; what
+// matters now is comparison down a column, and here the column is the award:
+// dbo.FundingSource.TotalAwardAmount where the fund has one, the no-value mark
+// where it does not (donations have no ceiling).
+//
+// NO COMMITTED, NO REMAINING. The one-page version priced each award against the
+// sum of its dbo.ProjectFundingSource rows and kept those rows on the setup page.
+// They are gone from setup: a commitment is entered on the project record, in
+// the Funding sources card, because linking a project to a fund is the product's
+// ongoing work and setup configures the list it picks from (Andy, 2026-09-18).
+// The comparison lives where the rows do.
+//
+// REMOVE IS NOT DELETE. A document-sourced row goes back to `suggested`, which
+// the first screen shows as an un-pressed tile; a hand-typed one is `dismissed`.
+// Nothing here has dependents any more, so nothing asks for a confirm.
+//
+// THE ARROW GOES TO THE HUB, filled, the way Start's last screen does: the walk
+// is done and the hub is where the next milestone is chosen. Finish later, in
+// the bar, is the other way out and keeps the same draft.
+//
+// bcn-lego-checked: esa-button for Remove and the arrow, esa-empty-state for the
+// empty roster. The bespoke part is the <table>, on firma2-table.css: there is
+// no esa-table (walked the catalog), and the spoke's AG Grid chrome is priced for
+// portfolio-scale surfaces with search, filters and export, none of which a
+// handful of rows read once during setup can use. Beacon is not cloned on this
+// machine. firma2-setup-org-roster is the precedent this table follows.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+
+const hubHref = withBase('/prototypes/setup');
+---
+<Firma2SetupStepScreen
+  step="review"
+  icon="credit-card"
+  prompt="Your funding sources"
+  align="start"
+  class="firma2-setup-funding-roster"
+>
+  <div class="firma2-table__scroll" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Confirmed funding sources</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Name</th>
+          <th scope="col" class="typography-label-sm-strong">Administered by</th>
+          <th scope="col" class="typography-label-sm-strong firma2-table__amount">Award</th>
+          <th scope="col" class="typography-label-sm-strong">Origin</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="organization"></td>
+          <td class="typography-body-sm firma2-table__amount" data-part="award"></td>
+          <td class="typography-body-sm" data-part="source"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-part="empty" hidden>
+    <EsaEmptyState title="No funding sources yet" />
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
+  </div>
+</Firma2SetupStepScreen>
+
+<script>
+  import { listFundingSources, setFundingSourceStatus } from '../../lib/setup-draft';
+  import type { FundingSource, FundingSourceSource, FundingSourceStatus } from '../../data/firma2-setup';
+  import { currencyFormatter } from '../../lib/format';
+
+  // The Source column, in the reader's words: where it was found, or that she typed it.
+  const SOURCE_LABEL: Record<FundingSourceSource, string> = {
+    document: 'Document',
+    manual: 'Manual',
+  };
+
+  /** The no-value mark: an EN dash, never a zero the data did not produce. */
+  const NONE = '–';
+  const money = (amount: number): string => currencyFormatter.format(amount);
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-funding-roster[data-step]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+  const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+
+  if (screen && scroll && body && rowTemplate && empty) {
+    const buildRow = (source: FundingSource): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = source.name;
+      const organization = part('organization');
+      if (organization) organization.textContent = source.organizationName;
+      // A fund with no fixed total has no award; the cell shows the no-value
+      // mark rather than a zero.
+      const award = part('award');
+      if (award) award.textContent = source.totalAward === undefined ? NONE : money(source.totalAward);
+      const sourceCell = part('source');
+      if (sourceCell) sourceCell.textContent = SOURCE_LABEL[source.source];
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${source.name}`);
+        remove.setAttribute('title', `Remove ${source.name}`);
+        remove.dataset.sourceId = source.id;
+        remove.dataset.sourceKind = source.source;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const confirmed = listFundingSources().filter((source) => source.status === 'confirmed');
+      body.replaceChildren(rowTemplate, ...confirmed.map(buildRow));
+      scroll.hidden = confirmed.length === 0;
+      empty.hidden = confirmed.length > 0;
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-source-id]');
+      const id = button?.dataset.sourceId;
+      if (!button || !id) return;
+      // A document still says this name, so it returns to the first screen
+      // un-pressed; a typed one has nothing behind it and simply goes away.
+      const status: FundingSourceStatus = button.dataset.sourceKind === 'document' ? 'suggested' : 'dismissed';
+      setFundingSourceStatus(id, status);
+    });
+
+    document.addEventListener('setup-draft-change', render);
+    render();
+  }
+</script>

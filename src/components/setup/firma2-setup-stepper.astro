@@ -1,0 +1,123 @@
+---
+// The stepped-flow shell: one screen at a time, Back in a bar above, the
+// current step in the URL. Start wrote this walk for itself
+// (firma2-setup-start-steps); this is the same walk with the Start-specific
+// parts removed, so Organizations and Funding sources can be stepped without a
+// second navigation script each. Andy, 2026-09-18: "make funding sources a
+// multi-step thing", then "can the multi-step stuff happen on orgs too?"
+//
+// THE CONTRACT. Children are screens: any descendant with `data-step="<id>"`,
+// one per id in `stepIds`, in order. The shell shows one, hides the rest, and
+// wires three gestures by delegation: [data-step-next] and [data-step-skip]
+// advance, [data-step-back] retreats. A screen says whether it is answered by
+// setting `data-step-ready="false"` on itself (absent means ready); the shell
+// disables Next and shows the ghost skip while it is false, and re-reads it on
+// every attribute change, so a screen never has to know about the shell. Each
+// show dispatches `setup-step-show` on the shell root with `{ step }`, for a
+// screen that must build something (an AG Grid) only once it has a width.
+//
+// POSITION IS THE URL, `?step=<id>`, exactly as Start does it: the first step
+// carries no param, Back and Forward work through popstate, and a reload lands
+// on the same screen. Nothing about position is written to the draft store,
+// because the answers are the record; which screen was open is not.
+//
+// THE LAST SCREEN HAS NO NEXT. Its arrow is a link (to the hub, in Start's
+// case), so the walk ends in navigation the shell does not own.
+//
+// WHAT IS NOT HERE. No step counter and no dots, for the reason Start gave: the
+// screens ask questions, and a fraction over a question makes it a form. No
+// guide column: Start's guides explain what an intent answer sets up, and a
+// roster screen explains itself. If a stepped milestone needs one, the .sidebar
+// primitive goes around this shell, not inside it.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import '../shared/firma2-setup-steps.css';
+
+interface Props {
+  /** Screen ids in walking order; the first is the entry and carries no URL param. */
+  stepIds: string[];
+}
+
+const { stepIds } = Astro.props;
+---
+<div class="firma2-setup-steps stack" data-gap="none" data-setup-steps data-step-ids={stepIds.join(',')}>
+  <div class="firma2-setup-steps__bar">
+    <div data-step-back-wrap hidden>
+      <EsaButton variant="ghost" iconOnly icon="arrow-left" label="Back" data-step-back />
+    </div>
+  </div>
+  <slot />
+</div>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-setup-steps]');
+
+  if (root) {
+    const stepIds = (root.dataset.stepIds ?? '').split(',').filter(Boolean);
+    const screens = Array.from(root.querySelectorAll<HTMLElement>('[data-step]'));
+    const back = root.querySelector<HTMLElement>('[data-step-back-wrap]');
+
+    const stepFromUrl = (): string => {
+      const wanted = new URLSearchParams(location.search).get('step') ?? '';
+      return stepIds.includes(wanted) ? wanted : stepIds[0];
+    };
+
+    let current = stepFromUrl();
+
+    const screenFor = (id: string): HTMLElement | undefined => screens.find((screen) => screen.dataset.step === id);
+
+    /** Absent means ready: a screen with nothing to answer never has to say so. */
+    const ready = (id: string): boolean => screenFor(id)?.dataset.stepReady !== 'false';
+
+    const setNext = (id: string): void => {
+      const screen = screenFor(id);
+      if (!screen) return;
+      const ok = ready(id);
+      const next = screen.querySelector<HTMLButtonElement>('[data-step-next]');
+      if (next) {
+        next.disabled = !ok;
+        next.closest('.esa-button')?.classList.toggle('esa-button--disabled', !ok);
+      }
+      const skip = screen.querySelector<HTMLElement>('[data-step-skip]');
+      if (skip) skip.hidden = ok;
+    };
+
+    const show = (id: string, push: boolean): void => {
+      current = id;
+      for (const screen of screens) screen.hidden = screen.dataset.step !== id;
+      const index = stepIds.indexOf(id);
+      if (back) back.hidden = index === 0;
+      setNext(id);
+
+      const url = new URL(location.href);
+      if (index === 0) url.searchParams.delete('step');
+      else url.searchParams.set('step', id);
+      if (push) history.pushState({ step: id }, '', url);
+      else history.replaceState({ step: id }, '', url);
+
+      root.dispatchEvent(new CustomEvent('setup-step-show', { detail: { step: id }, bubbles: true }));
+      screenFor(id)?.querySelector<HTMLElement>('.firma2-setup-steps__prompt')?.focus();
+    };
+
+    const move = (delta: number): void => {
+      const index = stepIds.indexOf(current) + delta;
+      if (index < 0 || index >= stepIds.length) return;
+      show(stepIds[index], true);
+    };
+
+    root.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('[data-step-next]')) move(1);
+      else if (target.closest('[data-step-skip]')) move(1);
+      else if (target.closest('[data-step-back]')) move(-1);
+    });
+
+    // A screen reports its readiness by attribute; the shell only ever reads it.
+    const readiness = new MutationObserver(() => setNext(current));
+    for (const screen of screens) readiness.observe(screen, { attributes: true, attributeFilter: ['data-step-ready'] });
+
+    window.addEventListener('popstate', () => show(stepFromUrl(), false));
+
+    show(current, false);
+  }
+</script>

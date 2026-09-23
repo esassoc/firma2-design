@@ -1,0 +1,108 @@
+---
+// firma2-setup-appearance-visibility: the fourth screen of the Names and
+// appearance walk. Who can see the site.
+//
+// THE RECORD IS dbo.Tenant's public-site flag, as a SiteVisibility. Two options,
+// each with its consequence folded after a colon in the label, the way the
+// classification limit screen does it: esa-radio-group's option type has no
+// per-option description, and the consequence belongs in each radio's
+// accessible name.
+//
+// PRESELECTED, SO NEXT IS NEVER A DEAD END. The draft's answer; else what Start's
+// goals suggest ("Share our work publicly" suggests a public site); else
+// Signed-in only, the setting that exposes nothing by default. Next writes the
+// shown value. No skip.
+//
+// NO LEGEND, for the reason the limit screen gives: a visible group label would
+// repeat the display-size prompt immediately above it.
+//
+// Composed: firma2-setup-step-screen is the screen, esa-radio-group the question,
+// esa-button the arrow. The one style rule is the field's column.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import { siteVisibilities } from '../../data/firma2-setup';
+
+const options = siteVisibilities.map((visibility) => ({
+  value: visibility.id,
+  label: `${visibility.label}: ${visibility.note}`,
+}));
+---
+<Firma2SetupStepScreen
+  step="visibility"
+  icon="eye"
+  prompt="Who can see your site?"
+  class="firma2-setup-appearance-visibility"
+>
+  <div class="firma2-setup-appearance-visibility__field">
+    <esa-radio-group
+      name="siteVisibility"
+      size="md"
+      orientation="vertical"
+      data-options={JSON.stringify(options)}
+      data-part="field-visibility"
+    ></esa-radio-group>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The group holds the column funding-add's fields do, centered under the
+     prompt; its own text reads from the start edge, not the screen's center. */
+  .firma2-setup-appearance-visibility__field {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import { siteVisibilities, suggestedSiteVisibility } from '../../data/firma2-setup';
+  import type { SiteVisibility } from '../../data/firma2-setup';
+  import { readSetupDraft, setSiteVisibility } from '../../lib/setup-draft';
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-appearance-visibility[data-step]');
+  const group = screen?.querySelector<RadioGroupElement>('[data-part="field-visibility"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && group && next) {
+    const asVisibility = (value: string | null): SiteVisibility | null =>
+      siteVisibilities.find((visibility) => visibility.id === value)?.id ?? null;
+
+    // The shown value: the draft's answer, Start's suggestion, or Signed-in only.
+    const sync = (): void => {
+      const draft = readSetupDraft();
+      group.value = draft.siteVisibility ?? suggestedSiteVisibility(draft.intent) ?? 'signed-in';
+    };
+
+    next.addEventListener('click', () => {
+      const visibility = asVisibility(group.value);
+      if (visibility) setSiteVisibility(visibility);
+    });
+
+    // Only after the upgrade: a value set on the bare element would shadow the
+    // lego's own property.
+    let defined = false;
+    customElements.whenDefined('esa-radio-group').then(() => {
+      defined = true;
+      // OPTIONS ARE A PROPERTY. The attribute is the authored copy; the property
+      // is what the lego renders from.
+      group.options = JSON.parse(group.dataset.options ?? '[]');
+      sync();
+    });
+
+    // A reset or another tab can change the answer under the screen.
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) sync();
+    });
+  }
+</script>

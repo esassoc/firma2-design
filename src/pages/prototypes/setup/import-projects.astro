@@ -1,0 +1,81 @@
+---
+// /prototypes/setup/import-projects: the Import projects milestone, as a walk.
+//
+// Answers to docs/product-brief.md § 5, for this screen:
+//   WHO         Dana, the tenant admin, at the go-live tier: organizations and
+//               funding sources are in, and the portfolio is still empty.
+//   DOING WHAT  Getting the program's projects into the system, from the list
+//               the program already keeps, so the portfolio opens with real
+//               rows and reporting has something to report on.
+//   BRINGING    The tracking spreadsheet Start took (Project tracking
+//               master.xlsx): one row a project, with program, lead
+//               organization, stage and start year already filled.
+//   OPTIMIZING  Confirming what the spreadsheet says over retyping it; one
+//               question a screen; a row left out can come back.
+//   PAYS FOR    The portfolio. dbo.Project rows, one per confirmed tracker row,
+//               with the fields the spreadsheet carried.
+//   LEAVES OUT  Authoring. No project is typed here; the project record's own
+//               screens are where a project is made and kept.
+//
+// IMPORT REPLACES "FIRST PROJECT". The milestone this page stands on used to
+// walk the admin through entering one project by hand so go-live had something
+// to show. Andy, 2026-09-18, chose the import instead (Option A): setup
+// configures reference data, and the portfolio's first fill is the spreadsheet
+// the program already keeps, not a form. Hand-entering a first project taught
+// the form and left twenty-nine rows still to type; reading the tracker leaves
+// none.
+//
+// TWO SCREENS, IN START'S WALK. The tracker's rows as a checked list, one
+// question over the whole cast; then the rows that came in and the arrow back
+// to setup. There is no add-by-hand screen between them, because a project
+// is not reference data typed once during setup: it is the record the product
+// exists to keep, and it is made on its own screens. The shell is
+// firma2-setup-stepper; the brief's "setup is not a wizard" (§ 4) still holds
+// in the sense it meant: the page is resumable at its URL, the step rides the
+// query string, Finish later keeps the draft.
+import SetupLayout from '../../../layouts/SetupLayout.astro';
+import Firma2SetupStepper from '../../../components/setup/firma2-setup-stepper.astro';
+import Firma2SetupImportPicker from '../../../components/setup/firma2-setup-import-picker.astro';
+import Firma2SetupImportRoster from '../../../components/setup/firma2-setup-import-roster.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+
+const stepIds = ['suggested', 'review'];
+---
+<!-- manifest:
+  layout: stack(2xl)
+  sections:
+    - status counts  -> esa-badge   (two, slotted into the milestone band SetupLayout renders)
+    - walk           -> firma2-setup-stepper
+      - suggested      -> firma2-setup-import-picker
+      - review         -> firma2-setup-import-roster
+-->
+<SetupLayout title="Import projects" width="wide" milestone="import-projects">
+  <!-- The counts the screens produce, at the top of the page. Synced by the
+       script below from the same draft the screens read. -->
+  <span slot="status" data-part="confirmed-count"><EsaBadge value="0 confirmed" variant="secondary" size="sm" /></span>
+  <span slot="status" data-part="review-count"><EsaBadge value="0 to review" variant="secondary" size="sm" /></span>
+
+  <Firma2SetupStepper stepIds={stepIds}>
+    <Firma2SetupImportPicker />
+    <Firma2SetupImportRoster />
+  </Firma2SetupStepper>
+</SetupLayout>
+
+<script>
+  import { listImportProjects } from '../../../lib/setup-draft';
+
+  const confirmedBadge = document.querySelector<HTMLElement>('[data-part="confirmed-count"] .esa-badge__text');
+  const reviewBadge = document.querySelector<HTMLElement>('[data-part="review-count"] .esa-badge__text');
+
+  const sync = (): void => {
+    const rows = listImportProjects();
+    const confirmed = rows.filter((row) => row.status === 'confirmed').length;
+    const toReview = rows.filter((row) => row.status === 'suggested').length;
+
+    if (confirmedBadge) confirmedBadge.textContent = `${confirmed} confirmed`;
+    if (reviewBadge) reviewBadge.textContent = `${toReview} to review`;
+  };
+
+  document.addEventListener('setup-draft-change', sync);
+  sync();
+</script>

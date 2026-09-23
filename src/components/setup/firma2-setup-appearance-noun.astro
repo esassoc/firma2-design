@@ -1,0 +1,139 @@
+---
+// firma2-setup-appearance-noun: the second screen of the Names and appearance
+// walk. What the program calls a project, both forms.
+//
+// THE RECORD IS THE FieldDefinition LABEL FOR "Project" (ProjectFirma's Labels
+// and Definitions), which renames the noun on every page, list and report. Two
+// fields because a label that only knows its singular pluralizes itself wrong
+// ("Restoration actions" is regular; plenty of program nouns are not).
+//
+// THE FIELDS OPEN ON THE BEST EVIDENCE: the draft's answer; else, when documents
+// are uploaded, what the annual report calls them, with the lede naming the
+// wording and the document so the prefill reads as found rather than invented;
+// else ProjectFirma's own "Project". Next always writes, because keeping
+// "Project" is an answer and null is not.
+//
+// Composed: firma2-setup-step-screen is the screen, esa-text-field both forms,
+// esa-button the arrow. The one style rule is the fields' column.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+---
+<Firma2SetupStepScreen
+  step="noun"
+  icon="file-text"
+  prompt="What do you call a project?"
+  class="firma2-setup-appearance-noun"
+>
+  <!-- Filled by the script: whether a document named the noun is draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <div class="firma2-setup-appearance-noun__form stack" data-gap="md">
+    <esa-text-field
+      label="Singular"
+      name="projectNounSingular"
+      size="md"
+      required
+      data-part="field-singular"
+    ></esa-text-field>
+    <esa-text-field
+      label="Plural"
+      name="projectNounPlural"
+      size="md"
+      required
+      data-part="field-plural"
+    ></esa-text-field>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The column funding-add's fields hold, centered under the prompt. */
+  .firma2-setup-appearance-noun__form {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import { defaultProjectNoun, suggestedProjectNoun } from '../../data/firma2-setup';
+  import type { ProjectNoun } from '../../data/firma2-setup';
+  import { readSetupDraft, setProjectNoun, sourceDocumentNames } from '../../lib/setup-draft';
+
+  /** The slice of the lego this file touches. */
+  interface TextFieldElement extends HTMLElement {
+    value: string;
+    errorText: string;
+  }
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-appearance-noun[data-step]');
+  const singularField = screen?.querySelector<TextFieldElement>('[data-part="field-singular"]');
+  const pluralField = screen?.querySelector<TextFieldElement>('[data-part="field-plural"]');
+  const lede = screen?.querySelector<HTMLElement>('[data-part="lede"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && singularField && pluralField && lede && next) {
+    /** The report's document, when documents are uploaded; otherwise nothing names the noun. */
+    const reportName = (): string | null =>
+      readSetupDraft().documentsUploaded ? (sourceDocumentNames([suggestedProjectNoun])[0] ?? null) : null;
+
+    /** The value the fields open on: the saved answer, the report's wording, or "Project". */
+    const opening = (): ProjectNoun => {
+      const draft = readSetupDraft();
+      if (draft.projectNoun) return draft.projectNoun;
+      return reportName() ? suggestedProjectNoun.noun : defaultProjectNoun;
+    };
+
+    const syncReady = (): void => {
+      screen.dataset.stepReady = String(singularField.value.trim().length > 0 && pluralField.value.trim().length > 0);
+    };
+
+    const syncLede = (): void => {
+      const report = reportName();
+      lede.textContent = report ? `Called “${suggestedProjectNoun.noun.plural.toLowerCase()}” in ${report}.` : '';
+      lede.hidden = !report;
+    };
+
+    const fillFields = (): void => {
+      const noun = opening();
+      singularField.value = noun.singular;
+      pluralField.value = noun.plural;
+      singularField.errorText = '';
+      pluralField.errorText = '';
+      syncReady();
+    };
+
+    const requireValue = (field: TextFieldElement, message: string): void => {
+      field.errorText = field.value.trim() ? '' : message;
+      syncReady();
+    };
+    singularField.addEventListener('change', () => requireValue(singularField, 'Singular is required'));
+    pluralField.addEventListener('change', () => requireValue(pluralField, 'Plural is required'));
+
+    next.addEventListener('click', () => {
+      setProjectNoun({ singular: singularField.value.trim(), plural: pluralField.value.trim() });
+    });
+
+    // Refill only when what the fields open on has changed (a reset, an upload,
+    // another tab), so an unrelated write never clobbers a half-typed edit.
+    let lastOpening = JSON.stringify(opening());
+    let defined = false;
+    document.addEventListener('setup-draft-change', () => {
+      syncLede();
+      const now = JSON.stringify(opening());
+      if (now === lastOpening) return;
+      lastOpening = now;
+      if (defined) fillFields();
+    });
+
+    customElements.whenDefined('esa-text-field').then(() => {
+      defined = true;
+      fillFields();
+    });
+    syncLede();
+  }
+</script>

@@ -1,0 +1,177 @@
+---
+// firma2-setup-people-picker: the first screen of the People walk. Every staff
+// member the documents named, as a tile you tap to keep.
+//
+// ONE QUESTION OVER THE WHOLE CAST. The idiom is
+// firma2-setup-classification-picker's, unchanged: the screen asks once, over
+// every document-sourced person, and nothing is written on tap. The write is the
+// arrow. Next confirms the pressed tiles and dismisses the rest; "None of these"
+// is the same write with nothing pressed.
+//
+// THE SCREEN SHOWS EVERY DOCUMENT-SOURCED PERSON, not only the open ones, with
+// the confirmed ones already pressed. So the screen is resumable and idempotent:
+// Back from the roster shows the answer as given, and the roster's Remove returns
+// a document row to `suggested`, which reads here as un-pressed.
+//
+// THE ADMIN DOING SETUP IS NEVER DISMISSED. The seed arrives with one person
+// confirmed, the admin at the keyboard (suggestedPeople). Her tile is locked
+// pressed, Next writes her as confirmed whatever else is pressed, and "None of
+// these" dismisses everyone but her. A go-live list with no admin on it is not a
+// list the product can send.
+//
+// THE CAST IS THE ANNUAL REPORT'S STAFF PAGE. As on every other milestone, the
+// suggestions come from the documents Start took. When there are none the screen
+// says so and points at Start.
+//
+// Composed: firma2-setup-step-screen is the screen, .grid the layout engine,
+// firma2-setup-person-tile the tile, esa-button the arrow and the skip,
+// esa-empty-state the no-documents state.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupPersonTile from './firma2-setup-person-tile.astro';
+import { withBase } from '../../lib/base';
+---
+<Firma2SetupStepScreen
+  step="suggested"
+  icon="file-text"
+  prompt="Which of your staff need access?"
+  align="start"
+  class="firma2-setup-people-picker"
+>
+  <!-- Filled by the script: which documents named the cast is draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <!-- Filled by the script: which suggestions exist and which are pressed is
+       draft state. The tile's markup is authored in its own template. -->
+  <ul class="firma2-setup-people-picker__grid grid" data-gap="md" data-part="grid" hidden></ul>
+
+  <!-- Plain <div> wrapper because esa-empty-state's props have no `hidden`. -->
+  <div data-part="no-documents" hidden>
+    <EsaEmptyState title="No suggestions yet" description="Upload an annual report to find your staff.">
+      <EsaButton variant="primary" href={withBase('/prototypes/setup/start')}>Start</EsaButton>
+    </EsaEmptyState>
+  </div>
+
+  <Firma2SetupPersonTile />
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+  <EsaButton slot="advance" variant="ghost" size="sm" data-step-skip>None of these</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* .grid is the layout engine; this strips the list chrome that comes with
+     choosing <ul> for its semantics and sets the tile's floor. */
+  .firma2-setup-people-picker__grid {
+    --grid-min: 16rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* .grid owns display, so [hidden] needs the specificity to win. */
+  .firma2-setup-people-picker__grid[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import { listPeople, readSetupDraft, setPersonStatuses, sourceDocumentNames } from '../../lib/setup-draft';
+  import { suggestedPeople } from '../../data/firma2-setup';
+  import type { PersonRecord, PersonStatus } from '../../data/firma2-setup';
+
+  const TILE = 'firma2-person-tile';
+
+  /** "A, B, and C": the documents named in the lede, in reading order. */
+  const LIST = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' });
+
+  /** The admin doing setup: the one report name the seed arrives with already confirmed. */
+  const SETUP_ADMINS = new Set(suggestedPeople.filter((p) => p.status === 'confirmed').map((p) => p.id));
+
+  type PersonTile = HTMLElement & {
+    person: PersonRecord;
+    personId: string;
+    selected: boolean;
+    locked: boolean;
+  };
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-people-picker[data-step]');
+  const grid = screen?.querySelector<HTMLElement>('[data-part="grid"]');
+  const lede = screen?.querySelector<HTMLElement>('[data-part="lede"]');
+  const noDocuments = screen?.querySelector<HTMLElement>('[data-part="no-documents"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+  const skip = screen?.querySelector<HTMLElement>('[data-step-skip]');
+
+  if (screen && grid && lede && noDocuments && next && skip) {
+    /** The cast this screen answers for: everyone a document named, whatever their status now. */
+    const fromDocuments = (): PersonRecord[] => listPeople().filter((person) => person.source === 'document');
+
+    const tiles = (): PersonTile[] => [...grid.querySelectorAll<PersonTile>(TILE)];
+
+    // Answered means at least one tile pressed. The locked admin counts, so a
+    // cast with her in it is always answered; a cast of none has nothing to
+    // answer, so the arrow stays live and the walk goes on.
+    const syncReady = (): void => {
+      const cast = tiles();
+      screen.dataset.stepReady = String(cast.length === 0 || cast.some((tile) => tile.selected));
+    };
+
+    const render = (): void => {
+      const cast = fromDocuments();
+      const uploaded = readSetupDraft().documentsUploaded;
+
+      grid.replaceChildren(
+        ...cast.map((record) => {
+          const item = document.createElement('li');
+          const tile = document.createElement(TILE) as PersonTile;
+          tile.person = record;
+          tile.selected = record.status === 'confirmed';
+          tile.locked = SETUP_ADMINS.has(record.id);
+          item.append(tile);
+          return item;
+        }),
+      );
+
+      grid.hidden = cast.length === 0;
+      noDocuments.hidden = uploaded;
+      const named = sourceDocumentNames(cast);
+      lede.textContent = named.length > 0 ? `Named in ${LIST.format(named)}.` : '';
+      lede.hidden = named.length === 0;
+      syncReady();
+    };
+
+    grid.addEventListener('person-tile-toggle', syncReady);
+
+    // The arrow is the write: pressed tiles confirmed, the rest dismissed, in one
+    // pass. The shell advances on the same click.
+    next.addEventListener('click', () => {
+      const statuses: Record<string, PersonStatus> = {};
+      for (const tile of tiles()) {
+        statuses[tile.personId] = tile.selected || SETUP_ADMINS.has(tile.personId) ? 'confirmed' : 'dismissed';
+      }
+      if (Object.keys(statuses).length > 0) setPersonStatuses(statuses);
+    });
+
+    skip.addEventListener('click', () => {
+      const statuses: Record<string, PersonStatus> = {};
+      for (const record of fromDocuments()) {
+        statuses[record.id] = SETUP_ADMINS.has(record.id) ? 'confirmed' : 'dismissed';
+      }
+      if (Object.keys(statuses).length > 0) setPersonStatuses(statuses);
+    });
+
+    let ready = false;
+    document.addEventListener('setup-draft-change', () => {
+      if (ready) render();
+    });
+
+    // Wait for the tile's definition, or createElement hands back an unupgraded
+    // element whose `person` setter goes nowhere.
+    customElements.whenDefined(TILE).then(() => {
+      ready = true;
+      render();
+    });
+  }
+</script>

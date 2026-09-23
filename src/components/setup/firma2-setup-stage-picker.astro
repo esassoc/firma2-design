@@ -1,0 +1,151 @@
+---
+// firma2-setup-stage-picker: the first screen of the Project stages walk. The six
+// fixed stages as tiles you tap to keep.
+//
+// THE CAST IS FIXED, THE ANSWER IS NOT. dbo.ProjectStage is six global rows with
+// no TenantID, so nothing here is created or named; the question is which of the
+// six this program uses. The idiom is firma2-setup-funding-picker's: one question
+// over the whole cast, nothing written on tap, and the arrow writes all six at
+// once (pressed confirmed, the rest dismissed), because "which stages does your
+// program use" has one answer per stage.
+//
+// NO SKIP. A project always has a stage (Project.ProjectStageID is NOT NULL), so
+// a program cannot use none, and the arrow waits for one pressed tile.
+//
+// PRE-PRESSED FROM THE TRACKER. A stage arrives pressed when the program already
+// confirmed it, or when the documents are in and a tracker Status value lands in
+// it. Deferred has no tracker evidence and arrives un-pressed: the program's
+// statuses never said "on hold", so the screen does not say it for them.
+//
+// THE PROPOSALS ANSWER OVERRIDES THE TRACKER FOR PROPOSAL. Program shape asks
+// "Do projects start as proposals?" (draft.intent.proposals, decision
+// 2026-09-23). While the Proposal stage is still `suggested`, No arrives
+// un-pressed even with a tracker Proposed value, and Yes arrives pressed even
+// without one. A stage the admin already confirmed or dismissed here keeps that
+// answer. The other five stages are unchanged.
+//
+// NO DOCUMENTS IS NOT EMPTY. Unlike the record pickers there is no empty state:
+// the stages exist whether or not anything was uploaded. Without documents the
+// tiles render with no tracker line and nothing pressed, and the lede is hidden.
+//
+// Composed: firma2-setup-step-screen is the screen, .grid the layout engine,
+// firma2-setup-stage-tile the tile, esa-button the arrow.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupStageTile from './firma2-setup-stage-tile.astro';
+---
+<Firma2SetupStepScreen
+  step="suggested"
+  icon="activity"
+  prompt="Which stages does your program use?"
+  align="start"
+  class="firma2-setup-stage-picker"
+>
+  <!-- Filled by the script: which document the pressed tiles came from is draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <!-- Filled by the script: which tiles are pressed is draft state. The tile's
+       markup is authored in firma2-setup-stage-tile's template. -->
+  <ul class="firma2-setup-stage-picker__grid grid" data-gap="md" data-part="grid"></ul>
+
+  <Firma2SetupStageTile />
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* .grid is the layout engine; this strips the list chrome that comes with
+     choosing <ul> for its semantics and sets the tile's floor. */
+  .firma2-setup-stage-picker__grid {
+    --grid-min: 16rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+</style>
+
+<script>
+  import { listStages, readSetupDraft, setStageStatuses, sourceDocumentNames } from '../../lib/setup-draft';
+  import { extractedCandidates } from '../../data/firma2-setup';
+  import type { StageOption, StageStatus } from '../../data/firma2-setup';
+
+  const TILE = 'firma2-stage-tile';
+
+  /** "A, B, and C": the documents named in the lede, in reading order. */
+  const LIST = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' });
+
+  type StageTile = HTMLElement & { stage: StageOption; stageId: string; selected: boolean; showProvenance: boolean };
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-stage-picker[data-step]');
+  const grid = screen?.querySelector<HTMLElement>('[data-part="grid"]');
+  const lede = screen?.querySelector<HTMLElement>('[data-part="lede"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && grid && lede && next) {
+    const tiles = (): StageTile[] => [...grid.querySelectorAll<StageTile>(TILE)];
+
+    // Answered means at least one stage in use: a project cannot be in no stage.
+    const syncReady = (): void => {
+      screen.dataset.stepReady = String(tiles().some((tile) => tile.selected));
+    };
+
+    const render = (): void => {
+      const draft = readSetupDraft();
+      const uploaded = draft.documentsUploaded;
+      const stages = listStages(draft);
+
+      // Program shape's proposals answer, for the Proposal stage only; undefined
+      // leaves the tracker rule in charge.
+      const proposals = draft.intent.proposals?.[0];
+      const prePress = (id: StageOption['id']): boolean | undefined =>
+        id === 'proposal' && (proposals === 'yes' || proposals === 'no') ? proposals === 'yes' : undefined;
+
+      grid.replaceChildren(
+        ...stages.map((stage) => {
+          const item = document.createElement('li');
+          const tile = document.createElement(TILE) as StageTile;
+          tile.showProvenance = uploaded;
+          tile.stage = stage;
+          tile.selected =
+            stage.status === 'confirmed' ||
+            (stage.status === 'suggested' && (prePress(stage.id) ?? (uploaded && stage.trackerStatuses.length > 0)));
+          item.append(tile);
+          return item;
+        }),
+      );
+
+      // The line under the prompt names the document the tracker lines came from,
+      // so a pressed tile reads as what the tracker said, not a guess setup made.
+      const withEvidence = uploaded && stages.some((stage) => stage.trackerStatuses.length > 0);
+      const named = withEvidence
+        ? sourceDocumentNames(extractedCandidates.filter((candidate) => candidate.journey === 'lifecycle'))
+        : [];
+      lede.textContent = named.length > 0 ? `Matched to the Status column in ${LIST.format(named)}.` : '';
+      lede.hidden = named.length === 0;
+      syncReady();
+    };
+
+    grid.addEventListener('stage-tile-toggle', syncReady);
+
+    // The arrow is the write: all six in one pass. The shell advances on the same click.
+    next.addEventListener('click', () => {
+      const statuses: Record<string, StageStatus> = {};
+      for (const tile of tiles()) statuses[tile.stageId] = tile.selected ? 'confirmed' : 'dismissed';
+      if (Object.keys(statuses).length > 0) setStageStatuses(statuses);
+    });
+
+    let ready = false;
+    document.addEventListener('setup-draft-change', () => {
+      if (ready) render();
+    });
+
+    // Wait for the tile's definition, or createElement hands back an unupgraded
+    // element whose `stage` setter goes nowhere.
+    customElements.whenDefined(TILE).then(() => {
+      ready = true;
+      render();
+    });
+  }
+</script>

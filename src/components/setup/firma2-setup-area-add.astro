@@ -1,0 +1,225 @@
+---
+// firma2-setup-area-add: the second screen of the Spatial areas walk. The areas
+// the documents did not name, typed in one at a time, with the list of what has
+// been typed so far beneath the fields.
+//
+// THE SHAPE IS firma2-setup-classification-add's. The fields are the screen; the
+// Add button beneath them writes one `manual` area, already confirmed, clears the
+// name and puts focus back on it. The arrow moves on; "Nothing to add" is the
+// same move for a program whose documents covered everything.
+//
+// TWO FIELDS: the area's name (dbo.GeospatialArea.GeospatialAreaName), required,
+// and its kind, the layer it sits in (dbo.GeospatialAreaType), a select over
+// spatialAreaKinds that opens on Watershed because the documents' areas are. The
+// kind stays on the field after an add, so a run of counties is typed without
+// re-choosing it. No geometry field: boundaries are the next screen's answer and
+// the file or service that supplies them is product work.
+//
+// THE LIST BENEATH IS THIS SCREEN'S WORK ONLY: areas typed by hand. The document
+// ones were answered one screen back and the full roster is three screens ahead.
+// Remove here dismisses a typed row; nothing stands behind it.
+//
+// bcn-lego-checked: esa-text-field and esa-select are the fields, esa-button the
+// Add, Remove, arrow and skip. The bespoke part is the <table>, on
+// firma2-table.css: there is no esa-table (walked the catalog), and the spoke's
+// AG Grid chrome is priced for portfolio-scale surfaces with search, filters and
+// export, none of which a handful of rows typed during setup can use. Beacon is
+// not cloned on this machine. firma2-setup-classification-add is the precedent
+// this screen follows, and firma2-setup-funding-add the precedent for the select.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+---
+<Firma2SetupStepScreen
+  step="add"
+  icon="pencil"
+  prompt="Any areas not in your documents?"
+  align="start"
+  class="firma2-setup-area-add"
+>
+  <div class="firma2-setup-area-add__form stack" data-gap="md">
+    <esa-text-field
+      label="Area name"
+      name="name"
+      size="md"
+      required
+      placeholder="e.g. Tumalo Creek"
+      data-part="field-name"
+    ></esa-text-field>
+    <esa-select
+      label="Kind"
+      name="kind"
+      size="md"
+      required
+      data-part="field-kind"
+    ></esa-select>
+    <div>
+      <EsaButton variant="secondary" size="md" icon="plus" data-part="create">Add area</EsaButton>
+    </div>
+  </div>
+
+  <div class="firma2-table__scroll firma2-setup-area-add__list" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Areas added by hand</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Name</th>
+          <th scope="col" class="typography-label-sm-strong">Kind</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="kind"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+  <EsaButton slot="advance" variant="ghost" size="sm" data-step-skip>Nothing to add</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The fields hold the column classification-add's do: readable line length
+     for a label and a value, centered under the prompt. The list sits under the
+     fields at a width that fits a name beside its kind. */
+  .firma2-setup-area-add__form {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-area-add__list {
+    inline-size: min(100%, 36rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-area-add__list[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import { addSpatialArea, listSpatialAreas, setSpatialAreaStatus } from '../../lib/setup-draft';
+  import { spatialAreaKindLabel, spatialAreaKinds } from '../../data/firma2-setup';
+  import type { SpatialAreaKind, SpatialAreaRecord } from '../../data/firma2-setup';
+  import type { EsaOption } from '../../lib/hydrate-select';
+
+  /** The slices of the legos this file touches. */
+  interface TextFieldElement extends HTMLElement {
+    value: string;
+    errorText: string;
+  }
+  interface SelectElement extends HTMLElement {
+    options: EsaOption[];
+    value: string | string[] | null;
+    errorText: string;
+  }
+
+  /** The kind the select opens on: the documents' areas are all watersheds. */
+  const DEFAULT_KIND: SpatialAreaKind = 'watershed';
+
+  const KIND_OPTIONS: EsaOption[] = spatialAreaKinds.map((kind) => ({ label: kind.label, value: kind.id }));
+
+  const isKind = (value: unknown): value is SpatialAreaKind => spatialAreaKinds.some((kind) => kind.id === value);
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-area-add[data-step]');
+  const nameField = screen?.querySelector<TextFieldElement>('[data-part="field-name"]');
+  const kindField = screen?.querySelector<SelectElement>('[data-part="field-kind"]');
+  const createButton = screen?.querySelector<HTMLElement>('[data-part="create"]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+
+  if (screen && nameField && kindField && createButton && scroll && body && rowTemplate) {
+    /** This screen's own work: areas typed here and still standing. */
+    const typed = (): SpatialAreaRecord[] =>
+      listSpatialAreas().filter((record) => record.source === 'manual' && record.status === 'confirmed');
+
+    // -----------------------------------------------------------------------
+    // The list so far
+    // -----------------------------------------------------------------------
+    const buildRow = (record: SpatialAreaRecord): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = record.name;
+      const kind = part('kind');
+      if (kind) kind.textContent = spatialAreaKindLabel(record.kind);
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${record.name}`);
+        remove.setAttribute('title', `Remove ${record.name}`);
+        remove.dataset.areaId = record.id;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const rows = typed();
+      body.replaceChildren(rowTemplate, ...rows.map(buildRow));
+      scroll.hidden = rows.length === 0;
+      // Answered means something was typed. Otherwise the ghost "Nothing to add"
+      // is the way on, and the shell shows it.
+      screen.dataset.stepReady = String(rows.length > 0);
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-area-id]');
+      const id = button?.dataset.areaId;
+      if (id) setSpatialAreaStatus(id, 'dismissed');
+    });
+
+    // -----------------------------------------------------------------------
+    // The fields
+    // -----------------------------------------------------------------------
+    const resetName = (): void => {
+      nameField.value = '';
+      nameField.errorText = '';
+    };
+
+    createButton.addEventListener('click', () => {
+      nameField.errorText = '';
+      const name = nameField.value.trim();
+      if (!name) {
+        nameField.errorText = 'Name is required';
+        return;
+      }
+
+      const kind = isKind(kindField.value) ? kindField.value : DEFAULT_KIND;
+
+      // addSpatialArea is the duplicate check: null means the name is already a
+      // live area, from a document or typed.
+      const added = addSpatialArea({ name, kind });
+      if (!added) {
+        nameField.errorText = 'Already in your program';
+        return;
+      }
+      resetName();
+      nameField.focus();
+    });
+
+    document.addEventListener('setup-draft-change', render);
+
+    Promise.all([customElements.whenDefined('esa-text-field'), customElements.whenDefined('esa-select')]).then(() => {
+      // Options before value: esa-select resolves its trigger label from the list.
+      kindField.options = KIND_OPTIONS;
+      kindField.value = DEFAULT_KIND;
+      resetName();
+      render();
+    });
+  }
+</script>

@@ -1,0 +1,183 @@
+---
+// firma2-setup-person-tile: one person as a large, tappable toggle. The unit
+// firma2-setup-people-picker deals in.
+//
+// IT RENDERS NOTHING BY ITSELF. Same construction as
+// firma2-setup-classification-tile: an inert <template> holding the tile's
+// markup and a <firma2-person-tile> custom element that clones the template and
+// fills it. A caller creates the element and sets `.person`; no caller writes
+// tile markup.
+//
+// THE CONTRACT
+//   el.person = PersonRecord    fills name, title and document; setting it again rebuilds
+//   el.personId                 the record's id, for the caller's write
+//   el.selected                 get/set, mirrors aria-pressed on the button
+//   el.locked                   get/set; a locked tile stays pressed and ignores taps
+//   'person-tile-toggle'        bubbling CustomEvent<{ id, selected }> on every accepted tap
+//
+// SELECTION IS NOT A WRITE. Tapping marks the tile; the picker's arrow is what
+// commits, once, for the set.
+//
+// LOCKED IS FOR THE ADMIN DOING SETUP. The report's staff include the person at
+// the keyboard, who arrives confirmed as admin. Un-pressing her would dismiss the
+// one account setup cannot go live without, so the picker locks her tile: it
+// renders pressed, carries aria-disabled, and a tap does nothing.
+//
+// WHAT IS ON THE TILE. The name, because the tile is a yes-or-no on the person.
+// The title as the secondary line, because the report gives it and it is how the
+// admin tells two staff apart (PersonRecord.title, not a dbo.Person column). The
+// document, as provenance, because it makes the tile read as found.
+//
+// THE CHROME IS SHARED, THE FIELDS ARE NOT. The button, its pressed state and the
+// check mark come from shared/firma2-pick-tile.css; this file keeps the host rule,
+// the locked cursor, and the fields a person fills.
+//
+// bcn-lego-checked: nothing in the catalog is a SELECTABLE tile. esa-card is
+// presentational (no pressed state, closed prop set); esa-checkbox has the right
+// semantics and a 16px target; esa-chip-group `multiple` is the closest behaviour
+// but a chip is one nowrap line and this holds a name over a title and a
+// provenance line; esa-button `active` is a control, not a record. Beacon is not
+// cloned on this machine. So the toggle is a native <button aria-pressed>, styled
+// from tokens in shared/firma2-pick-tile.css (the reusable home), and every mark
+// inside it is a lego: esa-icon for the check and the file glyph, laid out by .stack.
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import '../shared/firma2-pick-tile.css';
+import '../shared/firma2-provenance.css';
+---
+{/* The master copy. Inert until a <firma2-person-tile> clones it. */}
+<template data-person-tile>
+  <button type="button" class="firma2-pick-tile" aria-pressed="false">
+    {/* The selected mark. Present in every tile, shown only when pressed, so
+        selecting cannot reflow the card it sits in. */}
+    <span class="firma2-pick-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
+
+    <span class="firma2-pick-tile__body stack" data-gap="2xs">
+      <span class="typography-label-md-strong" data-part="name"></span>
+      <span class="firma2-pick-tile__secondary typography-body-sm" data-part="title" hidden></span>
+      {/* The document the name was found in. The file glyph is the label. */}
+      <span class="firma2-provenance typography-code-sm" data-part="source" hidden>
+        <EsaIcon name="file-text" size="xs" />
+        <span data-part="source-name"></span>
+      </span>
+    </span>
+  </button>
+</template>
+
+<style is:global>
+  /* The host is created by script and never carries this component's scope
+     attribute, so its rules are global, scoped by a tag name this file owns.
+     Stretching to the grid row's height keeps a short tile clickable edge to
+     edge beside a tall one. */
+  firma2-person-tile {
+    display: block;
+    block-size: 100%;
+  }
+
+  /* A locked tile answers no tap, so it offers no pointer. */
+  firma2-person-tile .firma2-pick-tile[aria-disabled='true'] {
+    cursor: default;
+  }
+</style>
+
+<script>
+  import { sampleDocuments } from '../../data/firma2-setup';
+  import type { PersonRecord } from '../../data/firma2-setup';
+
+  const TAG = 'firma2-person-tile';
+
+  /** The document a `document`-sourced suggestion came from, by name. */
+  const documentName = (id?: string): string => sampleDocuments.find((doc) => doc.id === id)?.name ?? '';
+
+  class Firma2PersonTile extends HTMLElement {
+    #record: PersonRecord | null = null;
+    #button: HTMLButtonElement | null = null;
+    #selected = false;
+    #locked = false;
+
+    /** Fills the tile. Setting it again rebuilds; there is no partial update. */
+    set person(value: PersonRecord) {
+      this.#record = value;
+      this.#build();
+    }
+
+    get person(): PersonRecord | null {
+      return this.#record;
+    }
+
+    get personId(): string {
+      return this.#record?.id ?? '';
+    }
+
+    get selected(): boolean {
+      return this.#selected;
+    }
+
+    set selected(value: boolean) {
+      this.#selected = value;
+      this.#button?.setAttribute('aria-pressed', value ? 'true' : 'false');
+    }
+
+    get locked(): boolean {
+      return this.#locked;
+    }
+
+    set locked(value: boolean) {
+      this.#locked = value;
+      if (value) this.selected = true;
+      this.#syncLocked();
+    }
+
+    connectedCallback(): void {
+      if (!this.#button) this.#build();
+    }
+
+    #syncLocked(): void {
+      if (this.#locked) this.#button?.setAttribute('aria-disabled', 'true');
+      else this.#button?.removeAttribute('aria-disabled');
+    }
+
+    #build(): void {
+      const record = this.#record;
+      if (!record) return;
+
+      const tileTemplate = document.querySelector<HTMLTemplateElement>('template[data-person-tile]');
+      if (!tileTemplate) return;
+
+      const tile = tileTemplate.content.cloneNode(true) as DocumentFragment;
+      const part = (name: string): HTMLElement | null => tile.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = record.name;
+
+      const title = part('title');
+      if (title) {
+        title.textContent = record.title ?? '';
+        title.hidden = !record.title;
+      }
+
+      const sourceLine = part('source');
+      const sourceName = documentName(record.sourceDocumentId);
+      const sourceValue = part('source-name');
+      if (sourceValue) sourceValue.textContent = sourceName;
+      if (sourceLine) sourceLine.hidden = !sourceName;
+
+      this.replaceChildren(tile);
+      this.#button = this.querySelector('button');
+      this.#button?.setAttribute('aria-pressed', this.#selected ? 'true' : 'false');
+      this.#syncLocked();
+      this.#button?.addEventListener('click', () => {
+        if (this.#locked) return;
+        this.selected = !this.selected;
+        this.dispatchEvent(
+          new CustomEvent('person-tile-toggle', {
+            detail: { id: this.personId, selected: this.selected },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+    }
+  }
+
+  if (!customElements.get(TAG)) customElements.define(TAG, Firma2PersonTile);
+</script>

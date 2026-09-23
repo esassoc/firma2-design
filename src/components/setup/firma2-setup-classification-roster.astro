@@ -1,0 +1,140 @@
+---
+// firma2-setup-classification-roster: the last screen of the Classifications
+// walk. Every classification this program has confirmed, from the tracker and by
+// hand, and the arrow back to the hub.
+//
+// A TABLE, FOR THE SAME REASON THE FUNDING ROSTER IS ONE. These are chosen; what
+// matters now is reading them down a column. The columns are the two fields
+// dbo.Classification holds, name and description, and where the row came from.
+// A document row has no description (a spreadsheet column holds values, not
+// definitions), so its cell shows the no-value mark.
+//
+// THE LIMIT IS NOT RESTATED HERE. It was answered one screen back and Back
+// reaches it; a line repeating it under the table would be the page describing
+// itself.
+//
+// REMOVE IS NOT DELETE. A document-sourced row goes back to `suggested`, which
+// the first screen shows as an un-pressed tile; a hand-typed one is `dismissed`.
+// Nothing here has dependents yet, so nothing asks for a confirm.
+//
+// THE ARROW GOES TO THE HUB, filled, the way the funding roster's does.
+//
+// bcn-lego-checked: esa-button for Remove and the arrow, esa-empty-state for the
+// empty roster. The bespoke part is the <table>, on firma2-table.css: there is
+// no esa-table (walked the catalog), and the spoke's AG Grid chrome is priced for
+// portfolio-scale surfaces with search, filters and export, none of which a
+// handful of rows read once during setup can use. Beacon is not cloned on this
+// machine. firma2-setup-funding-roster is the precedent this table follows.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+
+const hubHref = withBase('/prototypes/setup');
+---
+<Firma2SetupStepScreen
+  step="review"
+  icon="filter"
+  prompt="Your classifications"
+  align="start"
+  class="firma2-setup-classification-roster"
+>
+  <div class="firma2-table__scroll" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Confirmed classifications</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Name</th>
+          <th scope="col" class="typography-label-sm-strong">Description</th>
+          <th scope="col" class="typography-label-sm-strong">Origin</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="description"></td>
+          <td class="typography-body-sm" data-part="source"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-part="empty" hidden>
+    <EsaEmptyState title="No classifications yet" />
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
+  </div>
+</Firma2SetupStepScreen>
+
+<script>
+  import { confirmedClassifications, setClassificationStatus } from '../../lib/setup-draft';
+  import type { ClassificationRecord, ClassificationSource, ClassificationStatus } from '../../data/firma2-setup';
+
+  // The Origin column, in the reader's words: where it was found, or that the admin typed it.
+  const SOURCE_LABEL: Record<ClassificationSource, string> = {
+    document: 'Document',
+    manual: 'Manual',
+  };
+
+  /** The no-value mark: an EN dash, never text the data did not produce. */
+  const NONE = '–';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-classification-roster[data-step]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+  const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+
+  if (screen && scroll && body && rowTemplate && empty) {
+    const buildRow = (record: ClassificationRecord): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = record.name;
+      const description = part('description');
+      if (description) description.textContent = record.description ?? NONE;
+      const sourceCell = part('source');
+      if (sourceCell) sourceCell.textContent = SOURCE_LABEL[record.source];
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${record.name}`);
+        remove.setAttribute('title', `Remove ${record.name}`);
+        remove.dataset.classificationId = record.id;
+        remove.dataset.classificationKind = record.source;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const confirmed = confirmedClassifications();
+      body.replaceChildren(rowTemplate, ...confirmed.map(buildRow));
+      scroll.hidden = confirmed.length === 0;
+      empty.hidden = confirmed.length > 0;
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-classification-id]');
+      const id = button?.dataset.classificationId;
+      if (!button || !id) return;
+      // A document still says this name, so it returns to the first screen
+      // un-pressed; a typed one has nothing behind it and simply goes away.
+      const status: ClassificationStatus = button.dataset.classificationKind === 'document' ? 'suggested' : 'dismissed';
+      setClassificationStatus(id, status);
+    });
+
+    document.addEventListener('setup-draft-change', render);
+    render();
+  }
+</script>

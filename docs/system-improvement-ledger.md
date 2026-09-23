@@ -159,6 +159,52 @@ Raised via `/request-lego` unless noted otherwise.
   hard-coded green capsule skin; `firma2-editable-field` re-skins them via an
   adopted sheet to match `esa-pill`).
 
+- **`esa-radio-group` has no per-option description.** Its option type is
+  `{ label, value, disabled? }`. *Bit:* Project stages' default screen wanted
+  each stage's one-line definition under its name; the choices render as bare
+  stage names and the definitions live only on the other two screens. *Fix:* an
+  optional `description` on the option, rendered secondary under the label.
+  *Workaround:* none; `firma2-entity-create-dialog` folds it into the label.
+
+- **`esa-radio-group` cannot be named without a visible legend.** The group's
+  accessible name comes only from `label`, rendered as a visible `<legend>`.
+  *Bit:* a stepped setup screen whose display-size prompt IS the question
+  (Project stages, "Which stage do new projects start in?") must either repeat
+  the prompt as a legend or ship an unnamed radiogroup. *Fix:* a `label-hidden`
+  flag that renders the legend visually hidden, or an `aria-labelledby`
+  passthrough. *Workaround:* the label is omitted; the shell focuses the prompt
+  immediately before the group.
+  Classifications' limit screen hit both gaps too ("How many classifications
+  can one project carry?"): each option's consequence is folded into its label
+  after a colon, and the group ships with no legend.
+
+- **`esa-select` has no hidden-label or `aria-label` prop.** Its trigger takes
+  its accessible name only from the visible label. *Bit:* People setup wanted
+  an in-row role select in its roster, where a per-row visible label is noise;
+  the role renders as text instead and a report-sourced person's role cannot be
+  changed anywhere in the walk. *Fix:* `labelHidden` (the same gap the ledger
+  already records for esa-text-field, esa-textarea and esa-select) or an
+  `aria-label` passthrough.
+
+- **`esa-select`'s option list is clipped by an overflow frame.** The list is
+  absolutely positioned inside the host, so a `.firma2-table__scroll` wrapper
+  clips it on the lower rows. *Bit:* the same People roster. *Fix:* render the
+  list in a top layer (popover API) or let the host opt into `position: fixed`
+  placement.
+
+- **`esa-file-upload` has no way to clear it from code.** No public reset
+  method and no reactive `files` setter. *Bit:* Names and appearance's "Use the
+  directory mark" action has to replace the element with a fresh copy of itself
+  to drop a chosen logo. *Fix:* a `clear()` method, or make `files` a settable
+  property that re-renders.
+
+- **`esa-card` does not forward rest attributes to its root.** `hidden`,
+  `data-*` and `aria-*` set on the lego go nowhere, so a card a script shows,
+  hides or finds needs a wrapper element. *Bit:* the setup hub's complete band
+  wraps its card in a `<section>` only to carry `hidden` and the script hook.
+  *Fix:* spread `...rest` onto the card's root div, as `esa-button` does onto
+  its native element.
+
 ### Tooling
 
 - **`check-verbal-restraint.mjs` skips silently** when the design-gate corpus is
@@ -166,6 +212,22 @@ Raised via `/request-lego` unless noted otherwise.
   `"ok": true` alongside `"skipped": true`. *Bit:* a `/design-qa` run reads as
   green when the gate never ran. *Fix:* exit non-zero, or make `ok` false when
   skipped — a missing tool is not a pass.
+
+- **`manifest-crosscheck.mjs` ends the section list at the first non-list line.**
+  A wrapped continuation under a section (`(owns firma2-project-description as
+  its last row)` on its own line) reads as the end of `sections:`, so every
+  section after it is reported as undeclared drift. *Bit:* the project record
+  page threw eight `manifest-undeclared-section` errors for sections its
+  manifest listed. Worked around by folding the continuation into the list line.
+  *Fix:* treat an indented non-list line that follows a list item as that item's
+  continuation; end the list only at a `key:` line or the comment close.
+
+- **The manifest has no way to declare a section the LAYOUT renders.** The setup
+  pages' milestone band is composed by `SetupLayout`, not the page; listing it
+  fires `manifest-declared-absent`, omitting it hides a real section of the
+  rendered page. *Bit:* three setup pages. Worked around by listing the page's
+  slotted badges instead. *Fix:* honor a `(layout)` annotation on the resolver,
+  or a `layout-sections:` key the cross-check reads but does not reconcile.
 
 ## Notes
 

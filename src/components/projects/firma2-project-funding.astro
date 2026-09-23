@@ -11,6 +11,19 @@
 // module changes its rounding. The one thing that IS computed here is how the
 // SHARE percentages round for display — see PERCENTAGES below.
 //
+// THIS IS WHERE A COMMITMENT IS ENTERED. dbo.ProjectFundingSource, one project,
+// one funding source, one amount, spent a release on the Funding sources setup
+// milestone beside the list it points at, and moved here on 2026-09-18: setup
+// configures the list of funds a program draws on, and attaching one to a
+// project is the product's ongoing work (Andy: "individual data connections
+// between a project and funding source feel like the ongoing maintenance and
+// use of the platform"). So Add source opens a sheet whose Funding source field
+// is a pick over the sources confirmed in setup (src/lib/setup-draft.ts), and
+// the row it writes goes to src/lib/funding-commitment-draft.ts, keyed by
+// project, the way recorded spend does. The rows the reader added merge into
+// the grid beneath the authored ones and carry their own share of the estimate;
+// the authored rows and the total do not move.
+//
 // WHY A PLAIN <table> AND NOT AG GRID. This spoke's precedent for tabular data is
 // AG Grid with the full standard chrome (src/components/shared/grid-chrome.ts,
 // firma2-data-grid-chrome.css) — search, filters, CSV export, record count. That
@@ -45,9 +58,16 @@ interface Props {
    * construction — passed in rather than re-added here (see the note above).
    */
   estimatedTotalCost: number;
+  /**
+   * Keys the browser-local commitments to this project. Without it the section
+   * is read-only: Add source renders but has nothing to write to. The detail
+   * page always passes it; the prop is optional so the section can still be
+   * composed on a surface with no record behind it.
+   */
+  projectSlug?: string;
 }
 
-const { funding, estimatedTotalCost } = Astro.props;
+const { funding, estimatedTotalCost, projectSlug } = Astro.props;
 
 // Whole dollars: these are budget figures, not ledger entries, and cents on a
 // $1.2M grant are noise in every column they appear in.
@@ -112,12 +132,11 @@ for (let i = 0; i < leftover; i += 1) {
        header control renders at, and the card headers down this page have to
        agree exactly in height. Change it here only if it changes in all of them.
 
-       Still inert: nothing is wired behind it yet. It is a real, enabled
-       <button> so the eventual handler has somewhere to land, and deliberately
-       not `disabled` — disabled claims the action is unavailable to THIS user,
-       which is a different and false statement. Per-row editing and removal
-       inside this section are not built yet. -->
-  <EsaButton slot="actions" variant="chrome" size="sm" icon="plus">Add source</EsaButton>
+       Wired to the sheet below when the page gives a project slug; the script
+       finds it through the card, the way the Expenditures card finds Record
+       spend. Removal of a row the reader added lives in the sheet's log; the
+       authored rows have no remove, because they are the record, not a draft. -->
+  <EsaButton slot="actions" variant="chrome" size="sm" icon="plus" data-firma2-funding-add>Add source</EsaButton>
 
   <!-- AN AG GRID, not the hand-rolled <table> this was. The earlier note here
        walked the Ecology catalog, found no esa-table, and concluded "a native
@@ -136,7 +155,7 @@ for (let i = 0; i < leftover; i += 1) {
        The COLUMN SEMANTICS are unchanged: the funder still names its row, the
        amounts still align to their end, and the estimated total cost still sits
        under them as a footer rather than a fourth data row. -->
-  <div class="firma2-project-funding">
+  <div class="firma2-project-funding" data-project-slug={projectSlug}>
     <div class="firma2-project-funding__grid" data-firma2-funding-grid></div>
 
     <script
@@ -152,9 +171,52 @@ for (let i = 0; i < leftover; i += 1) {
       estimatedTotalCost,
       })}
     ></script>
-  </div>
 
-  </EsaCard>
+    <!-- THE SHEET. Same lego, same size, same footer rhythm as the Expenditures
+         card's Record spend: a pick, a figure, Save keeps the sheet open for the
+         next one, Done closes it. The Funding source field is a SELECT over the
+         sources confirmed in setup, minus the ones already on this project,
+         because a commitment points at a dbo.FundingSource row and typing a
+         name here would mint a second copy of it. -->
+    <esa-side-dialog
+      class="firma2-project-funding__sheet"
+      heading="Add funding source"
+      size="md"
+      position="right"
+    >
+      <div class="stack" data-gap="lg">
+        <esa-select data-funding-source label="Funding source" size="md" required></esa-select>
+        <esa-text-field
+          data-funding-amount
+          label="Amount"
+          size="md"
+          inputmode="decimal"
+          prefix="$"
+          required
+        ></esa-text-field>
+        <!-- THE LOG SAYS WHERE THIS LIVES, in its heading: nothing in this
+             prototype reaches a server, and a reader who attaches three grants
+             deserves to know that before they close the tab. Same sentence
+             shape and placement as the Expenditures sheet's. -->
+        <section class="stack" data-gap="2xs" data-funding-log-block hidden>
+          <h3 class="typography-label-sm">Recorded in this browser</h3>
+          <ul class="firma2-project-funding__log stack" data-gap="2xs" data-funding-log></ul>
+        </section>
+      </div>
+      <div slot="footer" class="repel">
+        <EsaButton variant="ghost" size="md" data-funding-done>Done</EsaButton>
+        <EsaButton variant="primary" size="md" data-funding-save>Save source</EsaButton>
+      </div>
+    </esa-side-dialog>
+
+    <!-- A rendered esa-button the script clones per log row: the lego-clone
+         trick the Expenditures sheet and the data grids use, so a script-built
+         row carries a real esa-button rather than a hand-rolled lookalike. -->
+    <div data-funding-remove-template hidden aria-hidden="true">
+      <EsaButton variant="chrome" iconOnly icon="x" size="sm" aria-label="Remove source">Remove source</EsaButton>
+    </div>
+  </div>
+</EsaCard>
 
 <style>
   /* The grid draws its own surface from firma2GridTheme, which is already mapped
@@ -201,11 +263,42 @@ for (let i = 0; i < leftover; i += 1) {
     font-weight: var(--font-weight-semibold, 600);
     border-block-start: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
   }
+
+  /* .stack is the layout engine for the log; this only strips the list chrome
+     that comes with choosing <ul> for its semantics. */
+  .firma2-project-funding__log {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* The rows are built at runtime, so they never carry this file's scope hash;
+     the authored <ul> does, and :global lets the rule reach down from it. */
+  .firma2-project-funding__log :global(.firma2-project-funding__log-row) {
+    align-items: center;
+  }
+
+  [data-funding-log-block][hidden] {
+    display: none;
+  }
 </style>
 
 <script>
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
   import { createCardGrid, gridCurrencyFormatter as currency } from '../shared/grid-chrome';
-  import type { ColDef } from 'ag-grid-community';
+  import type { ColDef, GridApi } from 'ag-grid-community';
+  import { confirmedFundingSources } from '../../lib/setup-draft';
+  import {
+    addFundingCommitment,
+    readFundingCommitments,
+    removeFundingCommitment,
+    type FundingCommitmentDraft,
+  } from '../../lib/funding-commitment-draft';
+  // esa-side-dialog lands flush-left and content-tall in Chrome without this;
+  // same fix the Expenditures and measures sheets apply.
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
 
   interface FundingRow {
     name: string;
@@ -214,15 +307,52 @@ for (let i = 0; i < leftover; i += 1) {
     share: number;
   }
 
+  /** The slices of the legos this file touches. */
+  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string };
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
+
   document.querySelectorAll<HTMLElement>('.firma2-project-funding').forEach((root) => {
     const host = root.querySelector<HTMLElement>('[data-firma2-funding-grid]');
     const payload = root.querySelector<HTMLScriptElement>('[data-firma2-funding-rows]');
     if (!host || !payload) return;
 
-    const { rows, estimatedTotalCost } = JSON.parse(payload.textContent ?? '{}') as {
+    const { rows: authored, estimatedTotalCost } = JSON.parse(payload.textContent ?? '{}') as {
       rows: FundingRow[];
       estimatedTotalCost: number;
     };
+    const slug = root.dataset.projectSlug ?? '';
+
+    // ---- the rows the reader added -----------------------------------------
+    // A commitment names a setup-draft source by id and the card resolves the
+    // name at render. A source removed from the program after the fact leaves a
+    // commitment pointing at nothing, and that row is dropped rather than shown
+    // under a name the card cannot vouch for.
+    const resolved = (): { commitment: FundingCommitmentDraft; row: FundingRow }[] => {
+      if (!slug) return [];
+      const byId = new Map(confirmedFundingSources().map((source) => [source.id, source]));
+      return readFundingCommitments(slug).flatMap((commitment) => {
+        const source = byId.get(commitment.fundingSourceId);
+        if (!source) return [];
+        return [
+          {
+            commitment,
+            row: {
+              name: source.name,
+              organization: source.organizationName,
+              amount: commitment.amount,
+              // A reader's row is priced against the same estimate the authored
+              // rows were, so the column stays one comparison. It is rounded on
+              // its own, not by largest remainder with the authored set: the
+              // authored shares are the record and do not move when a row is
+              // added beneath them.
+              share: Math.round((commitment.amount / estimatedTotalCost) * 100),
+            },
+          },
+        ];
+      });
+    };
+
+    const allRows = (): FundingRow[] => [...authored, ...resolved().map((entry) => entry.row)];
 
     const columnDefs: ColDef<FundingRow>[] = [
       // The funder names the row. `flex` on the two text columns, because grant
@@ -260,8 +390,8 @@ for (let i = 0; i < leftover; i += 1) {
       },
     ];
 
-    createCardGrid<FundingRow>(host, {
-      rowData: rows,
+    const api: GridApi<FundingRow> = createCardGrid<FundingRow>(host, {
+      rowData: allRows(),
       columnDefs,
       // This grid never scrolls sideways — four columns, two of them flexed —
       // so the reserved scrollbar gutter was pure empty band between the last
@@ -291,6 +421,121 @@ for (let i = 0; i < leftover; i += 1) {
           share: 100,
         },
       ],
+    });
+
+    const paintGrid = (): void => {
+      api.setGridOption('rowData', allRows());
+    };
+
+    // ---- the sheet -----------------------------------------------------------
+    const sheet = root.querySelector<Sheet>('.firma2-project-funding__sheet');
+    const trigger = root
+      .closest('.esa-card, esa-card')
+      ?.querySelector<HTMLElement>('[data-firma2-funding-add]');
+    const sourceField = root.querySelector<Control>('[data-funding-source]');
+    const amountField = root.querySelector<Control>('[data-funding-amount]');
+    const logBlock = root.querySelector<HTMLElement>('[data-funding-log-block]');
+    const log = root.querySelector<HTMLElement>('[data-funding-log]');
+    const removeTemplate = root.querySelector<HTMLElement>('[data-funding-remove-template]');
+
+    if (!sheet || !slug || !sourceField || !amountField || !log || !logBlock) return;
+    void fixSideDialog(sheet);
+
+    /** The sources still open to this project: confirmed in setup, not yet on the table. */
+    const openSources = () => {
+      const taken = new Set(readFundingCommitments(slug).map((c) => c.fundingSourceId));
+      return confirmedFundingSources().filter((source) => !taken.has(source.id));
+    };
+
+    const paintOptions = (): void => {
+      sourceField.options = openSources().map((source) => ({ label: source.name, value: source.id }));
+      sourceField.value = null;
+      sourceField.errorText = '';
+    };
+
+    const cloneButton = (label: string): HTMLElement | null => {
+      const btn = removeTemplate?.firstElementChild?.cloneNode(true) as HTMLElement | undefined;
+      if (!btn) return null;
+      btn.classList.add('firma2-project-funding__log-remove');
+      btn.setAttribute('aria-label', label);
+      return btn;
+    };
+
+    const paintLog = (): void => {
+      const entries = resolved();
+      logBlock.hidden = entries.length === 0;
+      log.replaceChildren(
+        ...entries.map(({ commitment, row }) => {
+          const li = document.createElement('li');
+          li.className = 'firma2-project-funding__log-row repel';
+          li.dataset.commitmentId = commitment.id;
+
+          const name = document.createElement('span');
+          name.className = 'typography-body-sm';
+          name.textContent = row.name;
+
+          const end = document.createElement('span');
+          end.className = 'cluster';
+          end.dataset.gap = 'xs';
+          const amount = document.createElement('span');
+          amount.className = 'typography-body-sm';
+          amount.textContent = currency.format(row.amount);
+          end.append(amount);
+          const remove = cloneButton(`Remove ${row.name}`);
+          if (remove) end.append(remove);
+
+          li.append(name, end);
+          return li;
+        }),
+      );
+    };
+
+    const openSheet = (): void => {
+      paintOptions();
+      amountField.value = '';
+      amountField.errorText = '';
+      paintLog();
+      sheet.show();
+    };
+
+    trigger?.addEventListener('click', openSheet);
+    root.querySelector('[data-funding-done]')?.addEventListener('click', () => sheet.close());
+
+    root.querySelector('[data-funding-save]')?.addEventListener('click', () => {
+      const fundingSourceId = typeof sourceField.value === 'string' ? sourceField.value : '';
+      if (!fundingSourceId) {
+        sourceField.errorText =
+          openSources().length === 0 ? 'Confirm a funding source in Setup first.' : 'Pick a funding source.';
+        return;
+      }
+      sourceField.errorText = '';
+      // Commas are what a person types into a money field, and "$40,000" is what
+      // they paste out of a spreadsheet — both are the figure, so both parse.
+      const amount = Number(String(amountField.value ?? '').replace(/[$,\s]/g, ''));
+      if (!Number.isFinite(amount) || amount <= 0) {
+        amountField.errorText = 'Enter the amount committed to this project.';
+        return;
+      }
+      amountField.errorText = '';
+      addFundingCommitment(slug, { fundingSourceId, amount });
+
+      // Batch-friendly: the row lands in the log and the grid, the fields clear
+      // for the next source, the sheet stays open.
+      paintLog();
+      paintGrid();
+      paintOptions();
+      amountField.value = '';
+      sourceField.focus();
+    });
+
+    log.addEventListener('click', (event) => {
+      const btn = (event.target as Element).closest('.firma2-project-funding__log-remove');
+      const li = btn?.closest<HTMLElement>('[data-commitment-id]');
+      if (!li?.dataset.commitmentId) return;
+      removeFundingCommitment(slug, li.dataset.commitmentId);
+      paintLog();
+      paintGrid();
+      paintOptions();
     });
   });
 </script>

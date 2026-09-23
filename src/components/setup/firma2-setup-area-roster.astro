@@ -1,0 +1,180 @@
+---
+// firma2-setup-area-roster: the last screen of the Spatial areas walk. Every area
+// this program has confirmed, from the documents and by hand, and the arrow back
+// to the hub.
+//
+// A TABLE, FOR THE SAME REASON THE CLASSIFICATION ROSTER IS ONE. These are
+// chosen; what matters now is reading them down a column. The columns are the
+// area's name, its kind (the layer, dbo.GeospatialAreaType), and where the row
+// came from.
+//
+// THE CATCH-ALL IS A DERIVED ROW. When the outside policy is `catch-all`, one row
+// named OUTSIDE_AREA_NAME follows the areas, kind "Catch-all", origin "Policy":
+// it is what the answer adds to the program, so it reads as one more area. It is
+// not a record, so its Remove changes the answer to `blank`, and the outside
+// screen shows that on Back. The row appears only beside real areas: with none,
+// every project is outside, and the catch-all would count nothing.
+//
+// NO AREAS IS AN OUTCOME, NOT A FAILURE. A program that confirms none is the
+// "Five Doors" mock's point-only answer, "the right answer with no GIS analyst":
+// every project sits on its own point. The empty state names that outcome.
+//
+// THE BOUNDARY SOURCE IS NOT RESTATED HERE. It was answered two screens back and
+// Back reaches it; a line repeating it under the table would be the page
+// describing itself.
+//
+// REMOVE IS NOT DELETE. A document-sourced row goes back to `suggested`, which
+// the first screen shows as an un-pressed tile; a hand-typed one is `dismissed`.
+//
+// bcn-lego-checked: esa-button for Remove and the arrow, esa-empty-state for the
+// point-only outcome. The bespoke part is the <table>, on firma2-table.css: there
+// is no esa-table (walked the catalog), and the spoke's AG Grid chrome is priced
+// for portfolio-scale surfaces with search, filters and export, none of which a
+// handful of rows read once during setup can use. Beacon is not cloned on this
+// machine. firma2-setup-classification-roster is the precedent this table
+// follows.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+
+const hubHref = withBase('/prototypes/setup');
+---
+<Firma2SetupStepScreen
+  step="review"
+  icon="map-pin"
+  prompt="Your spatial areas"
+  align="start"
+  class="firma2-setup-area-roster"
+>
+  <div class="firma2-table__scroll" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Confirmed spatial areas</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Name</th>
+          <th scope="col" class="typography-label-sm-strong">Kind</th>
+          <th scope="col" class="typography-label-sm-strong">Origin</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="kind"></td>
+          <td class="typography-body-sm" data-part="source"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-part="empty" hidden>
+    <EsaEmptyState title="Point locations only" description="Each project is mapped by its own point." />
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
+  </div>
+</Firma2SetupStepScreen>
+
+<script>
+  import { confirmedSpatialAreas, readSetupDraft, setOutsidePolicy, setSpatialAreaStatus } from '../../lib/setup-draft';
+  import { OUTSIDE_AREA_NAME, spatialAreaKindLabel } from '../../data/firma2-setup';
+  import type { SpatialAreaRecord, SpatialAreaSource, SpatialAreaStatus } from '../../data/firma2-setup';
+
+  /** Where a row came from, in the reader's words; `policy` is the catch-all the outside answer adds. */
+  type RowOrigin = SpatialAreaSource | 'policy';
+
+  /** One roster row: a confirmed area, or the catch-all the outside policy derives. */
+  interface RosterRow {
+    id: string;
+    name: string;
+    kindLabel: string;
+    origin: RowOrigin;
+  }
+
+  // The Origin column, in the reader's words.
+  const ORIGIN_LABEL: Record<RowOrigin, string> = {
+    document: 'Document',
+    manual: 'Manual',
+    policy: 'Policy',
+  };
+
+  const CATCH_ALL_KIND = 'Catch-all';
+  const CATCH_ALL_ID = 'outside-the-region';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-area-roster[data-step]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+  const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+
+  if (screen && scroll && body && rowTemplate && empty) {
+    const fromRecord = (record: SpatialAreaRecord): RosterRow => ({
+      id: record.id,
+      name: record.name,
+      kindLabel: spatialAreaKindLabel(record.kind),
+      origin: record.source,
+    });
+
+    const rows = (): RosterRow[] => {
+      const areas = confirmedSpatialAreas().map(fromRecord);
+      if (areas.length === 0 || readSetupDraft().outsidePolicy !== 'catch-all') return areas;
+      return [...areas, { id: CATCH_ALL_ID, name: OUTSIDE_AREA_NAME, kindLabel: CATCH_ALL_KIND, origin: 'policy' }];
+    };
+
+    const buildRow = (entry: RosterRow): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = entry.name;
+      const kind = part('kind');
+      if (kind) kind.textContent = entry.kindLabel;
+      const sourceCell = part('source');
+      if (sourceCell) sourceCell.textContent = ORIGIN_LABEL[entry.origin];
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${entry.name}`);
+        remove.setAttribute('title', `Remove ${entry.name}`);
+        remove.dataset.areaId = entry.id;
+        remove.dataset.areaOrigin = entry.origin;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const entries = rows();
+      body.replaceChildren(rowTemplate, ...entries.map(buildRow));
+      scroll.hidden = entries.length === 0;
+      empty.hidden = entries.length > 0;
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-area-id]');
+      const id = button?.dataset.areaId;
+      if (!button || !id) return;
+      const origin = button.dataset.areaOrigin as RowOrigin | undefined;
+      // The catch-all is an answer, not a record: removing it changes the answer.
+      if (origin === 'policy') {
+        setOutsidePolicy('blank');
+        return;
+      }
+      // A document still names this area, so it returns to the first screen
+      // un-pressed; a typed one has nothing behind it and simply goes away.
+      const status: SpatialAreaStatus = origin === 'document' ? 'suggested' : 'dismissed';
+      setSpatialAreaStatus(id, status);
+    });
+
+    document.addEventListener('setup-draft-change', render);
+    render();
+  }
+</script>

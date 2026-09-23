@@ -1,0 +1,101 @@
+---
+// /prototypes/setup/project-stages: the Project stages milestone, as a walk.
+//
+// Answers to docs/product-brief.md § 5, for this screen:
+//   WHO         Dana, the tenant admin, standing the program up alone or beside
+//               the account team.
+//   DOING WHAT  Saying which of ProjectFirma's six stages her program's projects
+//               actually move through, and which one a new project starts in.
+//   BRINGING    A project tracker whose Status column holds the program's own
+//               words for the same ladder (Proposed, Funded, In construction,
+//               Monitoring, Complete).
+//   OPTIMIZING  Confirming the match between her statuses and the six over
+//               learning the six from scratch; one question a screen; nothing
+//               lost between sittings.
+//   PAYS FOR    Two program preferences: the stages in use (a tenant-side subset
+//               of the global dbo.ProjectStage rows) and the stage a new
+//               project's ProjectStageID starts at.
+//   LEAVES OUT  Proposal approval and the public visibility of pending
+//               proposals. See below.
+//
+// THE STAGES ARE NOT CONFIGURATION. The teammate's 2026-09-23 "Project Stages
+// Setup" mock made the case: dbo.ProjectStage is six global rows (Proposal,
+// Planning & Design, Implementation, Post-Implementation, Completed, Deferred)
+// with no TenantID, not aliasable, and "project stage" is an attribute of a
+// project, not something a tenant builds. There is nothing to extract and
+// nothing to author. What a program does have is PREFERENCE: which of the six
+// it uses (her example, a program that skips proposals) and where a new project
+// starts. The step stays in setup because the documents already carry evidence
+// for the first answer: the tracker's Status values are extracted as lifecycle
+// candidates, and the walk maps them onto the fixed six so the program confirms
+// a match instead of answering cold.
+//
+// THREE SCREENS, IN THE FUNDING WALK'S FORMAT. The six as tiles, one question
+// over the whole cast, pre-pressed where a tracker status lands; the starting
+// stage, one choice over the stages in use; the roster and the arrow to the hub.
+// The shell is firma2-setup-stepper and the screens are the three components
+// below. The walk asks subset first and default second, the reverse of the
+// mock's order, because the default can only name a stage the program uses.
+//
+// NEITHER ANSWER HAS A COLUMN YET. Her mock's developer notes are the record:
+// no table lets a tenant turn a stage off (the platform's shape for it would be
+// a tenant table pointing at the global one, as dbo.TenantFeatureFlag points at
+// dbo.FeatureFlag), and Project.ProjectStageID is NOT NULL with no DEFAULT and
+// no create-project endpoint to read one. The walk captures both so whoever
+// builds project creation does not have to ask.
+//
+// APPROVAL AND VISIBILITY ARE CUT (agreed with the teammate, who flagged them
+// as out of onboarding scope herself). Her mock asked whether a proposal needs
+// approval before it counts, and whether a pending one is Public or Protected.
+// dbo.Project has no approval or visibility column, and Public would need an
+// anonymous read surface the app does not have. ProjectFirma 1.0 had the
+// feature; rebuilding it is product work, not a setup answer.
+import SetupLayout from '../../../layouts/SetupLayout.astro';
+import Firma2SetupStepper from '../../../components/setup/firma2-setup-stepper.astro';
+import Firma2SetupStagePicker from '../../../components/setup/firma2-setup-stage-picker.astro';
+import Firma2SetupStageDefault from '../../../components/setup/firma2-setup-stage-default.astro';
+import Firma2SetupStageRoster from '../../../components/setup/firma2-setup-stage-roster.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+
+const stepIds = ['suggested', 'default', 'review'];
+---
+<!-- manifest:
+  layout: stack(2xl)
+  sections:
+    - status counts  -> esa-badge   (two, slotted into the milestone band SetupLayout renders)
+    - walk           -> firma2-setup-stepper
+      - suggested      -> firma2-setup-stage-picker
+      - default        -> firma2-setup-stage-default
+      - review         -> firma2-setup-stage-roster
+-->
+<SetupLayout title="Project stages" width="wide" milestone="lifecycle">
+  <!-- The counts the screens produce, at the top of the page. Synced by the
+       script below from the same draft the screens read. -->
+  <span slot="status" data-part="used-count"><EsaBadge value="0 in use" variant="secondary" size="sm" /></span>
+  <span slot="status" data-part="review-count"><EsaBadge value="6 to review" variant="secondary" size="sm" /></span>
+
+  <Firma2SetupStepper stepIds={stepIds}>
+    <Firma2SetupStagePicker />
+    <Firma2SetupStageDefault />
+    <Firma2SetupStageRoster />
+  </Firma2SetupStepper>
+</SetupLayout>
+
+<script>
+  import { listStages } from '../../../lib/setup-draft';
+
+  const usedBadge = document.querySelector<HTMLElement>('[data-part="used-count"] .esa-badge__text');
+  const reviewBadge = document.querySelector<HTMLElement>('[data-part="review-count"] .esa-badge__text');
+
+  const sync = (): void => {
+    const stages = listStages();
+    const used = stages.filter((stage) => stage.status === 'confirmed').length;
+    const toReview = stages.filter((stage) => stage.status === 'suggested').length;
+
+    if (usedBadge) usedBadge.textContent = `${used} in use`;
+    if (reviewBadge) reviewBadge.textContent = `${toReview} to review`;
+  };
+
+  document.addEventListener('setup-draft-change', sync);
+  sync();
+</script>

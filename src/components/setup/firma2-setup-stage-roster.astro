@@ -1,0 +1,160 @@
+---
+// firma2-setup-stage-roster: the last screen of the Project stages walk. The
+// stages this program uses, in ladder order, which one new projects start in,
+// and the arrow back to the hub.
+//
+// A TABLE, FOR THE SAME REASON THE FUNDING ROSTER IS ONE. The answer is a short
+// ordered set and the reader checks it down two columns: what each stage means,
+// and which of the tracker's Status values land in it. A stage no status lands
+// in shows the no-value mark, which is the fact the program most needs to see
+// (a stage in use that its own records never name).
+//
+// THE STARTING STAGE IS A CHECK, not a badge. One row in six carries it; a
+// badge is a second name competing with the stage's own, where a check in a
+// narrow column is read only when looked for.
+//
+// REMOVE IS DISMISS. The stage stays in dbo.ProjectStage for every other
+// program; this one stops using it. It returns on the first screen as an
+// un-pressed tile, and removing the starting stage clears the default (the lib
+// does that, so the default screen shows its fallback on the way back).
+//
+// THE ARROW GOES TO THE HUB, filled, the way the funding walk's last screen does.
+//
+// bcn-lego-checked: esa-button for Remove and the arrow, esa-icon for the check,
+// esa-empty-state for no stages in use. The bespoke part is the <table>, on
+// firma2-table.css: there is no esa-table (walked the catalog), and the spoke's
+// AG Grid chrome is priced for portfolio-scale surfaces with search, filters
+// and export, none of which six rows read once during setup can use. Beacon is
+// not cloned on this machine. firma2-setup-funding-roster is the precedent this
+// table follows.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+
+const hubHref = withBase('/prototypes/setup');
+---
+<Firma2SetupStepScreen
+  step="review"
+  icon="activity"
+  prompt="Your project stages"
+  align="start"
+  class="firma2-setup-stage-roster"
+>
+  <div class="firma2-table__scroll" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Project stages in use</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Stage</th>
+          <th scope="col" class="typography-label-sm-strong">Definition</th>
+          <th scope="col" class="typography-label-sm-strong">Tracker status</th>
+          <th scope="col" class="typography-label-sm-strong">Starting stage</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="definition"></td>
+          <td class="typography-body-sm" data-part="statuses"></td>
+          <td class="typography-body-sm">
+            <span class="firma2-setup-stage-roster__start" data-part="start" hidden>
+              <EsaIcon name="check" size="sm" label="New projects start here" />
+            </span>
+          </td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-part="empty" hidden>
+    <EsaEmptyState title="No stages in use" />
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The check's wrapper is an inline element given `hidden`; this keeps the
+     attribute winning over any display the icon brings. */
+  .firma2-setup-stage-roster__start[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import { readSetupDraft, setStageStatus, usedStages } from '../../lib/setup-draft';
+  import type { StageOption } from '../../data/firma2-setup';
+
+  /** The no-value mark: an EN dash, never a status the tracker did not hold. */
+  const NONE = '–';
+
+  /** "Proposed, Funded": tracker values as written, listed without a conjunction. */
+  const LIST = new Intl.ListFormat('en', { style: 'narrow', type: 'unit' });
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-stage-roster[data-step]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+  const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+
+  if (screen && scroll && body && rowTemplate && empty) {
+    const buildRow = (stage: StageOption, isStart: boolean, uploaded: boolean): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = stage.name;
+      const definition = part('definition');
+      if (definition) definition.textContent = stage.definition;
+      // Tracker values count only once the tracker is in; before that, and for a
+      // stage none lands in, the cell shows the no-value mark.
+      const statuses = part('statuses');
+      if (statuses) {
+        statuses.textContent = uploaded && stage.trackerStatuses.length > 0 ? LIST.format(stage.trackerStatuses) : NONE;
+      }
+      const start = part('start');
+      if (start) start.hidden = !isStart;
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${stage.name}`);
+        remove.setAttribute('title', `Remove ${stage.name}`);
+        remove.dataset.stageId = stage.id;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const draft = readSetupDraft();
+      const used = usedStages(draft);
+      body.replaceChildren(
+        rowTemplate,
+        ...used.map((stage) => buildRow(stage, stage.id === draft.defaultStage, draft.documentsUploaded)),
+      );
+      scroll.hidden = used.length === 0;
+      empty.hidden = used.length > 0;
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-stage-id]');
+      const id = button?.dataset.stageId;
+      if (!button || !id) return;
+      setStageStatus(id, 'dismissed');
+    });
+
+    document.addEventListener('setup-draft-change', render);
+    render();
+  }
+</script>

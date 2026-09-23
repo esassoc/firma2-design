@@ -1,0 +1,156 @@
+---
+// firma2-setup-people-roster: the last screen of the People walk. Everyone this
+// program has confirmed, from the report and by hand, and the arrow back to the
+// hub. This is the go-live list; setup stages it, the product sends it.
+//
+// A TABLE, FOR THE SAME REASON THE CLASSIFICATION ROSTER IS ONE. These are
+// chosen; what matters now is reading them down a column. The columns are the
+// person's name, the title the report gave (shown to tell people apart; a typed
+// person has none, so the cell shows the no-value mark), the organization, and
+// the role.
+//
+// THE ROLE IS TEXT, NOT A SELECT. An esa-select in each row was the first idea.
+// Two things stop it: the lego's option list is absolutely positioned, so the
+// table's scroll frame clips it on the lower rows, and without a visible label
+// the lego names its trigger by nothing, so every row's control would be
+// unnamed. Both are hub gaps, reported rather than worked around here.
+//
+// STEWARDSHIP IS NOT RESTATED HERE. It was answered one screen back and Back
+// reaches it.
+//
+// REMOVE IS NOT DELETE. A document-sourced row goes back to `suggested`, which
+// the first screen shows as an un-pressed tile; a hand-typed one is `dismissed`.
+// The admin doing setup has no Remove: she is the one account go-live needs.
+//
+// THE ARROW GOES TO THE HUB, filled, the way the classification roster's does.
+//
+// bcn-lego-checked: esa-button for Remove and the arrow, esa-empty-state for the
+// empty roster. The bespoke part is the <table>, on firma2-table.css: there is
+// no esa-table (walked the catalog), and the spoke's AG Grid chrome is priced for
+// portfolio-scale surfaces with search, filters and export, none of which a
+// handful of rows read once during setup can use. Beacon is not cloned on this
+// machine. firma2-setup-classification-roster is the precedent this table follows.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+
+const hubHref = withBase('/prototypes/setup');
+---
+<Firma2SetupStepScreen
+  step="review"
+  icon="user"
+  prompt="Your people"
+  align="start"
+  class="firma2-setup-people-roster"
+>
+  <div class="firma2-table__scroll" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Confirmed people</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Name</th>
+          <th scope="col" class="typography-label-sm-strong">Title</th>
+          <th scope="col" class="typography-label-sm-strong">Organization</th>
+          <th scope="col" class="typography-label-sm-strong">Role</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="title"></td>
+          <td class="typography-body-sm" data-part="organization"></td>
+          <td class="typography-body-sm" data-part="role"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-part="empty" hidden>
+    <EsaEmptyState title="No people yet" />
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
+  </div>
+</Firma2SetupStepScreen>
+
+<script>
+  import { confirmedPeople, listOrganizations, setPersonStatus } from '../../lib/setup-draft';
+  import { personRoles, suggestedPeople } from '../../data/firma2-setup';
+  import type { PersonRecord, PersonStatus } from '../../data/firma2-setup';
+
+  /** The no-value mark: an EN dash, never text the data did not produce. */
+  const NONE = '–';
+
+  const ROLE_LABEL = new Map(personRoles.map((role) => [role.id, role.label]));
+
+  /** The admin doing setup: the one report name the seed arrives with already confirmed. */
+  const SETUP_ADMINS = new Set(suggestedPeople.filter((p) => p.status === 'confirmed').map((p) => p.id));
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-people-roster[data-step]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+  const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+
+  if (screen && scroll && body && rowTemplate && empty) {
+    const buildRow = (person: PersonRecord, organizationNames: Map<string, string>): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = person.name;
+      const title = part('title');
+      if (title) title.textContent = person.title ?? NONE;
+      const organization = part('organization');
+      if (organization) organization.textContent = organizationNames.get(person.organizationId) ?? NONE;
+      const role = part('role');
+      if (role) role.textContent = ROLE_LABEL.get(person.role) ?? NONE;
+
+      const remove = part('remove');
+      if (remove) {
+        if (SETUP_ADMINS.has(person.id)) {
+          remove.remove();
+        } else {
+          remove.setAttribute('aria-label', `Remove ${person.name}`);
+          remove.setAttribute('title', `Remove ${person.name}`);
+          remove.dataset.personId = person.id;
+          remove.dataset.personKind = person.source;
+        }
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const confirmed = confirmedPeople();
+      // Every status, so a row outlives its organization's later dismissal.
+      const organizationNames = new Map(listOrganizations().map((org) => [org.id, org.name]));
+      body.replaceChildren(rowTemplate, ...confirmed.map((person) => buildRow(person, organizationNames)));
+      scroll.hidden = confirmed.length === 0;
+      empty.hidden = confirmed.length > 0;
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-person-id]');
+      const id = button?.dataset.personId;
+      if (!button || !id) return;
+      // A document still names this person, so they return to the first screen
+      // un-pressed; a typed one has nothing behind it and simply goes away.
+      const status: PersonStatus = button.dataset.personKind === 'document' ? 'suggested' : 'dismissed';
+      setPersonStatus(id, status);
+    });
+
+    document.addEventListener('setup-draft-change', render);
+    render();
+  }
+</script>

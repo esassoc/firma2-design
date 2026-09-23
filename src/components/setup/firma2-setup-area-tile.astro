@@ -1,0 +1,153 @@
+---
+// firma2-setup-area-tile: one spatial area as a large, tappable toggle. The unit
+// firma2-setup-area-picker deals in.
+//
+// IT RENDERS NOTHING BY ITSELF. Same construction as
+// firma2-setup-classification-tile: an inert <template> holding the tile's
+// markup and a <firma2-area-tile> custom element that clones the template and
+// fills it. A caller creates the element and sets `.area`; no caller writes tile
+// markup.
+//
+// THE CONTRACT
+//   el.area = SpatialAreaRecord   fills the name, the kind and the document; setting it again rebuilds
+//   el.areaId                     the record's id, for the caller's write
+//   el.selected                   get/set, mirrors aria-pressed on the button
+//   'area-tile-toggle'            bubbling CustomEvent<{ id, selected }> on every click
+//
+// SELECTION IS NOT A WRITE. Tapping marks the tile; the picker's arrow is what
+// commits, once, for the set.
+//
+// WHAT IS ON THE TILE. The name, because the tile is a yes-or-no on the name.
+// The kind, as the secondary line, because it is the layer the area will sit in
+// (dbo.GeospatialAreaType) and it is a stored field of the record. The document,
+// as provenance in the mono composite, because it is what makes the tile read as
+// found rather than invented.
+//
+// THE CHROME IS SHARED, THE FIELDS ARE NOT. The button, its pressed state, the
+// check mark and the secondary line come from shared/firma2-pick-tile.css; this
+// file keeps the host rule and the fields an area fills.
+//
+// bcn-lego-checked: nothing in the catalog is a SELECTABLE tile. esa-card is
+// presentational (no pressed state, closed prop set); esa-checkbox has the right
+// semantics and a 16px target; esa-chip-group `multiple` is the closest behaviour
+// but a chip is one nowrap line and this holds a name over a kind and a
+// provenance line; esa-button `active` is a control, not a record. Beacon is not
+// cloned on this machine. So the toggle is a native <button aria-pressed>, styled
+// from tokens in shared/firma2-pick-tile.css (the reusable home), and every mark
+// inside it is a lego: esa-icon for the check and the file glyph, laid out by
+// .stack.
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import '../shared/firma2-pick-tile.css';
+import '../shared/firma2-provenance.css';
+---
+{/* The master copy. Inert until a <firma2-area-tile> clones it. */}
+<template data-area-tile>
+  <button type="button" class="firma2-pick-tile" aria-pressed="false">
+    {/* The selected mark. Present in every tile, shown only when pressed, so
+        selecting cannot reflow the card it sits in. */}
+    <span class="firma2-pick-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
+
+    <span class="firma2-pick-tile__body stack" data-gap="2xs">
+      <span class="typography-label-md-strong" data-part="name"></span>
+      <span class="firma2-pick-tile__secondary typography-body-sm" data-part="kind"></span>
+      {/* The document the name was found in. The file glyph is the label. */}
+      <span class="firma2-provenance typography-code-sm" data-part="source" hidden>
+        <EsaIcon name="file-text" size="xs" />
+        <span data-part="source-name"></span>
+      </span>
+    </span>
+  </button>
+</template>
+
+<style is:global>
+  /* The host is created by script and never carries this component's scope
+     attribute, so its one rule is global, scoped by a tag name this file owns.
+     Stretching to the grid row's height keeps a short tile clickable edge to
+     edge beside a tall one. */
+  firma2-area-tile {
+    display: block;
+    block-size: 100%;
+  }
+</style>
+
+<script>
+  import { sampleDocuments, spatialAreaKindLabel } from '../../data/firma2-setup';
+  import type { SpatialAreaRecord } from '../../data/firma2-setup';
+
+  const TAG = 'firma2-area-tile';
+
+  /** The document a `document`-sourced suggestion came from, by name. */
+  const documentName = (id?: string): string => sampleDocuments.find((doc) => doc.id === id)?.name ?? '';
+
+  class Firma2AreaTile extends HTMLElement {
+    #record: SpatialAreaRecord | null = null;
+    #button: HTMLButtonElement | null = null;
+    #selected = false;
+
+    /** Fills the tile. Setting it again rebuilds; there is no partial update. */
+    set area(value: SpatialAreaRecord) {
+      this.#record = value;
+      this.#build();
+    }
+
+    get area(): SpatialAreaRecord | null {
+      return this.#record;
+    }
+
+    get areaId(): string {
+      return this.#record?.id ?? '';
+    }
+
+    get selected(): boolean {
+      return this.#selected;
+    }
+
+    set selected(value: boolean) {
+      this.#selected = value;
+      this.#button?.setAttribute('aria-pressed', value ? 'true' : 'false');
+    }
+
+    connectedCallback(): void {
+      if (!this.#button) this.#build();
+    }
+
+    #build(): void {
+      const record = this.#record;
+      if (!record) return;
+
+      const tileTemplate = document.querySelector<HTMLTemplateElement>('template[data-area-tile]');
+      if (!tileTemplate) return;
+
+      const tile = tileTemplate.content.cloneNode(true) as DocumentFragment;
+      const part = (name: string): HTMLElement | null => tile.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = record.name;
+
+      const kind = part('kind');
+      if (kind) kind.textContent = spatialAreaKindLabel(record.kind);
+
+      const sourceLine = part('source');
+      const sourceName = documentName(record.sourceDocumentId);
+      const sourceValue = part('source-name');
+      if (sourceValue) sourceValue.textContent = sourceName;
+      if (sourceLine) sourceLine.hidden = !sourceName;
+
+      this.replaceChildren(tile);
+      this.#button = this.querySelector('button');
+      this.#button?.setAttribute('aria-pressed', this.#selected ? 'true' : 'false');
+      this.#button?.addEventListener('click', () => {
+        this.selected = !this.selected;
+        this.dispatchEvent(
+          new CustomEvent('area-tile-toggle', {
+            detail: { id: this.areaId, selected: this.selected },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+    }
+  }
+
+  if (!customElements.get(TAG)) customElements.define(TAG, Firma2AreaTile);
+</script>

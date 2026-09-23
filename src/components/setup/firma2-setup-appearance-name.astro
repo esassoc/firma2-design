@@ -1,0 +1,193 @@
+---
+// firma2-setup-appearance-name: the first screen of the Names and appearance
+// walk. What the program is called, in full and short, and the mark beside it.
+//
+// THE RECORD IS dbo.Tenant: display name, short name, square logo. The fields
+// open on the draft's answer, or on the tenant's own directory entry
+// (tenantAppearanceDefaults) when there is none, so most admins confirm rather
+// than type. Keeping the default is an answer only once written, so Next always
+// writes both names.
+//
+// THE LOGO IS THE DIRECTORY MARK UNTIL ONE IS UPLOADED. The mark renders the way
+// every org tile renders it (lib/org-mark); the tenant's directory entry has no
+// logo file, so its generated mark shows. A chosen file is recorded by name only
+// (the mock never stores bytes) and named as the caption under the mark, and
+// "Use the directory mark" returns the draft to null. The upload writes on its
+// own, the moment a file lands: it is a file, not a field, and nothing about Next
+// changes it.
+//
+// READY IS THE PROGRAM NAME. It is the one field a tenant cannot open without.
+// A cleared short name falls back to the program name on Next, so the name
+// decision is always answered once Next is pressed.
+//
+// bcn-lego-checked: esa-text-field is both names, esa-file-upload the logo,
+// esa-button the reset and the arrow. The mark is firma2-org-mark, the spoke's
+// reusable emblem home (esa-avatar walked there: hashed hue, circle and square
+// only). Beacon is not cloned on this machine. The one style rule is the
+// column funding-add's fields hold.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2OrgMark from './firma2-org-mark.astro';
+import { tenantAppearanceDefaults } from '../../data/firma2-setup';
+import { directoryById } from '../../data/firma2-org-directory';
+
+const directoryEntry = directoryById.get(tenantAppearanceDefaults.logoOrganizationId);
+---
+<Firma2SetupStepScreen
+  step="name"
+  icon="pencil"
+  prompt="What is your program called?"
+  class="firma2-setup-appearance-name"
+>
+  <div class="firma2-setup-appearance-name__form stack" data-gap="md">
+    <div class="firma2-setup-appearance-name__logo stack" data-gap="xs">
+      {directoryEntry && <Firma2OrgMark mark={directoryEntry.mark} size="lg" />}
+      <p class="typography-body-sm firma2-setup-appearance-name__caption" data-part="caption">Directory mark</p>
+      <div data-part="reset-wrap" hidden>
+        <EsaButton variant="ghost" size="sm" data-part="reset">Use the directory mark</EsaButton>
+      </div>
+    </div>
+
+    <esa-text-field
+      label="Program name"
+      name="tenantName"
+      size="md"
+      required
+      data-part="field-name"
+    ></esa-text-field>
+    <esa-text-field
+      label="Short name"
+      name="tenantShortName"
+      size="md"
+      data-part="field-short"
+    ></esa-text-field>
+
+    <esa-file-upload
+      label="Upload a logo"
+      accept=".png,.svg,.jpg,.jpeg"
+      max-size-mb="5"
+      data-part="upload"
+    ></esa-file-upload>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The fields hold the column funding-add's do, centered under the prompt,
+     their own text read from the start edge. The mark group centers above them. */
+  .firma2-setup-appearance-name__form {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+
+  .firma2-setup-appearance-name__logo {
+    align-items: center;
+    text-align: center;
+  }
+
+  /* The type composite sets type only; the UA paragraph margin would stack on
+     the .stack gap. Secondary ink, because it names the mark above it. */
+  .firma2-setup-appearance-name__caption {
+    margin: 0;
+    color: var(--color-content-default-secondary);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-file-upload';
+  import { tenantAppearanceDefaults } from '../../data/firma2-setup';
+  import { readSetupDraft, setTenantLogoFileName, setTenantNames } from '../../lib/setup-draft';
+
+  /** The slice of the lego this file touches. */
+  interface TextFieldElement extends HTMLElement {
+    value: string;
+    errorText: string;
+  }
+
+  const DIRECTORY_MARK = 'Directory mark';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-appearance-name[data-step]');
+  const nameField = screen?.querySelector<TextFieldElement>('[data-part="field-name"]');
+  const shortField = screen?.querySelector<TextFieldElement>('[data-part="field-short"]');
+  const caption = screen?.querySelector<HTMLElement>('[data-part="caption"]');
+  const resetWrap = screen?.querySelector<HTMLElement>('[data-part="reset-wrap"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && nameField && shortField && caption && resetWrap && next) {
+    const syncReady = (): void => {
+      screen.dataset.stepReady = String(nameField.value.trim().length > 0);
+    };
+
+    // The fields open on the saved names, or on the directory entry's.
+    const fillFields = (): void => {
+      const draft = readSetupDraft();
+      nameField.value = draft.tenantName ?? tenantAppearanceDefaults.name;
+      shortField.value = draft.tenantShortName ?? tenantAppearanceDefaults.shortName;
+      nameField.errorText = '';
+      syncReady();
+    };
+
+    const syncLogo = (): void => {
+      const fileName = readSetupDraft().tenantLogoFileName;
+      caption.textContent = fileName ?? DIRECTORY_MARK;
+      resetWrap.hidden = fileName === null;
+    };
+
+    nameField.addEventListener('change', () => {
+      nameField.errorText = nameField.value.trim() ? '' : 'Program name is required';
+      syncReady();
+    });
+
+    next.addEventListener('click', () => {
+      setTenantNames(nameField.value, shortField.value.trim() || nameField.value.trim());
+    });
+
+    // Any file landing in the zone is the logo; the lego's `change` carries
+    // detail.files, empty when its own remove button cleared it.
+    screen.addEventListener('change', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.matches('[data-part="upload"]')) return;
+      const files = (event as CustomEvent<{ files: File[] }>).detail?.files ?? [];
+      setTenantLogoFileName(files[0]?.name ?? null);
+    });
+
+    // Delegated: esa-button forwards rest props to its inner native button.
+    // The lego has no public clear, so the zone is swapped for a fresh copy of
+    // itself, which is what empties its file row.
+    screen.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('[data-part="reset"]')) return;
+      const upload = screen.querySelector<HTMLElement>('[data-part="upload"]');
+      upload?.replaceWith(upload.cloneNode(false));
+      setTenantLogoFileName(null);
+    });
+
+    // A reset or another tab can change the answer under the screen. The fields
+    // refill only when the stored names themselves changed, so a logo write or
+    // this screen's own Next never clobbers a half-typed edit.
+    const storedNames = (): string => {
+      const draft = readSetupDraft();
+      return JSON.stringify([draft.tenantName, draft.tenantShortName]);
+    };
+    let lastNames = storedNames();
+    let defined = false;
+    document.addEventListener('setup-draft-change', () => {
+      syncLogo();
+      const names = storedNames();
+      if (names === lastNames) return;
+      lastNames = names;
+      if (defined) fillFields();
+    });
+
+    customElements.whenDefined('esa-text-field').then(() => {
+      defined = true;
+      fillFields();
+    });
+    syncLogo();
+  }
+</script>

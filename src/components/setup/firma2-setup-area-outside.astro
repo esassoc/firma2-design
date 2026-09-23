@@ -1,0 +1,105 @@
+---
+// firma2-setup-area-outside: the fourth screen of the Spatial areas walk. The
+// program's second preference: what happens to a project that falls in none of
+// its areas.
+//
+// TWO ANSWERS, FROM THE TEAMMATE'S 2026-09-23 "Five Doors" MOCK. Count it in a
+// catch-all area named "Outside the region", so "every project is accounted
+// for"; or leave it blank, and "your area totals will quietly be short". The
+// catch-all comes first because it is the one that keeps the totals honest. It is
+// not stored as an area record: the roster derives its row from this answer
+// (OUTSIDE_AREA_NAME), so removing that row changes the answer, not a record.
+//
+// PRESELECTED, SO NEXT IS NEVER A DEAD END. The group opens on the draft's
+// answer, or on the catch-all when there is none, and Next writes the shown
+// value. There is no skip: a preselected group is always answered.
+//
+// EACH OPTION'S CONSEQUENCE RIDES IN ITS LABEL, and there is no legend, for the
+// classification limit screen's reasons.
+//
+// Composed: firma2-setup-step-screen is the screen, esa-radio-group the question,
+// esa-button the arrow. The one style rule is the field's column.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import { outsidePolicies } from '../../data/firma2-setup';
+
+const options = outsidePolicies.map((policy) => ({ value: policy.id, label: `${policy.label}: ${policy.note}` }));
+---
+<Firma2SetupStepScreen
+  step="outside"
+  icon="circle-alert"
+  prompt="What happens to a project outside every area?"
+  class="firma2-setup-area-outside"
+>
+  <div class="firma2-setup-area-outside__field">
+    <esa-radio-group
+      name="outsidePolicy"
+      size="md"
+      orientation="vertical"
+      data-options={JSON.stringify(options)}
+      data-part="field-policy"
+    ></esa-radio-group>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The group holds a readable column centered under the prompt; its own text
+     reads from the start edge, not the screen's center. */
+  .firma2-setup-area-outside__field {
+    inline-size: min(100%, 30rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import { outsidePolicies } from '../../data/firma2-setup';
+  import type { OutsidePolicy } from '../../data/firma2-setup';
+  import { readSetupDraft, setOutsidePolicy } from '../../lib/setup-draft';
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  /** The answer the group opens on when the draft has none. */
+  const DEFAULT_POLICY: OutsidePolicy = 'catch-all';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-area-outside[data-step]');
+  const group = screen?.querySelector<RadioGroupElement>('[data-part="field-policy"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && group && next) {
+    const asPolicy = (value: string | null): OutsidePolicy =>
+      outsidePolicies.find((policy) => policy.id === value)?.id ?? DEFAULT_POLICY;
+
+    const sync = (): void => {
+      group.value = readSetupDraft().outsidePolicy ?? DEFAULT_POLICY;
+    };
+
+    next.addEventListener('click', () => {
+      setOutsidePolicy(asPolicy(group.value));
+    });
+
+    // Only after the upgrade: a value set on the bare element would shadow the
+    // lego's own property.
+    let defined = false;
+    customElements.whenDefined('esa-radio-group').then(() => {
+      defined = true;
+      group.options = JSON.parse(group.dataset.options ?? '[]');
+      sync();
+    });
+
+    // A reset, another tab, or the roster's Remove on the catch-all row can
+    // change the answer under the screen.
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) sync();
+    });
+  }
+</script>

@@ -1,0 +1,303 @@
+---
+// firma2-setup-people-add: the second screen of the People walk. The people the
+// documents did not name, typed in one at a time, with the list of what has been
+// typed so far beneath the fields.
+//
+// THE SHAPE IS firma2-setup-classification-add's. The fields are the screen; the
+// Add button beneath them writes one `manual` person, already confirmed, clears
+// the fields and puts focus back on the name. The arrow moves on; "Nothing to
+// add" is the same move for a program whose report named everyone.
+//
+// FOUR FIELDS, THE FOUR dbo.Person HOLDS HERE: the name, required; the email,
+// optional (the product needs one to send an invitation, and setup stages the
+// list without sending); the organization; and the role.
+//
+// THE ORGANIZATION IS PICKED, NOT TYPED, the way firma2-setup-funding-add picks
+// a funder's. The options are the tenant first, then every other confirmed
+// Organization, which is why this journey depends on organizations. It opens on
+// the tenant, because most people setup adds are staff. Its value is the
+// Organization id, which is what dbo.Person.OrganizationID holds.
+//
+// THE ROLE OPENS ON EDITOR, and each option carries what the role can do after a
+// colon, the way the radio screens fold a consequence into a label.
+//
+// THE LIST BENEATH IS THIS SCREEN'S WORK ONLY: people typed by hand. The report's
+// staff were answered one screen back and the full roster is two screens ahead.
+// Remove here dismisses a typed row; nothing stands behind it.
+//
+// bcn-lego-checked: esa-text-field is the name and email, esa-select the
+// organization and role, esa-button the Add, Remove, arrow and skip. The bespoke
+// part is the <table>, on firma2-table.css: there is no esa-table (walked the
+// catalog), and the spoke's AG Grid chrome is priced for portfolio-scale surfaces
+// with search, filters and export, none of which a handful of rows typed during
+// setup can use. Beacon is not cloned on this machine.
+// firma2-setup-classification-add is the precedent this screen follows.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+---
+<Firma2SetupStepScreen
+  step="add"
+  icon="pencil"
+  prompt="Anyone not in your documents?"
+  align="start"
+  class="firma2-setup-people-add"
+>
+  <div class="firma2-setup-people-add__form stack" data-gap="md">
+    <esa-text-field
+      label="Name"
+      name="name"
+      size="md"
+      required
+      placeholder="e.g. Jordan Ellis"
+      data-part="field-name"
+    ></esa-text-field>
+    <esa-text-field
+      label="Email"
+      name="email"
+      size="md"
+      inputmode="email"
+      autocomplete="off"
+      placeholder="e.g. jordan.ellis@example.org"
+      data-part="field-email"
+    ></esa-text-field>
+    <esa-select
+      label="Organization"
+      name="organization"
+      size="md"
+      required
+      data-part="field-organization"
+    ></esa-select>
+    <esa-select
+      label="Role"
+      name="role"
+      size="md"
+      required
+      data-part="field-role"
+    ></esa-select>
+    <div>
+      <EsaButton variant="secondary" size="md" icon="plus" data-part="create">Add person</EsaButton>
+    </div>
+  </div>
+
+  <div class="firma2-table__scroll firma2-setup-people-add__list" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">People added by hand</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Name</th>
+          <th scope="col" class="typography-label-sm-strong">Organization</th>
+          <th scope="col" class="typography-label-sm-strong">Role</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="organization"></td>
+          <td class="typography-body-sm" data-part="role"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+  <EsaButton slot="advance" variant="ghost" size="sm" data-step-skip>Nothing to add</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The fields hold the column classification-add's do, centered under the
+     prompt. The list is wider, for three columns, but stays under the fields. */
+  .firma2-setup-people-add__form {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-people-add__list {
+    inline-size: min(100%, 44rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-people-add__list[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import { addPerson, listOrganizations, listPeople, setPersonStatus } from '../../lib/setup-draft';
+  import { personRoles, tenantOrganization } from '../../data/firma2-setup';
+  import type { PersonRecord, PersonRole } from '../../data/firma2-setup';
+  import type { EsaOption } from '../../lib/hydrate-select';
+
+  /** The slices of the legos this file touches. */
+  interface TextFieldElement extends HTMLElement {
+    value: string;
+    errorText: string;
+  }
+  interface SelectElement extends HTMLElement {
+    options: EsaOption[];
+    value: string | string[] | null;
+    errorText: string;
+  }
+
+  /** The no-value mark: an EN dash, never text the data did not produce. */
+  const NONE = '–';
+  const DEFAULT_ROLE: PersonRole = 'editor';
+
+  const ROLE_LABEL = new Map(personRoles.map((role) => [role.id, role.label]));
+  const isRole = (value: unknown): value is PersonRole => personRoles.some((role) => role.id === value);
+
+  /** Each role with what it can do folded after a colon. */
+  const roleOptions: EsaOption[] = personRoles.map((role) => ({ label: `${role.label}: ${role.note}`, value: role.id }));
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-people-add[data-step]');
+  const nameField = screen?.querySelector<TextFieldElement>('[data-part="field-name"]');
+  const emailField = screen?.querySelector<TextFieldElement>('[data-part="field-email"]');
+  const organizationField = screen?.querySelector<SelectElement>('[data-part="field-organization"]');
+  const roleField = screen?.querySelector<SelectElement>('[data-part="field-role"]');
+  const createButton = screen?.querySelector<HTMLElement>('[data-part="create"]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+
+  if (
+    screen &&
+    nameField &&
+    emailField &&
+    organizationField &&
+    roleField &&
+    createButton &&
+    scroll &&
+    body &&
+    rowTemplate
+  ) {
+    /** This screen's own work: people typed here and still standing. */
+    const typed = (): PersonRecord[] =>
+      listPeople().filter((person) => person.source === 'manual' && person.status === 'confirmed');
+
+    /** An Organization id as its name, from every status: a row outlives a later dismissal. */
+    const organizationName = (id: string): string => listOrganizations().find((org) => org.id === id)?.name ?? NONE;
+
+    // -----------------------------------------------------------------------
+    // The list so far
+    // -----------------------------------------------------------------------
+    const buildRow = (person: PersonRecord): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = person.name;
+      const organization = part('organization');
+      if (organization) organization.textContent = organizationName(person.organizationId);
+      const role = part('role');
+      if (role) role.textContent = ROLE_LABEL.get(person.role) ?? NONE;
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${person.name}`);
+        remove.setAttribute('title', `Remove ${person.name}`);
+        remove.dataset.personId = person.id;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const rows = typed();
+      body.replaceChildren(rowTemplate, ...rows.map(buildRow));
+      scroll.hidden = rows.length === 0;
+      // Answered means something was typed. Otherwise the ghost "Nothing to add"
+      // is the way on, and the shell shows it.
+      screen.dataset.stepReady = String(rows.length > 0);
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-person-id]');
+      const id = button?.dataset.personId;
+      if (id) setPersonStatus(id, 'dismissed');
+    });
+
+    // -----------------------------------------------------------------------
+    // The fields
+    // -----------------------------------------------------------------------
+    /** The tenant first, then every other confirmed organization. */
+    const organizationOptions = (): EsaOption[] => {
+      const others = listOrganizations().filter(
+        (org) => org.status === 'confirmed' && org.id !== tenantOrganization.id,
+      );
+      return [tenantOrganization, ...others].map((org) => ({ label: org.name, value: org.id }));
+    };
+
+    /** Reassigns the organization list, keeping the pick if it is still offered. */
+    const syncOrganizationOptions = (): void => {
+      const options = organizationOptions();
+      const picked = typeof organizationField.value === 'string' ? organizationField.value : '';
+      organizationField.options = options;
+      organizationField.value = options.some((option) => option.value === picked) ? picked : tenantOrganization.id;
+    };
+
+    const resetFields = (): void => {
+      nameField.value = '';
+      emailField.value = '';
+      organizationField.value = tenantOrganization.id;
+      roleField.value = DEFAULT_ROLE;
+      nameField.errorText = '';
+    };
+
+    createButton.addEventListener('click', () => {
+      nameField.errorText = '';
+      const name = nameField.value.trim();
+      if (!name) {
+        nameField.errorText = 'Name is required';
+        return;
+      }
+
+      const organizationId = typeof organizationField.value === 'string' ? organizationField.value : '';
+      const role = isRole(roleField.value) ? roleField.value : DEFAULT_ROLE;
+      const email = emailField.value.trim();
+
+      // addPerson is the duplicate check: null means the name is already a live
+      // person, from the report or typed.
+      const added = addPerson({
+        name,
+        organizationId: organizationId || tenantOrganization.id,
+        role,
+        ...(email ? { email } : {}),
+      });
+      if (!added) {
+        nameField.errorText = 'Already in your program';
+        return;
+      }
+      resetFields();
+      nameField.focus();
+    });
+
+    const legosReady = Promise.all([customElements.whenDefined('esa-text-field'), customElements.whenDefined('esa-select')]);
+
+    let defined = false;
+    // The organization list is draft state too: a partner confirmed in another
+    // tab shows up here on the next change.
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) syncOrganizationOptions();
+      render();
+    });
+
+    legosReady.then(() => {
+      defined = true;
+      // OPTIONS ARE A PROPERTY, and the value resolves against them, so options first.
+      organizationField.options = organizationOptions();
+      roleField.options = roleOptions;
+      resetFields();
+      render();
+    });
+  }
+</script>

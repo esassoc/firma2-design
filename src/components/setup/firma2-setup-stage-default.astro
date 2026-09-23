@@ -1,0 +1,111 @@
+---
+// firma2-setup-stage-default: the second screen of the Project stages walk. The
+// stage a new project starts in, one choice over the stages the program uses.
+//
+// WHY THIS IS A SETTING. Project.ProjectStageID is NOT NULL with no DEFAULT
+// constraint, so every project created has to be given a stage by someone. The
+// program answers once here and project creation reads it (the teammate's
+// 2026-09-23 "Project Stages Setup" mock: "Project stage is required. Set a
+// default for new projects."). It is the one answer on this walk with a column
+// waiting for it once a create-project path exists.
+//
+// THE CHOICES ARE THE USED STAGES, in order. A program that dropped Proposal on
+// the first screen cannot start its projects there, so the group re-renders on
+// every draft change: Back, a changed answer and the arrow again produce a new
+// set. The preselection is the saved answer, else Proposal if it is in use (the
+// start of the ladder), else the first stage in use.
+//
+// NO SKIP. A preselected radio is always an answer, and the stepper hides a
+// skip whenever its screen is ready, so the arrow writes the preselected stage.
+//
+// esa-radio-group has no per-option description (option type is { label,
+// value, disabled? }), so each choice is the stage name alone. The definitions
+// are on the first screen's tiles and the roster's column.
+//
+// Composed: firma2-setup-step-screen is the screen, esa-radio-group the choice,
+// esa-empty-state the no-stages case, esa-button the arrow.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+---
+<Firma2SetupStepScreen
+  step="default"
+  icon="plus"
+  prompt="Which stage do new projects start in?"
+  align="start"
+  class="firma2-setup-stage-default"
+>
+  <!-- Options filled by the script: which stages are in use is draft state.
+       No `label`: the prompt above is the question, and a legend restating it
+       would say it twice. -->
+  <div class="firma2-setup-stage-default__choice" data-part="choice">
+    <esa-radio-group size="md" orientation="vertical" name="defaultStage" data-part="group"></esa-radio-group>
+  </div>
+
+  <!-- Plain <div> wrapper because esa-empty-state's props have no `hidden`. -->
+  <div data-part="empty" hidden>
+    <EsaEmptyState title="No stages in use" />
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The choice holds the same column Start's ask field and the funding form do:
+     a readable measure, centered under the prompt. */
+  .firma2-setup-stage-default__choice {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-stage-default__choice[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import { readSetupDraft, setDefaultStage, usedStages } from '../../lib/setup-draft';
+  import type { StageOption } from '../../data/firma2-setup';
+
+  /** The slice of the lego this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-stage-default[data-step]');
+  const choice = screen?.querySelector<HTMLElement>('[data-part="choice"]');
+  const group = screen?.querySelector<RadioGroupElement>('[data-part="group"]');
+  const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && choice && group && empty && next) {
+    const render = (): void => {
+      const used = usedStages();
+      const saved = readSetupDraft().defaultStage;
+      const ids = used.map((stage) => stage.id);
+
+      const initial: StageOption['id'] | null =
+        saved && ids.includes(saved) ? saved : ids.includes('proposal') ? 'proposal' : (ids[0] ?? null);
+
+      group.options = used.map((stage) => ({ label: stage.name, value: stage.id }));
+      group.value = initial;
+
+      choice.hidden = used.length === 0;
+      empty.hidden = used.length > 0;
+    };
+
+    // The arrow is the write. The shell advances on the same click.
+    next.addEventListener('click', () => {
+      const ids = usedStages().map((stage) => stage.id);
+      const value = group.value as StageOption['id'] | null;
+      if (value && ids.includes(value)) setDefaultStage(value);
+    });
+
+    document.addEventListener('setup-draft-change', render);
+    customElements.whenDefined('esa-radio-group').then(render);
+  }
+</script>

@@ -1,0 +1,90 @@
+---
+// /prototypes/setup/funding-sources: the Funding sources milestone, as a walk.
+//
+// Answers to docs/product-brief.md § 5, for this screen:
+//   WHO         Dana, the tenant admin, standing the program up alone or beside
+//               the account team; later, program staff adding a grant mid-year.
+//   DOING WHAT  Getting every fund the program draws on into the system, with who
+//               administers it and, where one exists, its award, so a project's
+//               funding table has something to pick from.
+//   BRINGING    Grant agreements and an annual report; the names of their funders;
+//               award figures for the big grants and none for donations.
+//   OPTIMIZING  Confirming what the documents already said over typing it; one
+//               question a screen; nothing lost between sittings.
+//   PAYS FOR    The reference list. dbo.FundingSource rows, each with a name, an
+//               administering organization and, where stated, a TotalAwardAmount.
+//   LEAVES OUT  Commitments. See below.
+//
+// THE GOAL OF THIS STEP IS "WHAT ARE ALL THE GRANTS". Andy, 2026-09-18, on the
+// one-page version that carried a commitments table and a notes field: "I want
+// the goal of this funding step to be: what are all the grants ... individual
+// data connections between a project and funding source feel like the ongoing
+// maintenance and use of the platform." So this milestone configures the list
+// and stops. A commitment (dbo.ProjectFundingSource) is entered on the project
+// record, in its Funding sources card, and the note to support went with the
+// wizard it came from.
+//
+// THREE SCREENS, IN START'S WALK. The documents' suggestions as tiles, one
+// question over the whole cast; the funds the documents did not name, typed;
+// the roster and the arrow to the hub. One question a screen is what Start
+// established and what Andy asked for here ("make funding sources a multi-step
+// thing"); the shell is firma2-setup-stepper and the screens are the three
+// components below. The brief's "setup is not a wizard" (§ 4) still holds in the
+// sense it meant: the page is resumable at its URL, the step rides the query
+// string, Finish later keeps the draft, and no screen demands an answer to
+// leave.
+//
+// THE CONTRACT WITH THE TEAMMATE'S SPECIMEN (2026-09-17, "Funding Opportunities
+// Setup") is the record: FundingSourceName, OrganizationName and the proposed
+// TotalAward on dbo.FundingSource. Its per-record screens, its save moment and
+// its recap are the walk's three screens; its commitments and its note are out
+// of setup for the reason above.
+import SetupLayout from '../../../layouts/SetupLayout.astro';
+import Firma2SetupStepper from '../../../components/setup/firma2-setup-stepper.astro';
+import Firma2SetupFundingPicker from '../../../components/setup/firma2-setup-funding-picker.astro';
+import Firma2SetupFundingAdd from '../../../components/setup/firma2-setup-funding-add.astro';
+import Firma2SetupFundingRoster from '../../../components/setup/firma2-setup-funding-roster.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+
+const stepIds = ['suggested', 'add', 'review'];
+---
+<!-- manifest:
+  layout: stack(2xl)
+  sections:
+    - status counts  -> esa-badge   (two, slotted into the milestone band SetupLayout renders)
+    - walk           -> firma2-setup-stepper
+      - suggested      -> firma2-setup-funding-picker
+      - add            -> firma2-setup-funding-add
+      - review         -> firma2-setup-funding-roster
+-->
+<SetupLayout title="Funding sources" width="wide" milestone="funding-sources">
+  <!-- The counts the screens produce, at the top of the page. Synced by the
+       script below from the same draft the screens read. -->
+  <span slot="status" data-part="confirmed-count"><EsaBadge value="0 confirmed" variant="secondary" size="sm" /></span>
+  <span slot="status" data-part="review-count"><EsaBadge value="0 to review" variant="secondary" size="sm" /></span>
+
+  <Firma2SetupStepper stepIds={stepIds}>
+    <Firma2SetupFundingPicker />
+    <Firma2SetupFundingAdd />
+    <Firma2SetupFundingRoster />
+  </Firma2SetupStepper>
+</SetupLayout>
+
+<script>
+  import { listFundingSources } from '../../../lib/setup-draft';
+
+  const confirmedBadge = document.querySelector<HTMLElement>('[data-part="confirmed-count"] .esa-badge__text');
+  const reviewBadge = document.querySelector<HTMLElement>('[data-part="review-count"] .esa-badge__text');
+
+  const sync = (): void => {
+    const sources = listFundingSources();
+    const confirmed = sources.filter((source) => source.status === 'confirmed').length;
+    const toReview = sources.filter((source) => source.status === 'suggested').length;
+
+    if (confirmedBadge) confirmedBadge.textContent = `${confirmed} confirmed`;
+    if (reviewBadge) reviewBadge.textContent = `${toReview} to review`;
+  };
+
+  document.addEventListener('setup-draft-change', sync);
+  sync();
+</script>

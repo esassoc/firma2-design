@@ -1,0 +1,140 @@
+---
+// firma2-setup-color-tile: one primary color as a large, tappable toggle. The
+// unit firma2-setup-appearance-color deals in.
+//
+// IT RENDERS NOTHING BY ITSELF. Same construction as
+// firma2-setup-classification-tile: an inert <template> holding the tile's
+// markup and a <firma2-color-tile> custom element that clones the template and
+// fills it. A caller creates the element and sets `.color`; no caller writes
+// tile markup.
+//
+// THE CONTRACT
+//   el.color = TenantColor     fills the swatch and the label; setting it again rebuilds
+//   el.colorId                 the color's id, for the caller's write
+//   el.selected                get/set, mirrors aria-pressed on the button
+//   'color-tile-toggle'        bubbling CustomEvent<{ id, selected }> on every click
+//
+// SINGLE-SELECT IS THE CALLER'S. The tile toggles itself like every pick tile;
+// the color screen answers the event by pressing exactly the one tapped, so a
+// press never leaves the screen with none.
+//
+// THE SWATCH IS COMPUTED FROM THE HUE, at the lightness and chroma the milestone
+// band tints with (SetupLayout re-points the brand fill as an oklch over the
+// milestone hue). The hue is the stored datum; there is no token for "hue 160",
+// so the swatch is the one raw color here, fixed in L and C the way
+// lib/org-mark fixes its field, ring and ink.
+//
+// bcn-lego-checked: esa-color-picker is the near miss and was walked: it renders
+// a native <input type=color> and a free hex field beside its swatch grid, its
+// value is a hex where this record stores a tenantColors id, and a swatch's name
+// is only its accessible name, never shown. The choice here is one of eight named
+// colors, read by name. esa-chip-group is one nowrap line with no swatch; esa-card
+// has no pressed state. Beacon is not cloned on this machine. So the toggle is
+// the shared native <button aria-pressed> in shared/firma2-pick-tile.css (the
+// reusable home), with esa-icon for the check and .cluster for the layout.
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import '../shared/firma2-pick-tile.css';
+---
+{/* The master copy. Inert until a <firma2-color-tile> clones it. */}
+<template data-color-tile>
+  <button type="button" class="firma2-pick-tile" aria-pressed="false">
+    <span class="firma2-pick-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
+
+    <span class="firma2-pick-tile__body cluster" data-gap="sm">
+      <span class="firma2-color-tile__swatch" data-part="swatch" aria-hidden="true"></span>
+      <span class="typography-label-md-strong" data-part="label"></span>
+    </span>
+  </button>
+</template>
+
+<style is:global>
+  /* Global because the host and its contents are created by script and never
+     carry this component's scope attribute; scoped by names this file owns. */
+  firma2-color-tile {
+    display: block;
+    block-size: 100%;
+  }
+
+  /* A disc of the color, with a hairline so the light hues keep an edge on the
+     raised tile. The fill arrives as --swatch from the element's script. */
+  .firma2-color-tile__swatch {
+    display: block;
+    flex: none;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    border-radius: var(--radius-full);
+    border: var(--border-width-default) solid var(--color-border-default-subtle);
+    background: var(--swatch);
+  }
+</style>
+
+<script>
+  import type { TenantColor } from '../../data/firma2-setup';
+  import { tenantSwatch } from '../../lib/tenant-swatch';
+
+  const TAG = 'firma2-color-tile';
+
+  class Firma2ColorTile extends HTMLElement {
+    #color: TenantColor | null = null;
+    #button: HTMLButtonElement | null = null;
+    #selected = false;
+
+    /** Fills the tile. Setting it again rebuilds; there is no partial update. */
+    set color(value: TenantColor) {
+      this.#color = value;
+      this.#build();
+    }
+
+    get color(): TenantColor | null {
+      return this.#color;
+    }
+
+    get colorId(): string {
+      return this.#color?.id ?? '';
+    }
+
+    get selected(): boolean {
+      return this.#selected;
+    }
+
+    set selected(value: boolean) {
+      this.#selected = value;
+      this.#button?.setAttribute('aria-pressed', value ? 'true' : 'false');
+    }
+
+    connectedCallback(): void {
+      if (!this.#button) this.#build();
+    }
+
+    #build(): void {
+      const color = this.#color;
+      if (!color) return;
+
+      const tileTemplate = document.querySelector<HTMLTemplateElement>('template[data-color-tile]');
+      if (!tileTemplate) return;
+
+      const tile = tileTemplate.content.cloneNode(true) as DocumentFragment;
+      const part = (name: string): HTMLElement | null => tile.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const label = part('label');
+      if (label) label.textContent = color.label;
+      part('swatch')?.style.setProperty('--swatch', tenantSwatch(color.hue));
+
+      this.replaceChildren(tile);
+      this.#button = this.querySelector('button');
+      this.#button?.setAttribute('aria-pressed', this.#selected ? 'true' : 'false');
+      this.#button?.addEventListener('click', () => {
+        this.selected = !this.selected;
+        this.dispatchEvent(
+          new CustomEvent('color-tile-toggle', {
+            detail: { id: this.colorId, selected: this.selected },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+    }
+  }
+
+  if (!customElements.get(TAG)) customElements.define(TAG, Firma2ColorTile);
+</script>

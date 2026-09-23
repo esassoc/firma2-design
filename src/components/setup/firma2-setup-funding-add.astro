@@ -1,0 +1,284 @@
+---
+// firma2-setup-funding-add: the second screen of the Funding sources walk. The
+// funds the documents did not name, typed in, one at a time, with the list of
+// what has been typed so far beneath the fields.
+//
+// A SCREEN, NOT A DIALOG. The one-page version of this milestone put these three
+// fields in a dialog off the roster's Add, on the rule that three fields is
+// confirm scale. In a walk the question "any we did not find?" is a step of its
+// own, and a step's content sits on the screen: the fields are the screen. The
+// Add button beneath them writes one `manual` source, already confirmed, clears
+// the fields and puts focus back on the name, so a program with six grants types
+// six times without leaving. The arrow moves on; "Nothing to add" is the same
+// move for a program whose documents covered everything.
+//
+// THE ORGANIZATION IS PICKED, NOT TYPED. dbo.FundingSource.OrganizationName is a
+// free-text column today, but a funder IS an organization, and the Organizations
+// milestone already cut free text for the drift it causes. So the field is a
+// select over the confirmed organizations, funders first, and it writes the
+// chosen name into the string column. A funder that is not yet an organization
+// is added there first, which is the order the hub recommends.
+//
+// THE LIST BENEATH IS THIS SCREEN'S WORK ONLY: sources typed by hand. The
+// document-sourced ones were answered one screen back and the full roster is one
+// screen ahead. Remove here dismisses a typed row; nothing stands behind it to
+// return to.
+//
+// bcn-lego-checked: esa-text-field and esa-select are the fields, esa-button the
+// Add, Remove, arrow and skip. The bespoke part is the <table>, on
+// firma2-table.css: there is no esa-table (walked the catalog), and the spoke's
+// AG Grid chrome is priced for portfolio-scale surfaces with search, filters and
+// export, none of which a handful of rows typed during setup can use. Beacon is
+// not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+---
+<Firma2SetupStepScreen
+  step="add"
+  icon="pencil"
+  prompt="Any funding sources not in your documents?"
+  align="start"
+  class="firma2-setup-funding-add"
+>
+  <div class="firma2-setup-funding-add__form stack" data-gap="md">
+    <esa-text-field
+      label="Funding source name"
+      name="name"
+      size="md"
+      required
+      placeholder="e.g. Clean Water Act 319 grant"
+      data-part="field-name"
+    ></esa-text-field>
+    <esa-select
+      label="Administering organization"
+      name="organization"
+      size="md"
+      required
+      data-part="field-organization"
+    ></esa-select>
+    <esa-text-field
+      label="Total award"
+      name="totalAward"
+      size="md"
+      prefix="$"
+      inputmode="numeric"
+      placeholder="e.g. 250,000"
+      data-part="field-award"
+    ></esa-text-field>
+    <div>
+      <EsaButton variant="secondary" size="md" icon="plus" data-part="create">Add funding source</EsaButton>
+    </div>
+  </div>
+
+  <div class="firma2-table__scroll firma2-setup-funding-add__list" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Funding sources added by hand</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Name</th>
+          <th scope="col" class="typography-label-sm-strong">Administered by</th>
+          <th scope="col" class="typography-label-sm-strong firma2-table__amount">Award</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="organization"></td>
+          <td class="typography-body-sm firma2-table__amount" data-part="award"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+  <EsaButton slot="advance" variant="ghost" size="sm" data-step-skip>Nothing to add</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The fields hold the same column Start's ask field does: readable line
+     length for a label and a value, centered under the prompt. The list is
+     wider, because three columns of names and money need the room, but it
+     stays under the fields rather than running to the page edge. */
+  .firma2-setup-funding-add__form {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-funding-add__list {
+    inline-size: min(100%, 44rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-funding-add__list[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import { addFundingSource, listFundingSources, listOrganizations, setFundingSourceStatus } from '../../lib/setup-draft';
+  import type { FundingSource } from '../../data/firma2-setup';
+  import { currencyFormatter } from '../../lib/format';
+  import type { EsaOption } from '../../lib/hydrate-select';
+
+  /** The slices of the legos this file touches. */
+  interface TextFieldElement extends HTMLElement {
+    value: string;
+    errorText: string;
+  }
+  interface SelectElement extends HTMLElement {
+    options: EsaOption[];
+    value: string | string[] | null;
+    errorText: string;
+  }
+
+  /** The no-value mark: an EN dash, never a zero the data did not produce. */
+  const NONE = '–';
+  const money = (amount: number): string => currencyFormatter.format(amount);
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-funding-add[data-step]');
+  const nameField = screen?.querySelector<TextFieldElement>('[data-part="field-name"]');
+  const organizationField = screen?.querySelector<SelectElement>('[data-part="field-organization"]');
+  const awardField = screen?.querySelector<TextFieldElement>('[data-part="field-award"]');
+  const createButton = screen?.querySelector<HTMLElement>('[data-part="create"]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+
+  if (screen && nameField && organizationField && awardField && createButton && scroll && body && rowTemplate) {
+    /** This screen's own work: sources typed here and still standing. */
+    const typed = (): FundingSource[] =>
+      listFundingSources().filter((source) => source.source === 'manual' && source.status === 'confirmed');
+
+    // -----------------------------------------------------------------------
+    // The list so far
+    // -----------------------------------------------------------------------
+    const buildRow = (source: FundingSource): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = source.name;
+      const organization = part('organization');
+      if (organization) organization.textContent = source.organizationName;
+      const award = part('award');
+      if (award) award.textContent = source.totalAward === undefined ? NONE : money(source.totalAward);
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${source.name}`);
+        remove.setAttribute('title', `Remove ${source.name}`);
+        remove.dataset.sourceId = source.id;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const rows = typed();
+      body.replaceChildren(rowTemplate, ...rows.map(buildRow));
+      scroll.hidden = rows.length === 0;
+      // Answered means something was typed. Otherwise the ghost "Nothing to add"
+      // is the way on, and the shell shows it.
+      screen.dataset.stepReady = String(rows.length > 0);
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-source-id]');
+      const id = button?.dataset.sourceId;
+      if (id) setFundingSourceStatus(id, 'dismissed');
+    });
+
+    // -----------------------------------------------------------------------
+    // The fields
+    // -----------------------------------------------------------------------
+    /** The confirmed organizations, funders first: the question is who administers this fund. */
+    const organizationOptions = (): EsaOption[] => {
+      const confirmed = listOrganizations().filter((org) => org.status === 'confirmed');
+      const funders = confirmed.filter((org) => org.roles.includes('Funder'));
+      const others = confirmed.filter((org) => !org.roles.includes('Funder'));
+      return [...funders, ...others].map((org) => ({ label: org.name, value: org.name }));
+    };
+
+    const clearErrors = (): void => {
+      nameField.errorText = '';
+      organizationField.errorText = '';
+      awardField.errorText = '';
+    };
+
+    const resetFields = (): void => {
+      nameField.value = '';
+      awardField.value = '';
+      organizationField.value = null;
+      clearErrors();
+    };
+
+    /** Whole dollars from what was typed: digits with any grouping. Undefined when blank, NaN when not a number. */
+    const parseAward = (text: string): number | undefined => {
+      const trimmed = text.trim();
+      if (!trimmed) return undefined;
+      if (!/^\$?\s*[\d,]+(\.\d+)?$/.test(trimmed)) return Number.NaN;
+      return Math.round(Number(trimmed.replace(/[^0-9.]/g, '')));
+    };
+
+    createButton.addEventListener('click', () => {
+      clearErrors();
+      const name = nameField.value.trim();
+      const organization = typeof organizationField.value === 'string' ? organizationField.value : '';
+      const award = parseAward(awardField.value);
+
+      let valid = true;
+      if (!name) {
+        nameField.errorText = 'Name is required';
+        valid = false;
+      } else if (
+        listFundingSources().some((s) => s.status !== 'dismissed' && s.name.toLowerCase() === name.toLowerCase())
+      ) {
+        nameField.errorText = 'Already in your program';
+        valid = false;
+      }
+      if (!organization) {
+        organizationField.errorText = 'Organization is required';
+        valid = false;
+      }
+      if (award !== undefined && Number.isNaN(award)) {
+        awardField.errorText = 'Whole dollars only';
+        valid = false;
+      }
+      if (!valid) return;
+
+      const added = addFundingSource({ name, organizationName: organization, totalAward: award });
+      if (!added) {
+        nameField.errorText = 'Already in your program';
+        return;
+      }
+      resetFields();
+      nameField.focus();
+    });
+
+    const legosReady = Promise.all([customElements.whenDefined('esa-text-field'), customElements.whenDefined('esa-select')]);
+
+    // The organization list is draft state too: a funder confirmed in another
+    // tab shows up here on the next change.
+    document.addEventListener('setup-draft-change', () => {
+      organizationField.options = organizationOptions();
+      render();
+    });
+
+    legosReady.then(() => {
+      organizationField.options = organizationOptions();
+      resetFields();
+      render();
+    });
+  }
+</script>

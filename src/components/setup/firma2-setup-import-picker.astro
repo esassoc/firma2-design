@@ -1,0 +1,216 @@
+---
+// firma2-setup-import-picker: the first screen of the Import projects walk.
+// Every row the tracking spreadsheet holds, checked to come in, with the
+// question asked once over the whole list.
+//
+// A TABLE WITH CHECKBOXES, NOT TILES. The organizations and funding pickers are
+// tile grids because their casts are small (a dozen names) and a tile has room
+// for the evidence beside each one. A tracker has thirty rows, each with five
+// facts that only mean something read across (this project, this program, this
+// lead, this stage, this year), so the comparison is down a column and the
+// answer is a checkbox at the start of each row. Same contract as the tile
+// pickers otherwise: nothing writes on tap, the arrow writes the whole cast,
+// "None of these" is the same write with nothing checked.
+//
+// CHECKED BY DEFAULT. A spreadsheet the program keeps is the program's own
+// list; the likely answer for each row is yes, so the screen starts with every
+// row in and the admin unchecks the ones that should stay out (a duplicate, a
+// project another program owns). A funding suggestion pulled from a report's
+// prose starts unpressed because the extraction is a guess; a row the admin
+// typed into her own tracker is not.
+//
+// RESUMABLE AND IDEMPOTENT, like the other first screens: every row shows
+// whatever the status is now, confirmed and suggested both read as checked,
+// dismissed as unchecked, and the arrow re-writes the cast each time.
+//
+// bcn-lego-checked: esa-checkbox is the row control, esa-button the arrow and
+// the skip, esa-empty-state the no-documents state. The bespoke part is the
+// <table>, on firma2-table.css: there is no esa-table (walked the catalog), and
+// the spoke's AG Grid chrome is priced for the portfolio surface with search,
+// filters and export, which a one-time import answered once does not use.
+// Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+---
+<Firma2SetupStepScreen
+  step="suggested"
+  icon="file-text"
+  prompt="Which of these projects should come in?"
+  align="start"
+  class="firma2-setup-import-picker"
+>
+  <!-- Filled by the script: which document named the cast is draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <div class="firma2-table__scroll" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Projects in the tracking spreadsheet</caption>
+      <thead>
+        <tr>
+          <th scope="col"><span class="visually-hidden">Import</span></th>
+          <th scope="col" class="typography-label-sm-strong">Project</th>
+          <th scope="col" class="typography-label-sm-strong">Program</th>
+          <th scope="col" class="typography-label-sm-strong">Lead organization</th>
+          <th scope="col" class="typography-label-sm-strong">Stage</th>
+          <th scope="col" class="typography-label-sm-strong firma2-table__amount">Start year</th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td class="firma2-setup-import-picker__check">
+            <esa-checkbox size="md" data-part="check"></esa-checkbox>
+          </td>
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="program"></td>
+          <td class="typography-body-sm" data-part="lead"></td>
+          <td class="typography-body-sm" data-part="stage"></td>
+          <td class="typography-body-sm firma2-table__amount" data-part="year"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Plain <div> wrapper because esa-empty-state's props have no `hidden`. -->
+  <div data-part="no-documents" hidden>
+    <EsaEmptyState title="No suggestions yet" description="Upload a tracking spreadsheet to find projects.">
+      <EsaButton variant="primary" href={withBase('/prototypes/setup/start')}>Start</EsaButton>
+    </EsaEmptyState>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+  <EsaButton slot="advance" variant="ghost" size="sm" data-step-skip>None of these</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The checkbox column is as wide as its control, like the action column at
+     the other end of a roster row. */
+  .firma2-table .firma2-setup-import-picker__check {
+    inline-size: 1%;
+    padding-inline-end: 0;
+  }
+
+  /* .firma2-table__scroll owns display, so [hidden] needs the specificity to win. */
+  .firma2-table__scroll[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-checkbox';
+  import { listImportProjects, readSetupDraft, setProjectStatuses, sourceDocumentNames } from '../../lib/setup-draft';
+  import type { ImportProject, ProjectImportStatus } from '../../data/firma2-setup';
+
+  /** The slice of the lego this file touches. */
+  type CheckboxElement = HTMLElement & { checked: boolean };
+
+  /** "A, B, and C": the documents named in the lede, in reading order. */
+  const LIST = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' });
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-import-picker[data-step]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const lede = screen?.querySelector<HTMLElement>('[data-part="lede"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+  const noDocuments = screen?.querySelector<HTMLElement>('[data-part="no-documents"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+  const skip = screen?.querySelector<HTMLElement>('[data-step-skip]');
+
+  if (screen && scroll && lede && body && rowTemplate && noDocuments && next && skip) {
+    const rows = (): HTMLTableRowElement[] => [...body.querySelectorAll<HTMLTableRowElement>('tr[data-project-id]')];
+    const checkOf = (row: HTMLTableRowElement): CheckboxElement | null =>
+      row.querySelector<CheckboxElement>('[data-part="check"]');
+
+    // Answered means at least one row checked. A cast of none has nothing to
+    // answer, so the arrow stays live and the walk goes on.
+    const syncReady = (): void => {
+      const cast = rows();
+      screen.dataset.stepReady = String(cast.length === 0 || cast.some((row) => checkOf(row)?.checked));
+    };
+
+    const buildRow = (entry: ImportProject): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      row.dataset.projectId = entry.id;
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const { project } = entry;
+      const name = part('name');
+      if (name) name.textContent = project.projectName;
+      const program = part('program');
+      if (program) program.textContent = project.program;
+      const lead = part('lead');
+      if (lead) lead.textContent = project.leadOrganization;
+      const stage = part('stage');
+      if (stage) stage.textContent = project.stage;
+      const year = part('year');
+      if (year) year.textContent = String(project.implementationStartYear);
+
+      const check = checkOf(row);
+      if (check) {
+        check.setAttribute('aria-label', `Import ${project.projectName}`);
+        // In unless the admin said otherwise: suggested and confirmed both read as checked.
+        check.checked = entry.status !== 'dismissed';
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const cast = listImportProjects();
+      body.replaceChildren(rowTemplate, ...cast.map(buildRow));
+      scroll.hidden = cast.length === 0;
+      noDocuments.hidden = readSetupDraft().documentsUploaded;
+
+      // The line under the prompt names the document the rows came from, so the
+      // table reads as what the spreadsheet holds, not a list setup invented.
+      const named = sourceDocumentNames(cast);
+      lede.textContent = named.length > 0 ? `Named in ${LIST.format(named)}.` : '';
+      lede.hidden = named.length === 0;
+      syncReady();
+    };
+
+    // esa-checkbox's change is composed, so it reaches the row with the host as its target.
+    body.addEventListener('change', syncReady);
+
+    /** The cast as the checkboxes have it now: checked to confirmed, the rest dismissed. */
+    const answers = (): Record<string, ProjectImportStatus> => {
+      const statuses: Record<string, ProjectImportStatus> = {};
+      for (const row of rows()) {
+        const id = row.dataset.projectId;
+        if (id) statuses[id] = checkOf(row)?.checked ? 'confirmed' : 'dismissed';
+      }
+      return statuses;
+    };
+
+    // The arrow is the write. The shell advances on the same click.
+    next.addEventListener('click', () => {
+      const statuses = answers();
+      if (Object.keys(statuses).length > 0) setProjectStatuses(statuses);
+    });
+
+    skip.addEventListener('click', () => {
+      const statuses: Record<string, ProjectImportStatus> = {};
+      for (const entry of listImportProjects()) statuses[entry.id] = 'dismissed';
+      if (Object.keys(statuses).length > 0) setProjectStatuses(statuses);
+    });
+
+    let ready = false;
+    document.addEventListener('setup-draft-change', () => {
+      if (ready) render();
+    });
+
+    // Wait for the checkbox's definition, or the clone is an unupgraded element
+    // whose `checked` goes nowhere.
+    customElements.whenDefined('esa-checkbox').then(() => {
+      ready = true;
+      render();
+    });
+  }
+</script>

@@ -1,15 +1,16 @@
 ---
 // firma2-setup-milestone-grid — the setup hub's milestones, as a card per
-// milestone grouped by subject.
+// milestone in three groups ordered by dependency.
 //
-// WHY CARDS AND NOT ROWS. The list this replaces grouped by TIER (foundation,
-// build, go-live), which is the model's dependency order and answers "what may I
-// do next". It is the wrong question for somebody who has never stood a tenant
-// up: the first thing an admin wants is to recognise the SUBJECT — money,
-// people, the shape of the program — and pick the one they already have answers
-// for. So the grouping is by `section` and the unit is a card, sized to hold the
-// milestone's emblem at full size, because a milestone here is a thing you go
-// and collect rather than a line you tick.
+// THREE GROUPS, EACH WITH A DEFINITION OF DONE. Andy, 2026-09-23: the hub
+// groups by what has to exist before what (describe the program, define what a
+// project is made of, bring in the work), replacing five subject sections that
+// left two groups holding one or two cards. Each group is one tier of the model
+// and carries its own definition of done, printed under the heading after the
+// group's count, so the line says both how far along the group is and what
+// finished means. The unit is still a card, sized to hold the milestone's
+// emblem at full size, because a milestone here is a thing you go and collect
+// rather than a line you tick.
 //
 // SETUP IS STILL NOT A WIZARD. Nothing here numbers a step or advances a cursor.
 // Every card is its own URL, resumable, openable in any order, and the only
@@ -44,7 +45,8 @@
 // with their own gap and --grid-min knobs. The progress row is five dots and
 // nothing in the catalog draws one: esa-progress-bar is one track and one fill
 // with no steps, esa-pagination is navigation, esa-badge is a word. What is
-// written here and nowhere else is that row and the WHOLE-CARD LINK: esa-card is a
+// written here and nowhere else is that row and the WHOLE-CARD LINK (the group
+// line under each heading is a plain <p> in a type role, no component): esa-card is a
 // <div> with a closed prop set (title/meta/icon/variant/padding) and no href, no
 // anchor and no interactive state, and esa-button href renders a button-shaped
 // anchor rather than a card-shaped one. Walked the catalog for a clickable card
@@ -67,6 +69,9 @@ const DOTS = Array.from({ length: MILESTONE_DOTS }, (_, i) => i);
 // is the same picture a first-time visitor sees before the script runs — not a
 // placeholder that flickers into something else.
 const initial = journeyStatuses();
+
+/** "0 of 3 complete." — the group's count, the same derivation the script re-applies. */
+const groupCount = (confirmed: number, total: number): string => `${confirmed} of ${total} complete.`;
 ---
 <div class="firma2-setup-milestone-grid stack" data-gap="lg">
   {
@@ -74,13 +79,21 @@ const initial = journeyStatuses();
       const cards = journeys.filter((journey) => journey.section === section.key);
       if (cards.length === 0) return null;
       const headingId = `firma2-setup-section-${section.key}`;
+      const confirmed = cards.filter((journey) => initial[journey.key].status === 'confirmed').length;
       // The heading belongs to the cards under it, so the gap inside a section
-      // is a third of the gap between sections.
+      // is a third of the gap between sections; the group line belongs to the
+      // heading, so it sits tighter still.
       return (
-        <section class="stack" data-gap="sm" aria-labelledby={headingId}>
-          <h2 id={headingId} class="typography-title-strong firma2-setup-milestone-grid__heading">
-            {section.heading}
-          </h2>
+        <section class="stack" data-gap="sm" aria-labelledby={headingId} data-milestone-group={section.key}>
+          <div class="stack" data-gap="2xs">
+            <h2 id={headingId} class="typography-title-strong firma2-setup-milestone-grid__heading">
+              {section.heading}
+            </h2>
+            <p class="typography-body-md firma2-setup-milestone-grid__group-line">
+              <span data-group-count data-group-total={cards.length}>{groupCount(confirmed, cards.length)}</span>{' '}
+              {section.done}
+            </p>
+          </div>
 
           <ul class="grid firma2-setup-milestone-grid__cards" data-gap="md">
             {cards.map((journey) => {
@@ -203,6 +216,17 @@ const initial = journeyStatuses();
         // the draft changes its state, never its destination.
         card.dataset.status = progress.status;
       });
+
+      // Each group's count is its cards' confirmed statuses, read from the same
+      // derivation, so a group line cannot disagree with the cards under it.
+      root.querySelectorAll<HTMLElement>('[data-milestone-group]').forEach((group) => {
+        const count = group.querySelector<HTMLElement>('[data-group-count]');
+        if (!count) return;
+        const confirmed = [...group.querySelectorAll<HTMLElement>('[data-milestone]')].filter(
+          (card) => statuses[card.dataset.milestone as JourneyKey]?.status === 'confirmed',
+        ).length;
+        count.textContent = `${confirmed} of ${count.dataset.groupTotal} complete.`;
+      });
     };
 
     apply();
@@ -214,8 +238,14 @@ const initial = journeyStatuses();
   /* The typography composites set type only; the UA's heading margin survives
      them and would stack on top of the .stack gap. The spine owns spacing. */
   .firma2-setup-milestone-grid__heading,
+  .firma2-setup-milestone-grid__group-line,
   .firma2-setup-milestone-grid__title {
     margin: 0;
+  }
+
+  /* The group line is secondary to its heading: count, then definition of done. */
+  .firma2-setup-milestone-grid__group-line {
+    color: var(--color-content-default-secondary);
   }
 
   /* Three cards across the hub's column, one across a phone. 14rem is the

@@ -1,0 +1,126 @@
+---
+// firma2-setup-appearance-color: the third screen of the Names and appearance
+// walk. The program's primary color, one of eight.
+//
+// THE RECORD IS dbo.Tenant's primary color, stored as a tenantColors id. A hue is
+// the whole color, because the milestone band already tints from one: the choice
+// is which hue, and the lightness and chroma are the system's.
+//
+// EIGHT TILES, ONE PRESSED. The tiles are firma2-setup-color-tile on the shared
+// pick-tile chrome. Pressing one unpresses the rest, and pressing the pressed
+// one keeps it, so the screen always holds an answer and has no skip.
+//
+// PRESELECTED FROM THE MARK. The draft's answer; else the swatch nearest the
+// tenant's directory mark hue (146 for Cascade Headwaters, which is Pine at 160),
+// so the site opens in the color the program already wears. Next writes the
+// pressed one, default or not.
+//
+// Composed: firma2-setup-step-screen is the screen, .grid the layout engine,
+// firma2-setup-color-tile the tile, esa-button the arrow.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupColorTile from './firma2-setup-color-tile.astro';
+---
+<Firma2SetupStepScreen
+  step="color"
+  icon="star"
+  prompt="Pick your color"
+  align="start"
+  class="firma2-setup-appearance-color"
+>
+  <!-- Filled by the script: which tile is pressed is draft state. The tile's
+       markup is authored in its own template. -->
+  <ul class="firma2-setup-appearance-color__grid grid" data-gap="md" data-part="grid"></ul>
+
+  <Firma2SetupColorTile />
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* .grid is the layout engine; this strips the list chrome that comes with
+     choosing <ul> for its semantics and sets the tile's floor, four across at
+     the wide column. */
+  .firma2-setup-appearance-color__grid {
+    --grid-min: 10rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+</style>
+
+<script>
+  import { tenantAppearanceDefaults, tenantColors } from '../../data/firma2-setup';
+  import type { TenantColor } from '../../data/firma2-setup';
+  import { directoryById } from '../../data/firma2-org-directory';
+  import { readSetupDraft, setTenantColor } from '../../lib/setup-draft';
+  import { nearestTenantColor } from '../../lib/tenant-swatch';
+
+  const TILE = 'firma2-color-tile';
+
+  type ColorTile = HTMLElement & { color: TenantColor; colorId: string; selected: boolean };
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-appearance-color[data-step]');
+  const grid = screen?.querySelector<HTMLElement>('[data-part="grid"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && grid && next) {
+    const markHue = directoryById.get(tenantAppearanceDefaults.logoOrganizationId)?.mark.hue;
+
+    /** The saved color, else the one nearest the tenant's mark, else the first. */
+    const opening = (): string =>
+      readSetupDraft().tenantColorId ??
+      (markHue !== undefined ? nearestTenantColor(tenantColors, markHue)?.id : undefined) ??
+      tenantColors[0].id;
+
+    const tiles = (): ColorTile[] => [...grid.querySelectorAll<ColorTile>(TILE)];
+
+    const press = (id: string): void => {
+      for (const tile of tiles()) tile.selected = tile.colorId === id;
+    };
+
+    const render = (): void => {
+      grid.replaceChildren(
+        ...tenantColors.map((color) => {
+          const item = document.createElement('li');
+          const tile = document.createElement(TILE) as ColorTile;
+          tile.color = color;
+          item.append(tile);
+          return item;
+        }),
+      );
+      press(opening());
+    };
+
+    grid.addEventListener('color-tile-toggle', (event) => {
+      const { id } = (event as CustomEvent<{ id: string; selected: boolean }>).detail;
+      press(id);
+    });
+
+    next.addEventListener('click', () => {
+      const pressed = tiles().find((tile) => tile.selected);
+      if (pressed) setTenantColor(pressed.colorId);
+    });
+
+    // A reset or another tab can change the answer under the screen; only the
+    // saved color moves the pressed tile, so an unrelated write leaves a fresh
+    // press alone.
+    let lastSaved = readSetupDraft().tenantColorId;
+    let ready = false;
+    document.addEventListener('setup-draft-change', () => {
+      const saved = readSetupDraft().tenantColorId;
+      if (saved === lastSaved) return;
+      lastSaved = saved;
+      if (ready) press(opening());
+    });
+
+    // Wait for the tile's definition, or createElement hands back an unupgraded
+    // element whose `color` setter goes nowhere.
+    customElements.whenDefined(TILE).then(() => {
+      ready = true;
+      render();
+    });
+  }
+</script>

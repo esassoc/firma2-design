@@ -1,0 +1,213 @@
+---
+// firma2-setup-classification-add: the second screen of the Classifications
+// walk. The classifications the documents did not name, typed in one at a time,
+// with the list of what has been typed so far beneath the fields.
+//
+// THE SHAPE IS firma2-setup-funding-add's. The fields are the screen; the Add
+// button beneath them writes one `manual` classification, already confirmed,
+// clears the fields and puts focus back on the name. The arrow moves on;
+// "Nothing to add" is the same move for a program whose tracker covered
+// everything.
+//
+// TWO FIELDS, THE TWO dbo.Classification HOLDS: ClassificationName, required,
+// and ClassificationDescription, optional and one line, capped at 160 characters
+// by the field. The teammate's 2026-09-23 mock spent a screen on one distinction
+// (a classification is what a project is FOR; the kind of work is its project
+// type). A helper line under the name carried it until 2026-09-23, when it was
+// cut because it contradicted the tracker's own "Fish passage" value, which is
+// the tenant's to confirm or dismiss; the picker prompt and the placeholders
+// frame classifications as outcomes instead.
+//
+// THE LIST BENEATH IS THIS SCREEN'S WORK ONLY: classifications typed by hand.
+// The document ones were answered one screen back and the full roster is two
+// screens ahead. Remove here dismisses a typed row; nothing stands behind it.
+//
+// bcn-lego-checked: esa-text-field is both fields, esa-button the Add, Remove,
+// arrow and skip. The bespoke part is the <table>, on firma2-table.css: there is
+// no esa-table (walked the catalog), and the spoke's AG Grid chrome is priced for
+// portfolio-scale surfaces with search, filters and export, none of which a
+// handful of rows typed during setup can use. Beacon is not cloned on this
+// machine. firma2-setup-funding-add is the precedent this screen follows.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+---
+<Firma2SetupStepScreen
+  step="add"
+  icon="pencil"
+  prompt="Any classifications not in your documents?"
+  align="start"
+  class="firma2-setup-classification-add"
+>
+  <div class="firma2-setup-classification-add__form stack" data-gap="md">
+    <esa-text-field
+      label="Classification name"
+      name="name"
+      size="md"
+      required
+      placeholder="e.g. Salmon recovery"
+      data-part="field-name"
+    ></esa-text-field>
+    <esa-text-field
+      label="Description"
+      name="description"
+      size="md"
+      maxlength="160"
+      placeholder="e.g. Returning salmon and steelhead to the upper basin"
+      data-part="field-description"
+    ></esa-text-field>
+    <div>
+      <EsaButton variant="secondary" size="md" icon="plus" data-part="create">Add classification</EsaButton>
+    </div>
+  </div>
+
+  <div class="firma2-table__scroll firma2-setup-classification-add__list" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Classifications added by hand</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Name</th>
+          <th scope="col" class="typography-label-sm-strong">Description</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="description"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+  <EsaButton slot="advance" variant="ghost" size="sm" data-step-skip>Nothing to add</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The fields hold the column funding-add's do: readable line length for a
+     label and a value, centered under the prompt. The list is wider, for a
+     one-line description beside the name, but stays under the fields. */
+  .firma2-setup-classification-add__form {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-classification-add__list {
+    inline-size: min(100%, 44rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-classification-add__list[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import { addClassification, listClassifications, setClassificationStatus } from '../../lib/setup-draft';
+  import type { ClassificationRecord } from '../../data/firma2-setup';
+
+  /** The slice of the lego this file touches. */
+  interface TextFieldElement extends HTMLElement {
+    value: string;
+    errorText: string;
+  }
+
+  /** The no-value mark: an EN dash, never text the data did not produce. */
+  const NONE = '–';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-classification-add[data-step]');
+  const nameField = screen?.querySelector<TextFieldElement>('[data-part="field-name"]');
+  const descriptionField = screen?.querySelector<TextFieldElement>('[data-part="field-description"]');
+  const createButton = screen?.querySelector<HTMLElement>('[data-part="create"]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+
+  if (screen && nameField && descriptionField && createButton && scroll && body && rowTemplate) {
+    /** This screen's own work: classifications typed here and still standing. */
+    const typed = (): ClassificationRecord[] =>
+      listClassifications().filter((record) => record.source === 'manual' && record.status === 'confirmed');
+
+    // -----------------------------------------------------------------------
+    // The list so far
+    // -----------------------------------------------------------------------
+    const buildRow = (record: ClassificationRecord): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = record.name;
+      const description = part('description');
+      if (description) description.textContent = record.description ?? NONE;
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${record.name}`);
+        remove.setAttribute('title', `Remove ${record.name}`);
+        remove.dataset.classificationId = record.id;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const rows = typed();
+      body.replaceChildren(rowTemplate, ...rows.map(buildRow));
+      scroll.hidden = rows.length === 0;
+      // Answered means something was typed. Otherwise the ghost "Nothing to add"
+      // is the way on, and the shell shows it.
+      screen.dataset.stepReady = String(rows.length > 0);
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-classification-id]');
+      const id = button?.dataset.classificationId;
+      if (id) setClassificationStatus(id, 'dismissed');
+    });
+
+    // -----------------------------------------------------------------------
+    // The fields
+    // -----------------------------------------------------------------------
+    const resetFields = (): void => {
+      nameField.value = '';
+      descriptionField.value = '';
+      nameField.errorText = '';
+    };
+
+    createButton.addEventListener('click', () => {
+      nameField.errorText = '';
+      const name = nameField.value.trim();
+      if (!name) {
+        nameField.errorText = 'Name is required';
+        return;
+      }
+
+      // addClassification is the duplicate check: null means the name is
+      // already a live classification, from a document or typed.
+      const description = descriptionField.value.trim();
+      const added = addClassification({ name, ...(description ? { description } : {}) });
+      if (!added) {
+        nameField.errorText = 'Already in your program';
+        return;
+      }
+      resetFields();
+      nameField.focus();
+    });
+
+    document.addEventListener('setup-draft-change', render);
+
+    customElements.whenDefined('esa-text-field').then(() => {
+      resetFields();
+      render();
+    });
+  }
+</script>

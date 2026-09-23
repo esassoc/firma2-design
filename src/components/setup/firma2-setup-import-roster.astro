@@ -1,0 +1,142 @@
+---
+// firma2-setup-import-roster: the last screen of the Import projects walk. The
+// rows that came in, and the arrow back to setup.
+//
+// THE SAME COLUMNS AS THE PICKER, MINUS THE CHECKBOX, PLUS REMOVE. The reader
+// checks the list she just made against the one she just read, so the columns
+// stay put and only the control at the row's edge changes. Remove puts a row
+// back to `suggested`, not `dismissed`: the spreadsheet still holds it, so the
+// first screen shows it checked again and the admin answers it there.
+//
+// THE ARROW GOES TO THE HUB, like every other milestone's last screen. It went
+// to the portfolio until 2026-09-23, on the argument that the projects list is
+// the thing this walk made; but the next milestone is chosen on the hub, and the
+// hub is where 11 of 11 raises the finish line, so an admin sent to the
+// portfolio mid-setup left the one screen that says what is still open. Start's
+// last screen set the filled-arrow-as-link precedent.
+//
+// bcn-lego-checked: esa-button for Remove and the arrow, esa-empty-state for
+// the empty roster. The bespoke part is the <table>, on firma2-table.css:
+// there is no esa-table (walked the catalog), and the spoke's AG Grid chrome is
+// priced for the portfolio surface itself. Beacon is not
+// cloned on this machine. firma2-setup-funding-roster is the precedent.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+
+const hubHref = withBase('/prototypes/setup');
+---
+<Firma2SetupStepScreen
+  step="review"
+  icon="folder"
+  prompt="Your projects"
+  align="start"
+  class="firma2-setup-import-roster"
+>
+  <div class="firma2-table__scroll" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Imported projects</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Project</th>
+          <th scope="col" class="typography-label-sm-strong">Program</th>
+          <th scope="col" class="typography-label-sm-strong">Lead organization</th>
+          <th scope="col" class="typography-label-sm-strong">Stage</th>
+          <th scope="col" class="typography-label-sm-strong firma2-table__amount">Start year</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="program"></td>
+          <td class="typography-body-sm" data-part="lead"></td>
+          <td class="typography-body-sm" data-part="stage"></td>
+          <td class="typography-body-sm firma2-table__amount" data-part="year"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-part="empty" hidden>
+    <EsaEmptyState title="No projects yet" />
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* .firma2-table__scroll owns display, so [hidden] needs the specificity to win. */
+  .firma2-table__scroll[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import { confirmedImportProjects, setProjectStatuses } from '../../lib/setup-draft';
+  import type { ImportProject } from '../../data/firma2-setup';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-import-roster[data-step]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+  const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+
+  if (screen && scroll && body && rowTemplate && empty) {
+    const buildRow = (entry: ImportProject): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      row.dataset.projectId = entry.id;
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const { project } = entry;
+      const name = part('name');
+      if (name) name.textContent = project.projectName;
+      const program = part('program');
+      if (program) program.textContent = project.program;
+      const lead = part('lead');
+      if (lead) lead.textContent = project.leadOrganization;
+      const stage = part('stage');
+      if (stage) stage.textContent = project.stage;
+      const year = part('year');
+      if (year) year.textContent = String(project.implementationStartYear);
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${project.projectName}`);
+        remove.setAttribute('title', `Remove ${project.projectName}`);
+        remove.dataset.projectId = entry.id;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const confirmed = confirmedImportProjects();
+      body.replaceChildren(rowTemplate, ...confirmed.map(buildRow));
+      scroll.hidden = confirmed.length === 0;
+      empty.hidden = confirmed.length > 0;
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-part="remove"]');
+      const id = button?.dataset.projectId;
+      // The picker checks every row that is not dismissed, so a row sent back
+      // to `suggested` would read as checked again and Back then Next would
+      // re-import it. Remove is the same answer as unchecking: dismissed. The
+      // spreadsheet still holds the row, so the picker still lists it.
+      if (id) setProjectStatuses({ [id]: 'dismissed' });
+    });
+
+    document.addEventListener('setup-draft-change', render);
+    render();
+  }
+</script>

@@ -1,0 +1,142 @@
+---
+// firma2-setup-appearance-roster: the last screen of the Names and appearance
+// walk. Every setting the four screens wrote, read down one column, and the arrow
+// back to the hub.
+//
+// A TABLE OF SETTINGS, NOT OF RECORDS. The other rosters list rows a tenant
+// added; this one lists the dbo.Tenant attributes and the project label, one
+// row each, so the columns are the setting and its value. Anything unanswered
+// shows the no-value mark. The logo always has a value: null in the draft is the
+// directory mark, which is what the site shows until a file is uploaded.
+//
+// NO REMOVE. These are scalars; Back reaches the screen that set each one.
+//
+// THE ARROW GOES TO THE HUB, filled, the way every roster's does.
+//
+// bcn-lego-checked: esa-button for the arrow. The bespoke part is the <table>,
+// on firma2-table.css: there is no esa-table (walked the catalog), and the
+// spoke's AG Grid chrome is priced for portfolio-scale surfaces with search,
+// filters and export, none of which six settings read once during setup can use.
+// The swatch is firma2-setup-color-tile's, from lib/tenant-swatch. Beacon is not
+// cloned on this machine. firma2-setup-classification-roster is the precedent.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+
+const hubHref = withBase('/prototypes/setup');
+
+/** The rows, in the order the walk asks them. */
+const rows: { id: string; label: string }[] = [
+  { id: 'name', label: 'Program name' },
+  { id: 'short-name', label: 'Short name' },
+  { id: 'logo', label: 'Logo' },
+  { id: 'noun', label: 'Projects are called' },
+  { id: 'color', label: 'Color' },
+  { id: 'visibility', label: 'Site' },
+];
+---
+<Firma2SetupStepScreen
+  step="review"
+  icon="pencil"
+  prompt="Your names and appearance"
+  align="start"
+  class="firma2-setup-appearance-roster"
+>
+  <div class="firma2-table__scroll firma2-setup-appearance-roster__table">
+    <table class="firma2-table">
+      <caption class="visually-hidden">Names and appearance settings</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Setting</th>
+          <th scope="col" class="typography-label-sm-strong">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr>
+            <th scope="row" class="typography-label-sm-strong">{row.label}</th>
+            <td class="typography-body-sm">
+              {row.id === 'color' ? (
+                <span class="cluster" data-gap="xs">
+                  <span class="firma2-setup-appearance-roster__swatch" data-part="swatch" hidden></span>
+                  <span data-value={row.id}></span>
+                </span>
+              ) : (
+                <span data-value={row.id}></span>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* Six rows of two short columns: the table holds a readable width rather than
+     stretching a label and a value across the wide column. */
+  .firma2-setup-appearance-roster__table {
+    inline-size: min(100%, 36rem);
+    margin-inline: auto;
+  }
+
+  /* The color tile's disc at table-row size; the fill arrives as --swatch
+     from the script, drawn by lib/tenant-swatch like the tile's. */
+  .firma2-setup-appearance-roster__swatch {
+    display: block;
+    flex: none;
+    inline-size: 1rem;
+    block-size: 1rem;
+    border-radius: var(--radius-full);
+    border: var(--border-width-default) solid var(--color-border-default-subtle);
+    background: var(--swatch);
+  }
+
+  .firma2-setup-appearance-roster__swatch[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import { siteVisibilities, tenantColors } from '../../data/firma2-setup';
+  import { readSetupDraft } from '../../lib/setup-draft';
+  import { tenantSwatch } from '../../lib/tenant-swatch';
+
+  /** The no-value mark: an EN dash, never text the data did not produce. */
+  const NONE = '–';
+  const DIRECTORY_MARK = 'Directory mark';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-appearance-roster[data-step]');
+  const swatch = screen?.querySelector<HTMLElement>('[data-part="swatch"]');
+
+  if (screen && swatch) {
+    const setValue = (id: string, text: string): void => {
+      const cell = screen.querySelector<HTMLElement>(`[data-value="${id}"]`);
+      if (cell) cell.textContent = text;
+    };
+
+    const render = (): void => {
+      const draft = readSetupDraft();
+      const color = tenantColors.find((entry) => entry.id === draft.tenantColorId);
+      const visibility = siteVisibilities.find((entry) => entry.id === draft.siteVisibility);
+
+      setValue('name', draft.tenantName ?? NONE);
+      setValue('short-name', draft.tenantShortName ?? NONE);
+      setValue('logo', draft.tenantLogoFileName ?? DIRECTORY_MARK);
+      setValue('noun', draft.projectNoun ? `${draft.projectNoun.singular} / ${draft.projectNoun.plural}` : NONE);
+      setValue('color', color?.label ?? NONE);
+      setValue('visibility', visibility?.label ?? NONE);
+
+      swatch.hidden = !color;
+      if (color) swatch.style.setProperty('--swatch', tenantSwatch(color.hue));
+    };
+
+    document.addEventListener('setup-draft-change', render);
+    render();
+  }
+</script>

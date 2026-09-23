@@ -1,0 +1,185 @@
+---
+// firma2-setup-shape-question: one rule question of the Program shape walk,
+// used three times (money, time, proposals). The question's prompt, icon and
+// options are the intent question's own (intentQuestionById), so Start and this
+// walk read and write the same draft.intent answer.
+//
+// PRE-ANSWERED FROM THE DOCUMENTS. Once documents are uploaded, the option
+// programShapeEvidence argues for arrives selected and the lede names the
+// evidence and its document, so the admin confirms a rule instead of recalling
+// it. A saved answer always wins over the evidence. Without documents nothing is
+// selected and the lede is hidden.
+//
+// NOTHING IS WRITTEN UNTIL NEXT. Next writes the shown option; with nothing
+// selected the shell disables Next and shows "Decide later", which writes
+// nothing and leaves the question open on the hub. The one exception is the
+// ask field: addIntentOption stores a typed period already chosen, exactly as it
+// does on Start, and the group re-renders with it selected.
+//
+// ONE SCRIPT, THREE SCREENS. Astro hoists a component's script once however many
+// times the component renders, so the script walks every instance on the page.
+//
+// NO LEGEND, the classification limit screen's reason: a visible group label
+// would repeat the display-size prompt above it. esa-radio-group has no
+// per-option description, and none of these options needs one.
+//
+// bcn-lego-checked: esa-radio-group is the question, esa-text-field + esa-button
+// the ask row (Start's snippet, laid out by the .cluster primitive), esa-button
+// the arrow and the ghost skip. The only style rules are the 26rem column the
+// limit screen and Start's ask row use, restated because both live in those
+// components' scoped styles. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import { intentQuestionById } from '../../data/firma2-setup';
+import type { ProgramShapeQuestionId } from '../../data/firma2-setup';
+
+interface Props {
+  questionId: ProgramShapeQuestionId;
+}
+
+const { questionId } = Astro.props;
+const question = intentQuestionById(questionId);
+if (!question) throw new Error(`firma2-setup-shape-question: no intent question "${questionId}"`);
+---
+<Firma2SetupStepScreen
+  step={questionId}
+  icon={question.icon}
+  prompt={question.prompt}
+  class="firma2-setup-shape-question"
+>
+  <!-- Filled by the script: whether documents are uploaded is draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <div class="firma2-setup-shape-question__field">
+    <esa-radio-group
+      name={`intent-${questionId}`}
+      size="md"
+      orientation="vertical"
+      data-question={questionId}
+      data-part="field"
+    ></esa-radio-group>
+  </div>
+
+  {question.ask && (
+    <div class="firma2-setup-shape-question__ask">
+      <div class="cluster" data-gap="sm">
+        <esa-text-field
+          data-part="ask-field"
+          label={question.ask.label}
+          placeholder={question.ask.placeholder}
+          size="md"
+        ></esa-text-field>
+        <EsaButton variant="ai" data-part="ask-add">Add</EsaButton>
+      </div>
+    </div>
+  )}
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+  <EsaButton slot="advance" variant="ghost" size="sm" data-step-skip>Decide later</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The group and the ask row hold the column the limit screen's field does,
+     centered under the prompt; their own text reads from the start edge. */
+  .firma2-setup-shape-question__field {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+  /* Start's ask row: --align is the cluster's own knob, flex-end so the button
+     sits on the field's box rather than centred against its label. */
+  .firma2-setup-shape-question__ask > .cluster {
+    --align: flex-end;
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+  }
+  .firma2-setup-shape-question__ask esa-text-field {
+    flex: 1;
+    min-inline-size: 0;
+    text-align: start;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import '@esa/ecology/esa-text-field';
+  import { programShapeEvidence } from '../../data/firma2-setup';
+  import { addIntentOption, intentOptionsFor, readSetupDraft, setIntentAnswer, sourceDocumentNames } from '../../lib/setup-draft';
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  type AskFieldElement = HTMLElement & { value: string };
+
+  const screens = [...document.querySelectorAll<HTMLElement>('.firma2-setup-shape-question[data-step]')];
+
+  for (const screen of screens) {
+    const questionId = screen.dataset.step ?? '';
+    const group = screen.querySelector<RadioGroupElement>('[data-part="field"]');
+    const lede = screen.querySelector<HTMLElement>('[data-part="lede"]');
+    const next = screen.querySelector<HTMLElement>('[data-step-next]');
+    const askField = screen.querySelector<AskFieldElement>('[data-part="ask-field"]');
+    const askAdd = screen.querySelector<HTMLElement>('[data-part="ask-add"]');
+    const evidence = programShapeEvidence.find((entry) => entry.questionId === questionId);
+    if (!group || !lede || !next) continue;
+
+    // Unanswered until the lego says otherwise: absent would read as ready.
+    screen.dataset.stepReady = 'false';
+
+    const syncReady = (): void => {
+      screen.dataset.stepReady = String(Boolean(group.value));
+    };
+
+    // Options are rebuilt on every sync: a typed period is one more option, and
+    // the group has to render it before the selection can point at it.
+    const sync = (): void => {
+      const draft = readSetupDraft();
+      const saved = draft.intent[questionId]?.[0];
+      const fromDocuments = draft.documentsUploaded ? evidence?.optionId : undefined;
+
+      group.options = intentOptionsFor(questionId, draft).map((option) => ({ label: option.label, value: option.id }));
+      group.value = saved ?? fromDocuments ?? null;
+
+      const named = evidence && draft.documentsUploaded ? sourceDocumentNames([evidence])[0] : undefined;
+      lede.textContent = evidence && named ? `${evidence.label}, in ${named}.` : '';
+      lede.hidden = !lede.textContent;
+      syncReady();
+    };
+
+    group.addEventListener('change', syncReady);
+
+    next.addEventListener('click', () => {
+      if (group.value) setIntentAnswer(questionId, [group.value]);
+    });
+
+    // Blank or already-taken text leaves the field alone; a stored option clears it.
+    const submitAsk = (): void => {
+      if (askField && addIntentOption(questionId, askField.value)) askField.value = '';
+    };
+    askAdd?.addEventListener('click', submitAsk);
+    // The keydown is retargeted to the esa-text-field host out of its shadow root.
+    askField?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      submitAsk();
+    });
+
+    // Only after the upgrade: a value set on the bare element would shadow the
+    // lego's own property.
+    let defined = false;
+    customElements.whenDefined('esa-radio-group').then(() => {
+      defined = true;
+      sync();
+    });
+
+    // A reset, the ask field, or another tab can change the answer under the screen.
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) sync();
+    });
+  }
+</script>

@@ -1,0 +1,112 @@
+---
+// firma2-setup-area-boundaries: the third screen of the Spatial areas walk. The
+// program's first preference: where the areas' boundaries come from.
+//
+// FOUR SOURCES, FROM THE TEAMMATE'S 2026-09-23 "Five Doors" MOCK. A published
+// source, because "watersheds, counties, districts and tribal lands are all
+// published free"; a file, "a shapefile, GeoJSON or KML, whatever your GIS
+// exports"; a map service, which "re-syncs on demand"; and "our GIS person has
+// it", a handoff that blocks nothing. The mock branched from here to an upload
+// screen and a service screen; this walk records the answer and stops, because
+// the geometry itself is product work (see firma2-setup.ts § Spatial areas).
+//
+// PRESELECTED, SO NEXT IS NEVER A DEAD END. The group opens on the draft's
+// answer, or on the published source when there is none, and Next writes the
+// shown value. There is no skip: a preselected group is always answered.
+//
+// EACH OPTION'S CONSEQUENCE RIDES IN ITS LABEL, the classification limit's
+// construction: esa-radio-group's option type has no per-option description, so
+// a colon joins the choice to what it means, and the consequence is part of each
+// radio's accessible name.
+//
+// NO LEGEND, for the limit screen's reason: the group's only name is a visible
+// `label`, which would repeat the prompt above it.
+//
+// Composed: firma2-setup-step-screen is the screen, esa-radio-group the question,
+// esa-button the arrow. The one style rule is the field's column.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import { boundarySources } from '../../data/firma2-setup';
+
+const options = boundarySources.map((source) => ({ value: source.id, label: `${source.label}: ${source.note}` }));
+---
+<Firma2SetupStepScreen
+  step="boundaries"
+  icon="upload"
+  prompt="Where do your area boundaries come from?"
+  class="firma2-setup-area-boundaries"
+>
+  <div class="firma2-setup-area-boundaries__field">
+    <esa-radio-group
+      name="boundarySource"
+      size="md"
+      orientation="vertical"
+      data-options={JSON.stringify(options)}
+      data-part="field-source"
+    ></esa-radio-group>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The group holds a readable column centered under the prompt; its own text
+     reads from the start edge, not the screen's center. Wider than the limit
+     screen's, because each label carries its consequence. */
+  .firma2-setup-area-boundaries__field {
+    inline-size: min(100%, 34rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import { boundarySources } from '../../data/firma2-setup';
+  import type { BoundarySource } from '../../data/firma2-setup';
+  import { readSetupDraft, setBoundarySource } from '../../lib/setup-draft';
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  /** The answer the group opens on when the draft has none. */
+  const DEFAULT_SOURCE: BoundarySource = 'published';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-area-boundaries[data-step]');
+  const group = screen?.querySelector<RadioGroupElement>('[data-part="field-source"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && group && next) {
+    const asSource = (value: string | null): BoundarySource =>
+      boundarySources.find((source) => source.id === value)?.id ?? DEFAULT_SOURCE;
+
+    const sync = (): void => {
+      group.value = readSetupDraft().boundarySource ?? DEFAULT_SOURCE;
+    };
+
+    next.addEventListener('click', () => {
+      setBoundarySource(asSource(group.value));
+    });
+
+    // Only after the upgrade: a value set on the bare element would shadow the
+    // lego's own property.
+    let defined = false;
+    customElements.whenDefined('esa-radio-group').then(() => {
+      defined = true;
+      // OPTIONS ARE A PROPERTY. The attribute is the authored copy; the property
+      // is what the lego renders from.
+      group.options = JSON.parse(group.dataset.options ?? '[]');
+      sync();
+    });
+
+    // A reset or another tab can change the answer under the screen.
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) sync();
+    });
+  }
+</script>

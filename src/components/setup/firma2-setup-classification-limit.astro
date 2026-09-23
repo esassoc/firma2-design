@@ -1,0 +1,114 @@
+---
+// firma2-setup-classification-limit: the third screen of the Classifications
+// walk. The tenant's one preference: how many classifications one project may
+// carry.
+//
+// ONE OR UP TO TWO, AND NO FURTHER. The teammate's 2026-09-23 "Classifications
+// Interview" mock made the argument, and this screen keeps it: every
+// classification a project carries is a bucket its dollars and acres are counted
+// in. At one, the buckets add up to the program total. At two, a project counts
+// toward both. Past two, "a $1M project reads as $3M or $4M toward your
+// classifications, and the roll-up stops meaning anything", so the choice stops
+// at two and the reasoning stays here, not on the screen.
+//
+// PRESELECTED, SO NEXT IS NEVER A DEAD END. The group opens on the draft's answer,
+// or on One when there is none, and Next writes the shown value. There is no
+// skip: a preselected group is always answered.
+//
+// EACH OPTION'S CONSEQUENCE RIDES IN ITS LABEL. esa-radio-group's option type is
+// `{ label, value, disabled? }`, with no per-option description, the gap
+// firma2-entity-create-dialog already filed. A colon joins the choice to what it
+// does to the totals, because the em dash that dialog used is now banned on
+// surfaces, and the consequence belongs in each radio's accessible name.
+//
+// NO LEGEND. The group's only name is a visible `label`, which would repeat the
+// display-size prompt above it. The ledger records the gap and the workaround
+// Project stages took: the label is omitted and the shell focuses the prompt
+// immediately before the group.
+//
+// Composed: firma2-setup-step-screen is the screen, esa-radio-group the question,
+// esa-button the arrow. The one style rule is the field's column.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import type { ClassificationLimit } from '../../data/firma2-setup';
+
+const options: { value: `${ClassificationLimit}`; label: string }[] = [
+  { value: '1', label: 'One: totals add up across the portfolio' },
+  { value: '2', label: 'Up to two: a project counts toward both' },
+];
+---
+<Firma2SetupStepScreen
+  step="limit"
+  icon="settings"
+  prompt="How many classifications can one project carry?"
+  class="firma2-setup-classification-limit"
+>
+  <div class="firma2-setup-classification-limit__field">
+    <esa-radio-group
+      name="classificationLimit"
+      size="md"
+      orientation="vertical"
+      data-options={JSON.stringify(options)}
+      data-part="field-limit"
+    ></esa-radio-group>
+  </div>
+
+  <div slot="advance" class="firma2-setup-steps__arrow">
+    <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
+  </div>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The group holds the column funding-add's fields do, centered under the
+     prompt; its own text reads from the start edge, not the screen's center. */
+  .firma2-setup-classification-limit__field {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import { readSetupDraft, setClassificationLimit } from '../../lib/setup-draft';
+  import type { ClassificationLimit } from '../../data/firma2-setup';
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-classification-limit[data-step]');
+  const group = screen?.querySelector<RadioGroupElement>('[data-part="field-limit"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && group && next) {
+    const asLimit = (value: string | null): ClassificationLimit => (value === '2' ? 2 : 1);
+
+    // The shown value is the draft's answer, or One when there is none yet.
+    const sync = (): void => {
+      group.value = String(readSetupDraft().classificationLimit ?? 1);
+    };
+
+    next.addEventListener('click', () => {
+      setClassificationLimit(asLimit(group.value));
+    });
+
+    // Only after the upgrade: a value set on the bare element would shadow the
+    // lego's own property.
+    let defined = false;
+    customElements.whenDefined('esa-radio-group').then(() => {
+      defined = true;
+      // OPTIONS ARE A PROPERTY. The attribute is the authored copy; the property
+      // is what the lego renders from.
+      group.options = JSON.parse(group.dataset.options ?? '[]');
+      sync();
+    });
+
+    // A reset or another tab can change the answer under the screen.
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) sync();
+    });
+  }
+</script>
