@@ -18,6 +18,8 @@ import {
   askExamples,
   candidateCountByJourney,
   classificationFromFields,
+  consideredMeasures,
+  measureFromFields,
   fundingSourceFromFields,
   intentQuestionById,
   intentQuestionsFor,
@@ -30,10 +32,12 @@ import {
   stageOptions,
   suggestedClassifications,
   suggestedFundingSources,
+  measureEvidence,
+  suggestedMeasures,
+  suggestedWorkKindIds,
   suggestedOrganizations,
   suggestedPeople,
   suggestedSpatialAreas,
-  spatialAreaFromFields,
   stewardshipFromIntent,
   suggestedProjectNoun,
   suggestedSiteVisibility,
@@ -43,6 +47,12 @@ import {
 } from '../data/firma2-setup';
 import type {
   ClassificationFields,
+  MeasureDetail,
+  MeasureFields,
+  MeasureRecord,
+  MeasureStatus,
+  ProjectCommitment,
+  WorkKindSuggestion,
   ClassificationLimit,
   ClassificationRecord,
   ClassificationStatus,
@@ -64,15 +74,16 @@ import type {
   ProjectNoun,
   SiteVisibility,
   Stewardship,
-  BoundarySource,
   OutsidePolicy,
-  SpatialAreaFields,
   SpatialAreaRecord,
   SpatialAreaStatus,
+  SpatialLayerChoice,
   StageOption,
   StageStatus,
 } from '../data/firma2-setup';
 import { projects, projectSlug } from '../data/firma2-projects';
+import { libraryCounts, measureUnitById, workKindById, workKinds } from '../data/firma2-measure-library';
+import type { WorkKind } from '../data/firma2-measure-library';
 import { directoryById } from '../data/firma2-org-directory';
 import { nearestTenantColor } from './tenant-swatch';
 
@@ -115,10 +126,8 @@ export interface SetupDraft {
   classificationLimit: ClassificationLimit | null;
   /** Status per spatial area id, for every area the admin has touched. */
   spatialAreaStatus: Record<string, SpatialAreaStatus>;
-  /** Areas typed into the add screen in this browser. Seed suggestions are not stored. */
-  addedSpatialAreas: SpatialAreaRecord[];
-  /** Where the program's boundaries come from. Null until answered. */
-  boundarySource: BoundarySource | null;
+  /** Where the program's boundaries come from. Null until answered. Replaced boundarySource 2026-09-23; an old draft's field is ignored and this starts null. */
+  spatialLayer: SpatialLayerChoice | null;
   /** What happens to a project outside every area. Null until answered. */
   outsidePolicy: OutsidePolicy | null;
   /** dbo.Tenant display name. Null until answered; keeping the default writes the default. */
@@ -142,11 +151,20 @@ export interface SetupDraft {
   /** Whether partner organizations edit their own projects. Null until answered. */
   stewardship: Stewardship | null;
   /**
-   * True once the measures milestone is done. Mission 6 owns that walk; this is
-   * the one bit it writes back so the hub can count it. False on every draft
-   * written before it existed, because EMPTY spreads under the stored shape.
+   * Status per work kind id, for every kind the admin has answered. Patches over
+   * listWorkKinds' seed. MEASURES WALK LANDED 2026-09-24: these five fields
+   * replace the single done flag that stood in until it did; an old draft's
+   * flag is ignored and the walk starts fresh.
    */
-  measuresComplete: boolean;
+  workKindStatus: Record<string, MeasureStatus>;
+  /** Status per measure id, for every measure the admin has touched. */
+  measureStatus: Record<string, MeasureStatus>;
+  /** Measures typed into the add screen in this browser. Library and document measures are not stored. */
+  addedMeasures: MeasureRecord[];
+  /** How much detail the program reports. Null until answered. */
+  measureDetail: MeasureDetail | null;
+  /** Whether a funded project commits to an amount of work. Null until answered. */
+  projectTargets: ProjectCommitment | null;
 }
 
 const EMPTY: SetupDraft = {
@@ -164,8 +182,7 @@ const EMPTY: SetupDraft = {
   addedClassifications: [],
   classificationLimit: null,
   spatialAreaStatus: {},
-  addedSpatialAreas: [],
-  boundarySource: null,
+  spatialLayer: null,
   outsidePolicy: null,
   tenantName: null,
   tenantShortName: null,
@@ -177,7 +194,11 @@ const EMPTY: SetupDraft = {
   addedPeople: [],
   personRole: {},
   stewardship: null,
-  measuresComplete: false,
+  workKindStatus: {},
+  measureStatus: {},
+  addedMeasures: [],
+  measureDetail: null,
+  projectTargets: null,
 };
 
 /** SSR-safe: localStorage does not exist during `astro build`, and Safari private mode throws on access. */
@@ -519,11 +540,12 @@ export const setClassificationLimit = (limit: ClassificationLimit | null): boole
 /**
  * Every area the tenant knows about, with the draft's statuses applied. Same
  * contract as listClassifications: document suggestions appear once documents
- * are uploaded; areas added by hand are stored whole.
+ * are uploaded. Nothing is added by hand (removed 2026-09-23: a name with no
+ * geometry holds no project).
  */
 export const listSpatialAreas = (draft: SetupDraft = readSetupDraft()): SpatialAreaRecord[] => {
   const seed = draft.documentsUploaded ? suggestedSpatialAreas : [];
-  return [...seed, ...draft.addedSpatialAreas].map((record) => ({
+  return seed.map((record) => ({
     ...record,
     status: draft.spatialAreaStatus[record.id] ?? record.status,
   }));
@@ -544,29 +566,29 @@ export const setSpatialAreaStatuses = (statuses: Record<string, SpatialAreaStatu
 };
 
 /**
- * Adds an area typed into the add screen, already confirmed. Returns null on a
- * blank name or one the tenant already tracks (compared without case; a
- * dismissed suggestion does not count, the same rule as addClassification).
+ * Start's map answer as the layer screen's opening choice, with the option it
+ * came from. The first answered option, in Start's order, that names a layer;
+ * null when unanswered, typed in, or the answer names none. SHOWN, NOT SAVED:
+ * the layer screen presses it and writes it on Next, so the journey reads
+ * confirmed only after a real save.
  */
-export const addSpatialArea = (fields: SpatialAreaFields): SpatialAreaRecord | null => {
-  const record = spatialAreaFromFields(fields);
-  if (!record.name || record.id === 'manual-') return null;
-
-  const draft = readSetupDraft();
-  const tracked = listSpatialAreas(draft).filter((a) => a.status !== 'dismissed');
-  if (tracked.some((a) => a.name.toLowerCase() === record.name.toLowerCase())) return null;
-
-  // A manual area removed earlier and typed in again gets its old id back; the
-  // stale row and its `dismissed` status go with it.
-  const added = draft.addedSpatialAreas.filter((a) => a.id !== record.id);
-  const { [record.id]: _stale, ...spatialAreaStatus } = draft.spatialAreaStatus;
-  writeSetupDraft({ ...draft, addedSpatialAreas: [...added, record], spatialAreaStatus });
-  return record;
+export const spatialLayerIntent = (
+  draft: SetupDraft = readSetupDraft(),
+): { choice: SpatialLayerChoice; option: IntentOption } | null => {
+  const chosen = draft.intent.map ?? [];
+  const option = (intentQuestionById('map')?.options ?? []).find(
+    (candidate) => chosen.includes(candidate.id) && candidate.spatialLayer,
+  );
+  return option?.spatialLayer ? { choice: option.spatialLayer, option } : null;
 };
 
+/** Start's map answer as a layer choice, on the pattern of stewardshipFromIntent. */
+export const spatialLayerFromIntent = (draft: SetupDraft = readSetupDraft()): SpatialLayerChoice | null =>
+  spatialLayerIntent(draft)?.choice ?? null;
+
 /** Records where the program's boundaries come from. Null clears the answer. */
-export const setBoundarySource = (source: BoundarySource | null): boolean =>
-  writeSetupDraft({ ...readSetupDraft(), boundarySource: source });
+export const setSpatialLayer = (choice: SpatialLayerChoice | null): boolean =>
+  writeSetupDraft({ ...readSetupDraft(), spatialLayer: choice });
 
 /** Records what happens to a project outside every area. Null clears the answer. */
 export const setOutsidePolicy = (policy: OutsidePolicy | null): boolean =>
@@ -674,18 +696,183 @@ export const setStewardship = (stewardship: Stewardship | null): boolean =>
   writeSetupDraft({ ...readSetupDraft(), stewardship });
 
 // ---------------------------------------------------------------------------
-// Measures
+// Performance measures
 // ---------------------------------------------------------------------------
 
 /**
- * Marks the measures milestone done or not done. The seam Mission 6's walk
- * writes when it lands; until then only fillSetupDraft sets it. Returns void,
- * like clearSetupDraft, because nothing downstream of a single flag has a
- * storage failure to report that the next read would not show.
+ * Why a kind arrives pressed. `document`: a document names it, with the pages.
+ * `intent`: Start's kind-of-work answer maps to it and no document names it;
+ * `label` is the Start option as the admin picked it ("Habitat restoration").
+ * A kind both sources name carries the document, the more specific of the two.
  */
-export const setMeasuresComplete = (value: boolean): void => {
-  writeSetupDraft({ ...readSetupDraft(), measuresComplete: value });
+export type WorkKindProvenance =
+  | ({ from: 'document' } & WorkKindSuggestion)
+  | { from: 'intent'; optionId: string; label: string };
+
+/** One kind of work as the walk's first step shows it: pressed unless dismissed. */
+export interface WorkKindOption extends WorkKind {
+  status: MeasureStatus;
+  /** Where the kind's suggestion comes from; absent for kinds nothing names. */
+  suggestion?: WorkKindProvenance;
+}
+
+/**
+ * Start's kind-of-work answers that name library kinds, in Start's order. Typed
+ * answers carry no kinds, so they never pre-press a tile.
+ */
+export const workIntentOptions = (draft: SetupDraft = readSetupDraft()): IntentOption[] => {
+  const chosen = draft.intent.work ?? [];
+  return (intentQuestionById('work')?.options ?? []).filter(
+    (option) => chosen.includes(option.id) && (option.workKinds?.length ?? 0) > 0,
+  );
 };
+
+/**
+ * The fifteen kinds of work, in library order, with the draft's statuses
+ * applied. A FIXED LIST ASKED AS A PREFERENCE (2026-09-24), like listStages, but
+ * where every stage starts suggested, only the kinds something names start
+ * suggested (pressed); the rest start dismissed (available, not pressed).
+ * Pressing one writes confirmed.
+ *
+ * START'S ANSWER SEEDS IT TOO, 2026-09-24 (Andy: "initial steps win"). A kind
+ * with no stored status starts suggested when the documents name it (once they
+ * are in) OR when Start's kind-of-work answer maps to it (IntentOption
+ * workKinds), so the screen builds on the answer instead of asking it again.
+ */
+export const listWorkKinds = (draft: SetupDraft = readSetupDraft()): WorkKindOption[] => {
+  const intentOptions = workIntentOptions(draft);
+  return workKinds.map((kind) => {
+    const documented = draft.documentsUploaded
+      ? suggestedWorkKindIds.find((s) => s.kindId === kind.id)
+      : undefined;
+    const said = intentOptions.find((option) => option.workKinds?.includes(kind.id));
+    const suggestion: WorkKindProvenance | undefined = documented
+      ? { from: 'document', ...documented }
+      : said
+        ? { from: 'intent', optionId: said.id, label: said.label }
+        : undefined;
+    const seed: MeasureStatus = suggestion ? 'suggested' : 'dismissed';
+    return { ...kind, ...(suggestion ? { suggestion } : {}), status: draft.workKindStatus[kind.id] ?? seed };
+  });
+};
+
+/** The kinds of work the program does. */
+export const confirmedWorkKinds = (draft: SetupDraft = readSetupDraft()): WorkKindOption[] =>
+  listWorkKinds(draft).filter((kind) => kind.status === 'confirmed');
+
+/** Changes several kinds' statuses in one write. */
+export const setWorkKindStatuses = (statuses: Record<string, MeasureStatus>): boolean => {
+  const draft = readSetupDraft();
+  return writeSetupDraft({ ...draft, workKindStatus: { ...draft.workKindStatus, ...statuses } });
+};
+
+/** Changes one kind's status. */
+export const setWorkKindStatus = (id: string, status: MeasureStatus): boolean => setWorkKindStatuses({ [id]: status });
+
+/**
+ * Every measure on the table, with the draft's statuses applied, in this order:
+ *
+ *   1. library counts of every kind still pressed (suggested or confirmed), in
+ *      library order; a count the documents report is its suggestedMeasures
+ *      record (document source, quote, suggested) once documents are in, and
+ *      any other is a library record that starts dismissed (unpressed)
+ *   2. consideredMeasures, once documents are in, whatever their kind: they
+ *      are the documents' own shortlist, shown in their own group with the
+ *      reason they were left out; they start dismissed
+ *   3. measures typed into the add screen, confirmed
+ *
+ * A kind dismissed takes its counts off the table, documented ones included,
+ * so a suggestion under a kind the program does not do never blocks confirm.
+ *
+ * THE DETAIL ANSWER DRIVES SPLITS (2026-09-24). "Mostly totals" drops every
+ * split from the list; the other two answers, and no answer, keep the split
+ * each record carries. Typed measures carry none.
+ */
+export const listMeasures = (draft: SetupDraft = readSetupDraft()): MeasureRecord[] => {
+  const pressedKinds = new Set(
+    listWorkKinds(draft)
+      .filter((kind) => kind.status !== 'dismissed')
+      .map((kind) => kind.id),
+  );
+  const documentedById = new Map(
+    (draft.documentsUploaded ? suggestedMeasures : []).map((record) => [record.id, record]),
+  );
+  const considered = draft.documentsUploaded ? consideredMeasures : [];
+  const consideredIds = new Set(considered.map((record) => record.id));
+
+  const fromKinds: MeasureRecord[] = libraryCounts
+    .filter((count) => pressedKinds.has(count.kindId) && !consideredIds.has(count.id))
+    .map(
+      (count) =>
+        documentedById.get(count.id) ?? {
+          id: count.id,
+          kindId: count.kindId,
+          name: count.name,
+          unitId: count.unitId,
+          countingRule: count.countingRule,
+          ...(count.split ? { split: count.split } : {}),
+          ...(count.definition ? { definition: count.definition } : {}),
+          source: 'library',
+          status: 'dismissed',
+        },
+    );
+
+  const totalsOnly = draft.measureDetail === 'totals';
+  return [...fromKinds, ...considered, ...draft.addedMeasures].map(({ split, ...record }) => ({
+    ...record,
+    ...(split && !totalsOnly ? { split } : {}),
+    status: draft.measureStatus[record.id] ?? record.status,
+  }));
+};
+
+/** The measures the program keeps. */
+export const confirmedMeasures = (draft: SetupDraft = readSetupDraft()): MeasureRecord[] =>
+  listMeasures(draft).filter((record) => record.status === 'confirmed');
+
+/** Changes several measures' statuses in one write, one `setup-draft-change` for the set. */
+export const setMeasureStatuses = (statuses: Record<string, MeasureStatus>): boolean => {
+  const draft = readSetupDraft();
+  return writeSetupDraft({ ...draft, measureStatus: { ...draft.measureStatus, ...statuses } });
+};
+
+/** Changes one measure's status. */
+export const setMeasureStatus = (id: string, status: MeasureStatus): boolean => setMeasureStatuses({ [id]: status });
+
+/**
+ * Adds a measure typed into the add screen, already confirmed. Returns null on a
+ * blank name, a unit the library does not list, a kind it does not list, or a
+ * name the tenant already lists (compared without case; a dismissed measure
+ * does not count, the same rule as addPerson).
+ */
+export const addMeasure = (fields: MeasureFields): MeasureRecord | null => {
+  const measure = measureFromFields(fields);
+  if (!measure.name || measure.id === 'manual-') return null;
+  if (!measureUnitById.has(measure.unitId)) return null;
+  if (measure.kindId && !workKindById.has(measure.kindId)) return null;
+
+  const draft = readSetupDraft();
+  const listed = listMeasures(draft).filter((m) => m.status !== 'dismissed');
+  if (listed.some((m) => m.name.toLowerCase() === measure.name.toLowerCase())) return null;
+
+  // A typed measure removed earlier and typed in again gets the old id back;
+  // the stale row and its `dismissed` status go with it.
+  const added = draft.addedMeasures.filter((m) => m.id !== measure.id);
+  const { [measure.id]: _stale, ...measureStatus } = draft.measureStatus;
+  writeSetupDraft({ ...draft, addedMeasures: [...added, measure], measureStatus });
+  return measure;
+};
+
+/** Records how much detail the program reports. Null clears the answer. */
+export const setMeasureDetail = (detail: MeasureDetail | null): boolean =>
+  writeSetupDraft({ ...readSetupDraft(), measureDetail: detail });
+
+/** Records whether funded projects commit to an amount of work. Null clears the answer. */
+export const setProjectTargets = (targets: ProjectCommitment | null): boolean =>
+  writeSetupDraft({ ...readSetupDraft(), projectTargets: targets });
+
+/** True once both preferences (detail, targets) are answered. */
+export const measuresAnswered = (draft: SetupDraft = readSetupDraft()): boolean =>
+  draft.measureDetail !== null && draft.projectTargets !== null;
 
 // ---------------------------------------------------------------------------
 // Import projects
@@ -776,7 +963,7 @@ export const milestoneDotsFilled = (progress: JourneyProgress, dots = MILESTONE_
  *   classifications the same shape again, over classifications, plus one step
  *                   for the per-project limit: confirmed waits on that answer too
  *   spatial areas   the classifications shape with two preference steps (boundary
- *                   source, outside policy); confirmed with zero areas is valid,
+ *                   layer, outside policy); confirmed with zero areas is valid,
  *                   the point-only outcome, once both are answered
  *   lifecycle       the six fixed stages are the suggestion, plus one step for
  *                   the default: confirmed when every stage is answered, one is
@@ -789,9 +976,12 @@ export const milestoneDotsFilled = (progress: JourneyProgress, dots = MILESTONE_
  *                   when every row is answered and at least one came in
  *   go-live         otherwise untouched until its own screen is built; dependsOn
  *                   is for data entry, never for the hub, so nothing here is locked
- *   measures        confirmed only when draft.measuresComplete is true (the
- *                   seam Mission 6 writes; today only fillSetupDraft sets it);
- *                   otherwise suggested when intent names performance measures
+ *   measures        the classifications shape over measures, with the kinds
+ *                   of work in front and two preference steps (detail,
+ *                   targets): confirmed when a measure is kept, no measure or
+ *                   kind is left suggested and both are answered; in-progress
+ *                   once the admin acts; suggested once documents are in or
+ *                   intent names measures
  */
 export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<JourneyKey, JourneyProgress> => {
   const counts = draft.documentsUploaded ? candidateCountByJourney() : {};
@@ -944,9 +1134,9 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
         // Two preference answers are two more steps. Zero confirmed areas is a
         // valid outcome (projects sit on a point), so confirmation waits on the
         // answers and on the admin having acted, never on a count.
-        const answered = draft.boundarySource !== null && draft.outsidePolicy !== null;
+        const answered = draft.spatialLayer !== null && draft.outsidePolicy !== null;
         const touched =
-          records.some((a) => a.status !== 'suggested') || draft.boundarySource !== null || draft.outsidePolicy !== null;
+          records.some((a) => a.status !== 'suggested') || draft.spatialLayer !== null || draft.outsidePolicy !== null;
         let status: JourneyStatus = 'untouched';
         if (suggested === 0 && answered && touched) status = 'confirmed';
         else if (touched) status = 'in-progress';
@@ -956,7 +1146,7 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
           confirmed,
           suggested,
           steps: {
-            done: confirmed + (draft.boundarySource ? 1 : 0) + (draft.outsidePolicy ? 1 : 0),
+            done: confirmed + (draft.spatialLayer ? 1 : 0) + (draft.outsidePolicy ? 1 : 0),
             total: confirmed + suggested + 2,
           },
         };
@@ -978,20 +1168,37 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
         };
         break;
       }
-      case 'measures':
-        // draft.measuresComplete is the seam Mission 6's walk writes when it
-        // lands; today only the hub's fill control (fillSetupDraft) sets it.
-        // Without it the case reads exactly as before: suggested when intent
-        // names measures, untouched otherwise, never confirmed.
-        progress = draft.measuresComplete
-          ? { status: 'confirmed', confirmed: 1, suggested: 0, steps: { done: 1, total: 1 } }
-          : {
-              status: wanted.has('measures') ? 'suggested' : 'untouched',
-              confirmed: 0,
-              suggested: 0,
-              steps: { done: 0, total: 0 },
-            };
+      case 'measures': {
+        // MEASURES WALK LANDED 2026-09-24, replacing the single done flag.
+        // Kinds come first and gate the list, so a kind still suggested holds
+        // confirmation the way a suggested measure does. The two preferences
+        // are two more steps, the spatial-areas rule.
+        const kinds = listWorkKinds(draft);
+        const kindsSuggested = kinds.filter((k) => k.status === 'suggested').length;
+        const records = listMeasures(draft);
+        const confirmed = records.filter((m) => m.status === 'confirmed').length;
+        const suggested = records.filter((m) => m.status === 'suggested').length;
+        const preferences = (draft.measureDetail !== null ? 1 : 0) + (draft.projectTargets !== null ? 1 : 0);
+        // Seed kinds and measures arrive suggested or dismissed, never
+        // confirmed, but in-progress still keys on the admin having acted, the
+        // people rule, so an untouched upload never reads as started.
+        const touched =
+          Object.keys(draft.workKindStatus).length > 0 ||
+          Object.keys(draft.measureStatus).length > 0 ||
+          draft.addedMeasures.length > 0 ||
+          preferences > 0;
+        let status: JourneyStatus = 'untouched';
+        if (confirmed > 0 && suggested === 0 && kindsSuggested === 0 && measuresAnswered(draft)) status = 'confirmed';
+        else if (touched) status = 'in-progress';
+        else if (draft.documentsUploaded || wanted.has('measures')) status = 'suggested';
+        progress = {
+          status,
+          confirmed,
+          suggested,
+          steps: { done: confirmed + preferences, total: confirmed + suggested + 2 },
+        };
         break;
+      }
       default: {
         const suggested = counts[journey.key] ?? 0;
         const relevant = suggested > 0 || wanted.has(journey.key);
@@ -1012,9 +1219,8 @@ export const journeyStatuses = (draft: SetupDraft = readSetupDraft()): Record<Jo
 /**
  * Fraction of milestones complete, for the hub's meter. Every milestone counts,
  * measures included: the hub collects all eleven, and setup is not stood up
- * until measures confirms too. A walk through this slice alone tops out at ten
- * of eleven, because only Mission 6's screen or the demo fill sets
- * measuresComplete. That is the honest number.
+ * until measures confirms too. Since 2026-09-24 the measures walk is in this
+ * slice, so a walk through every screen reaches eleven of eleven.
  */
 export const setupCompletion = (draft: SetupDraft = readSetupDraft()): { done: number; total: number } => {
   const statuses = journeyStatuses(draft);
@@ -1040,7 +1246,7 @@ export const setupComplete = (draft: SetupDraft = readSetupDraft()): boolean => 
  * FILLED FROM WHAT THE WALKS ALREADY PROPOSE, 2026-09-23. Every value is the
  * seed's own suggestion or the answer a walk pre-selects; nothing is invented,
  * so the filled hub shows the program the documents describe. Where a walk
- * pre-selects nothing (Start's six questions), the answers are the ones that
+ * pre-selects nothing (Start's five questions), the answers are the ones that
  * fit the Cascade Headwaters narrative: a watershed partnership that implements
  * its own projects with partners, reports measures, groups projects by program
  * area and draws subbasins.
@@ -1050,12 +1256,14 @@ export const setupComplete = (draft: SetupDraft = readSetupDraft()): boolean => 
  *              coordinate, share      partners on the roster, a public site
  *   slices     program-areas          the tracker's Program area column
  *   map        watersheds             the report's four subbasins
- *   measures   yes                    reports performance measures
  *   reporters  partners               implements its projects with partners
  *   money, time, proposals           programShapeEvidence: both, fiscal-july, no
  *
  * Records: every seeded organization, funding source, tracker row,
- * classification, spatial area and person confirmed. Stages: the ones the
+ * classification, spatial area and person confirmed; every kind the kinds
+ * screen pre-presses (the five document kinds and the ones the work answer
+ * maps to, 2026-09-24) and the six document measures confirmed, the two considered ones dismissed,
+ * detail and targets at measureEvidence's picks (split, yes). Stages: the ones the
  * tracker's Status column lands in confirmed, the rest dismissed; Proposal is
  * dismissed because the proposals answer is no, and Deferred because no tracker
  * value lands there (the stage picker's pre-press rule). The default stage is
@@ -1070,7 +1278,6 @@ export const completeSetupDraft = (): SetupDraft => {
     goals: ['track-funding', 'report', 'coordinate', 'share'],
     slices: ['program-areas'],
     map: ['watersheds'],
-    measures: ['yes'],
     reporters: ['partners'],
   };
   for (const evidence of programShapeEvidence) intent[evidence.questionId] = [evidence.optionId];
@@ -1109,7 +1316,7 @@ export const completeSetupDraft = (): SetupDraft => {
     classificationStatus: confirmAll(suggestedClassifications),
     classificationLimit: 1,
     spatialAreaStatus: confirmAll(suggestedSpatialAreas),
-    boundarySource: 'published',
+    spatialLayer: { kind: 'public', layerId: 'usgs-watersheds', levelId: 'huc8' },
     outsidePolicy: 'catch-all',
     tenantName: tenantAppearanceDefaults.name,
     tenantShortName: tenantAppearanceDefaults.shortName,
@@ -1119,7 +1326,17 @@ export const completeSetupDraft = (): SetupDraft => {
     siteVisibility: suggestedSiteVisibility(intent),
     personStatus: confirmAll(suggestedPeople),
     stewardship: stewardshipFromIntent(intent) ?? 'staff',
-    measuresComplete: true,
+    workKindStatus: Object.fromEntries(
+      listWorkKinds({ ...EMPTY, documentsUploaded: true, intent })
+        .filter((kind) => kind.status === 'suggested')
+        .map((kind) => [kind.id, 'confirmed' as const]),
+    ),
+    measureStatus: {
+      ...confirmAll(suggestedMeasures),
+      ...Object.fromEntries(consideredMeasures.map((m) => [m.id, 'dismissed' as const])),
+    },
+    measureDetail: measureEvidence.detail.optionId,
+    projectTargets: measureEvidence.targets.optionId,
   };
 };
 

@@ -1,60 +1,90 @@
 ---
-// The stepped-flow shell: one screen at a time, Back in a bar above, the
-// current step in the URL. Start wrote this walk for itself
-// (firma2-setup-start-steps); this is the same walk with the Start-specific
-// parts removed, so Organizations and Funding sources can be stepped without a
-// second navigation script each. Andy, 2026-09-18: "make funding sources a
-// multi-step thing", then "can the multi-step stuff happen on orgs too?"
+// The stepped-flow shell: the milestone's steps in a rail on the left, one
+// screen at a time beside it, the current step in the URL. Start wrote the
+// one-screen walk for itself (firma2-setup-start-steps); this is the same walk
+// with the Start-specific parts removed, so any milestone can be stepped
+// without a navigation script of its own. Andy, 2026-09-18: "make funding
+// sources a multi-step thing", then "can the multi-step stuff happen on orgs
+// too?"
 //
-// THE CONTRACT. Children are screens: any descendant with `data-step="<id>"`,
-// one per id in `stepIds`, in order. The shell shows one, hides the rest, and
+// THE RAIL REPLACED THE ARROWS. Andy, 2026-09-24: "I'm not loving our
+// paging/arrows per milestone ... For each milestone, you should see the steps
+// you're completing, and be able to traverse backwards (and forwards?)
+// easily." So the ghost back arrow above the screen is gone (a rail row is the
+// way back), and each screen's advance button names the step it leads to. The
+// rail is firma2-setup-step-rail; this shell renders it, so a page never does.
+//
+// THE CONTRACT. Pass `steps`, `{ id, label }[]` in walking order; `stepIds`
+// alone still works and labels each step from its id, and `steps` wins when
+// both are given. Children are screens: any descendant with
+// `data-step="<id>"`, one per step. The shell shows one, hides the rest, and
 // wires three gestures by delegation: [data-step-next] and [data-step-skip]
-// advance, [data-step-back] retreats. A screen says whether it is answered by
-// setting `data-step-ready="false"` on itself (absent means ready); the shell
-// disables Next and shows the ghost skip while it is false, and re-reads it on
-// every attribute change, so a screen never has to know about the shell. Each
-// show dispatches `setup-step-show` on the shell root with `{ step }`, for a
-// screen that must build something (an AG Grid) only once it has a width.
+// advance, [data-step-go="<id>"] (a rail row) jumps to any step already
+// reached. A screen says whether it is answered by setting
+// `data-step-ready="false"` on itself (absent means ready); the shell disables
+// Next and shows the ghost skip while it is false, and re-reads it on every
+// attribute change, so a screen never has to know about the shell. Each show
+// writes `data-step-current` on the root and dispatches `setup-step-show`
+// with `{ step }`, which the rail follows and a screen that must build
+// something only once it has a width (an AG Grid) can listen for.
+//
+// NEXT NAMES THE NEXT STEP. A screen's advance slot holds
+// firma2-setup-step-next; the shell writes "Next: <label>" into every
+// [data-step-next-label] on load, from the step list only it has. A screen
+// still on the old icon-only arrow keeps working as an arrow.
 //
 // POSITION IS THE URL, `?step=<id>`, exactly as Start does it: the first step
 // carries no param, Back and Forward work through popstate, and a reload lands
 // on the same screen. Nothing about position is written to the draft store,
 // because the answers are the record; which screen was open is not.
 //
-// THE LAST SCREEN HAS NO NEXT. Its arrow is a link (to the hub, in Start's
-// case), so the walk ends in navigation the shell does not own.
+// THE LAST SCREEN HAS NO NEXT. Its button is a link (to the hub), so the walk
+// ends in navigation the shell does not own.
 //
-// WHAT IS NOT HERE. No step counter and no dots, for the reason Start gave: the
-// screens ask questions, and a fraction over a question makes it a form. No
-// guide column: Start's guides explain what an intent answer sets up, and a
-// roster screen explains itself. If a stepped milestone needs one, the .sidebar
-// primitive goes around this shell, not inside it.
-import EsaButton from '@esa/ecology/esa-button.astro';
+// THE LAYOUT is the .sidebar primitive: the rail is the aside, the screens
+// take the rest and keep their centred composition. Below the point where the
+// screens would drop under two thirds of the column the sidebar wraps, the
+// rail goes above the screen and turns itself into one line.
+import Firma2SetupStepRail from './firma2-setup-step-rail.astro';
+import { resolveSetupSteps } from '../../lib/setup-steps';
+import type { SetupStep } from '../../lib/setup-steps';
 import '../shared/firma2-setup-steps.css';
 
 interface Props {
-  /** Screen ids in walking order; the first is the entry and carries no URL param. */
-  stepIds: string[];
+  /** The walk, in order, with each step's rail label. The first is the entry and carries no URL param. */
+  steps?: SetupStep[];
+  /** Fallback for a page not yet given labels: ids in walking order, labelled from the id. */
+  stepIds?: string[];
 }
 
-const { stepIds } = Astro.props;
+const { steps: givenSteps, stepIds } = Astro.props;
+const steps = resolveSetupSteps(givenSteps, stepIds);
 ---
-<div class="firma2-setup-steps stack" data-gap="none" data-setup-steps data-step-ids={stepIds.join(',')}>
-  <div class="firma2-setup-steps__bar">
-    <div data-step-back-wrap hidden>
-      <EsaButton variant="ghost" iconOnly icon="arrow-left" label="Back" data-step-back />
-    </div>
+<div
+  class="firma2-setup-steps firma2-setup-steps--railed sidebar"
+  data-setup-steps
+  data-step-ids={steps.map((step) => step.id).join(',')}
+  data-step-current={steps[0]?.id}
+>
+  <Firma2SetupStepRail steps={steps} />
+  <!-- The sidebar primitive reads its first and last children: the rail, then
+       this column. The step list rides inside the column for that reason. -->
+  <div class="firma2-setup-steps__main">
+    <slot />
+    <script type="application/json" data-step-list set:html={JSON.stringify(steps)}></script>
   </div>
-  <slot />
 </div>
 
 <script>
+  import { nextLabel } from '../../lib/setup-steps';
+  import type { SetupStep } from '../../lib/setup-steps';
+
   const root = document.querySelector<HTMLElement>('[data-setup-steps]');
 
   if (root) {
-    const stepIds = (root.dataset.stepIds ?? '').split(',').filter(Boolean);
+    const steps: SetupStep[] = JSON.parse(root.querySelector('[data-step-list]')?.textContent ?? '[]');
+    const stepIds = steps.map((step) => step.id);
     const screens = Array.from(root.querySelectorAll<HTMLElement>('[data-step]'));
-    const back = root.querySelector<HTMLElement>('[data-step-back-wrap]');
 
     const stepFromUrl = (): string => {
       const wanted = new URLSearchParams(location.search).get('step') ?? '';
@@ -64,6 +94,15 @@ const { stepIds } = Astro.props;
     let current = stepFromUrl();
 
     const screenFor = (id: string): HTMLElement | undefined => screens.find((screen) => screen.dataset.step === id);
+
+    // Each screen's Next says where it goes. Written once: the step list never changes on a page.
+    steps.forEach((step, i) => {
+      const next = steps[i + 1];
+      if (!next) return;
+      screenFor(step.id)
+        ?.querySelectorAll<HTMLElement>('[data-step-next-label]')
+        .forEach((label) => (label.textContent = nextLabel(next)));
+    });
 
     /** Absent means ready: a screen with nothing to answer never has to say so. */
     const ready = (id: string): boolean => screenFor(id)?.dataset.stepReady !== 'false';
@@ -85,7 +124,6 @@ const { stepIds } = Astro.props;
       current = id;
       for (const screen of screens) screen.hidden = screen.dataset.step !== id;
       const index = stepIds.indexOf(id);
-      if (back) back.hidden = index === 0;
       setNext(id);
 
       const url = new URL(location.href);
@@ -94,6 +132,7 @@ const { stepIds } = Astro.props;
       if (push) history.pushState({ step: id }, '', url);
       else history.replaceState({ step: id }, '', url);
 
+      root.dataset.stepCurrent = id;
       root.dispatchEvent(new CustomEvent('setup-step-show', { detail: { step: id }, bubbles: true }));
       screenFor(id)?.querySelector<HTMLElement>('.firma2-setup-steps__prompt')?.focus();
     };
@@ -107,9 +146,15 @@ const { stepIds } = Astro.props;
     root.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
+      const go = target.closest<HTMLElement>('[data-step-go]');
+      if (go) {
+        // The rail marks steps not yet reached; they stay where they are.
+        const id = go.dataset.stepGo ?? '';
+        if (go.getAttribute('aria-disabled') !== 'true' && stepIds.includes(id) && id !== current) show(id, true);
+        return;
+      }
       if (target.closest('[data-step-next]')) move(1);
       else if (target.closest('[data-step-skip]')) move(1);
-      else if (target.closest('[data-step-back]')) move(-1);
     });
 
     // A screen reports its readiness by attribute; the shell only ever reads it.

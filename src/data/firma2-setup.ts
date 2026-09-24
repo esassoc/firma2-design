@@ -28,9 +28,18 @@
 // The tenant is Cascade Headwaters Partnership from the hackathon cast
 // (docs/hackathon/PERSONAS.md in the projectfirma2 repo): six staff, ~30
 // projects, no GIS analyst, Dana as admin.
+//
+// START'S ANSWERS WIN, 2026-09-24 (Andy: "make sure we're not double asking,
+// and that initial steps win and the later steps build off of them"). Start's
+// kind-of-work and map answers now seed the Measures kinds and Spatial layer
+// screens instead of being asked again there, and Start's "Do you report
+// performance measures?" question is gone: Goals' "Report to funders and the
+// board" option already carries it (see intentQuestions).
 
 import type { Project, ProjectStage } from './firma2-projects';
 import { STAGE_ORDER } from './firma2-projects';
+import { libraryCountById } from './firma2-measure-library';
+import type { CountingRule, MeasureSplit } from './firma2-measure-library';
 
 export type JourneyKey =
   | 'documents'
@@ -246,13 +255,12 @@ export const journeys: SetupJourney[] = [
     title: 'Performance measures',
     tier: 'go-live',
     section: 'work',
-    route: '/prototypes/performance-measures',
+    route: '/prototypes/setup/measures',
     dependsOn: [],
     hex: { q: 1, r: 1 },
     unit: 'measures',
     icon: 'trending-up',
     hue: 325,
-    external: 'mission-6',
   },
   {
     key: 'people',
@@ -522,11 +530,16 @@ export const extractedCandidates: ExtractedCandidate[] = [
   { journey: 'lifecycle', label: 'In construction', sourceDocumentId: 'project-tracker' },
   { journey: 'lifecycle', label: 'Complete', sourceDocumentId: 'project-tracker' },
   { journey: 'lifecycle', label: 'Monitoring', sourceDocumentId: 'project-tracker' },
-  // Spatial areas: the annual report's map names four subbasins.
-  { journey: 'spatial-areas', label: 'Whychus Creek', sourceDocumentId: 'annual-report-2025' },
-  { journey: 'spatial-areas', label: 'Metolius River', sourceDocumentId: 'annual-report-2025' },
+  // Spatial areas: the annual report's map names four subbasins. THE FOUR ARE
+  // USGS HUC-8 NAMES (2026-09-24): the layer screen's preview highlights the
+  // confirmed areas whose names match units in the chosen public layer, and
+  // the demo picks Watersheds at HUC-8, so the report's subbasins are the
+  // real HUC-8 units of the region. Whychus Creek and the Metolius, which the
+  // earlier seed named, are HUC-10 units and matched one of four.
   { journey: 'spatial-areas', label: 'Upper Deschutes', sourceDocumentId: 'annual-report-2025' },
-  { journey: 'spatial-areas', label: 'Crooked River', sourceDocumentId: 'annual-report-2025' },
+  { journey: 'spatial-areas', label: 'Little Deschutes', sourceDocumentId: 'annual-report-2025' },
+  { journey: 'spatial-areas', label: 'Upper Crooked', sourceDocumentId: 'annual-report-2025' },
+  { journey: 'spatial-areas', label: 'Lower Crooked', sourceDocumentId: 'annual-report-2025' },
   // Appearance: what the documents call things.
   { journey: 'appearance', label: 'Projects are called "restoration actions"', sourceDocumentId: 'annual-report-2025' },
   { journey: 'appearance', label: 'Wordmark on report cover', sourceDocumentId: 'annual-report-2025' },
@@ -675,6 +688,17 @@ export interface IntentOption {
   classification?: string;
   /** How the answer reads in the composed summary sentence. */
   phrase: string;
+  /**
+   * For the work answers: the measure library's kinds of work (workKinds ids)
+   * the answer stands for. The Performance measures walk pre-presses them.
+   */
+  workKinds?: string[];
+  /**
+   * For the map answers: the boundary layer the answer stands for. The Spatial
+   * areas walk's layer screen opens on it. An own layer carries an empty URL,
+   * which the screen shows pressed and never saves until an address is typed.
+   */
+  spatialLayer?: SpatialLayerChoice;
 }
 
 /**
@@ -714,7 +738,22 @@ export interface StepGuide {
   examples?: string[];
 }
 
-/** One screen each, in this order. Three or four choices a screen, label only. */
+/**
+ * One screen each, in this order. Three or four choices a screen, label only.
+ *
+ * START ASKS ONCE; LATER SCREENS BUILD ON THE ANSWER (Andy, 2026-09-24: "make
+ * sure we're not double asking, and that initial steps win"). Two answers carry
+ * forward as data: a work answer's `workKinds` pre-press the Performance
+ * measures walk's kinds, and a map answer's `spatialLayer` opens the Spatial
+ * areas walk's layer screen on that layer. Each screen names the answer in its
+ * lede, and the kinds screen's prompt builds on it rather than asking it again.
+ *
+ * "DO YOU REPORT PERFORMANCE MEASURES?" REMOVED, 2026-09-24, on the same
+ * directive. Goals' "Report to funders and the board" already lights the
+ * measures journey, and once documents are in "Not yet" changed nothing: the
+ * journey is suggested on documents alone. Start now asks five questions after
+ * its Documents screen.
+ */
 export const intentQuestions: IntentQuestion[] = [
   {
     id: 'money',
@@ -741,10 +780,29 @@ export const intentQuestions: IntentQuestion[] = [
     icon: 'trees',
     lead: 'working on',
     options: [
-      { id: 'habitat', label: 'Habitat restoration', journeys: ['classifications', 'measures'], phrase: 'habitat restoration' },
-      { id: 'water', label: 'Water quality and supply', journeys: ['classifications', 'measures'], phrase: 'water quality and supply' },
-      { id: 'land', label: 'Land protection', journeys: ['classifications', 'spatial-areas'], phrase: 'land protection' },
-      { id: 'planning', label: 'Planning and monitoring', journeys: ['classifications'], phrase: 'planning and monitoring' },
+      {
+        id: 'habitat',
+        label: 'Habitat restoration',
+        journeys: ['classifications', 'measures'],
+        phrase: 'habitat restoration',
+        workKinds: [
+          'streamside-restoration',
+          'in-stream-habitat',
+          'fish-passage',
+          'invasive-plants',
+          'wetlands-and-floodplains',
+          'upland-and-grassland-habitat',
+        ],
+      },
+      {
+        id: 'water',
+        label: 'Water quality and supply',
+        journeys: ['classifications', 'measures'],
+        phrase: 'water quality and supply',
+        workKinds: ['water-quality', 'water-supply-and-flow'],
+      },
+      { id: 'land', label: 'Land protection', journeys: ['classifications', 'spatial-areas'], phrase: 'land protection', workKinds: ['land-conservation'] },
+      { id: 'planning', label: 'Planning and monitoring', journeys: ['classifications'], phrase: 'planning and monitoring', workKinds: ['planning-and-monitoring'] },
     ],
     guide: {
       title: 'Work types become project types',
@@ -799,9 +857,27 @@ export const intentQuestions: IntentQuestion[] = [
     icon: 'map-pin',
     lead: 'mapped by',
     options: [
-      { id: 'watersheds', label: 'Watersheds', journeys: ['spatial-areas'], phrase: 'watershed' },
-      { id: 'counties', label: 'Counties', journeys: ['spatial-areas'], phrase: 'county' },
-      { id: 'own-boundaries', label: 'Our own boundaries', journeys: ['spatial-areas'], phrase: 'your own boundaries' },
+      {
+        id: 'watersheds',
+        label: 'Watersheds',
+        journeys: ['spatial-areas'],
+        phrase: 'watershed',
+        spatialLayer: { kind: 'public', layerId: 'usgs-watersheds', levelId: 'huc8' },
+      },
+      {
+        id: 'counties',
+        label: 'Counties',
+        journeys: ['spatial-areas'],
+        phrase: 'county',
+        spatialLayer: { kind: 'public', layerId: 'census-counties', levelId: 'county' },
+      },
+      {
+        id: 'own-boundaries',
+        label: 'Our own boundaries',
+        journeys: ['spatial-areas'],
+        phrase: 'your own boundaries',
+        spatialLayer: { kind: 'own', url: '' },
+      },
     ],
     guide: {
       title: 'Areas the map is drawn by',
@@ -845,24 +921,6 @@ export const intentQuestions: IntentQuestion[] = [
       title: 'Proposals before projects',
       body: 'Yes turns on the Proposal stage: ideas are entered and approved before they count as projects. No starts every project in Planning and design or later.',
     },
-  },
-  {
-    id: 'measures',
-    asks: 'documents',
-    prompt: 'Do you report performance measures?',
-    multiple: false,
-    icon: 'trending-up',
-    lead: '',
-    options: [
-      { id: 'yes', label: 'Yes', journeys: ['measures'], phrase: 'reporting performance measures' },
-      { id: 'not-yet', label: 'Not yet', journeys: [], phrase: 'not reporting performance measures yet' },
-    ],
-    guide: {
-      title: 'Numbers each project reports',
-      body: 'A performance measure is a quantity reported per project and summed for the program, like miles of stream opened or acres treated.',
-      examples: ['Miles of stream opened', 'Acres of riparian planting', 'Fish passage barriers removed'],
-    },
-    ask: { label: 'Measures you already report', placeholder: 'Acres treated, stream miles opened, barriers removed' },
   },
   {
     id: 'reporters',
@@ -1246,9 +1304,9 @@ export const classificationFromFields = (fields: ClassificationFields): Classifi
 // once for the program: where boundaries come from, and what happens to a
 // project that falls outside all of them.
 //
-// NOT SETUP: the geometry itself. A published source, an uploaded file, or a map
-// service supplies it; the upload and service screens and the GIS handoff link
-// are product work. Nor a project's location and area membership: both are
+// NOT SETUP: the geometry itself. A public layer (firma2-spatial-layers.ts), the
+// program's own map service or hosted file, or the GIS team supplies it; the
+// sync, the file upload and the GIS handoff link are product work. Nor a project's location and area membership: both are
 // computed on the record, which is why the teammate's 2026-09-23 "Five Doors"
 // mock says each layer "costs a reporter nothing". A program with no areas is a
 // valid outcome: every project sits on a point.
@@ -1257,6 +1315,15 @@ export const classificationFromFields = (fields: ClassificationFields): Classifi
 // journey 'spatial-areas'): four subbasins, all of kind watershed. Start's intent
 // `map` question names KINDS (Watersheds, Counties, Our own boundaries), not
 // areas, so it is not a candidate source here.
+//
+// MANUAL ADD REMOVED, PUBLISHED AND SERVICE MERGED (2026-09-23, teammate
+// feedback). An area typed in by hand is a name with no geometry, so nothing
+// can fall inside it: the add screen, SpatialAreaFields and spatialAreaFromFields
+// are gone, and every area comes from the documents. "Use a published source"
+// and "Connect a map service" were one answer in two words, since a published
+// source IS a map service: SpatialLayerChoice replaces BoundarySource with a
+// public layer at a chosen level, the program's own service or file, or the GIS
+// team later. The teammate's mock supplied the public layer list.
 
 export type SpatialAreaKind = 'watershed' | 'county' | 'own';
 
@@ -1298,32 +1365,19 @@ export const suggestedSpatialAreas: SpatialAreaRecord[] = extractedCandidates
     status: 'suggested',
   }));
 
-export interface SpatialAreaFields {
-  name: string;
-  kind: SpatialAreaKind;
-}
+/**
+ * Where the program's boundaries come from. `public` names a layer and level in
+ * publicSpatialLayers; `own` is the program's own map service or a hosted file
+ * (the URL as typed); `gis` hands it to the GIS team, and nothing waits on it.
+ */
+export type SpatialLayerChoice =
+  | { kind: 'public'; layerId: string; levelId: string }
+  | { kind: 'own'; url: string }
+  | { kind: 'gis' };
 
-/** Mints an area from the add screen's fields: `manual-<slug>`, `manual`, and already confirmed. */
-export const spatialAreaFromFields = (fields: SpatialAreaFields): SpatialAreaRecord => {
-  const name = fields.name.trim().replace(/\s+/g, ' ');
-  return {
-    id: `manual-${slugify(name)}`,
-    name,
-    kind: fields.kind,
-    source: 'manual',
-    status: 'confirmed',
-  };
-};
-
-export type BoundarySource = 'published' | 'file' | 'service' | 'gis';
-
-/** Radio options for the boundaries screen; `note` is the consequence folded after the label. */
-export const boundarySources: { id: BoundarySource; label: string; note: string }[] = [
-  { id: 'published', label: 'Use a published source', note: 'watersheds, counties, districts and tribal lands are free' },
-  { id: 'file', label: 'Upload a file', note: 'a shapefile, GeoJSON or KML from your GIS' },
-  { id: 'service', label: 'Connect a map service', note: 're-syncs on demand' },
-  { id: 'gis', label: 'Our GIS person has it', note: 'nothing else waits on it' },
-];
+/** Option labels for the layer step's two non-public answers. */
+export const ownLayerLabel = 'Your own map service or file';
+export const gisLaterLabel = 'Our GIS person has it';
 
 export type OutsidePolicy = 'catch-all' | 'blank';
 
@@ -1602,4 +1656,251 @@ export const stewardships: { id: Stewardship; label: string; note: string }[] = 
 export const stewardshipFromIntent = (answers: Record<string, string[]>): Stewardship | null => {
   const answer = (answers.reporters ?? [])[0];
   return answer === 'staff' || answer === 'partners' ? answer : null;
+};
+
+// ---------------------------------------------------------------------------
+// Performance measures
+// ---------------------------------------------------------------------------
+//
+// THE RECORD IS the program's performance measures: each a named count in one
+// unit, filed under a kind of work, summed or read, with at most one split.
+// Setup chooses which counts the program keeps and answers two questions once
+// for the program: how much detail it reports, and whether projects commit to
+// an amount of work when funded.
+//
+// NOT SETUP: reporting year (Program shape asks it), who enters numbers
+// (People's stewardship answers it), uploads and the program intro (Start).
+// A teammate's 2026-09-24 interview mock asked all of these again; this walk
+// does not. Nor a measure's full definition, guidance and targets per project:
+// those are the separate Performance measure setup prototype, and a measure
+// confirmed here arrives there as a draft.
+//
+// WHERE THE SUGGESTIONS COME FROM. The same mock's reading of the seed: five
+// kinds of work named in the annual report and grant agreement, six counts they
+// report, with the quote and page for each. The mock's documents were a
+// strategic plan, an annual report and a funder report; here "Annual Report"
+// maps to annual-report-2025 and "Grant" to grant-agreement.
+//
+// CONSIDERED AND LEFT OUT (2026-09-24). Two counts the mock weighed and did not
+// keep are listed separately as consideredMeasures, arriving dismissed with
+// the reason, so a pressed tile always means a suggestion to confirm and the
+// status rule stays the same as every other milestone's: suggested is pressed
+// and waiting, dismissed is not kept.
+
+export type MeasureStatus = 'suggested' | 'confirmed' | 'dismissed';
+
+/** How a measure entered the tenant: the documents, the library, or typed in. */
+export type MeasureSource = 'document' | 'library' | 'manual';
+
+export interface MeasureRecord {
+  /** The library count's id for document and library measures; `manual-<slug>` for typed ones. */
+  id: string;
+  name: string;
+  /** A WorkKind id. Absent on a typed measure the admin left without a kind. */
+  kindId?: string;
+  /** A MeasureUnit id. */
+  unitId: string;
+  countingRule: CountingRule;
+  split?: MeasureSplit;
+  definition?: string;
+  source: MeasureSource;
+  /** The document the count was found in, for `document`-sourced suggestions. */
+  sourceDocumentId?: string;
+  /** The sentence the count was read from, shown as the tile's secondary text. */
+  evidence?: { quote: string; page?: number };
+  /** Why the count was considered and not kept. Set on consideredMeasures only. */
+  leftOutReason?: string;
+  status: MeasureStatus;
+}
+
+/** One kind of work the documents name, and where. */
+export interface WorkKindSuggestion {
+  kindId: string;
+  sourceDocumentId: string;
+  /** The pages the kind appears on: "p. 5". */
+  pages?: string;
+}
+
+/** The five kinds of work the documents name, in library order. The walk pre-presses these. */
+export const suggestedWorkKindIds: WorkKindSuggestion[] = [
+  { kindId: 'streamside-restoration', sourceDocumentId: 'grant-agreement', pages: 'p. 2' },
+  { kindId: 'in-stream-habitat', sourceDocumentId: 'annual-report-2025', pages: 'p. 5' },
+  { kindId: 'fish-passage', sourceDocumentId: 'annual-report-2025', pages: 'p. 6' },
+  { kindId: 'community-outreach', sourceDocumentId: 'annual-report-2025', pages: 'p. 11' },
+  { kindId: 'volunteers-and-funding', sourceDocumentId: 'grant-agreement', pages: 'p. 4' },
+];
+
+/** A library count as a record: its id, name, unit, rule, split and definition. */
+const fromLibrary = (id: string): Omit<MeasureRecord, 'source' | 'status'> => {
+  const count = libraryCountById.get(id);
+  if (!count) throw new Error(`Unknown library count: ${id}`);
+  const { kindId, name, unitId, countingRule, split, definition } = count;
+  return {
+    id,
+    kindId,
+    name,
+    unitId,
+    countingRule,
+    ...(split ? { split } : {}),
+    ...(definition ? { definition } : {}),
+  };
+};
+
+const documented = (
+  id: string,
+  sourceDocumentId: string,
+  quote: string,
+  page: number,
+  keepSplit: boolean,
+): MeasureRecord => {
+  const { split, ...count } = fromLibrary(id);
+  return {
+    ...count,
+    ...(keepSplit && split ? { split } : {}),
+    source: 'document',
+    sourceDocumentId,
+    evidence: { quote, page },
+    status: 'suggested',
+  };
+};
+
+/**
+ * The six counts the documents report, in library order. The split follows the
+ * documents: fish barriers are reported as one total, so that count drops the
+ * library's split; volunteer hours have none to drop.
+ */
+export const suggestedMeasures: MeasureRecord[] = [
+  documented(
+    'streamside-land-restored',
+    'grant-agreement',
+    'Partners fenced 14.2 acres of streambank and planted 9.8 acres of native shrubs and trees this grant year.',
+    2,
+    true,
+  ),
+  documented(
+    'in-stream-habitat-structures-installed',
+    'annual-report-2025',
+    '38 large wood structures and 6 beaver dam analogs were installed across four creeks.',
+    5,
+    true,
+  ),
+  documented(
+    'fish-barriers-removed-or-replaced',
+    'annual-report-2025',
+    'Two barrier removals on Alder and Tully Creeks reconnected 4.2 miles of spawning habitat.',
+    6,
+    false,
+  ),
+  documented(
+    'stream-reopened-to-fish',
+    'annual-report-2025',
+    'Two barrier removals on Alder and Tully Creeks reconnected 4.2 miles of spawning habitat.',
+    6,
+    false,
+  ),
+  documented(
+    'people-reached',
+    'annual-report-2025',
+    'Field days and workshops reached 410 students, 150 landowners and 80 volunteers.',
+    11,
+    true,
+  ),
+  documented(
+    'volunteer-time-given',
+    'grant-agreement',
+    'Please report total volunteer hours contributed to funded projects.',
+    4,
+    false,
+  ),
+];
+
+/** The two counts considered and left out, dismissed with the reason. The walk shows them unpressed. */
+export const consideredMeasures: MeasureRecord[] = [
+  {
+    ...fromLibrary('eroding-streambank-repaired'),
+    source: 'library',
+    leftOutReason: 'Would count the same streamside work twice: once by length, once by area.',
+    status: 'dismissed',
+  },
+  {
+    ...fromLibrary('stream-temperature-summer-peak'),
+    source: 'library',
+    leftOutReason:
+      "A monitoring partner already tracks it, and a reading can't be totaled across projects, so linking to their data is simpler than asking every project.",
+    status: 'dismissed',
+  },
+];
+
+export type MeasureDetail = 'totals' | 'split' | 'per-funder';
+
+/** Radio options for how much detail the program reports; `note` is the consequence folded after the label. */
+export const measureDetails: { id: MeasureDetail; label: string; note?: string }[] = [
+  { id: 'totals', label: 'Mostly totals' },
+  {
+    id: 'split',
+    label: 'Totals split into types',
+    note: "every split adds a choice each project makes every year, and a split added later can't be filled in for past years",
+  },
+  { id: 'per-funder', label: 'It depends on the funder' },
+];
+
+export type ProjectCommitment = 'yes' | 'sometimes' | 'no';
+
+/** Radio options for whether a funded project commits to an amount of work. */
+export const projectCommitments: { id: ProjectCommitment; label: string }[] = [
+  { id: 'yes', label: 'Yes, usually' },
+  { id: 'sometimes', label: 'Sometimes' },
+  { id: 'no', label: 'No' },
+];
+
+/** Document evidence for one preference, shaped like ProgramShapeEvidence. */
+export interface MeasurePreferenceEvidence<T extends string> {
+  /** The option the evidence argues for. */
+  optionId: T;
+  sourceDocumentId: string;
+  /** The quote, shown as the provenance line. */
+  label: string;
+  page?: number;
+}
+
+/** One piece of document evidence per preference. The walk pre-selects the option on an unanswered question once documents are in. */
+export const measureEvidence: {
+  detail: MeasurePreferenceEvidence<MeasureDetail>;
+  targets: MeasurePreferenceEvidence<ProjectCommitment>;
+} = {
+  detail: {
+    optionId: 'split',
+    sourceDocumentId: 'grant-agreement',
+    label: 'Partners fenced 14.2 acres of streambank and planted 9.8 acres of native shrubs and trees this grant year.',
+    page: 2,
+  },
+  targets: {
+    optionId: 'yes',
+    sourceDocumentId: 'grant-agreement',
+    label: 'Deliverable 2: 15 acres of riparian planting completed by June 30, 2026.',
+    page: 1,
+  },
+};
+
+export interface MeasureFields {
+  name: string;
+  unitId: string;
+  kindId?: string;
+  /** Defaults to `sum`; a typed measure is an amount of work unless the admin says it is a reading. */
+  countingRule?: CountingRule;
+}
+
+/** Mints a measure from the add screen's fields: `manual-<slug>`, `manual`, and already confirmed. */
+export const measureFromFields = (fields: MeasureFields): MeasureRecord => {
+  const name = fields.name.trim().replace(/\s+/g, ' ');
+  const kindId = fields.kindId?.trim();
+  return {
+    id: `manual-${slugify(name)}`,
+    name,
+    ...(kindId ? { kindId } : {}),
+    unitId: fields.unitId,
+    countingRule: fields.countingRule ?? 'sum',
+    source: 'manual',
+    status: 'confirmed',
+  };
 };

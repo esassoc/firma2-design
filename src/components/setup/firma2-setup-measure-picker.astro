@@ -1,0 +1,203 @@
+---
+// firma2-setup-measure-picker: the second screen of the Performance measures
+// walk. The counts the library holds for every kind kept on the screen before,
+// grouped by kind, as tiles you tap to keep.
+//
+// ONE QUESTION OVER THE WHOLE LIST. The idiom is the kinds screen's: nothing
+// written on tap, and Next writes every tile at once, pressed confirmed and the
+// rest dismissed. The list is listMeasures(): library counts for the kinds
+// kept, the documented ones swapped in with their quote and page, then the two
+// counts the documents' reading left out, then anything typed on the add screen.
+//
+// THE KINDS DECIDE THE LIST, SO THE SCREEN RE-RENDERS on every draft change:
+// Next on the kinds screen is a write, and returning through the rail has to show the list
+// the kinds now imply.
+//
+// PRESSED MEANS NOT DISMISSED. A documented count arrives `suggested`, so it
+// arrives pressed; a library count arrives `dismissed`, un-pressed, on offer.
+//
+// THE LEFT-OUT GROUP SITS LAST, whatever kind its counts belong to, un-pressed,
+// with the reason as the tile's line. Pressing one keeps it; the reason stays
+// on the tile so the admin sees what they are overruling.
+//
+// NO SKIP. A program that reports measures reports at least one.
+//
+// Composed: firma2-setup-step-screen is the screen, .stack and .grid the layout
+// engine, firma2-setup-measure-tile the tile, firma2-setup-step-next the advance.
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupStepNext from './firma2-setup-step-next.astro';
+import Firma2SetupMeasureTile from './firma2-setup-measure-tile.astro';
+---
+<Firma2SetupStepScreen
+  step="measures"
+  icon="activity"
+  prompt="Which of these do you count?"
+  align="start"
+  class="firma2-setup-measure-picker"
+>
+  <!-- Filled by the script: which documents reported the counts is draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <!-- Filled by the script, one group per kind kept, cloned from the template
+       below so every group carries this component's scope. -->
+  <div class="stack" data-gap="xl" data-part="groups"></div>
+
+  <template data-part="group-template">
+    <section class="stack" data-gap="sm">
+      <h3 class="typography-title-sm-strong firma2-setup-measure-picker__heading" data-part="heading"></h3>
+      <ul class="firma2-setup-measure-picker__grid grid" data-gap="md" data-part="grid"></ul>
+    </section>
+  </template>
+
+  <Firma2SetupMeasureTile />
+
+  <Firma2SetupStepNext slot="advance" />
+</Firma2SetupStepScreen>
+
+<style>
+  /* .grid is the layout engine; this strips the list chrome that comes with
+     choosing <ul> for its semantics and sets the tile's floor. */
+  .firma2-setup-measure-picker__grid {
+    --grid-min: 16rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .firma2-setup-measure-picker__heading {
+    margin: 0;
+  }
+</style>
+
+<script>
+  import { listMeasures, readSetupDraft, setMeasureStatuses, sourceDocumentNames } from '../../lib/setup-draft';
+  import { measureUnitById, workKindById } from '../../data/firma2-measure-library';
+  import type { MeasureRecord, MeasureStatus } from '../../data/firma2-setup';
+
+  const TILE = 'firma2-measure-tile';
+
+  /** "A, B, and C": the documents named in the lede, in reading order. */
+  const LIST = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' });
+
+  /** The last group's heading: the counts the documents' reading did not keep. */
+  const LEFT_OUT = 'Left out';
+
+  /** The heading for typed counts filed under no kind, or a kind no longer kept. */
+  const OTHER = 'Other';
+
+  interface TileOption {
+    id: string;
+    name: string;
+    unit?: string;
+    excerpt?: string;
+    source?: string;
+  }
+
+  type MeasureTile = HTMLElement & { option: TileOption; optionId: string; selected: boolean };
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-measure-picker[data-step]');
+  const groups = screen?.querySelector<HTMLElement>('[data-part="groups"]');
+  const groupTemplate = screen?.querySelector<HTMLTemplateElement>('[data-part="group-template"]');
+  const lede = screen?.querySelector<HTMLElement>('[data-part="lede"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && groups && groupTemplate && lede && next) {
+    const tiles = (): MeasureTile[] => [...groups.querySelectorAll<MeasureTile>(TILE)];
+
+    /** A record as tile lines: its unit, then the document's sentence or the reason it was left out. */
+    const optionFor = (record: MeasureRecord): TileOption => {
+      const unit = measureUnitById.get(record.unitId)?.label;
+      const excerpt = record.leftOutReason ?? (record.evidence ? `“${record.evidence.quote}”` : undefined);
+      const [documentName] = sourceDocumentNames([record]);
+      const page = record.evidence?.page;
+      const source = documentName ? (page ? `${documentName}, p. ${page}` : documentName) : undefined;
+      return {
+        id: record.id,
+        name: record.name,
+        ...(unit ? { unit: `In ${unit}` } : {}),
+        ...(excerpt ? { excerpt } : {}),
+        ...(source ? { source } : {}),
+      };
+    };
+
+    const buildGroup = (heading: string, records: MeasureRecord[]): HTMLElement | null => {
+      const fragment = groupTemplate.content.cloneNode(true) as DocumentFragment;
+      const section = fragment.querySelector<HTMLElement>('section');
+      const title = fragment.querySelector<HTMLElement>('[data-part="heading"]');
+      const grid = fragment.querySelector<HTMLElement>('[data-part="grid"]');
+      if (!section || !title || !grid) return null;
+      title.textContent = heading;
+      grid.replaceChildren(
+        ...records.map((record) => {
+          const item = document.createElement('li');
+          const tile = document.createElement(TILE) as MeasureTile;
+          tile.option = optionFor(record);
+          tile.selected = record.status !== 'dismissed';
+          item.append(tile);
+          return item;
+        }),
+      );
+      return section;
+    };
+
+    // Answered means at least one count kept.
+    const syncReady = (): void => {
+      screen.dataset.stepReady = String(tiles().some((tile) => tile.selected));
+    };
+
+    const render = (): void => {
+      const records = listMeasures(readSetupDraft());
+
+      // Kind groups in library order, as listMeasures returns them; typed counts
+      // join their kind's group when it is on screen, and Other when it is not.
+      const byKind = new Map<string, MeasureRecord[]>();
+      const other: MeasureRecord[] = [];
+      const leftOut: MeasureRecord[] = [];
+      for (const record of records) {
+        if (record.leftOutReason) leftOut.push(record);
+        else if (record.source !== 'manual' && record.kindId) {
+          byKind.set(record.kindId, [...(byKind.get(record.kindId) ?? []), record]);
+        }
+      }
+      for (const record of records) {
+        if (record.source !== 'manual') continue;
+        const group = record.kindId ? byKind.get(record.kindId) : undefined;
+        if (group) group.push(record);
+        else other.push(record);
+      }
+
+      const sections = [
+        ...[...byKind].map(([kindId, list]) => buildGroup(workKindById.get(kindId)?.name ?? OTHER, list)),
+        other.length > 0 ? buildGroup(OTHER, other) : null,
+        leftOut.length > 0 ? buildGroup(LEFT_OUT, leftOut) : null,
+      ].filter((section): section is HTMLElement => section !== null);
+      groups.replaceChildren(...sections);
+
+      const named = sourceDocumentNames(records.filter((record) => record.source === 'document'));
+      lede.textContent = named.length > 0 ? `Reported in ${LIST.format(named)}.` : '';
+      lede.hidden = named.length === 0;
+      syncReady();
+    };
+
+    groups.addEventListener('measure-tile-toggle', syncReady);
+
+    // Next is the write: every tile in one pass. The shell advances on the same click.
+    next.addEventListener('click', () => {
+      const statuses: Record<string, MeasureStatus> = {};
+      for (const tile of tiles()) statuses[tile.optionId] = tile.selected ? 'confirmed' : 'dismissed';
+      if (Object.keys(statuses).length > 0) setMeasureStatuses(statuses);
+    });
+
+    let ready = false;
+    document.addEventListener('setup-draft-change', () => {
+      if (ready) render();
+    });
+
+    // Wait for the tile's definition, or createElement hands back an unupgraded
+    // element whose `option` setter goes nowhere.
+    customElements.whenDefined(TILE).then(() => {
+      ready = true;
+      render();
+    });
+  }
+</script>

@@ -1,0 +1,308 @@
+---
+// The checklist beside a stepped walk: one row per step, a dot and a short
+// label, so a milestone always shows the steps it is made of and where you are
+// in them. Andy, 2026-09-24: "I'm not loving our paging/arrows per milestone.
+// I'd like to adopt something like we did on the biochar-atlas-design with a
+// sub-nav stepper ... you should see the steps you're completing, and be able
+// to traverse backwards (and forwards?) easily." The pattern is biochar's
+// bca-stepper-rail (itself after the step list in Claude Cowork), in this
+// spoke's tokens and type roles.
+//
+// WHAT A ROW SAYS. `data-status` on each row is one of four. `active` is the
+// screen on show. `complete` and `skipped` are steps behind the furthest one
+// reached: complete when the step's screen is answered (the screen's own
+// `data-step-ready`, absent meaning answered), skipped when it is not, which
+// is the only way past an unanswered screen (its skip link). Reading the
+// answer rather than remembering the gesture keeps the rail true when someone
+// goes back and changes an answer. `upcoming` is everything not yet resolved.
+//
+// WHICH ROWS MOVE YOU. Every row up to the furthest step reached, forwards as
+// well as back: that is the traversal Andy asked for. Rows past it are inert,
+// marked `aria-disabled` so a keyboard hears why nothing happens, and look
+// like every other row except for their empty dot (design-principles:
+// inert, not disabled). The shell that owns the screens does the moving: a
+// row is `[data-step-go="<id>"]`, and firma2-setup-stepper (or Start) shows
+// that screen, so this component never touches a screen.
+//
+// THE LAST ROW IS THE DESTINATION. Every walk here ends on a read-back screen
+// that hands off to the hub, so the last row sits under a hairline, apart
+// from the steps that lead to it.
+//
+// WHERE IT LISTENS. The nearest `[data-setup-steps]` root. The shell writes
+// the step on show as `data-step-current` on that root and dispatches
+// `setup-step-show`; the rail reads the attribute on load (whichever script
+// runs first) and follows the event after. Readiness is observed on the
+// root's `[data-step]` screens.
+//
+// TWO SHAPES, ONE MARKUP. Beside the screens the rows stack and the list
+// sticks as the page scrolls. When the shell's sidebar wraps (a phone, a
+// narrow window) the rail spans the column above the screen, and a container
+// query on the rail's own width turns the rows into one scrollable line, so
+// the switch follows the layout rather than a guessed viewport width.
+//
+// bcn-lego-checked: esa-sidebar-nav is a page-nav tree (hrefs, collapse), not
+// a stateful checklist; esa-progress-bar is a linear meter; esa-tab-layout is
+// peer panels with no order or status. Nothing in Ecology renders a stepper,
+// and Beacon ships no wizard or stepper UI (the biochar spoke checked; Beacon
+// is not cloned here). The rows are native buttons because each is a
+// same-page navigation control the shell owns: esa-button is an action button
+// with its own chrome, the wrong shape for a checklist row. The dot is the
+// row's own span, holding esa-icon glyphs. The hub gap is an esa-stepper (a
+// stateful step checklist); biochar's bca-stepper-rail is the other spoke copy.
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import type { SetupStep } from '../../lib/setup-steps';
+
+interface Props {
+  steps: SetupStep[];
+}
+
+const { steps } = Astro.props;
+const last = steps.length - 1;
+const DASH = '<path d="M5 12h14"/>';
+---
+<nav class="firma2-setup-rail" aria-label="Steps" data-step-rail>
+  <ol class="firma2-setup-rail__list" role="list">
+    {steps.map((step, i) => (
+      <li
+        class="firma2-setup-rail__item"
+        data-step-rail-item={step.id}
+        data-status={i === 0 ? 'active' : 'upcoming'}
+        data-destination={i === last && last > 0 ? '' : undefined}
+      >
+        <button
+          type="button"
+          class="firma2-setup-rail__row typography-label-md"
+          data-step-go={step.id}
+          aria-current={i === 0 ? 'step' : undefined}
+          aria-disabled={i === 0 ? undefined : 'true'}
+        >
+          <span class="firma2-setup-rail__dot" aria-hidden="true">
+            <span class="firma2-setup-rail__glyph firma2-setup-rail__glyph--check"><EsaIcon name="check" size="xs" /></span>
+            <span class="firma2-setup-rail__glyph firma2-setup-rail__glyph--skip"><EsaIcon name="minus" size="xs" paths={DASH} /></span>
+          </span>
+          <span class="firma2-setup-rail__label">{step.label}</span>
+          <span class="visually-hidden" data-part="state"></span>
+        </button>
+      </li>
+    ))}
+  </ol>
+</nav>
+
+<script>
+  import type { SetupStepStatus } from '../../lib/setup-steps';
+
+  /** Spoken after the label; the dot carries the same fact for sighted readers. */
+  const SPOKEN: Record<SetupStepStatus, string> = {
+    active: '',
+    complete: ', done',
+    skipped: ', skipped',
+    upcoming: '',
+  };
+
+  const rail = document.querySelector<HTMLElement>('[data-step-rail]');
+  const root = rail?.closest<HTMLElement>('[data-setup-steps]');
+
+  if (rail && root) {
+    const list = rail.querySelector<HTMLElement>('.firma2-setup-rail__list');
+    const items = Array.from(rail.querySelectorAll<HTMLElement>('[data-step-rail-item]'));
+    const ids = items.map((item) => item.dataset.stepRailItem ?? '');
+    const screens = Array.from(root.querySelectorAll<HTMLElement>('[data-step]'));
+
+    const indexOf = (id: string | undefined): number => Math.max(0, ids.indexOf(id ?? ''));
+
+    let current = indexOf(root.dataset.stepCurrent);
+    let furthest = current;
+
+    /** Absent means answered, the same rule the shell applies to its Next button. */
+    const ready = (id: string): boolean =>
+      screens.find((screen) => screen.dataset.step === id)?.dataset.stepReady !== 'false';
+
+    const statusOf = (i: number): SetupStepStatus => {
+      if (i === current) return 'active';
+      if (i < furthest) return ready(ids[i]) ? 'complete' : 'skipped';
+      return 'upcoming';
+    };
+
+    /** In the one-line shape, keep the active row in view without moving the page. */
+    const revealCurrent = (): void => {
+      if (!list || list.scrollWidth <= list.clientWidth) return;
+      const row = items[current];
+      if (!row) return;
+      const start = row.offsetLeft - list.offsetLeft;
+      const end = start + row.offsetWidth;
+      if (start < list.scrollLeft) list.scrollLeft = start;
+      else if (end > list.scrollLeft + list.clientWidth) list.scrollLeft = end - list.clientWidth;
+    };
+
+    const render = (): void => {
+      items.forEach((item, i) => {
+        const status = statusOf(i);
+        item.dataset.status = status;
+        const row = item.querySelector<HTMLElement>('[data-step-go]');
+        if (row) {
+          if (i === current) row.setAttribute('aria-current', 'step');
+          else row.removeAttribute('aria-current');
+          if (i > furthest) row.setAttribute('aria-disabled', 'true');
+          else row.removeAttribute('aria-disabled');
+        }
+        const spoken = item.querySelector<HTMLElement>('[data-part="state"]');
+        if (spoken) spoken.textContent = SPOKEN[status];
+      });
+      revealCurrent();
+    };
+
+    root.addEventListener('setup-step-show', (event) => {
+      const step = (event as CustomEvent<{ step: string }>).detail?.step;
+      current = indexOf(step);
+      furthest = Math.max(furthest, current);
+      render();
+    });
+
+    const readiness = new MutationObserver(render);
+    for (const screen of screens) readiness.observe(screen, { attributes: true, attributeFilter: ['data-step-ready'] });
+
+    render();
+  }
+</script>
+
+<style>
+  .firma2-setup-rail {
+    container: step-rail / inline-size;
+  }
+
+  .firma2-setup-rail__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-050);
+    position: sticky;
+    inset-block-start: var(--spacing-600);
+  }
+
+  /* A native button reset to a row: the label's type role on the row itself,
+     so the dot can centre on the first line with the lh unit. */
+  .firma2-setup-rail__row {
+    appearance: none;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-300);
+    inline-size: 100%;
+    margin: 0;
+    padding: var(--spacing-200) var(--spacing-300);
+    border: 0;
+    border-radius: var(--radius-200);
+    background: transparent;
+    color: var(--color-content-default);
+    text-align: start;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  /* Hover is the active row's tint at reduced strength, so it takes the
+     milestone's hue the layout re-points the brand roles to (a faint purple on
+     Performance measures, a faint blue on Spatial areas) rather than the
+     overlay token, which is brand green on every milestone. Only rows that
+     move you get it: every row up to the furthest reached, ahead of the
+     current one included. The active row keeps its full tint under the
+     pointer (its own rule below outranks this one). */
+  .firma2-setup-rail__row:not([aria-disabled='true']):hover {
+    background: color-mix(in oklch, var(--color-background-brand-muted) 55%, transparent);
+  }
+  .firma2-setup-rail__row[aria-disabled='true'] {
+    cursor: default;
+  }
+  .firma2-setup-rail__row:focus-visible {
+    outline: 2px solid var(--focus-ring-color, var(--color-border-default-focus));
+    outline-offset: 2px;
+  }
+
+  .firma2-setup-rail__label {
+    min-inline-size: 0;
+    text-wrap: balance;
+  }
+
+  /* Where am I: the milestone's muted brand fill, brand ink, semibold. */
+  .firma2-setup-rail__item[data-status='active'] .firma2-setup-rail__row {
+    background: var(--color-background-brand-muted);
+    color: var(--color-content-brand);
+    font-weight: var(--typography-font-weight-semibold);
+  }
+
+  /* ── the dot ── */
+  .firma2-setup-rail__dot {
+    --icon-size-xs: 0.625rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    inline-size: 1rem;
+    block-size: 1rem;
+    margin-block-start: calc((1lh - 1rem) / 2);
+    border: 1.5px solid var(--color-border-default);
+    border-radius: var(--radius-full);
+    background: var(--color-background-elevation-raised);
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-setup-rail__glyph {
+    display: none;
+    line-height: 0;
+  }
+  .firma2-setup-rail__item[data-status='active'] .firma2-setup-rail__dot {
+    border-color: var(--color-background-brand);
+  }
+  .firma2-setup-rail__item[data-status='complete'] .firma2-setup-rail__dot {
+    border-color: var(--color-background-brand);
+    background: var(--color-background-brand);
+    color: var(--color-content-default-knockout);
+  }
+  .firma2-setup-rail__item[data-status='complete'] .firma2-setup-rail__glyph--check,
+  .firma2-setup-rail__item[data-status='skipped'] .firma2-setup-rail__glyph--skip {
+    display: inline-flex;
+  }
+  .firma2-setup-rail__item[data-status='skipped'] .firma2-setup-rail__dot {
+    border-style: dashed;
+  }
+
+  /* The read-back screen the walk ends on, set apart from the steps before it. */
+  .firma2-setup-rail__item[data-destination] {
+    margin-block-start: var(--spacing-200);
+    padding-block-start: var(--spacing-200);
+    border-block-start: 1px solid var(--color-border-default-subtle);
+  }
+
+  /* ── one line, when the rail spans the column above the screen ──
+     Beside the screens the rail is its sidebar basis wide (about 13rem); once
+     the sidebar wraps it takes the whole column, never narrower than a small
+     phone's, so any width past 16rem means wrapped. */
+  @container step-rail (min-width: 16rem) {
+    .firma2-setup-rail__list {
+      position: static;
+      flex-direction: row;
+      gap: var(--spacing-100);
+      overflow-x: auto;
+      scrollbar-width: thin;
+      padding-block-end: var(--spacing-100);
+    }
+    .firma2-setup-rail__row {
+      inline-size: auto;
+      align-items: center;
+      white-space: nowrap;
+    }
+    /* The label's balanced wrap is for the column; in one line a label that
+       breaks ("Add / others") makes the row two lines tall and misaligns the
+       dots, so the label takes the row's nowrap here. */
+    .firma2-setup-rail__label {
+      white-space: nowrap;
+      text-wrap: nowrap;
+    }
+    .firma2-setup-rail__dot {
+      margin-block-start: 0;
+    }
+    .firma2-setup-rail__item[data-destination] {
+      margin-block-start: 0;
+      padding-block-start: 0;
+      border-block-start: 0;
+    }
+  }
+</style>

@@ -4,10 +4,32 @@
 // Screen 1 takes the documents the tenant already has. Screens 2 to 7 each ask
 // one question with two to four label-only pills: only the questions Start asks
 // (intentQuestionsFor('documents')), what the program does. The rules it runs by
+//
+// GUIDANCE UNDER THE HEADLINE, NO GUIDE COLUMN, 2026-09-24. Each Start screen
+// used to show its guide (title, body, examples, the milestones it sets up) in a
+// sticky 17rem column to the right, which made Start the one walk whose screen
+// column was narrower than the rest and put the context beside the question
+// instead of under it. Andy moved Documents' guide under the headline, then
+// asked for the same on every step. Now the guide's body is the screen's lede
+// and its examples are one row of badges (firma2-setup-guide-row) between the
+// heading and the choices; the "Sets up" milestone list is gone, the hub shows
+// the same thing as suggested cards a screen later. Start's layout is the
+// stepper's: rail, then screens, nothing nested.
 // are Program shape's. The last screen reads the answers back as one sentence
-// and hands off to the hub, where the map lights for the first time. No
-// progress indicator: eight short screens and a back
-// arrow are the whole navigation. Every screen has a URL (?step=<id>) so it
+// and hands off to the hub, where the map lights for the first time. The
+// eight screens are listed in the rail every stepped milestone wears
+// (firma2-setup-step-rail; Andy, 2026-09-24: "For each milestone, you should
+// see the steps you're completing, and be able to traverse backwards (and
+// forwards?) easily"), which replaced the back arrow and the circular Next.
+// The rail sits left, the screens centre, the guide stays right: the sidebar
+// primitive twice, rail around the existing screen-and-guide pair. The
+// documents screen carries its guide in the screen itself, under the prompt
+// (Andy, 2026-09-24), so the guide column is empty on that screen and holds its
+// width, keeping the screen column where it sits on every other screen. Start keeps
+// its own script because its readiness is the intent answers, not a screen
+// attribute; it writes that readiness onto each screen as `data-step-ready`
+// so the rail reads it the same way it does on the shared stepper, and it
+// handles the rail's `[data-step-go]` rows itself. Every screen has a URL (?step=<id>) so it
 // can be resumed, and the setup bar's "Finish later" returns to the hub with
 // the answers so far kept. The milestone's own band (emblem and the word
 // Start) is the layout's, above this, on every screen; the prompts are h2s
@@ -21,8 +43,8 @@
 // esa-progress-bar is the only progress lego and it is linear, not stepped);
 // checked Beacon (no ui-stepper). Each screen is composed from legos:
 // esa-chip-group for the pills (brand tone, its selected roles re-pointed to a
-// solid fill), esa-text-field + esa-button for the ask row, esa-button for the
-// arrows, esa-card for the confirm card, firma2-setup-document-upload for the
+// solid fill), esa-text-field + esa-button for the ask row, firma2-setup-step-next for
+// Next, esa-card for the confirm card, firma2-setup-document-upload for the
 // first screen, esa-icon in a tinted circle above each prompt,
 // firma2-setup-hex-map as the illustration on the last screen. The bespoke part
 // is the screen switching, the centred stack and the icon circle, which no lego
@@ -34,49 +56,78 @@
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaIcon from '@esa/ecology/esa-icon.astro';
+import Firma2SetupGuideRow from './firma2-setup-guide-row.astro';
 import Firma2SetupDocumentUpload from './firma2-setup-document-upload.astro';
-import Firma2SetupStepGuide from './firma2-setup-step-guide.astro';
-import { intentQuestionsFor, journeysForQuestion, stepGuides } from '../../data/firma2-setup';
+import Firma2SetupStepNext from './firma2-setup-step-next.astro';
+import Firma2SetupStepRail from './firma2-setup-step-rail.astro';
+import { intentQuestionsFor, stepGuides } from '../../data/firma2-setup';
 import { withBase } from '../../lib/base';
-// The screen chrome (bar, icon plate, prompt, advance, arrow) is shared with every
+import { labelFromId, nextLabel } from '../../lib/setup-steps';
+import type { SetupStep } from '../../lib/setup-steps';
+// The screen chrome (icon plate, prompt, advance block) is shared with every
 // stepped milestone; the rules below are only what Start adds on top of it.
 import '../shared/firma2-setup-steps.css';
 
 const intentQuestions = intentQuestionsFor('documents');
-const stepIds = ['documents', ...intentQuestions.map((q) => q.id), 'confirm'];
+
+// The rail's words for each screen. The questions' prompts are the data's;
+// these short names are this walk's, so they live beside it. An id missing
+// here (a question added to the data later) falls back to its sentence-cased id.
+const RAIL_LABELS: Record<string, string> = {
+  documents: 'Documents',
+  work: 'Kind of work',
+  goals: 'Goals',
+  slices: 'Project groups',
+  map: 'Map',
+  reporters: 'Data entry',
+  confirm: 'Review',
+};
+const steps: SetupStep[] = ['documents', ...intentQuestions.map((q) => q.id), 'confirm'].map((id) => ({
+  id,
+  label: RAIL_LABELS[id] ?? labelFromId(id),
+}));
+const stepIds = steps.map((step) => step.id);
+
+/** "Next: <label>" for the screen after `id`. Start renders its own screens, so it writes this at build. */
+const nextLabelFor = (id: string): string => {
+  const next = steps[stepIds.indexOf(id) + 1];
+  return next ? nextLabel(next) : 'Next';
+};
 const hubHref = withBase('/prototypes/setup');
 ---
-<div class="sidebar firma2-setup-steps" data-side="end" data-setup-steps data-step-ids={stepIds.join(',')}>
-  <aside class="firma2-setup-steps__guide" aria-label="Guidance">
-    <Firma2SetupStepGuide step="documents" guide={stepGuides.documents} />
-    {intentQuestions.map((q) => (
-      <Firma2SetupStepGuide step={q.id} guide={q.guide} journeys={journeysForQuestion(q)} hidden />
-    ))}
-    <Firma2SetupStepGuide step="confirm" guide={stepGuides.confirm} hidden />
-  </aside>
+<div
+  class="firma2-setup-steps firma2-setup-steps--railed sidebar"
+  data-setup-steps
+  data-step-ids={stepIds.join(',')}
+  data-step-current={stepIds[0]}
+>
+  <Firma2SetupStepRail steps={steps} />
   <div class="firma2-setup-steps__main">
-  <div class="firma2-setup-steps__bar">
-    <div data-step-back-wrap hidden>
-      <EsaButton variant="ghost" iconOnly icon="arrow-left" label="Back" data-step-back />
-    </div>
-  </div>
-
-  <section class="firma2-setup-steps__screen stack" data-gap="xl" data-step="documents">
+  <section class="firma2-setup-steps__screen stack" data-gap="lg" data-step="documents">
     <span class="firma2-setup-steps__icon"><EsaIcon name="upload" size="xl" /></span>
-    <h2 class="typography-display-sm firma2-setup-steps__prompt">What do you have on hand?</h2>
+    <div class="stack firma2-setup-steps__heading" data-gap="sm">
+      <h2 class="typography-display-sm firma2-setup-steps__prompt">What do you have on hand?</h2>
+      {/* The guide's body is the lede (2026-09-24): why documents matter, in one
+          sentence under the question, so the card below is one row and the
+          sample-documents button clears the sticky footer at 1280 by 800. */}
+      <p class="typography-body-md firma2-setup-steps__lede">{stepGuides.documents.body}</p>
+    </div>
+    <Firma2SetupGuideRow guide={stepGuides.documents} />
     <Firma2SetupDocumentUpload />
-    <div class="stack firma2-setup-steps__advance" data-gap="sm">
-      <div class="firma2-setup-steps__arrow">
-        <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next />
-      </div>
-      <EsaButton variant="ghost" size="sm" data-step-skip>Nothing yet</EsaButton>
+    <div class="firma2-setup-steps__advance">
+      <Firma2SetupStepNext label={nextLabelFor('documents')} />
+      <EsaButton variant="ghost" size="lg" data-step-skip>Nothing yet</EsaButton>
     </div>
   </section>
 
   {intentQuestions.map((q) => (
-    <section class="firma2-setup-steps__screen stack" data-gap="xl" data-step={q.id} hidden>
+    <section class="firma2-setup-steps__screen stack" data-gap="lg" data-step={q.id} hidden>
       <span class="firma2-setup-steps__icon"><EsaIcon name={q.icon} size="xl" /></span>
-      <h2 class="typography-display-sm firma2-setup-steps__prompt">{q.prompt}</h2>
+      <div class="stack firma2-setup-steps__heading" data-gap="sm">
+        <h2 class="typography-display-sm firma2-setup-steps__prompt">{q.prompt}</h2>
+        <p class="typography-body-md firma2-setup-steps__lede">{q.guide.body}</p>
+      </div>
+      {q.guide.examples && <Firma2SetupGuideRow guide={q.guide} />}
       <div class="firma2-setup-steps__choices">
         <esa-chip-group
           data-intent-question={q.id}
@@ -102,16 +153,17 @@ const hubHref = withBase('/prototypes/setup');
         </div>
       )}
       <div class="firma2-setup-steps__advance">
-        <div class="firma2-setup-steps__arrow">
-          <EsaButton variant="primary" appearance="outline" size="lg" iconOnly icon="arrow-right" label="Next" data-step-next disabled />
-        </div>
+        <Firma2SetupStepNext label={nextLabelFor(q.id)} disabled />
       </div>
     </section>
   ))}
 
-  <section class="firma2-setup-steps__screen stack" data-gap="xl" data-step="confirm" hidden>
+  <section class="firma2-setup-steps__screen stack" data-gap="lg" data-step="confirm" hidden>
     <span class="firma2-setup-steps__icon"><EsaIcon name="circle-check" size="xl" /></span>
-    <h2 class="typography-display-sm firma2-setup-steps__prompt">Does this look right?</h2>
+    <div class="stack firma2-setup-steps__heading" data-gap="sm">
+      <h2 class="typography-display-sm firma2-setup-steps__prompt">Does this look right?</h2>
+      <p class="typography-body-md firma2-setup-steps__lede">{stepGuides.confirm.body}</p>
+    </div>
     <EsaCard variant="outlined" padding="spacious">
       <div class="stack" data-gap="md">
         <p class="typography-body-lg firma2-setup-steps__summary" data-step-summary></p>
@@ -122,9 +174,7 @@ const hubHref = withBase('/prototypes/setup');
       </div>
     </EsaCard>
     <div class="firma2-setup-steps__advance">
-      <div class="firma2-setup-steps__arrow">
-        <EsaButton variant="primary" size="lg" iconOnly icon="arrow-right" label="Go to setup" href={hubHref} />
-      </div>
+      <Firma2SetupStepNext href={hubHref} label="Go to setup" />
     </div>
   </section>
 
@@ -159,8 +209,6 @@ const hubHref = withBase('/prototypes/setup');
     const questions: Question[] = JSON.parse(root.querySelector('[data-step-questions]')?.textContent ?? '[]');
     const questionById = new Map(questions.map((q) => [q.id, q]));
     const screens = Array.from(root.querySelectorAll<HTMLElement>('[data-step]'));
-    const guides = Array.from(root.querySelectorAll<HTMLElement>('[data-step-guide]'));
-    const back = root.querySelector<HTMLElement>('[data-step-back-wrap]');
 
     const stepFromUrl = (): string => {
       const wanted = new URLSearchParams(location.search).get('step') ?? '';
@@ -210,6 +258,16 @@ const hubHref = withBase('/prototypes/setup');
       }
     };
 
+    // The rail reads each screen's answer the way it does on the shared stepper,
+    // from `data-step-ready`; here that answer is the intent draft, so it is
+    // written onto every screen whenever the draft moves.
+    const syncReady = () => {
+      for (const screen of screens) {
+        const id = screen.dataset.step ?? '';
+        screen.dataset.stepReady = String(valid(id));
+      }
+    };
+
     const setNext = (id: string) => {
       const next = root.querySelector<HTMLButtonElement>(`[data-step="${id}"] [data-step-next]`);
       if (!next) return;
@@ -223,9 +281,7 @@ const hubHref = withBase('/prototypes/setup');
     const show = (id: string, push: boolean) => {
       current = id;
       for (const screen of screens) screen.hidden = screen.dataset.step !== id;
-      for (const guide of guides) guide.hidden = guide.dataset.stepGuide !== id;
       const index = stepIds.indexOf(id);
-      if (back) back.hidden = index === 0;
       setNext(id);
       if (id === 'confirm') syncSummary();
       const url = new URL(location.href);
@@ -233,6 +289,8 @@ const hubHref = withBase('/prototypes/setup');
       else url.searchParams.set('step', id);
       if (push) history.pushState({ step: id }, '', url);
       else history.replaceState({ step: id }, '', url);
+      root.dataset.stepCurrent = id;
+      root.dispatchEvent(new CustomEvent('setup-step-show', { detail: { step: id }, bubbles: true }));
       root.querySelector<HTMLElement>(`[data-step="${id}"] .firma2-setup-steps__prompt`)?.focus();
     };
 
@@ -245,11 +303,17 @@ const hubHref = withBase('/prototypes/setup');
     root.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
+      // A rail row: any step already reached; the rail marks the rest aria-disabled.
+      const go = target.closest<HTMLElement>('[data-step-go]');
+      if (go) {
+        const id = go.dataset.stepGo ?? '';
+        if (go.getAttribute('aria-disabled') !== 'true' && stepIds.includes(id) && id !== current) show(id, true);
+        return;
+      }
       const add = target.closest<HTMLElement>('[data-ask-add]');
       if (add) submitAsk(add.dataset.askQuestion ?? '');
       else if (target.closest('[data-step-next]')) move(1);
       else if (target.closest('[data-step-skip]')) move(1);
-      else if (target.closest('[data-step-back]')) move(-1);
       else if (target.closest('[data-step-edit]')) show(stepIds[1], true);
     });
 
@@ -275,6 +339,7 @@ const hubHref = withBase('/prototypes/setup');
 
     document.addEventListener('setup-draft-change', () => {
       syncChoices();
+      syncReady();
       setNext(current);
       if (current === 'confirm') syncSummary();
     });
@@ -283,29 +348,13 @@ const hubHref = withBase('/prototypes/setup');
 
     customElements.whenDefined('esa-chip-group').then(() => {
       syncChoices();
+      syncReady();
       show(current, false);
     });
   }
 </script>
 
 <style>
-  .firma2-setup-steps {
-    --sidebar-width: 17rem;
-    --sidebar-content-min: 55%;
-    --gap: var(--spacing-800);
-    align-items: flex-start;
-  }
-  .firma2-setup-steps__guide {
-    position: sticky;
-    inset-block-start: var(--spacing-600);
-    padding-block-start: var(--spacing-950);
-  }
-  @media (max-width: 48rem) {
-    .firma2-setup-steps__guide {
-      position: static;
-      padding-block-start: 0;
-    }
-  }
   /* One choice per row, each a full-width capsule: the lego's chip radius token
      re-pointed to the pill, the chip part stretched. The group has no justify
      hook, so a wrapped, centred row of chips is not reachable from outside. */

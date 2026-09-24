@@ -1,0 +1,149 @@
+---
+// firma2-setup-measure-roster: the last screen of the Performance measures walk.
+// Every measure the program keeps, as a table, and the way back to the hub.
+//
+// THE SHAPE IS firma2-setup-people-roster's. Rows are confirmedMeasures(), in
+// the order listMeasures() gives: kind order, then the counts kept from the
+// left-out group, then the typed ones. Remove dismisses a row, which reads as
+// un-pressed on the counts screen, so returning there through the rail undoes it.
+//
+// FIVE COLUMNS, WHAT A MEASURE IS BEFORE IT HAS A DEFINITION. The name; the kind
+// of work it is filed under; the unit; the split, when the program reports one
+// and the count carries one (answering "Mostly totals" empties the column); and
+// where it came from, the document and page, the library, or typed in. The
+// definition, guidance and targets are the separate Performance measure setup
+// prototype's, where each row here arrives as a draft.
+//
+// NO LINE UNDER THE TABLE. A split count is visible in its own column; a
+// sentence counting them would restate the table.
+//
+// bcn-lego-checked: the <table> on firma2-table.css, as in every setup roster:
+// there is no esa-table (walked the catalog), and the spoke's AG Grid chrome is
+// priced for portfolio-scale surfaces with search, filters and export, none of
+// which a program's handful of measures can use. Beacon is not cloned on this
+// machine. esa-button is Remove and the way out; esa-empty-state the empty table.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupStepNext from './firma2-setup-step-next.astro';
+import '../shared/firma2-table.css';
+import { withBase } from '../../lib/base';
+
+const hubHref = withBase('/prototypes/setup');
+---
+<Firma2SetupStepScreen
+  step="review"
+  icon="trending-up"
+  prompt="Your performance measures"
+  align="start"
+  class="firma2-setup-measure-roster"
+>
+  <div class="firma2-table__scroll" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Performance measures kept</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Measure</th>
+          <th scope="col" class="typography-label-sm-strong">Kind of work</th>
+          <th scope="col" class="typography-label-sm-strong">Unit</th>
+          <th scope="col" class="typography-label-sm-strong">Split by</th>
+          <th scope="col" class="typography-label-sm-strong">Source</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="kind"></td>
+          <td class="typography-body-sm" data-part="unit"></td>
+          <td class="typography-body-sm" data-part="split"></td>
+          <td class="typography-body-sm" data-part="source"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div data-part="empty" hidden>
+    <EsaEmptyState title="No measures yet" />
+  </div>
+
+  <Firma2SetupStepNext slot="advance" href={hubHref} label="Go to setup" />
+</Firma2SetupStepScreen>
+
+<script>
+  import { confirmedMeasures, setMeasureStatus, sourceDocumentNames } from '../../lib/setup-draft';
+  import { measureUnitById, workKindById } from '../../data/firma2-measure-library';
+  import type { MeasureRecord } from '../../data/firma2-setup';
+
+  /** The no-value mark: an EN dash, never text the data did not produce. */
+  const NONE = '–';
+
+  /** Where a measure came from, in the words the Source column uses. */
+  const SOURCE_LABEL: Record<Exclude<MeasureRecord['source'], 'document'>, string> = {
+    library: 'Measure library',
+    manual: 'Added by you',
+  };
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-measure-roster[data-step]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+  const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+
+  if (screen && scroll && body && rowTemplate && empty) {
+    /** "Annual Report 2025, p. 5" for a documented count; the library or the admin otherwise. */
+    const sourceOf = (record: MeasureRecord): string => {
+      if (record.source !== 'document') return SOURCE_LABEL[record.source];
+      const [name] = sourceDocumentNames([record]);
+      if (!name) return NONE;
+      return record.evidence?.page ? `${name}, p. ${record.evidence.page}` : name;
+    };
+
+    const buildRow = (record: MeasureRecord): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = record.name;
+      const kind = part('kind');
+      if (kind) kind.textContent = (record.kindId && workKindById.get(record.kindId)?.name) || NONE;
+      const unit = part('unit');
+      if (unit) unit.textContent = measureUnitById.get(record.unitId)?.label ?? NONE;
+      const split = part('split');
+      if (split) split.textContent = record.split?.label ?? NONE;
+      const source = part('source');
+      if (source) source.textContent = sourceOf(record);
+
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${record.name}`);
+        remove.setAttribute('title', `Remove ${record.name}`);
+        remove.dataset.measureId = record.id;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const kept = confirmedMeasures();
+      body.replaceChildren(rowTemplate, ...kept.map(buildRow));
+      scroll.hidden = kept.length === 0;
+      empty.hidden = kept.length > 0;
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-measure-id]');
+      const id = button?.dataset.measureId;
+      if (id) setMeasureStatus(id, 'dismissed');
+    });
+
+    document.addEventListener('setup-draft-change', render);
+    render();
+  }
+</script>

@@ -52,6 +52,17 @@
 // without a reload. The wrapper is a plain div so `hidden` lands on an element
 // that owns no display rule; the step slots are plain spans for the same reason.
 //
+// CONFETTI ON ARRIVAL, 2026-09-24. Andy: "When you click the Complete demo
+// button, can we also get some sort of fireworks? Want folks to celebrate. Make
+// it short but nice." firma2-setup-celebration is mounted once in the wrapper
+// and throws about 1.4 seconds of confetti in the eleven milestone colours from
+// just above the paragraph. It fires only when a `setup-draft-change` takes the
+// panel from hidden to shown: never on the load-time render, so a reload with a
+// complete draft stays quiet, and never when Reset demo hides it. The paragraph
+// renders first and the burst starts on the next frame, so nothing waits on it.
+// Under reduced motion no piece is thrown and the paragraph fades in over
+// 400ms instead.
+//
 // bcn-lego-checked: no esa-* lego is a token that sits inside running text.
 // esa-pill is a block-ish label with its own type scale (xs to lg), six fixed
 // variants and no hue channel; esa-badge is a count or status mark sized by its
@@ -63,6 +74,7 @@
 // reusable home of the finish token.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaIcon from '@esa/ecology/esa-icon.astro';
+import Firma2SetupCelebration from './firma2-setup-celebration.astro';
 import { journeys } from '../../data/firma2-setup';
 import { completeSetupDraft } from '../../lib/setup-draft';
 import { nextSteps, programPortrait } from '../../lib/setup-summary';
@@ -78,6 +90,7 @@ const steps = nextSteps(programPortrait(completeSetupDraft()));
   sections:
     - paragraph  -> p in typography-heading-md (runs from finishRuns: text, and name, color, noun and milestone tokens)
     - next steps -> cluster of esa-button (secondary, md, arrow-right; up to three, from nextSteps)
+    - celebration -> firma2-setup-celebration (confetti when the panel arrives)
 -->
 <div class="firma2-setup-finish" data-setup-finish hidden>
   <div class="stack" data-gap="xl">
@@ -98,6 +111,8 @@ const steps = nextSteps(programPortrait(completeSetupDraft()));
       <EsaIcon name={journey.icon} size="sm" />
     </template>
   ))}
+
+  <Firma2SetupCelebration />
 </div>
 
 <style>
@@ -164,6 +179,18 @@ const steps = nextSteps(programPortrait(completeSetupDraft()));
     vertical-align: -0.05em;
   }
 
+  /* Reduced motion throws no confetti; the paragraph arrives by opacity alone. */
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-setup-finish__paragraph.is-arriving {
+      animation: firma2-setup-finish-arrive 400ms ease-out;
+    }
+  }
+
+  @keyframes firma2-setup-finish-arrive {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
   @media (forced-colors: active) {
     .firma2-setup-finish__paragraph :global(.firma2-setup-finish__token) {
       border: var(--border-width-default) solid CanvasText;
@@ -179,6 +206,11 @@ const steps = nextSteps(programPortrait(completeSetupDraft()));
   import { withBase } from '../../lib/base';
 
   type TokenRun = Exclude<PortraitRun, { kind: 'text' }>;
+
+  /** firma2-setup-celebration's public surface. */
+  interface Celebration extends HTMLElement {
+    burst(origin: Element): boolean;
+  }
 
   const root = document.querySelector<HTMLElement>('[data-setup-finish]');
   const paragraph = root?.querySelector<HTMLElement>('[data-finish-paragraph]');
@@ -234,7 +266,23 @@ const steps = nextSteps(programPortrait(completeSetupDraft()));
       }
     };
 
+    const celebration = root.querySelector<Celebration>('firma2-setup-celebration');
+
+    // Celebrate only the arrival a draft change caused: the panel was hidden
+    // and this change raised it. The load-time apply() below never does.
+    const celebrate = (): void => {
+      if (celebration && typeof celebration.burst === 'function' && celebration.burst(paragraph)) return;
+      paragraph.classList.remove('is-arriving');
+      void paragraph.offsetWidth;
+      paragraph.classList.add('is-arriving');
+    };
+    paragraph.addEventListener('animationend', () => paragraph.classList.remove('is-arriving'));
+
     apply();
-    document.addEventListener('setup-draft-change', apply);
+    document.addEventListener('setup-draft-change', () => {
+      const wasHidden = root.hidden;
+      apply();
+      if (wasHidden && !root.hidden) requestAnimationFrame(celebrate);
+    });
   }
 </script>

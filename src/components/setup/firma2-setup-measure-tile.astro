@@ -1,0 +1,170 @@
+---
+// firma2-setup-measure-tile: one kind of work, or one count, as a large,
+// tappable toggle. The unit both pickers of the Performance measures walk deal
+// in: firma2-setup-measure-kinds (the fifteen kinds) and
+// firma2-setup-measure-picker (the counts for the kinds kept).
+//
+// IT RENDERS NOTHING BY ITSELF. Same construction as firma2-setup-stage-tile:
+// an inert <template> holding the tile's markup, and a <firma2-measure-tile>
+// custom element that clones it and fills it. A caller creates the element and
+// sets `.option`; no caller writes tile markup.
+//
+// THE CONTRACT
+//   el.option = MeasureTileOption  fills the name and whichever lines it carries
+//   el.optionId                    the kind's or count's id, for the caller's write
+//   el.selected                    get/set, mirrors aria-pressed on the button
+//   'measure-tile-toggle'          bubbling CustomEvent<{ id, selected }> on every click
+//
+// ONE TILE FOR TWO RECORDS. A kind carries a name and, when a document names
+// it, the document and pages. A count adds its unit, and either the sentence the
+// document reported it in or the reason it was left out. Every line is optional
+// and hidden when absent, so the kind tile is the count tile with less in it.
+//
+// START'S ANSWER IN THE SOURCE'S PLACE, 2026-09-24. A kind pressed because
+// Start's kind-of-work answer maps to it, and no document names it, reads the
+// answer in the last line, "From Start: Habitat restoration", in body type and
+// without the file glyph: the glyph means a document, and this is not one. A
+// tile carries one of the two lines, never both.
+//
+// SELECTION IS NOT A WRITE. Tapping marks the tile; the picker's Next commits,
+// once, for every tile on the screen.
+//
+// bcn-lego-checked: nothing in the catalog is a SELECTABLE tile. esa-card is
+// presentational (no pressed state, closed prop set); esa-checkbox has the right
+// semantics and a 16px target; esa-chip-group `multiple` is the closest behaviour
+// but a chip is one nowrap line and this holds up to four data in a stack;
+// esa-button `active` is a control, not a record. Beacon is not cloned on this
+// machine. So the toggle is the shared native <button aria-pressed> from
+// shared/firma2-pick-tile.css, the reusable home every setup picker's tile uses,
+// and every mark inside it is a lego: esa-icon for the check and the file glyph,
+// laid out by .stack.
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import '../shared/firma2-pick-tile.css';
+import '../shared/firma2-provenance.css';
+---
+{/* The master copy. Inert until a <firma2-measure-tile> clones it. */}
+<template data-measure-tile>
+  <button type="button" class="firma2-pick-tile" aria-pressed="false">
+    {/* The selected mark. Present in every tile, shown only when pressed, so
+        selecting cannot reflow the card it sits in. */}
+    <span class="firma2-pick-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
+
+    <span class="firma2-pick-tile__body stack" data-gap="2xs">
+      <span class="typography-label-md-strong" data-part="name"></span>
+      <span class="firma2-pick-tile__secondary typography-body-md" data-part="unit" hidden></span>
+      <span class="firma2-pick-tile__secondary typography-body-md" data-part="excerpt" hidden></span>
+      {/* The Start answer the tile was pressed from, when no document names it. */}
+      <span class="firma2-pick-tile__secondary typography-body-md" data-part="intent" hidden></span>
+      {/* The document and page the tile was read from. The file glyph is the label. */}
+      <span class="firma2-provenance typography-code-sm" data-part="source" hidden>
+        <EsaIcon name="file-text" size="xs" />
+        <span data-part="source-name"></span>
+      </span>
+    </span>
+  </button>
+</template>
+
+<style is:global>
+  /* The host is created by script and never carries this component's scope
+     attribute, so its one rule is global, scoped by a tag name this file owns.
+     Stretching to the grid row's height keeps a short tile clickable edge to
+     edge beside a tall one. */
+  firma2-measure-tile {
+    display: block;
+    block-size: 100%;
+  }
+</style>
+
+<script>
+  const TAG = 'firma2-measure-tile';
+
+  /** What a tile shows. Only `id` and `name` are required; every other line hides when absent. */
+  interface MeasureTileOption {
+    id: string;
+    name: string;
+    /** "In acres". Counts only. */
+    unit?: string;
+    /** The document's sentence, quoted, or the reason a count was left out. */
+    excerpt?: string;
+    /** "Annual Report 2025, p. 5": where the tile was read from. */
+    source?: string;
+    /** "From Start: Habitat restoration": the answer the tile was pressed from. Kinds only. */
+    intent?: string;
+  }
+
+  class Firma2MeasureTile extends HTMLElement {
+    #option: MeasureTileOption | null = null;
+    #button: HTMLButtonElement | null = null;
+    #selected = false;
+
+    /** Fills the tile. Setting it again rebuilds; there is no partial update. */
+    set option(value: MeasureTileOption) {
+      this.#option = value;
+      this.#build();
+    }
+
+    get option(): MeasureTileOption | null {
+      return this.#option;
+    }
+
+    get optionId(): string {
+      return this.#option?.id ?? '';
+    }
+
+    get selected(): boolean {
+      return this.#selected;
+    }
+
+    set selected(value: boolean) {
+      this.#selected = value;
+      this.#button?.setAttribute('aria-pressed', value ? 'true' : 'false');
+    }
+
+    connectedCallback(): void {
+      if (!this.#button) this.#build();
+    }
+
+    #build(): void {
+      const option = this.#option;
+      if (!option) return;
+
+      const tileTemplate = document.querySelector<HTMLTemplateElement>('template[data-measure-tile]');
+      if (!tileTemplate) return;
+
+      const tile = tileTemplate.content.cloneNode(true) as DocumentFragment;
+      const part = (name: string): HTMLElement | null => tile.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      /** Writes a line's text and shows it, or leaves it hidden when the option has none. */
+      const fill = (name: string, text: string | undefined): void => {
+        const line = part(name);
+        if (!line) return;
+        line.textContent = text ?? '';
+        line.hidden = !text;
+      };
+
+      fill('name', option.name);
+      fill('unit', option.unit);
+      fill('excerpt', option.excerpt);
+      fill('intent', option.intent);
+      fill('source-name', option.source);
+      const source = part('source');
+      if (source) source.hidden = !option.source;
+
+      this.replaceChildren(tile);
+      this.#button = this.querySelector('button');
+      this.#button?.setAttribute('aria-pressed', this.#selected ? 'true' : 'false');
+      this.#button?.addEventListener('click', () => {
+        this.selected = !this.selected;
+        this.dispatchEvent(
+          new CustomEvent('measure-tile-toggle', {
+            detail: { id: this.optionId, selected: this.selected },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+    }
+  }
+
+  if (!customElements.get(TAG)) customElements.define(TAG, Firma2MeasureTile);
+</script>

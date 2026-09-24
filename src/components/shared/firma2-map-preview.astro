@@ -1,0 +1,200 @@
+---
+// firma2-map-preview: a small, fixed-height map that shows one ArcGIS layer over
+// a region, with the program's own areas filled in, and one line under it that
+// says what the layer found. The Spatial areas walk's layer step is the first
+// caller: pressing a layer draws it here.
+//
+// THE CONTRACT
+//   <Firma2MapPreview hue={265} />                server side: hue, height, bbox
+//   el.show({ serviceUrl, nameField?, highlightNames, unit })
+//                                                 draws the layer and writes the line
+//   el.clear()                                    empties the map and the line
+// `unit` names what the layer holds, { one, other }: "HUC-8 unit", "boundary".
+//
+// THE LINE IS THE WHOLE TEXT OF THE MAP. While loading, "Loading the layer".
+// With matches, "4 of your 4 areas match HUC-8 units in this layer"; with none,
+// or no areas yet, "20 HUC-8 units in view". On failure, "The layer did not
+// answer. Your choice is saved.", because the caller saves the choice before it
+// asks for a preview. It is a polite live region, and it is the text
+// alternative to the map, which carries no other words.
+//
+// THE BASEMAP is Esri's Light Gray Canvas; spatial-preview.ts records why it
+// is not CARTO's.
+//
+// COLOUR. The emblem's construction: brand tokens with only the hue replaced,
+// so a unit's outline is the Spatial areas card's line and a matched area is its
+// fill. Unmatched units keep a near-transparent wash so their insides still
+// catch the pointer.
+//
+// LEAFLET'S CSS is imported by this file's script only, so it loads on pages
+// that carry a preview. Every one of its selectors is .leaflet- prefixed; the
+// overrides below reach into it through :global() under this component's class.
+//
+// bcn-lego-checked: ecology has no map lego (walked node_modules/@esa/ecology/
+// src/components; the hub's esa-map page is a non-functional reference doc).
+// Checked Beacon: Beacon.Web draws maps with Leaflet 1.9.4 and esri-leaflet
+// feature layers (shared/components/leaflet/beacon-map), so Leaflet is the
+// faithful primitive; this spoke's firma2-project-map already uses it from a
+// CDN for a project's own shapes. This component is the reusable home for a
+// layer preview: a fixed box, one data layer at a time, a status line.
+import { seedRegion } from '../../data/firma2-spatial-layers';
+import type { Bbox } from '../../lib/spatial-preview';
+
+interface Props {
+  /** The milestone's oklch hue angle. */
+  hue: number;
+  /** A CSS length for the map's height. */
+  height?: string;
+  bbox?: Bbox;
+}
+
+const { hue, height = '22rem', bbox = seedRegion.bbox } = Astro.props;
+---
+<firma2-map-preview
+  class="firma2-map-preview stack"
+  data-gap="xs"
+  data-hue={hue}
+  data-bbox={JSON.stringify(bbox)}
+  style={`--firma2-map-height: ${height}; --firma2-map-hue: ${hue}`}
+  hidden
+>
+  <div class="firma2-map-preview__canvas" data-part="canvas" role="region" aria-label="Layer preview"></div>
+  <p class="firma2-map-preview__status typography-body-md" data-part="status" aria-live="polite"></p>
+</firma2-map-preview>
+
+<style>
+  .firma2-map-preview {
+    display: flex;
+  }
+
+  /* .stack owns display, so [hidden] needs the specificity to win. */
+  .firma2-map-preview[hidden] {
+    display: none;
+  }
+
+  .firma2-map-preview__canvas {
+    --_line: oklch(from var(--color-border-brand) l c var(--firma2-map-hue, h));
+    --_fill: oklch(from var(--color-background-brand) l c var(--firma2-map-hue, h));
+    block-size: var(--firma2-map-height, 22rem);
+    border: var(--border-width-default) solid var(--color-border-default-subtle);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken);
+    overflow: hidden;
+    /* Leaflet's panes stack to z-index 1000; keep them under the page's chrome. */
+    isolation: isolate;
+  }
+
+  .firma2-map-preview__status {
+    margin: 0;
+    color: var(--color-content-default-secondary);
+    text-align: start;
+  }
+
+  /* The units. The rules outrank the stroke and fill attributes Leaflet writes. */
+  .firma2-map-preview__canvas :global(.firma2-map-preview__unit) {
+    stroke: var(--_line);
+    stroke-width: 1px;
+    fill: var(--_fill);
+    fill-opacity: 0.04;
+  }
+
+  .firma2-map-preview__canvas :global(.firma2-map-preview__unit--match) {
+    stroke: var(--_fill);
+    stroke-width: 2px;
+    fill-opacity: 0.35;
+  }
+
+  /* Leaflet's tooltip and attribution default to 11 and 12px; both read here as
+     the page's own small text. */
+  .firma2-map-preview__canvas :global(.firma2-map-preview__tooltip) {
+    font-family: var(--typography-label-md-font-family);
+    font-size: var(--typography-label-md-font-size);
+    line-height: var(--typography-label-md-line-height);
+    color: var(--color-content-default);
+    background: var(--color-background-elevation-floating);
+    border-color: var(--color-border-default-subtle);
+  }
+
+  .firma2-map-preview__canvas :global(.leaflet-control-attribution) {
+    font-family: var(--typography-body-sm-font-family);
+    font-size: var(--typography-body-sm-font-size);
+    color: var(--color-content-default-secondary);
+  }
+</style>
+
+<script>
+  import 'leaflet/dist/leaflet.css';
+  import { PreviewSuperseded, clearLayerPreview, renderLayerPreview } from '../../lib/spatial-preview';
+  import type { Bbox } from '../../lib/spatial-preview';
+
+  /** What the layer holds, singular and plural, for the status line. */
+  interface PreviewUnit {
+    one: string;
+    other: string;
+  }
+
+  interface MapPreviewRequest {
+    serviceUrl: string;
+    nameField?: string;
+    highlightNames: string[];
+    unit: PreviewUnit;
+  }
+
+  const TAG = 'firma2-map-preview';
+
+  /** Generalization for every preview: invisible at region scale, and it keeps HUC-12 light. */
+  const MAX_ALLOWABLE_OFFSET = 0.005;
+
+  const LOADING = 'Loading the layer';
+  const FAILED = 'The layer did not answer. Your choice is saved.';
+
+  const count = (n: number, unit: PreviewUnit): string => `${n} ${n === 1 ? unit.one : unit.other}`;
+
+  class Firma2MapPreview extends HTMLElement {
+    get #canvas(): HTMLElement | null {
+      return this.querySelector<HTMLElement>('[data-part="canvas"]');
+    }
+
+    get #status(): HTMLElement | null {
+      return this.querySelector<HTMLElement>('[data-part="status"]');
+    }
+
+    async show(request: MapPreviewRequest): Promise<void> {
+      const canvas = this.#canvas;
+      const status = this.#status;
+      if (!canvas || !status) return;
+
+      this.hidden = false;
+      status.textContent = LOADING;
+
+      try {
+        const result = await renderLayerPreview(canvas, {
+          serviceUrl: request.serviceUrl,
+          nameField: request.nameField,
+          bbox: JSON.parse(this.dataset.bbox ?? '[]') as Bbox,
+          highlightNames: request.highlightNames,
+          hue: Number(this.dataset.hue),
+          maxAllowableOffset: MAX_ALLOWABLE_OFFSET,
+        });
+        const total = request.highlightNames.length;
+        status.textContent =
+          result.matched.length > 0
+            ? `${result.matched.length} of your ${total} ${total === 1 ? 'area' : 'areas'} ${result.matched.length === 1 ? 'matches' : 'match'} ${request.unit.other} in this layer`
+            : `${count(result.featureCount, request.unit)} in view`;
+      } catch (error) {
+        if (error instanceof PreviewSuperseded) return;
+        status.textContent = FAILED;
+      }
+    }
+
+    clear(): void {
+      const canvas = this.#canvas;
+      if (canvas) clearLayerPreview(canvas);
+      const status = this.#status;
+      if (status) status.textContent = '';
+      this.hidden = true;
+    }
+  }
+
+  if (!customElements.get(TAG)) customElements.define(TAG, Firma2MapPreview);
+</script>

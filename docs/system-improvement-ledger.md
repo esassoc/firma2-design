@@ -51,8 +51,12 @@ Raised via `/request-lego` unless noted otherwise.
 - **No map lego.** `esa-map` is a `type="reference"` documentation page marked
   non-functional, with nothing importable — the same situation as `esa-grid` vs
   AG Grid. *Bit:* `firma2-project-map` hand-rolls a Leaflet loader; cb-fish-design
-  already hand-rolls the same one, so this is TWO spokes duplicating it. *Fix:*
-  an `esa-map` Lit island wrapping Leaflet with token-themed chrome.
+  already hand-rolls the same one, so this is TWO spokes duplicating it. As of
+  2026-09-24 this spoke alone carries two: `firma2-project-map` loads Leaflet
+  from a CDN and `firma2-map-preview` bundles it, with a token-painted GeoJSON
+  layer over an Esri Light Gray basemap. *Fix:* an `esa-map` Lit island wrapping
+  Leaflet with token-themed chrome, a basemap, and one GeoJSON layer whose
+  paths take token colours.
 
 - **No `esa-table`.** *Bit:* the funding section is three rows with a total — far
   below AG Grid's weight class, and the spoke's AG Grid precedent is explicitly
@@ -62,6 +66,15 @@ Raised via `/request-lego` unless noted otherwise.
 - **No `esa-inline-edit` / editable-field.** *Bit:* `firma2-editable-field` ports
   cb-fish-design's `cbf-invoice-field` — the SECOND spoke to build this
   read↔edit row. *Fix:* promote it. See the decomposition notes before doing so.
+
+- **No `esa-stepper`.** A stateful step checklist: dot-plus-label rows with
+  active, complete, skipped and upcoming states, rows as navigation buttons for
+  steps already reached, vertical beside the content and one scrollable line
+  when narrow. *Bit:* two spokes now carry a copy, biochar-atlas-design's
+  `bca-stepper-rail` and this spoke's `firma2-setup-step-rail` (2026-09-24);
+  biochar's comments say an entry was filed, but that repo has no ledger, so
+  this is the first. *Fix:* promote one of them, with the step list as data
+  and the status as an attribute per row.
 
 - **No `esa-timeline`.** *Bit:* `firma2-project-timeline` renders
   `{date, title, status}[]` and is domain-free; any permit track, grant lifecycle

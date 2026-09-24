@@ -1,0 +1,253 @@
+---
+// firma2-setup-measure-add: the third screen of the Performance measures walk.
+// The counts the library did not have, typed in one at a time, with the list of
+// what has been typed so far beneath the fields.
+//
+// THE SHAPE IS firma2-setup-classification-add's. The fields are the screen; the
+// Add button beneath them writes one `manual` measure, already confirmed,
+// clears the fields and puts focus back on the name. Next moves on; "Nothing to
+// add" is the same move for a program the library covered.
+//
+// THREE FIELDS, THE THREE A COUNT CANNOT DO WITHOUT OR IS FILED BY. The name,
+// required. The unit, required, picked from the library's seventeen: a count is
+// a number of something, and a unit typed freehand is a unit no two projects
+// spell alike. The kind of work, optional, picked from the kinds kept on the
+// first screen; a count filed under none shows under Other on the counts screen.
+// No split and no counting rule here: a typed count is a single total, summed,
+// and the separate Performance measure setup prototype is where a draft gets
+// its detail.
+//
+// addMeasure IS THE CHECK. Null means the name is already a live measure, or
+// the unit is not the library's; the screen checks the unit first, so null
+// after that reads as a duplicate.
+//
+// THE LIST BENEATH IS THIS SCREEN'S WORK ONLY: measures typed by hand. Remove
+// here dismisses a typed row; nothing stands behind it.
+//
+// bcn-lego-checked: esa-text-field is the name, esa-select the unit and the kind,
+// esa-button the Add, Remove and skip. The bespoke part is the <table>, on
+// firma2-table.css: there is no esa-table (walked the catalog), and the spoke's
+// AG Grid chrome is priced for portfolio-scale surfaces with search, filters and
+// export, none of which a handful of rows typed during setup can use. Beacon is
+// not cloned on this machine. firma2-setup-classification-add is the precedent.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupStepNext from './firma2-setup-step-next.astro';
+import { measureUnits } from '../../data/firma2-measure-library';
+import '../shared/firma2-table.css';
+
+/** The unit list is the library's and never changes, so it is rendered, not scripted. */
+const unitOptions = JSON.stringify(measureUnits.map((unit) => ({ label: unit.label, value: unit.id })));
+---
+<Firma2SetupStepScreen
+  step="add"
+  icon="pencil"
+  prompt="Anything else you count?"
+  align="start"
+  class="firma2-setup-measure-add"
+>
+  <div class="firma2-setup-measure-add__form stack" data-gap="md">
+    <esa-text-field
+      label="Measure name"
+      name="name"
+      size="md"
+      required
+      placeholder="e.g. Nest boxes installed"
+      data-part="field-name"
+    ></esa-text-field>
+    <esa-select
+      label="Unit"
+      name="unit"
+      size="md"
+      required
+      options={unitOptions}
+      placeholder="e.g. each"
+      data-part="field-unit"
+    ></esa-select>
+    <esa-select
+      label="Kind of work"
+      name="kind"
+      size="md"
+      data-part="field-kind"
+    ></esa-select>
+    <div>
+      <EsaButton variant="secondary" size="md" icon="plus" data-part="create">Add measure</EsaButton>
+    </div>
+  </div>
+
+  <div class="firma2-table__scroll firma2-setup-measure-add__list" data-part="scroll" hidden>
+    <table class="firma2-table">
+      <caption class="visually-hidden">Measures added by hand</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="typography-label-sm-strong">Measure</th>
+          <th scope="col" class="typography-label-sm-strong">Unit</th>
+          <th scope="col" class="typography-label-sm-strong">Kind of work</th>
+          <th scope="col"><span class="visually-hidden">Remove</span></th>
+        </tr>
+      </thead>
+      <tbody data-part="body">
+        {/* The master copy every scripted row is cloned from. A hidden <tr>
+            rather than a <template>, because a row is only a row inside a table. */}
+        <tr hidden data-part="row-template">
+          <td><span class="typography-label-sm-strong" data-part="name"></span></td>
+          <td class="typography-body-sm" data-part="unit"></td>
+          <td class="typography-body-sm" data-part="kind"></td>
+          <td class="firma2-table__action">
+            <EsaButton variant="chrome" iconOnly icon="circle-x" label="Remove" size="sm" data-part="remove" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <Firma2SetupStepNext slot="advance" />
+  <EsaButton slot="advance" variant="ghost" size="lg" data-step-skip>Nothing to add</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The fields hold the column classification-add's do: readable line length
+     for a label and a value, centered under the prompt. The list is wider, for
+     three columns, but stays under the fields. */
+  .firma2-setup-measure-add__form {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-measure-add__list {
+    inline-size: min(100%, 44rem);
+    margin-inline: auto;
+  }
+
+  .firma2-setup-measure-add__list[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import { addMeasure, confirmedWorkKinds, listMeasures, setMeasureStatus } from '../../lib/setup-draft';
+  import { measureUnitById, workKindById } from '../../data/firma2-measure-library';
+  import type { MeasureRecord } from '../../data/firma2-setup';
+
+  /** The slice of esa-text-field this file touches. */
+  interface TextFieldElement extends HTMLElement {
+    value: string;
+    errorText: string;
+  }
+
+  /** The slice of esa-select this file touches, single-select only. */
+  interface SelectElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | string[] | null;
+    errorText: string;
+  }
+
+  /** The no-value mark: an EN dash, never text the data did not produce. */
+  const NONE = '–';
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-measure-add[data-step]');
+  const nameField = screen?.querySelector<TextFieldElement>('[data-part="field-name"]');
+  const unitField = screen?.querySelector<SelectElement>('[data-part="field-unit"]');
+  const kindField = screen?.querySelector<SelectElement>('[data-part="field-kind"]');
+  const createButton = screen?.querySelector<HTMLElement>('[data-part="create"]');
+  const scroll = screen?.querySelector<HTMLElement>('[data-part="scroll"]');
+  const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
+  const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
+
+  if (screen && nameField && unitField && kindField && createButton && scroll && body && rowTemplate) {
+    /** This screen's own work: measures typed here and still standing. */
+    const typed = (): MeasureRecord[] =>
+      listMeasures().filter((record) => record.source === 'manual' && record.status === 'confirmed');
+
+    /** A single select's value as one id, '' when nothing is picked. */
+    const picked = (field: SelectElement): string => (typeof field.value === 'string' ? field.value : '');
+
+    // -----------------------------------------------------------------------
+    // The list so far
+    // -----------------------------------------------------------------------
+    const buildRow = (record: MeasureRecord): HTMLTableRowElement => {
+      const row = rowTemplate.cloneNode(true) as HTMLTableRowElement;
+      row.removeAttribute('hidden');
+      row.removeAttribute('data-part');
+      const part = (name: string): HTMLElement | null => row.querySelector<HTMLElement>(`[data-part="${name}"]`);
+
+      const name = part('name');
+      if (name) name.textContent = record.name;
+      const unit = part('unit');
+      if (unit) unit.textContent = measureUnitById.get(record.unitId)?.label ?? NONE;
+      const kind = part('kind');
+      if (kind) kind.textContent = (record.kindId && workKindById.get(record.kindId)?.name) || NONE;
+      const remove = part('remove');
+      if (remove) {
+        remove.setAttribute('aria-label', `Remove ${record.name}`);
+        remove.setAttribute('title', `Remove ${record.name}`);
+        remove.dataset.measureId = record.id;
+      }
+      return row;
+    };
+
+    const render = (): void => {
+      const rows = typed();
+      body.replaceChildren(rowTemplate, ...rows.map(buildRow));
+      scroll.hidden = rows.length === 0;
+      // Answered means something was typed. Otherwise the ghost "Nothing to add"
+      // is the way on, and the shell shows it.
+      screen.dataset.stepReady = String(rows.length > 0);
+
+      // The kind list is the kinds kept on the first screen, which can change when
+      // the admin returns there through the rail. A kind no longer kept drops out of the picked value too.
+      const kinds = confirmedWorkKinds();
+      const current = picked(kindField);
+      kindField.options = kinds.map((kind) => ({ label: kind.name, value: kind.id }));
+      if (current && !kinds.some((kind) => kind.id === current)) kindField.value = null;
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-measure-id]');
+      const id = button?.dataset.measureId;
+      if (id) setMeasureStatus(id, 'dismissed');
+    });
+
+    // -----------------------------------------------------------------------
+    // The fields
+    // -----------------------------------------------------------------------
+    const clearErrors = (): void => {
+      nameField.errorText = '';
+      unitField.errorText = '';
+    };
+
+    const resetFields = (): void => {
+      nameField.value = '';
+      unitField.value = null;
+      kindField.value = null;
+      clearErrors();
+    };
+
+    createButton.addEventListener('click', () => {
+      clearErrors();
+      const name = nameField.value.trim();
+      const unitId = picked(unitField);
+      if (!name) nameField.errorText = 'Name is required';
+      if (!measureUnitById.has(unitId)) unitField.errorText = 'Pick a unit';
+      if (nameField.errorText || unitField.errorText) return;
+
+      const kindId = picked(kindField);
+      const added = addMeasure({ name, unitId, ...(kindId ? { kindId } : {}) });
+      if (!added) {
+        nameField.errorText = 'Already on the list';
+        return;
+      }
+      resetFields();
+      nameField.focus();
+    });
+
+    document.addEventListener('setup-draft-change', render);
+
+    Promise.all([customElements.whenDefined('esa-text-field'), customElements.whenDefined('esa-select')]).then(() => {
+      resetFields();
+      render();
+    });
+  }
+</script>

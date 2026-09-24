@@ -1,0 +1,174 @@
+---
+// firma2-setup-measure-question: one of the two preferences the Performance
+// measures walk asks once for the whole program. `question="detail"` is how much
+// detail it reports (measureDetails, written by setMeasureDetail);
+// `question="targets"` is whether a funded project commits to an amount of work
+// (projectCommitments, written by setProjectTargets).
+//
+// THE SHAPE IS firma2-setup-shape-question's. One esa-radio-group; an answer
+// already given shows as given; an unanswered question pre-selects the option
+// the documents argue for once they are in, and the lede quotes the sentence
+// that argues it, with document and page. A pre-selected question is answered,
+// so the shell never shows its skip; "Decide later" is there for the program
+// with no documents.
+//
+// THE SPLIT IS PRICED WHERE IT IS CHOSEN. Every split is a choice each project
+// makes every year, on every count that carries one, and a split added later
+// cannot be filled in for years already reported. The admin choosing it never
+// pays that; the project leads do (product brief § 0). So the 'split' option's
+// note is the group's help text, beneath the choices, whichever is selected.
+//
+// Answering 'totals' strips every count's split in listMeasures, so the review
+// table's Split by column empties when it is chosen.
+//
+// Composed: firma2-setup-step-screen is the screen, esa-radio-group the field,
+// firma2-setup-step-next the advance, esa-button the skip.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupStepNext from './firma2-setup-step-next.astro';
+import { measureDetails } from '../../data/firma2-setup';
+
+type MeasureQuestion = 'detail' | 'targets';
+
+interface Props {
+  question: MeasureQuestion;
+}
+
+const { question } = Astro.props;
+
+const screens: Record<MeasureQuestion, { icon: string; prompt: string }> = {
+  detail: { icon: 'notepad-text', prompt: 'How much detail do you report?' },
+  targets: { icon: 'award', prompt: 'Do funded projects commit to an amount of work?' },
+};
+const { icon, prompt } = screens[question];
+
+/** The cost of a split, as a sentence: the contract's note is folded after a label, so it starts lowercase. */
+const splitNote = measureDetails.find((option) => option.id === 'split')?.note;
+const helpText =
+  question === 'detail' && splitNote ? `${splitNote.charAt(0).toUpperCase()}${splitNote.slice(1)}.` : undefined;
+---
+<Firma2SetupStepScreen
+  step={question}
+  icon={icon}
+  prompt={prompt}
+  class="firma2-setup-measure-question"
+>
+  <!-- Filled by the script: whether documents are uploaded is draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <div class="firma2-setup-measure-question__field">
+    <esa-radio-group
+      name={`measures-${question}`}
+      size="md"
+      orientation="vertical"
+      help-text={helpText}
+      data-question={question}
+      data-part="field"
+    ></esa-radio-group>
+  </div>
+
+  <Firma2SetupStepNext slot="advance" />
+  <EsaButton slot="advance" variant="ghost" size="lg" data-step-skip>Decide later</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* The group holds the column shape-question's does, centered under the
+     prompt; its own text reads from the start edge. */
+  .firma2-setup-measure-question__field {
+    inline-size: min(100%, 26rem);
+    margin-inline: auto;
+    text-align: start;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import { measureDetails, measureEvidence, projectCommitments } from '../../data/firma2-setup';
+  import type { MeasurePreferenceEvidence } from '../../data/firma2-setup';
+  import { readSetupDraft, setMeasureDetail, setProjectTargets, sourceDocumentNames } from '../../lib/setup-draft';
+  import type { SetupDraft } from '../../lib/setup-draft';
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  /** What each question reads, offers and writes. */
+  interface QuestionWiring {
+    options: { id: string; label: string }[];
+    evidence: MeasurePreferenceEvidence<string>;
+    saved: (draft: SetupDraft) => string | null;
+    write: (value: string) => void;
+  }
+
+  const WIRING: Record<string, QuestionWiring> = {
+    detail: {
+      options: measureDetails,
+      evidence: measureEvidence.detail,
+      saved: (draft) => draft.measureDetail,
+      write: (value) => {
+        const option = measureDetails.find((entry) => entry.id === value);
+        if (option) setMeasureDetail(option.id);
+      },
+    },
+    targets: {
+      options: projectCommitments,
+      evidence: measureEvidence.targets,
+      saved: (draft) => draft.projectTargets,
+      write: (value) => {
+        const option = projectCommitments.find((entry) => entry.id === value);
+        if (option) setProjectTargets(option.id);
+      },
+    },
+  };
+
+  const screens = [...document.querySelectorAll<HTMLElement>('.firma2-setup-measure-question[data-step]')];
+
+  for (const screen of screens) {
+    const wiring = WIRING[screen.dataset.step ?? ''];
+    const group = screen.querySelector<RadioGroupElement>('[data-part="field"]');
+    const lede = screen.querySelector<HTMLElement>('[data-part="lede"]');
+    const next = screen.querySelector<HTMLElement>('[data-step-next]');
+    if (!wiring || !group || !lede || !next) continue;
+
+    screen.dataset.stepReady = 'false';
+
+    const syncReady = (): void => {
+      screen.dataset.stepReady = String(Boolean(group.value));
+    };
+
+    const sync = (): void => {
+      const draft = readSetupDraft();
+      const { evidence } = wiring;
+      const fromDocuments = draft.documentsUploaded ? evidence.optionId : undefined;
+
+      group.options = wiring.options.map((option) => ({ label: option.label, value: option.id }));
+      group.value = wiring.saved(draft) ?? fromDocuments ?? null;
+
+      // The sentence the pre-selection rests on, then where it was read.
+      const [named] = draft.documentsUploaded ? sourceDocumentNames([evidence]) : [];
+      const where = named && evidence.page ? `${named}, p. ${evidence.page}` : named;
+      lede.textContent = where ? `“${evidence.label}” ${where}.` : '';
+      lede.hidden = !lede.textContent;
+      syncReady();
+    };
+
+    group.addEventListener('change', syncReady);
+
+    // Next is the write. The shell advances on the same click.
+    next.addEventListener('click', () => {
+      if (group.value) wiring.write(group.value);
+    });
+
+    let defined = false;
+    customElements.whenDefined('esa-radio-group').then(() => {
+      defined = true;
+      sync();
+    });
+
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) sync();
+    });
+  }
+</script>

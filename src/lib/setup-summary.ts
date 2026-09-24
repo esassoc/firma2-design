@@ -37,7 +37,6 @@ import {
   tenantColors,
   tenantOrganization,
 } from '../data/firma2-setup';
-import { measures } from '../data/firma2-performance-measures';
 import type {
   ClassificationLimit,
   JourneyKey,
@@ -51,6 +50,7 @@ import {
   confirmedClassifications,
   confirmedFundingSources,
   confirmedImportProjects,
+  confirmedMeasures,
   confirmedPeople,
   confirmedSpatialAreas,
   intentOptionsFor,
@@ -117,7 +117,8 @@ export interface ProgramPortrait {
     withoutEmail: number;
     stewardship: Stewardship | null;
   };
-  measuresComplete: boolean;
+  /** Confirmed performance measures. */
+  measures: RecordTally;
   milestones: { done: number; total: number };
 }
 
@@ -239,7 +240,7 @@ export const programPortrait = (draft: SetupDraft = readSetupDraft()): ProgramPo
       withoutEmail: people.filter((p) => !p.email).length,
       stewardship: draft.stewardship,
     },
-    measuresComplete: draft.measuresComplete,
+    measures: tally(confirmedMeasures(draft).map((m) => m.name)),
     milestones: setupCompletion(draft),
   };
 };
@@ -357,7 +358,7 @@ export const finishRuns = (p: ProgramPortrait): PortraitRun[] => {
   // the invite button under it carries their count.
   const work: PortraitRun[][] = [];
   if (p.projects.count) work.push([fact('import-projects', count(p.projects.count, singular, plural))]);
-  if (p.measuresComplete) work.push([fact('measures', `${measures.length} performance measures`)]);
+  if (p.measures.count) work.push([fact('measures', count(p.measures.count, 'performance measure', 'performance measures'))]);
   if (work.length) sentences.push([text('The program tracks '), ...joinClauses(work), text('.')]);
 
   return sentences.flatMap((sentence, i) => (i === 0 ? sentence : [text(' '), ...sentence]));
@@ -375,7 +376,9 @@ export const finishRuns = (p: ProgramPortrait): PortraitRun[] => {
 export const nextSteps = (p: ProgramPortrait): NextStep[] => {
   const candidates: { id: NextStepId; label: string; route: string | undefined }[] = [
     { id: 'projects', label: `View ${lower(p.noun.plural)}`, route: '/prototypes/projects' },
-    { id: 'measures', label: 'Open performance measures', route: journeyByKey('measures').route },
+    // Pinned 2026-09-24: the measures journey now routes to its setup walk, and
+    // after setup the measures live on the Performance measures prototype.
+    { id: 'measures', label: 'Open performance measures', route: '/prototypes/performance-measures' },
   ];
   if (p.people.count) {
     candidates.push({

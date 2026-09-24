@@ -1,0 +1,401 @@
+---
+// firma2-setup-area-layer: the second screen of the Spatial areas walk. The
+// program's first preference: which map layer its areas' boundaries come from.
+//
+// ONE ANSWER, SIX TILES. A tile per public layer (publicSpatialLayers: USGS
+// watersheds, Census counties, BIA tribal lands, Census congressional
+// districts), the program's own map service or file, and "our GIS person has
+// it", a handoff that blocks nothing. The public layers are the teammate's
+// 2026-09-23 mock's list; Andy asked for them with a map preview (2026-09-24).
+// "Use a published source" and "Connect a map service" were one answer in two
+// words, since a published source is a map service, so they are one choice
+// here: pick a public one, or give the address of your own.
+//
+// SINGLE SELECT ON THE PICK TILE. The same <button aria-pressed> chrome every
+// setup picker uses (shared/firma2-pick-tile.css), with one pressed at a time,
+// the way a radio group behaves. Pressing a tile IS the write, because the
+// preview under the tiles answers the press, and a preview of an unsaved answer
+// would be showing a choice the walk forgets on Back.
+//
+// WHAT A PRESSED TILE REVEALS, under itself in the same grid cell. Watersheds
+// has three levels, so its tile opens an esa-radio-group of HUC-8, HUC-10 and
+// HUC-12, HUC-8 by default, each with its note. The own tile opens an
+// esa-text-field for the address; its choice saves once the field holds one,
+// and until then the screen is unanswered.
+//
+// THE PREVIEW draws the pressed public layer, or an own address that looks like
+// an ArcGIS layer (best effort), with the areas confirmed on the first screen
+// filled in. It never gates the answer: a layer that does not answer says so
+// and the choice stands. The GIS answer has nothing to draw.
+//
+// NO PRESELECTION, SO A SKIP. The screen opens on the draft's answer or on
+// nothing; while nothing is chosen Next is off and "Decide later" advances.
+//
+// START'S MAP ANSWER OPENS IT, 2026-09-24 (Andy: "make sure we're not double
+// asking, and that initial steps win"). With no saved answer, Start's "What
+// draws your map?" answer (spatialLayerFromIntent) presses its tile: Watersheds
+// at HUC-8, or Census counties, previewed and Next on, and the lede says "You
+// said watersheds at Start." THE FALLBACK SAVES ON NEXT, the brief's rule that
+// the write happens on Next, while pressing any tile still saves at once. Until
+// Next the draft holds nothing, so the hub never reads the journey confirmed on
+// the fallback alone. "Our own boundaries" presses the own tile with an empty
+// address, the same unsaved state as pressing it by hand: Next waits for one.
+//
+// Composed: firma2-setup-step-screen the screen, the pick tile the choice,
+// esa-badge the "Most programs" mark, esa-radio-group the level, esa-text-field
+// the address, firma2-map-preview the map, firma2-setup-step-next the Next
+// button, esa-button the skip.
+//
+// bcn-lego-checked: the tiles are the shared pick tile (its own claim covers
+// why no esa- lego is a selectable record); the only style here is the grid's
+// cell, which puts a tile and the control it reveals on a subgrid row pair so
+// tiles stay level; no layout primitive spans two rows of its parent grid. Beacon's
+// Angular source has no setup picker to port.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupStepNext from './firma2-setup-step-next.astro';
+import Firma2MapPreview from '../shared/firma2-map-preview.astro';
+import '../shared/firma2-pick-tile.css';
+import '../shared/firma2-provenance.css';
+import { publicSpatialLayers } from '../../data/firma2-spatial-layers';
+import { gisLaterLabel, journeys, ownLayerLabel } from '../../data/firma2-setup';
+
+const hue = journeys.find((journey) => journey.key === 'spatial-areas')?.hue ?? 265;
+
+/** "Large basins, a handful per region" reads after a colon in lower case. */
+const lowerFirst = (text: string): string => text.charAt(0).toLowerCase() + text.slice(1);
+
+const levelOptions = (levels: (typeof publicSpatialLayers)[number]['levels']) =>
+  levels.map((level) => ({
+    value: level.id,
+    label: level.note ? `${level.label}: ${lowerFirst(level.note)}` : level.label,
+  }));
+---
+<Firma2SetupStepScreen
+  step="layer"
+  icon="database"
+  prompt="Where do your boundaries come from?"
+  class="firma2-setup-area-layer"
+>
+  <ul class="firma2-setup-area-layer__grid grid" data-gap="md" data-part="grid">
+    {publicSpatialLayers.map((layer) => (
+      <li class="firma2-setup-area-layer__cell">
+        <button type="button" class="firma2-pick-tile" aria-pressed="false" data-choice={layer.id}>
+          <span class="firma2-pick-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
+          <span class="firma2-pick-tile__body stack" data-gap="2xs">
+            <span class="cluster" data-gap="xs">
+              <span class="typography-label-md-strong">{layer.name}</span>
+              {layer.popular && <EsaBadge value="Most programs" variant="secondary" size="sm" />}
+            </span>
+            <span class="firma2-pick-tile__secondary typography-body-sm">{layer.description}</span>
+            <span class="firma2-provenance typography-code-sm">{layer.provider}</span>
+          </span>
+        </button>
+        {layer.levels.length > 1 && (
+          <div class="firma2-setup-area-layer__reveal" data-reveal={layer.id} hidden>
+            <esa-radio-group
+              name={`${layer.id}-level`}
+              label="Watershed level"
+              size="md"
+              orientation="vertical"
+              data-options={JSON.stringify(levelOptions(layer.levels))}
+              data-part="level"
+              data-layer-id={layer.id}
+            ></esa-radio-group>
+          </div>
+        )}
+      </li>
+    ))}
+
+    <li class="firma2-setup-area-layer__cell">
+      <button type="button" class="firma2-pick-tile" aria-pressed="false" data-choice="own">
+        <span class="firma2-pick-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
+        <span class="firma2-pick-tile__body stack" data-gap="2xs">
+          <span class="typography-label-md-strong">{ownLayerLabel}</span>
+          <span class="firma2-pick-tile__secondary typography-body-sm">A link to an ArcGIS layer, or a hosted shapefile, GeoJSON or KML</span>
+        </span>
+      </button>
+      <div class="firma2-setup-area-layer__reveal" data-reveal="own" hidden>
+        <esa-text-field
+          label="Service or file URL"
+          type="url"
+          placeholder="https://…/MapServer/0"
+          size="md"
+          data-part="own-url"
+        ></esa-text-field>
+      </div>
+    </li>
+
+    <li class="firma2-setup-area-layer__cell">
+      <button type="button" class="firma2-pick-tile" aria-pressed="false" data-choice="gis">
+        <span class="firma2-pick-tile__mark"><EsaIcon name="circle-check" size="sm" /></span>
+        <span class="firma2-pick-tile__body stack" data-gap="2xs">
+          <span class="typography-label-md-strong">{gisLaterLabel}</span>
+          <span class="firma2-pick-tile__secondary typography-body-sm">They send the boundaries later. Setup goes on without them.</span>
+        </span>
+      </button>
+    </li>
+  </ul>
+
+  <!-- Filled by the script: Start's map answer is draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <Firma2MapPreview hue={hue} />
+
+  <Firma2SetupStepNext slot="advance" />
+  <EsaButton slot="advance" variant="ghost" size="lg" data-step-skip>Decide later</EsaButton>
+</Firma2SetupStepScreen>
+
+<style>
+  /* .grid is the layout engine; this strips the list chrome and sets the tile's
+     floor, the area picker's values. */
+  .firma2-setup-area-layer__grid {
+    --grid-min: 16rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    text-align: start;
+  }
+
+  /* A cell is the tile over the control it reveals, on two of the grid's rows
+     through subgrid: every tile in a row shares the first, so tiles stay level,
+     and a revealed control takes the second without stretching its neighbours.
+     The cell's own row gap is zero, so a row with nothing revealed is spaced
+     like any other; a revealed control carries its own space above it. */
+  .firma2-setup-area-layer__cell {
+    display: grid;
+    grid-row: span 2;
+    grid-template-rows: subgrid;
+    row-gap: 0;
+  }
+
+  .firma2-setup-area-layer__reveal {
+    padding-block-start: var(--spacing-300, 0.75rem);
+    padding-inline: var(--spacing-300, 0.75rem);
+  }
+
+  .firma2-setup-area-layer__reveal[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import '@esa/ecology/esa-text-field';
+  import { publicSpatialLayer, spatialLayerLevel } from '../../data/firma2-spatial-layers';
+  import type { SpatialLayerChoice } from '../../data/firma2-setup';
+  import { confirmedSpatialAreas, readSetupDraft, setSpatialLayer, spatialLayerIntent } from '../../lib/setup-draft';
+  import { looksLikeArcgisLayer } from '../../lib/spatial-preview';
+
+  /** The slice of esa-radio-group this file touches. */
+  interface RadioGroupElement extends HTMLElement {
+    options: { label: string; value: string }[];
+    value: string | null;
+  }
+
+  /** The slice of esa-text-field this file touches. */
+  interface TextFieldElement extends HTMLElement {
+    value: string;
+  }
+
+  /** What the map says a layer holds, singular and plural. */
+  interface PreviewUnit {
+    one: string;
+    other: string;
+  }
+
+  /** firma2-map-preview's public methods. */
+  interface MapPreviewElement extends HTMLElement {
+    show(request: { serviceUrl: string; nameField?: string; highlightNames: string[]; unit: PreviewUnit }): Promise<void>;
+    clear(): void;
+  }
+
+  /** A tile's key: a public layer id, 'own', or 'gis'. */
+  type TileKey = string;
+
+  // The status line's noun per level. A HUC level is named by its code.
+  const UNITS: Record<string, PreviewUnit> = {
+    huc8: { one: 'HUC-8 unit', other: 'HUC-8 units' },
+    huc10: { one: 'HUC-10 unit', other: 'HUC-10 units' },
+    huc12: { one: 'HUC-12 unit', other: 'HUC-12 units' },
+    county: { one: 'county', other: 'counties' },
+    lar: { one: 'tribal land area', other: 'tribal land areas' },
+    congressional: { one: 'district', other: 'districts' },
+  };
+  const BOUNDARY: PreviewUnit = { one: 'boundary', other: 'boundaries' };
+
+  /** How long typing rests before an own address is previewed. */
+  const TYPING_REST_MS = 600;
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-area-layer[data-step]');
+  const tiles = [...(screen?.querySelectorAll<HTMLButtonElement>('[data-choice]') ?? [])];
+  const reveals = [...(screen?.querySelectorAll<HTMLElement>('[data-reveal]') ?? [])];
+  const levelGroups = [...(screen?.querySelectorAll<RadioGroupElement>('[data-part="level"]') ?? [])];
+  const ownField = screen?.querySelector<TextFieldElement>('[data-part="own-url"]');
+  const preview = screen?.querySelector<MapPreviewElement>('firma2-map-preview');
+  const lede = screen?.querySelector<HTMLElement>('[data-part="lede"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && tiles.length > 0 && ownField && preview && lede && next) {
+    /** The own tile pressed with no address yet: shown, not saved. */
+    let pendingOwn = false;
+    /** The last preview asked for, so a repeat sync does not refetch. */
+    let previewKey = '';
+    let typingTimer: number | undefined;
+
+    const levelGroupFor = (layerId: string): RadioGroupElement | undefined =>
+      levelGroups.find((group) => group.dataset.layerId === layerId);
+
+    const firstLevel = (layerId: string): string => publicSpatialLayer(layerId)?.levels[0]?.id ?? '';
+
+    const keyOf = (choice: SpatialLayerChoice | null): TileKey | null => {
+      if (pendingOwn) return 'own';
+      if (!choice) return null;
+      return choice.kind === 'public' ? choice.layerId : choice.kind;
+    };
+
+    /**
+     * Start's answer, while nothing is saved and no tile has been pressed by
+     * hand: the choice the screen shows until Next saves it. An own answer
+     * carries no address, so it presses the tile and saves nothing.
+     */
+    const fallback = (): SpatialLayerChoice | null => {
+      const draft = readSetupDraft();
+      if (draft.spatialLayer !== null || pendingOwn) return null;
+      return spatialLayerIntent(draft)?.choice ?? null;
+    };
+
+    /** A fallback that can be saved as it stands: anything but an own layer with no address. */
+    const savable = (choice: SpatialLayerChoice | null): choice is SpatialLayerChoice =>
+      choice !== null && !(choice.kind === 'own' && choice.url.trim() === '');
+
+    const syncPreview = (choice: SpatialLayerChoice | null): void => {
+      const highlightNames = confirmedSpatialAreas().map((area) => area.name);
+      let request: { serviceUrl: string; nameField?: string; unit: PreviewUnit } | null = null;
+
+      if (choice?.kind === 'public') {
+        const level = spatialLayerLevel(choice.layerId, choice.levelId);
+        if (level) request = { serviceUrl: level.serviceUrl, nameField: level.nameField, unit: UNITS[level.id] ?? BOUNDARY };
+      } else if (choice?.kind === 'own' && looksLikeArcgisLayer(choice.url)) {
+        request = { serviceUrl: choice.url.trim(), unit: BOUNDARY };
+      }
+
+      const key = request ? `${request.serviceUrl}|${highlightNames.join(',')}` : '';
+      if (key === previewKey) return;
+      previewKey = key;
+      if (request) void preview.show({ ...request, highlightNames });
+      else preview.clear();
+    };
+
+    const sync = (): void => {
+      const draft = readSetupDraft();
+      const standIn = fallback();
+      // The saved answer, else Start's when it can stand as one.
+      const choice = draft.spatialLayer ?? (savable(standIn) ? standIn : null);
+      const pressed = standIn && !savable(standIn) ? 'own' : keyOf(choice);
+
+      // The lede names Start's answer while the pressed tile is the one it chose.
+      const intent = spatialLayerIntent(draft);
+      const intentKey = intent ? (intent.choice.kind === 'public' ? intent.choice.layerId : intent.choice.kind) : null;
+      const said = intent !== null && intentKey === pressed;
+      lede.textContent = said ? `You said ${intent.option.label.toLowerCase()} at Start.` : '';
+      lede.hidden = !said;
+
+      for (const tile of tiles) tile.setAttribute('aria-pressed', String(tile.dataset.choice === pressed));
+      for (const reveal of reveals) reveal.hidden = reveal.dataset.reveal !== pressed;
+
+      for (const group of levelGroups) {
+        const layerId = group.dataset.layerId ?? '';
+        const wanted = choice?.kind === 'public' && choice.layerId === layerId ? choice.levelId : firstLevel(layerId);
+        if (group.value !== wanted) group.value = wanted;
+      }
+
+      // Never write the field under the caret: only a value from elsewhere lands.
+      const url = choice?.kind === 'own' ? choice.url : '';
+      if (!pendingOwn && ownField.value !== url) ownField.value = url;
+
+      screen.dataset.stepReady = String(choice !== null);
+      syncPreview(choice);
+    };
+
+    const choose = (key: TileKey): void => {
+      window.clearTimeout(typingTimer);
+      if (key === 'own') {
+        const url = ownField.value.trim();
+        pendingOwn = url === '';
+        setSpatialLayer(url ? { kind: 'own', url } : null);
+        if (pendingOwn) sync();
+        ownField.focus();
+        return;
+      }
+      pendingOwn = false;
+      if (key === 'gis') {
+        setSpatialLayer({ kind: 'gis' });
+        return;
+      }
+      setSpatialLayer({ kind: 'public', layerId: key, levelId: levelGroupFor(key)?.value || firstLevel(key) });
+    };
+
+    // THE FALLBACK SAVES ON NEXT, at the level the screen shows; a saved
+    // answer was written on its press. The shell advances on the same click.
+    next.addEventListener('click', () => {
+      const standIn = fallback();
+      if (!savable(standIn)) return;
+      setSpatialLayer(
+        standIn.kind === 'public'
+          ? { ...standIn, levelId: levelGroupFor(standIn.layerId)?.value || standIn.levelId }
+          : standIn,
+      );
+    });
+
+    for (const tile of tiles) {
+      tile.addEventListener('click', () => {
+        if (tile.getAttribute('aria-pressed') === 'true') return;
+        choose(tile.dataset.choice ?? '');
+      });
+    }
+
+    for (const group of levelGroups) {
+      group.addEventListener('change', () => {
+        const layerId = group.dataset.layerId ?? '';
+        if (group.value) setSpatialLayer({ kind: 'public', layerId, levelId: group.value });
+      });
+    }
+
+    // The address saves once typing rests, and the preview follows the save.
+    // Until then the own tile stays pressed whatever else the draft says.
+    ownField.addEventListener('change', () => {
+      window.clearTimeout(typingTimer);
+      pendingOwn = true;
+      typingTimer = window.setTimeout(() => {
+        const url = ownField.value.trim();
+        pendingOwn = url === '';
+        setSpatialLayer(url ? { kind: 'own', url } : null);
+        sync();
+      }, TYPING_REST_MS);
+    });
+
+    // Only after the upgrade: a value set on the bare element would shadow the
+    // lego's own property.
+    let defined = false;
+    Promise.all([
+      customElements.whenDefined('esa-radio-group'),
+      customElements.whenDefined('esa-text-field'),
+      customElements.whenDefined('firma2-map-preview'),
+    ]).then(() => {
+      defined = true;
+      // OPTIONS ARE A PROPERTY. The attribute is the authored copy; the property
+      // is what the lego renders from.
+      for (const group of levelGroups) group.options = JSON.parse(group.dataset.options ?? '[]');
+      sync();
+    });
+
+    // A reset, the first screen's confirmations, or another tab can change the
+    // answer or the areas under the screen.
+    document.addEventListener('setup-draft-change', () => {
+      if (defined) sync();
+    });
+  }
+</script>

@@ -423,11 +423,26 @@ different answers, and putting them on one page made neither legible. What keeps
 a stepped milestone out of wizard territory is the same four properties the
 measure draft has: the page has its own URL, the step rides the query string so
 a link reopens the screen it was copied from, Finish later keeps the draft, and
-no screen refuses to be left. The write happens on the arrow, over the whole
+no screen refuses to be left. The write happens on Next, over the whole
 cast, so there is no half-answered state to lose.
 
 *Proved on: Funding sources, after its one-page version drew "I have no sense of
 what I'm entering" (Andy, 2026-09-18). Organizations followed.*
+
+A stepped milestone shows its steps. A rail beside the screen lists the
+milestone's steps by name, marks each as done, skipped or ahead, and lets you
+go back to any step, or forward to any step already reached, so no path
+through a milestone is forced and you always know where you are. It shows
+place, never a count or a percentage. Next says where it goes ("Next: Project
+editors"), because a bare arrow leaving a screen gave no sense of what came
+after. The rail is modelled on the biochar atlas's stepper, which took it from
+Claude Cowork's task steps. Next and its skip sit in a footer that sticks to
+the bottom of the viewport while a screen is taller than it, so the way
+forward is always in reach on a long tile screen and rests under the content
+on a short one; the skip matches Next's size because they share a row.
+
+*Proved on: every stepped milestone, after the per-screen arrows drew "I'm not
+loving our paging/arrows per milestone" (Andy, 2026-09-24).*
 
 ### Setup configures the vocabulary; the product makes the links
 
@@ -484,6 +499,19 @@ suggestions from theme choices; the built screen drew five from the tracker's
 Program area column instead, which is how every other milestone already
 worked.*
 
+A public dataset can stand beside the documents when it is the vocabulary the
+documents already speak. The Spatial areas layer screen offers USGS watersheds
+and Census counties because an annual report's subbasins are those units, and
+a map preview proves it by filling in the areas the report named. The
+documents still decide what is suggested; the public layer only says where the
+boundaries come from. Typing an area by hand is gone from that walk: a name
+without a boundary is not an area, so the choices are a public layer, your own
+service or file, or your GIS person later.
+
+*Proved on: Spatial areas, layer screen, after the GIS lead asked for "use a
+published source" and "connect a map service" to be one question and for the
+hand-typed area to go (2026-09-23 prep meeting; built 2026-09-24).*
+
 ### An empty list can be the answer
 
 Some milestones are finished with nothing in them. A program with no GIS
@@ -519,6 +547,38 @@ print as zero.
 *Proved on: the setup hub's finish (2026-09-23). A separate Setup complete
 page with three columns of summary copy was built and removed the same day.
 It said less than one paragraph on the page the admin was already on.*
+
+The finish is announced once. When the panel arrives because the draft changed
+(Complete demo, or the eleventh milestone confirming), a burst of confetti in
+the eleven milestone colours rises from the paragraph for about a second and a
+half, then is gone; a reload with a complete draft shows the panel quietly, and
+reduced motion gets a fade instead. Celebration marks the moment of finishing,
+not the state of being finished. (Andy: "make it short but nice", 2026-09-24.)
+
+### Start asks once; later screens build on the answer
+
+A question Start already asked is not asked again later. Its answer pre-selects
+the later screen, the tile says where that came from ("From Start: Habitat
+restoration"), and the save still happens on Next. Where two Start questions
+did the same job, the later one went: "Do you report performance measures?" was
+carried by Goals' "Report to funders and the board" and was removed
+(2026-09-24).
+
+*Proved on: Performance measures kinds, where Start's kind of work pre-presses
+the kinds, and Spatial areas boundaries, where Start's map answer opens the
+screen on that layer with the preview running. Found by an audit after Andy
+asked "make sure we're not double asking, and that initial steps win"
+(2026-09-24).*
+
+### A measure costs every project a number every year
+
+Whoever configures a measure never enters it. Every project lead does, on every
+split, every year, and a split added later cannot be backfilled. So the cost of
+detail is stated where detail is chosen, as the choice's own help text, not in
+a warning after the fact.
+
+*Proved on: Performance measures. A teammate's 2026-09-24 mock carried the
+split-cost note; the walk kept it as the detail question's help text.*
 
 ### Sort fields by what survives being wrong
 
@@ -686,7 +746,7 @@ a styling problem.
 | Report | **Measure setup** (one per measure) | built |
 | Report | Progress Dashboard, Funding Status | not built |
 | Manage | Users, Manage Organizations, Manage Funding Sources, Custom Pages | not built |
-| Setup | **Setup hub**, **Start**, **Program shape**, **Names and appearance**, **Organizations**, **Funding sources**, **Classifications**, **Project stages**, **Spatial areas**, **Import projects**, **People** | all eleven milestones built as stepped walks over a browser-local draft, grouped in three by dependency; at 11 of 11 the hub itself carries the finish, one large-type paragraph of the program's facts (2026-09-23); Performance measures is a separate prototype |
+| Setup | **Setup hub**, **Start**, **Program shape**, **Names and appearance**, **Organizations**, **Funding sources**, **Classifications**, **Project stages**, **Spatial areas**, **Import projects**, **People**, **Performance measures** | all eleven milestones built as stepped walks over a browser-local draft, grouped in three by dependency, each walk with a step rail beside its screens and a sticky Next footer (2026-09-24); Start is Documents, five intent questions (Kind of work, Goals, Project groups, Map, Data entry) and Review, each screen's guidance under its headline as a lede and a row of examples instead of a side column, and its work and map answers pre-select the measures kinds and the boundaries layer (2026-09-24); at 11 of 11 the hub itself carries the finish, one large-type paragraph of the program's facts (2026-09-23); Spatial areas picks its boundaries from a public layer with a map preview (2026-09-24); the Performance measures walk scaffolds kinds of work and counts from the documents into drafts, and the separate Performance measures prototype is where they live afterward (2026-09-24) |
 
 The two built areas are deliberately different exercises: the project pages are
 about **reading a record**, the measure pages about **setting one up**. Most

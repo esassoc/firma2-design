@@ -1,0 +1,170 @@
+---
+// firma2-setup-measure-kinds: the first screen of the Performance measures walk.
+// The fifteen kinds of work in the measure library, as tiles you tap to keep.
+//
+// A FIXED LIST ASKED AS A PREFERENCE. The kinds are the library's, not the
+// tenant's to author (product brief § 4), so the screen is Project stages'
+// picker in shape: one question over the whole list, nothing written on tap,
+// and Next writes all fifteen at once, pressed confirmed and the rest
+// dismissed. Which counts the next screen offers follows from this answer.
+//
+// PRE-PRESSED FROM THE DOCUMENTS. The five kinds the annual report and grant
+// agreement name arrive pressed, with the document and pages on the tile.
+// Without documents or a Start answer every tile arrives un-pressed and the
+// lede is hidden; the list is there either way, as the stages are.
+//
+// BUILDS ON START, 2026-09-24 (Andy: "make sure we're not double asking, and
+// that initial steps win"). Start already asked what kind of work the program
+// does, so its answer pre-presses the kinds it maps to (IntentOption
+// workKinds) beside the documents' five, and the prompt asks which of THESE the
+// work includes rather than asking the question again. A kind only Start names
+// reads "From Start:" and the answer where a document's name would sit. The
+// lede states both sources as facts: "You said habitat restoration at Start.
+// Your documents name five." Either half stands alone; with neither it hides.
+// Next writes exactly as before.
+//
+// NO SKIP. A program that reports measures does some kind of work, and a kind
+// is where every count on the next screen comes from, so Next waits for one
+// pressed tile.
+//
+// Composed: firma2-setup-step-screen is the screen, .grid the layout engine,
+// firma2-setup-measure-tile the tile, firma2-setup-step-next the advance.
+import Firma2SetupStepScreen from './firma2-setup-step-screen.astro';
+import Firma2SetupStepNext from './firma2-setup-step-next.astro';
+import Firma2SetupMeasureTile from './firma2-setup-measure-tile.astro';
+---
+<Firma2SetupStepScreen
+  step="kinds"
+  icon="trees"
+  prompt="Which of these does your work include?"
+  align="start"
+  class="firma2-setup-measure-kinds"
+>
+  <!-- Filled by the script: Start's answer and the documents are draft state. -->
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  <!-- Filled by the script: which tiles are pressed is draft state. The tile's
+       markup is authored in firma2-setup-measure-tile's template. -->
+  <ul class="firma2-setup-measure-kinds__grid grid" data-gap="md" data-part="grid"></ul>
+
+  <Firma2SetupMeasureTile />
+
+  <Firma2SetupStepNext slot="advance" />
+</Firma2SetupStepScreen>
+
+<style>
+  /* .grid is the layout engine; this strips the list chrome that comes with
+     choosing <ul> for its semantics and sets the tile's floor. */
+  .firma2-setup-measure-kinds__grid {
+    --grid-min: 16rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+</style>
+
+<script>
+  import {
+    listWorkKinds,
+    readSetupDraft,
+    setWorkKindStatuses,
+    sourceDocumentNames,
+    workIntentOptions,
+  } from '../../lib/setup-draft';
+  import type { WorkKindOption } from '../../lib/setup-draft';
+  import type { MeasureStatus } from '../../data/firma2-setup';
+
+  const TILE = 'firma2-measure-tile';
+
+  /** "A and B": Start's answers in the lede, in Start's order. */
+  const LIST = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' });
+
+  /** Counts in the lede read as words, the way the sentence is spoken. */
+  const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  const spell = (n: number): string => WORDS[n] ?? String(n);
+
+  type MeasureTile = HTMLElement & {
+    option: { id: string; name: string; source?: string; intent?: string };
+    optionId: string;
+    selected: boolean;
+  };
+
+  const screen = document.querySelector<HTMLElement>('.firma2-setup-measure-kinds[data-step]');
+  const grid = screen?.querySelector<HTMLElement>('[data-part="grid"]');
+  const lede = screen?.querySelector<HTMLElement>('[data-part="lede"]');
+  const next = screen?.querySelector<HTMLElement>('[data-step-next]');
+
+  if (screen && grid && lede && next) {
+    const tiles = (): MeasureTile[] => [...grid.querySelectorAll<MeasureTile>(TILE)];
+
+    /** "Grant Agreement, p. 2": the document that named the kind, and where. */
+    const sourceOf = (kind: WorkKindOption): string | undefined => {
+      if (kind.suggestion?.from !== 'document') return undefined;
+      const [name] = sourceDocumentNames([kind.suggestion]);
+      if (!name) return undefined;
+      return kind.suggestion.pages ? `${name}, ${kind.suggestion.pages}` : name;
+    };
+
+    /** "From Start: Habitat restoration": the answer a kind no document names came from. */
+    const intentOf = (kind: WorkKindOption): string | undefined =>
+      kind.suggestion?.from === 'intent' ? `From Start: ${kind.suggestion.label}` : undefined;
+
+    /** Both sources as facts, each half only when it has something to say. */
+    const ledeText = (kinds: WorkKindOption[]): string => {
+      const said = workIntentOptions(readSetupDraft()).map((option) => option.phrase);
+      const documented = kinds.filter((kind) => kind.suggestion?.from === 'document').length;
+      const parts: string[] = [];
+      if (said.length > 0) parts.push(`You said ${LIST.format(said)} at Start.`);
+      if (documented > 0) parts.push(`Your documents name ${spell(documented)}.`);
+      return parts.join(' ');
+    };
+
+    // Answered means at least one kind kept.
+    const syncReady = (): void => {
+      screen.dataset.stepReady = String(tiles().some((tile) => tile.selected));
+    };
+
+    const render = (): void => {
+      const kinds = listWorkKinds(readSetupDraft());
+
+      grid.replaceChildren(
+        ...kinds.map((kind) => {
+          const item = document.createElement('li');
+          const tile = document.createElement(TILE) as MeasureTile;
+          const source = sourceOf(kind);
+          const intent = intentOf(kind);
+          tile.option = { id: kind.id, name: kind.name, ...(source ? { source } : {}), ...(intent ? { intent } : {}) };
+          tile.selected = kind.status !== 'dismissed';
+          item.append(tile);
+          return item;
+        }),
+      );
+
+      const text = ledeText(kinds);
+      lede.textContent = text;
+      lede.hidden = text === '';
+      syncReady();
+    };
+
+    grid.addEventListener('measure-tile-toggle', syncReady);
+
+    // Next is the write: all fifteen in one pass. The shell advances on the same click.
+    next.addEventListener('click', () => {
+      const statuses: Record<string, MeasureStatus> = {};
+      for (const tile of tiles()) statuses[tile.optionId] = tile.selected ? 'confirmed' : 'dismissed';
+      if (Object.keys(statuses).length > 0) setWorkKindStatuses(statuses);
+    });
+
+    let ready = false;
+    document.addEventListener('setup-draft-change', () => {
+      if (ready) render();
+    });
+
+    // Wait for the tile's definition, or createElement hands back an unupgraded
+    // element whose `option` setter goes nowhere.
+    customElements.whenDefined(TILE).then(() => {
+      ready = true;
+      render();
+    });
+  }
+</script>
