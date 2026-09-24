@@ -1,1 +1,0 @@
-import{Z as r,_ as a}from"./setup-draft.DmMzbHka.js";import"./firma2-setup.Czlf-i8q.js";import"./firma2-projects.JNRzCvWl.js";import"./firma2-org-directory.Dvt1zVgF.js";import"./tenant-swatch.DOWFIX5v.js";document.addEventListener("click",e=>{const t=e.target;t?.closest("[data-setup-fill]")?r():t?.closest("[data-setup-reset]")&&a()});
