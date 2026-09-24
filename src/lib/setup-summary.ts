@@ -53,6 +53,7 @@ import {
   confirmedMeasures,
   confirmedPeople,
   confirmedSpatialAreas,
+  describeSpatialLayer,
   intentOptionsFor,
   journeyStatuses,
   listOrganizations,
@@ -109,6 +110,8 @@ export interface ProgramPortrait {
     outsidePolicy: OutsidePolicy | null;
     /** True once the Spatial areas milestone is confirmed, which is when zero areas is an answer. */
     answered: boolean;
+    /** The unit a project takes from the chosen boundaries, "subbasin (HUC-8)"; null with no layer chosen. */
+    unit: string | null;
   };
   projects: RecordTally;
   people: RecordTally & {
@@ -232,6 +235,7 @@ export const programPortrait = (draft: SetupDraft = readSetupDraft()): ProgramPo
       termPlural: areaTerm.plural,
       outsidePolicy: draft.outsidePolicy,
       answered: journeyStatuses(draft)['spatial-areas'].status === 'confirmed',
+      unit: describeSpatialLayer(draft.spatialLayer)?.unit ?? null,
     },
     projects: tally(confirmedImportProjects(draft).map((row) => row.project.projectName)),
     people: {
@@ -350,6 +354,9 @@ export const finishRuns = (p: ProgramPortrait): PortraitRun[] => {
   }
   if (s.count) made.push([text('moves through '), fact('lifecycle', count(s.count, 'stage', 'stages'))]);
   if (a.count) made.push([text(a.count === 1 ? 'sits in ' : 'sits in one of '), fact('spatial-areas', count(a.count, a.termSingular, a.termPlural))]);
+  // A layer with no named areas still places every project: in the unit it
+  // sits in. Only a program with no layer either sits on points (2026-09-24).
+  else if (a.answered && a.unit) made.push([text('sits in '), fact('spatial-areas', `${/^[aeiou]/i.test(a.unit) ? 'an' : 'a'} ${a.unit}`)]);
   else if (a.answered) made.push([text('sits on '), fact('spatial-areas', 'a point on the map')]);
   if (made.length) sentences.push([text(`Each ${singular} `), ...joinClauses(made), text('.')]);
 

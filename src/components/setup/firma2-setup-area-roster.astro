@@ -18,9 +18,14 @@
 // "Five Doors" mock's point-only answer, "the right answer with no GIS analyst":
 // every project sits on its own point. The empty state names that outcome.
 //
-// THE MAP LAYER IS NOT RESTATED HERE. It was answered two screens back and the
-// rail reaches it; a line repeating it under the table would be the page
-// describing itself.
+// THE BOUNDARY ANSWER IS READ BACK, 2026-09-24. This screen used to list only
+// the areas confirmed from documents, on the theory that the layer was answered
+// two screens back and the rail reaches it. A reviewer who opened the walk with
+// no documents could then only choose a layer and an outside policy, and the
+// review answered "Point locations only" whatever they chose. So the lede names
+// the boundaries chosen (describeSpatialLayer), the point-only outcome shows
+// only when no layer was chosen either, and a layer with no named areas gets an
+// empty state that says where a project's area comes from.
 //
 // REMOVE IS NOT DELETE. A document-sourced row goes back to `suggested`, which
 // the first screen shows as an un-pressed tile. The `manual` branch stays for
@@ -75,15 +80,23 @@ const hubHref = withBase('/prototypes/setup');
     </table>
   </div>
 
+  <p slot="lede" class="typography-body-md firma2-setup-steps__lede" data-part="lede" hidden></p>
+
+  {/* Two outcomes for a table with no rows. No layer either: every project sits
+      on its own point. A layer chosen: the areas are its units, and the script
+      names the one a project takes. */}
   <div data-part="empty" hidden>
     <EsaEmptyState title="Point locations only" description="Each project is mapped by its own point." />
+  </div>
+  <div data-part="empty-layer" hidden>
+    <EsaEmptyState title="No areas named yet" description="Each project takes the area it sits in." />
   </div>
 
   <Firma2SetupStepNext slot="advance" href={hubHref} label="Go to setup" />
 </Firma2SetupStepScreen>
 
 <script>
-  import { confirmedSpatialAreas, readSetupDraft, setOutsidePolicy, setSpatialAreaStatus } from '../../lib/setup-draft';
+  import { confirmedSpatialAreas, describeSpatialLayer, readSetupDraft, setOutsidePolicy, setSpatialAreaStatus } from '../../lib/setup-draft';
   import { OUTSIDE_AREA_NAME, spatialAreaKindLabel } from '../../data/firma2-setup';
   import type { SpatialAreaRecord, SpatialAreaSource, SpatialAreaStatus } from '../../data/firma2-setup';
 
@@ -113,8 +126,13 @@ const hubHref = withBase('/prototypes/setup');
   const body = screen?.querySelector<HTMLTableSectionElement>('[data-part="body"]');
   const rowTemplate = screen?.querySelector<HTMLTableRowElement>('[data-part="row-template"]');
   const empty = screen?.querySelector<HTMLElement>('[data-part="empty"]');
+  const emptyLayer = screen?.querySelector<HTMLElement>('[data-part="empty-layer"]');
+  const lede = screen?.querySelector<HTMLElement>('[data-part="lede"]');
 
-  if (screen && scroll && body && rowTemplate && empty) {
+  if (screen && scroll && body && rowTemplate && empty && emptyLayer && lede) {
+    // The lego renders its description as one <p>; the unit is written into it.
+    const layerUnit = emptyLayer.querySelector<HTMLElement>('.esa-empty-state__description');
+
     const fromRecord = (record: SpatialAreaRecord): RosterRow => ({
       id: record.id,
       name: record.name,
@@ -152,9 +170,14 @@ const hubHref = withBase('/prototypes/setup');
 
     const render = (): void => {
       const entries = rows();
+      const words = describeSpatialLayer(readSetupDraft().spatialLayer);
       body.replaceChildren(rowTemplate, ...entries.map(buildRow));
       scroll.hidden = entries.length === 0;
-      empty.hidden = entries.length > 0;
+      lede.textContent = words?.lede ?? '';
+      lede.hidden = words === null;
+      empty.hidden = entries.length > 0 || words !== null;
+      emptyLayer.hidden = entries.length > 0 || words === null;
+      if (words && layerUnit) layerUnit.textContent = `Each project takes the ${words.unit} it sits in.`;
     };
 
     body.addEventListener('click', (event) => {

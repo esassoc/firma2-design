@@ -555,6 +555,16 @@ half, then is gone; a reload with a complete draft shows the panel quietly, and
 reduced motion gets a fade instead. Celebration marks the moment of finishing,
 not the state of being finished. (Andy: "make it short but nice", 2026-09-24.)
 
+A read-back names every answer the walk took, the preference answers included.
+The Spatial areas review listed only the areas confirmed from documents, on the
+theory that the boundary layer was answered two screens back and the rail
+reaches it. A reviewer who opened the walk with no documents chose watersheds
+and read "Point locations only" (2026-09-24, the afternoon of the demo). The
+review now opens with the boundaries chosen, and the point-only outcome shows
+only when no layer was chosen either. The finish paragraph follows the same
+rule: a program with a layer and no named areas "sits in a subbasin (HUC-8)",
+not "on a point on the map".
+
 ### Start asks once; later screens build on the answer
 
 A question Start already asked is not asked again later. Its answer pre-selects

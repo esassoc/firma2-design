@@ -41,10 +41,12 @@ import {
   stewardshipFromIntent,
   suggestedProjectNoun,
   suggestedSiteVisibility,
+  ownLayerLabel,
   tenantAppearanceDefaults,
   tenantColors,
   tenantOrganization,
 } from '../data/firma2-setup';
+import { publicSpatialLayer, spatialLayerLevel } from '../data/firma2-spatial-layers';
 import type {
   ClassificationFields,
   MeasureDetail,
@@ -589,6 +591,41 @@ export const spatialLayerFromIntent = (draft: SetupDraft = readSetupDraft()): Sp
 /** Records where the program's boundaries come from. Null clears the answer. */
 export const setSpatialLayer = (choice: SpatialLayerChoice | null): boolean =>
   writeSetupDraft({ ...readSetupDraft(), spatialLayer: choice });
+
+/** The boundary answer in the reader's words, for the review screen and the hub portrait. */
+export interface SpatialLayerWords {
+  /** One line naming the answer: "Subbasin (HUC-8) boundaries from USGS Watersheds." */
+  lede: string;
+  /** The unit a project falls in, lower case: "subbasin (HUC-8)", "county"; "area" for an own or GIS layer. */
+  unit: string;
+}
+
+/**
+ * Reads the boundary answer back. Added 2026-09-24 after a reviewer who
+ * opened Spatial areas with no documents chose a layer and read "Point
+ * locations only" on the review: a layer is an answer about where projects
+ * fall, so every read-back names it. Null when no layer is chosen, or a
+ * public choice names a layer or level the catalog no longer carries.
+ */
+export const describeSpatialLayer = (choice: SpatialLayerChoice | null): SpatialLayerWords | null => {
+  if (choice === null) return null;
+  if (choice.kind === 'public') {
+    const layer = publicSpatialLayer(choice.layerId);
+    const level = spatialLayerLevel(choice.layerId, choice.levelId);
+    if (!layer || !level) return null;
+    // The layer's name earns a place only where it says more than the level:
+    // "Subbasin (HUC-8) boundaries from USGS Watersheds", but "County
+    // boundaries from US Census Bureau", not "... US Census Bureau Counties".
+    const source = layer.levels.length > 1 ? `${layer.provider} ${layer.name}` : layer.provider;
+    return {
+      lede: `${level.label} boundaries from ${source}.`,
+      // "Subbasin (HUC-8)" to "subbasin (HUC-8)": only the first letter drops, so the code keeps its case.
+      unit: level.label.charAt(0).toLowerCase() + level.label.slice(1),
+    };
+  }
+  if (choice.kind === 'own') return { lede: `Boundaries from ${ownLayerLabel.toLowerCase()}.`, unit: 'area' };
+  return { lede: 'Boundaries from your GIS person.', unit: 'area' };
+};
 
 /** Records what happens to a project outside every area. Null clears the answer. */
 export const setOutsidePolicy = (policy: OutsidePolicy | null): boolean =>
