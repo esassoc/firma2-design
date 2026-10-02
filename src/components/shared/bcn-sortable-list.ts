@@ -43,6 +43,7 @@
 // The kit's one polite live region. A component minting its own region
 // degrades every other announcement on the page (see the hub's announcer.ts).
 import { announce } from '@esa/ecology/announcer';
+import { ICON_PATHS } from '@esa/ecology/icon-registry';
 
 const DRAG_SLOP = 4;
 
@@ -63,7 +64,9 @@ const GRIP_PATHS =
 
 function cloneGrip(template: HTMLTemplateElement): DocumentFragment {
   const fragment = template.content.cloneNode(true) as DocumentFragment;
-  fragment.querySelectorAll('svg').forEach((svg) => (svg.innerHTML = GRIP_PATHS));
+  // Registry first: the spoke's icon set maps `grip-vertical`; the Lucide dots
+  // above are the fallback for a registry without it (the hub's, today).
+  fragment.querySelectorAll('svg').forEach((svg) => (svg.innerHTML = ICON_PATHS['grip-vertical'] ?? GRIP_PATHS));
   return fragment;
 }
 

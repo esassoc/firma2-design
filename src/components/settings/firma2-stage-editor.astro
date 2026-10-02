@@ -1,0 +1,371 @@
+---
+// firma2-stage-editor — the workspace's project stages, in lifecycle order:
+// reorder them, give each an icon and a colour, and add new ones.
+//
+// THE ICON IS THE CONTROL. Each row leads with its stage's icon, tinted in the
+// stage's colour, and clicking it opens a popover that changes both — the
+// thing being styled is the thing you click, so there is no swatch-beside-a-
+// preview to keep in step. Any Hugeicons free glyph can be chosen
+// (bcn-icon-picker): a shortlist of status circles, and a search over the set.
+//
+// COLOUR WORKS LIKE BRANDING. The same esa-color-picker the Branding page uses:
+// suggested swatches, a free hex, and a warning (never a block) when the
+// colour is too light to see as an icon on a white page — SC 1.4.11 asks 3 : 1
+// of a graphic that carries meaning. The swatches all clear it.
+//
+// ONLY ADDED STAGES CAN BE REMOVED. A stage that holds projects would strand
+// them, and the seeded ones all do; a stage added here holds none yet.
+//
+// Edits save as they are made, to this browser (src/lib/stage-draft.ts).
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { STAGE_ICON_SUGGESTIONS, STAGE_SWATCHES } from '../../data/firma2-workspace-settings';
+---
+<!-- bcn-lego-checked: every control is a lego (esa-button, esa-popover,
+     esa-color-picker, esa-side-dialog, esa-text-field, esa-textarea,
+     esa-switch-toggle) or the spoke's own bcn-sortable-list (reorders the
+     rows) and bcn-icon-picker (searches the icon set); the classes only lay
+     out the row list, which no esa- component does. Beacon is not cloned on this machine. Same row
+     construction as firma2-type-studio. -->
+<div
+  class="firma2-stage-editor stack"
+  data-gap="lg"
+  data-icon-suggestions={JSON.stringify(STAGE_ICON_SUGGESTIONS)}
+  data-swatches={JSON.stringify(STAGE_SWATCHES)}
+>
+  <bcn-sortable-list data-stage-sort>
+    <template data-sort-handle><EsaButton variant="chrome" size="sm" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+    <ol class="firma2-stage-editor__rows" data-stage-rows></ol>
+  </bcn-sortable-list>
+  <div>
+    <EsaButton variant="secondary" size="md" icon="plus" data-add-stage>Add stage</EsaButton>
+  </div>
+
+  <esa-side-dialog class="firma2-stage-editor__sheet" heading="New stage" size="md" position="right">
+    <div class="stack" data-gap="lg">
+      <esa-text-field data-new-name label="Name" size="md" placeholder="e.g. Monitoring" required></esa-text-field>
+      <esa-textarea data-new-description label="Description" rows="2" placeholder="What a project in this stage is doing."></esa-textarea>
+      <div data-new-look></div>
+      <esa-switch-toggle data-new-reports label="Reports each year" size="md"></esa-switch-toggle>
+      <esa-switch-toggle data-new-public label="Shown on the public page" size="md"></esa-switch-toggle>
+    </div>
+    <div slot="footer" class="cluster" data-gap="xs">
+      <EsaButton variant="primary" size="md" data-new-save>Add stage</EsaButton>
+      <EsaButton variant="ghost" size="md" data-new-cancel>Cancel</EsaButton>
+    </div>
+  </esa-side-dialog>
+
+  <!-- Clone sources: real legos, copied by the script per row. The look
+       button's glyph is swapped for the stage's icon on each clone. -->
+  <template data-tpl-look><EsaButton variant="chrome" size="md" iconOnly icon="activity" aria-label="Icon and colour">Icon and colour</EsaButton></template>
+  <template data-tpl-icon-option><EsaButton variant="chrome" size="md" iconOnly icon="star" aria-label="Icon">Icon</EsaButton></template>
+  <template data-tpl-remove><EsaButton variant="chrome" size="sm" iconOnly icon="x" aria-label="Remove stage">Remove stage</EsaButton></template>
+</div>
+
+<style>
+  .firma2-stage-editor [hidden] {
+    display: none !important;
+  }
+
+  .firma2-stage-editor__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-stage-editor__rows :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+
+  /* The chrome button takes its colour from context, so the stage's colour is
+     set here and the glyph inherits it. */
+  .firma2-stage-editor__rows :global(.firma2-stage-editor__look) {
+    flex: none;
+    color: var(--stage-color);
+  }
+
+  .firma2-stage-editor__rows :global(.firma2-stage-editor__name) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .firma2-stage-editor :global(.firma2-stage-editor__meta) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-stage-editor :global(.firma2-stage-editor__warning) {
+    color: var(--color-content-utility-warning);
+  }
+
+  /* A definite width: the icon grid fills it with as many columns as fit. */
+  .firma2-stage-editor__rows :global(.firma2-stage-editor__panel) {
+    width: min(26rem, 80vw);
+  }
+
+  .firma2-stage-editor__rows :global(.firma2-stage-editor__spacer) {
+    flex: none;
+    visibility: hidden;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-popover';
+  import '@esa/ecology/esa-color-picker';
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '../shared/bcn-sortable-list';
+  import '../shared/bcn-icon-picker';
+  import { announce } from '@esa/ecology/announcer';
+  import { readStages, writeStages } from '../../lib/stage-draft';
+  import { contrast, isHex } from '../../lib/tenant-brand';
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
+  import type { StageSetting } from '../../data/firma2-workspace-settings';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; swatches?: unknown; checked?: boolean; errorText?: string };
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
+  type Look = { icon: string; iconPaths: string; color: string };
+  type Icon = { name: string; label: string; paths: string };
+
+  const ICON_MIN = 3;
+
+  const facts = (s: StageSetting): string =>
+    [s.reportsYearly ? 'Reports each year' : 'No yearly report', s.publicPage ? 'Shown on the public page' : 'Hidden from the public page'].join(' · ');
+
+  document.querySelectorAll<HTMLElement>('.firma2-stage-editor').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const suggestions = JSON.parse(root.dataset.iconSuggestions ?? '[]') as Icon[];
+    const swatches = JSON.parse(root.dataset.swatches ?? '[]') as { value: string; label: string }[];
+    let stages = readStages();
+
+    const save = () => writeStages(stages);
+    const cloneTpl = (name: string) =>
+      $<HTMLTemplateElement>(`[data-tpl-${name}]`).content.firstElementChild!.cloneNode(true) as HTMLElement;
+
+    /** Draw a stage's stored glyph into a cloned button. */
+    const drawIcon = (node: HTMLElement, paths: string) => {
+      const svg = node.querySelector('svg');
+      if (svg) svg.innerHTML = paths;
+    };
+
+    /**
+     * The icon toggle and colour picker, built once for each place a stage's
+     * look is chosen (a row's popover, the New stage sheet). `onChange` gets
+     * the whole look after every pick.
+     */
+    const buildLookControls = (initial: Look, onChange: (look: Look) => void): HTMLElement => {
+      const look = { ...initial };
+      const wrap = document.createElement('div');
+      wrap.className = 'stack';
+      wrap.dataset.gap = 'lg';
+
+      const icon = document.createElement('bcn-icon-picker') as HTMLElement & { suggestions: Icon[]; value: string };
+      icon.setAttribute('label', 'Icon');
+      // The picker clones its glyph buttons from a template it is handed.
+      const option = document.createElement('template');
+      option.setAttribute('data-icon-option', '');
+      option.content.append(cloneTpl('icon-option'));
+      icon.append(option);
+      icon.style.setProperty('--bcn-icon-picker-color', look.color);
+      icon.suggestions = suggestions;
+      icon.value = look.icon;
+
+      const colour = document.createElement('esa-color-picker') as Control;
+      colour.setAttribute('label', 'Colour');
+      colour.setAttribute('show-input', '');
+
+      const colourBlock = document.createElement('div');
+      colourBlock.className = 'stack';
+      colourBlock.dataset.gap = 'xs';
+      const warning = document.createElement('p');
+      warning.className = 'firma2-stage-editor__warning typography-body-sm';
+      colourBlock.append(colour, warning);
+
+      const paintWarning = () => {
+        const ratio = contrast(look.color, '#ffffff');
+        warning.hidden = ratio >= ICON_MIN;
+        warning.textContent = `Hard to see on white: ${ratio.toFixed(1)} : 1. Icons need at least ${ICON_MIN} : 1.`;
+      };
+
+      void customElements.whenDefined('esa-color-picker').then(() => {
+        colour.swatches = swatches;
+        colour.value = look.color;
+        paintWarning();
+      });
+
+      icon.addEventListener('change', (e) => {
+        const next = (e as CustomEvent<Icon>).detail;
+        if (next.name === look.icon) return;
+        look.icon = next.name;
+        look.iconPaths = next.paths;
+        onChange({ ...look });
+      });
+      colour.addEventListener('change', () => {
+        const next = String(colour.value ?? '');
+        if (!isHex(next) || next === look.color) return;
+        look.color = next;
+        icon.style.setProperty('--bcn-icon-picker-color', next);
+        paintWarning();
+        onChange({ ...look });
+      });
+
+      wrap.append(icon, colourBlock);
+      return wrap;
+    };
+
+    const paint = () => {
+      $('[data-stage-rows]').replaceChildren(
+        ...stages.map((s) => {
+          const li = document.createElement('li');
+          li.dataset.sortKey = s.key;
+          li.dataset.sortLabel = s.name;
+
+          // ---- the look: icon button + popover ----
+          const lookWrap = document.createElement('span');
+          lookWrap.className = 'firma2-stage-editor__look';
+          lookWrap.style.setProperty('--stage-color', s.color);
+          const popover = document.createElement('esa-popover');
+          // RIGHT, not below: centred under the icon, the panel spilled left
+          // onto the nav rail and the rail's resize handle ate its first
+          // column. To the right it opens over the row's own text, never the rail.
+          popover.setAttribute('position', 'right');
+          popover.setAttribute('label', `Icon and colour for ${s.name}`);
+          const trigger = cloneTpl('look');
+          drawIcon(trigger, s.iconPaths);
+          const button = trigger.querySelector('button') ?? trigger;
+          button.setAttribute('aria-label', `Icon and colour for ${s.name}`);
+          button.setAttribute('title', 'Change icon and colour');
+          const panel = buildLookControls(s, (look) => {
+            s.icon = look.icon;
+            s.iconPaths = look.iconPaths;
+            s.color = look.color;
+            drawIcon(trigger, s.iconPaths);
+            lookWrap.style.setProperty('--stage-color', s.color);
+            save();
+          });
+          panel.slot = 'content';
+          panel.classList.add('firma2-stage-editor__panel');
+          // esa-popover toggles on ANY click inside its anchor, and its panel
+          // renders inside the anchor — so a click on a swatch would close it.
+          // Stopping the click at the panel keeps it open while choosing.
+          // Hub gap: the lego should ignore clicks from slot="content".
+          panel.addEventListener('click', (e) => e.stopPropagation());
+          popover.append(trigger, panel);
+          lookWrap.append(popover);
+
+          // ---- the name ----
+          const name = document.createElement('div');
+          name.className = 'firma2-stage-editor__name stack';
+          name.dataset.gap = '2xs';
+          const title = document.createElement('span');
+          title.className = 'typography-label-lg';
+          title.textContent = s.name;
+          name.append(title);
+          if (s.description) {
+            const desc = document.createElement('span');
+            desc.className = 'typography-body-md';
+            desc.textContent = s.description;
+            name.append(desc);
+          }
+          const meta = document.createElement('span');
+          meta.className = 'firma2-stage-editor__meta typography-body-sm';
+          meta.textContent = facts(s);
+          name.append(meta);
+
+          // ---- remove (added stages only) ----
+          let tail: HTMLElement;
+          if (s.added) {
+            tail = cloneTpl('remove');
+            const remove = tail.querySelector('button') ?? tail;
+            remove.setAttribute('aria-label', `Remove ${s.name}`);
+            remove.addEventListener('click', () => {
+              stages = stages.filter((x) => x.key !== s.key);
+              save();
+              paint();
+              announce(`${s.name} removed.`);
+              $<HTMLElement>('[data-add-stage]').focus();
+            });
+          } else {
+            // An invisible, inert copy holds the remove button's width, so
+            // every row's text ends on the same line.
+            tail = cloneTpl('remove');
+            tail.classList.add('firma2-stage-editor__spacer');
+            tail.setAttribute('aria-hidden', 'true');
+            tail.inert = true;
+          }
+
+          li.append(lookWrap, name, tail);
+          return li;
+        }),
+      );
+    };
+
+    $('[data-stage-sort]').addEventListener('sort-change', (e) => {
+      const { order } = (e as CustomEvent<{ order: string[] }>).detail;
+      stages = order.map((key) => stages.find((s) => s.key === key)!);
+      save();
+      paint();
+    });
+
+    // ---- adding a stage ----------------------------------------------------------
+    const sheet = $<Sheet>('.firma2-stage-editor__sheet');
+    void fixSideDialog(sheet);
+    const newName = $<Control>('[data-new-name]');
+    const newDescription = $<Control>('[data-new-description]');
+    const newReports = $<Control>('[data-new-reports]');
+    const newPublic = $<Control>('[data-new-public]');
+    const firstUnused = <T,>(list: T[], used: (item: T) => boolean): T => list.find((x) => !used(x)) ?? list[0];
+    let newLook: Look = { icon: '', iconPaths: '', color: '' };
+
+    $('[data-add-stage]').addEventListener('click', () => {
+      newName.value = '';
+      newName.errorText = '';
+      newDescription.value = '';
+      // The first icon and colour no stage wears yet, so a new stage reads as new.
+      const icon = firstUnused(suggestions, (i) => stages.some((s) => s.icon === i.name));
+      newLook = {
+        icon: icon.name,
+        iconPaths: icon.paths,
+        color: firstUnused(swatches, (w) => stages.some((s) => s.color.toLowerCase() === w.value)).value,
+      };
+      $('[data-new-look]').replaceChildren(buildLookControls(newLook, (look) => (newLook = look)));
+      newReports.checked = false;
+      newPublic.checked = true;
+      sheet.show();
+    });
+
+    $('[data-new-cancel]').addEventListener('click', () => sheet.close());
+
+    $('[data-new-save]').addEventListener('click', () => {
+      const name = String(newName.value ?? '').trim();
+      const taken = stages.some((s) => s.name.toLowerCase() === name.toLowerCase());
+      newName.errorText = !name ? 'Name the stage.' : taken ? 'A stage already has this name.' : '';
+      if (newName.errorText) return;
+      stages = [
+        ...stages,
+        {
+          key: `added-${Date.now()}`,
+          name,
+          description: String(newDescription.value ?? '').trim(),
+          icon: newLook.icon,
+          iconPaths: newLook.iconPaths,
+          color: newLook.color,
+          reportsYearly: Boolean(newReports.checked),
+          publicPage: Boolean(newPublic.checked),
+          added: true,
+        },
+      ];
+      save();
+      paint();
+      sheet.close();
+      announce(`${name} added as stage ${stages.length} of ${stages.length}.`);
+    });
+
+    paint();
+  });
+</script>

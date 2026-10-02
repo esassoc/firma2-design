@@ -17,19 +17,29 @@
 // field labels, columns — never data. A funding source named "…Program"
 // keeps its name. That is the team's "aim the pipe" rule, said where the
 // administrator can see it.
-import EsaCard from '@esa/ecology/esa-card.astro';
+//
+// ONE SWITCH IN FRONT OF ALL OF IT. Aliasing is off or on for the whole
+// workspace, and the switch comes first because it decides whether the rest
+// of the screen means anything. Off: every reader sees the application's
+// words and the fields are locked. The renamings are kept rather than cleared,
+// so switching back on restores them exactly.
+//
+// NO CARD: a settings section, unboxed like its siblings — the table's rules
+// already bound its rows.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import { NOUNS } from '../../data/firma2-vocabulary';
 ---
-<!-- bcn-lego-checked: esa-card, esa-text-field and esa-button legos; the
-     classes lay out a three-column table of fields, which no esa- component
-     does. Beacon is not cloned on this machine. -->
+<!-- bcn-lego-checked: esa-switch-toggle, esa-text-field and esa-button
+     legos; the classes lay out a three-column table of fields, which no esa-
+     component does. Beacon is not cloned on this machine. -->
 <div class="firma2-vocabulary-editor">
-  <EsaCard>
     <div class="stack" data-gap="lg">
-      <p class="typography-body-md">
-        Call things what your program calls them. Your words replace the application’s in menus, page titles, headings, field labels, table columns and public pages. Records keep the names they were given.
-      </p>
+      <div class="stack" data-gap="xs">
+        <esa-switch-toggle data-aliasing label="Use your own words" label-position="before" size="md"></esa-switch-toggle>
+        <p class="firma2-vocabulary-editor__help typography-body-sm">
+          Your words replace the application’s in menus, titles, headings, field labels and columns. Records keep their names. Off keeps your words for later.
+        </p>
+      </div>
       <table class="firma2-vocabulary-editor__table">
         <thead>
           <tr>
@@ -55,7 +65,6 @@ import { NOUNS } from '../../data/firma2-vocabulary';
         </tbody>
       </table>
     </div>
-  </EsaCard>
 </div>
 
 <style>
@@ -81,6 +90,25 @@ import { NOUNS } from '../../data/firma2-vocabulary';
     color: var(--color-text-secondary);
   }
 
+  /* Unboxed: the outer columns sit on the section's own edges. */
+  .firma2-vocabulary-editor__table tr > :first-child {
+    padding-inline-start: 0;
+  }
+
+  .firma2-vocabulary-editor__table tr > :last-child {
+    padding-inline-end: 0;
+  }
+
+  .firma2-vocabulary-editor__help {
+    color: var(--color-text-secondary);
+  }
+
+  /* Off: the application's words are in force, so the column of them is
+     what the reader should see; the locked fields recede. */
+  .firma2-vocabulary-editor[data-off] .firma2-vocabulary-editor__table td {
+    opacity: 0.6;
+  }
+
   .firma2-vocabulary-editor__plural {
     color: var(--color-text-secondary);
   }
@@ -88,14 +116,17 @@ import { NOUNS } from '../../data/firma2-vocabulary';
 
 <script>
   import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-switch-toggle';
   import { suggestPlural } from '../../data/firma2-vocabulary';
   import type { Vocabulary } from '../../data/firma2-vocabulary';
-  import { readVocabulary, writeVocabulary } from '../../lib/vocabulary';
+  import { isAliasingEnabled, readStoredVocabulary, setAliasingEnabled, writeVocabulary } from '../../lib/vocabulary';
 
-  type Field = HTMLElement & { value?: string; placeholder?: string };
+  type Field = HTMLElement & { value?: string; placeholder?: string; disabled?: boolean };
+  type Switch = HTMLElement & { checked?: boolean };
 
   document.querySelectorAll<HTMLElement>('.firma2-vocabulary-editor').forEach((root) => {
     const rows = [...root.querySelectorAll<HTMLTableRowElement>('tr[data-noun]')];
+    const aliasing = root.querySelector<Switch>('[data-aliasing]')!;
 
     const paintRow = (tr: HTMLTableRowElement, vocabulary: Vocabulary) => {
       const alias = vocabulary[tr.dataset.noun!] ?? {};
@@ -105,18 +136,39 @@ import { NOUNS } from '../../data/firma2-vocabulary';
       plural.value = alias.plural ?? '';
       // The plural the application WILL use, shown before anyone types it.
       plural.placeholder = alias.singular?.trim() ? suggestPlural(alias.singular) : tr.dataset.plural!;
-      tr.querySelector<HTMLElement>('[data-reset-wrap]')!.hidden = !alias.singular?.trim() && !alias.plural?.trim();
+      const on = isAliasingEnabled();
+      singular.disabled = !on;
+      plural.disabled = !on;
+      // visibility, not `hidden`: the column keeps its width whether or not any
+      // row has something to reset, so the fields never shift sideways when
+      // the switch flips or the first word is typed. A visibility-hidden
+      // button is also out of the tab order.
+      const wrap = tr.querySelector<HTMLElement>('[data-reset-wrap]')!;
+      wrap.hidden = false;
+      wrap.style.visibility = !on || (!alias.singular?.trim() && !alias.plural?.trim()) ? 'hidden' : '';
     };
 
-    customElements.whenDefined('esa-text-field').then(() => {
-      const vocabulary = readVocabulary();
+    const paintAll = () => {
+      const on = isAliasingEnabled();
+      root.toggleAttribute('data-off', !on);
+      aliasing.checked = on;
+      const vocabulary = readStoredVocabulary();
       rows.forEach((tr) => paintRow(tr, vocabulary));
+    };
+
+    // Both legos before the first paint: `checked` and `disabled` are reactive
+    // properties, and set before upgrade they would shadow the accessors.
+    Promise.all([customElements.whenDefined('esa-text-field'), customElements.whenDefined('esa-switch-toggle')]).then(paintAll);
+
+    aliasing.addEventListener('change', () => {
+      setAliasingEnabled(Boolean(aliasing.checked));
+      paintAll();
     });
 
     const commit = (tr: HTMLTableRowElement) => {
       const singular = String(tr.querySelector<Field>('[data-field="singular"]')!.value ?? '').trim();
       const plural = String(tr.querySelector<Field>('[data-field="plural"]')!.value ?? '').trim();
-      const vocabulary = readVocabulary();
+      const vocabulary = readStoredVocabulary();
       if (singular || plural) vocabulary[tr.dataset.noun!] = { singular: singular || undefined, plural: plural || undefined };
       else delete vocabulary[tr.dataset.noun!];
       writeVocabulary(vocabulary);

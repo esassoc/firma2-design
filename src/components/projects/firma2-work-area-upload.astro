@@ -1,0 +1,380 @@
+---
+// firma2-work-area-upload — bring a project's shapes in from a file someone
+// already has. Ported from ProjectFirma2 hackathon team 2's upload dialog,
+// which itself follows biochar-atlas's AOI import: instructions before the
+// picker, one state on screen at a time, and a primary action that exists only
+// once there is something to keep.
+//
+// THE STATES, and what each owes the reader:
+//   pick     — the rules that decide whether an upload works. A file picker
+//              cannot teach them, and they are what refusals are mostly about.
+//   reading  — names the file, so somebody who picked the wrong one knows.
+//   choose   — a geodatabase with several layers: which one to read.
+//   refused  — the main event, not an error tucked in a corner. Each refusal
+//              says what to do, and the control that fixes it sits under it.
+//   preview  — the shapes drawn, one line of summary, the table. Nothing is
+//              added until "Add" is pressed.
+//
+// THE PICKERS ARE ONE NODE IN TWO PLACES. Above the map when the read worked
+// (the adjustment you make, then look at), under the refusal when it did not
+// (the refusal has to be read before the control that answers it makes sense).
+// Team 2 learned this the hard way: when each state owned its own pickers, the
+// refusal CAUSED by the name field hid the name field. One node, moved.
+//
+// THE FILE IS NOT READ. A static prototype has no server to unzip a
+// geodatabase, so any .zip reads as the sample geodatabase, and the two sample
+// links stand in for "a file that works" and "a file that does not".
+//
+// bcn-lego-checked: every control is a lego (esa-dialog, esa-file-upload,
+// esa-select, esa-button, esa-alert-box, esa-loading-spinner); the preview
+// canvas is Leaflet, as on every map in this spoke (see firma2-project-map's
+// header for the lookup), and the table is a plain data table in the
+// firma2-settings-table style, which has no lego. Beacon is not cloned here.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
+import type { LatLng } from '../../lib/geo';
+
+interface Props {
+  /** The project's center — the sample file's shapes are placed around it. */
+  center: LatLng;
+}
+
+const { center } = Astro.props;
+---
+<esa-dialog class="firma2-work-area-upload" heading="Upload shapes" size="lg" data-center={JSON.stringify(center)}>
+  <div class="stack" data-gap="lg">
+    <div class="stack" data-gap="lg" data-step="pick">
+      <div class="stack" data-gap="sm">
+        <p class="typography-body-md">A zipped shapefile or file geodatabase. You see what it holds before anything is added to this project.</p>
+        <ul class="firma2-work-area-upload__rules stack typography-body-md" data-gap="xs">
+          <li>A <strong>shapefile</strong> travels as a set: zip the .shp, .shx, .dbf and .prj together. Without the .prj there is no way to know what the coordinates mean, so the file is refused rather than guessed at.</li>
+          <li>A <strong>file geodatabase</strong> is a folder: zip the whole .gdb. If it holds several layers, you choose one.</li>
+          <li>Every shape becomes its own work area. Areas, reaches and points are all kept, and the kind is read from the shape.</li>
+        </ul>
+      </div>
+      <esa-file-upload label="File" accept=".zip" max-size-mb="50" data-file></esa-file-upload>
+      <p class="typography-body-sm">
+        No file to hand? Try
+        <button type="button" class="firma2-work-area-upload__link" data-sample="gdb">a sample geodatabase</button>
+        or
+        <button type="button" class="firma2-work-area-upload__link" data-sample="noprj">a shapefile missing its .prj</button>.
+      </p>
+    </div>
+
+    <div class="cluster" data-gap="sm" data-step="reading" hidden>
+      <EsaLoadingSpinner size="sm" label="Reading the file" />
+      <p class="typography-body-md" data-reading-label></p>
+    </div>
+
+    <div class="stack" data-gap="md" data-step="refused" hidden>
+      <EsaAlertBox variant="danger" title="This file was not accepted">
+        <ul class="firma2-work-area-upload__errors stack" data-gap="xs" data-errors></ul>
+        <p class="typography-body-sm">Nothing was added.</p>
+      </EsaAlertBox>
+      <div data-pickers-after-refusal></div>
+    </div>
+
+    <div class="stack" data-gap="md" data-step="choose" hidden>
+      <div data-pickers-choose></div>
+    </div>
+
+    <div class="stack" data-gap="md" data-step="preview" hidden>
+      <div data-pickers-before-preview></div>
+      <div class="firma2-work-area-upload__map" role="application" aria-label="Shapes in this file" data-preview-map></div>
+      <p class="typography-body-md" data-summary></p>
+      <table class="firma2-work-area-upload__table">
+        <caption class="visually-hidden">Work areas this file would add</caption>
+        <thead>
+          <tr><th scope="col" class="firma2-work-area-upload__num">#</th><th scope="col">Name</th><th scope="col">Kind</th><th scope="col" class="firma2-work-area-upload__num">Extent</th></tr>
+        </thead>
+        <tbody data-upload-rows></tbody>
+      </table>
+    </div>
+
+    <!-- The pickers themselves: ONE node, moved between the hosts above. -->
+    <div class="firma2-work-area-upload__pickers cluster" data-gap="md" data-pickers>
+      <esa-select data-layer label="This file has several layers. Read" placeholder="Choose a layer" size="md" hidden></esa-select>
+      <esa-select data-name-field label="Name each work area from" size="md" hidden></esa-select>
+    </div>
+  </div>
+
+  <div slot="footer" class="firma2-work-area-upload__footer repel">
+    <span>
+      <span data-again-wrap hidden><EsaButton variant="ghost" size="md" data-again>Choose a different file</EsaButton></span>
+    </span>
+    <span class="cluster" data-gap="xs">
+      <span data-commit-wrap hidden><EsaButton variant="primary" size="md" data-commit>Add these work areas</EsaButton></span>
+      <EsaButton variant="secondary" appearance="outline" size="md" data-cancel>Cancel</EsaButton>
+    </span>
+  </div>
+</esa-dialog>
+
+<style>
+  .firma2-work-area-upload [hidden] {
+    display: none !important;
+  }
+
+  .firma2-work-area-upload__rules {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+    list-style: disc;
+  }
+
+  .firma2-work-area-upload__errors {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+  }
+
+  /* An inline action inside a sentence: the link's look, a button's semantics
+     (it does something here rather than going somewhere). */
+  .firma2-work-area-upload__link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-content-link, #2a7e3b);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .firma2-work-area-upload__pickers esa-select {
+    min-inline-size: 16rem;
+  }
+
+  .firma2-work-area-upload__map {
+    block-size: 18rem;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+    font-family: var(--typography-body-sm-font-family);
+    font-size: var(--typography-body-sm-font-size);
+  }
+
+  .firma2-work-area-upload__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-work-area-upload__table th,
+  .firma2-work-area-upload__table :global(td) {
+    padding: var(--spacing-200) var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    font-weight: normal;
+  }
+
+  .firma2-work-area-upload__table thead th {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-work-area-upload__table th.firma2-work-area-upload__num,
+  .firma2-work-area-upload__table :global(td.firma2-work-area-upload__num) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-work-area-upload__footer {
+    inline-size: 100%;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-file-upload';
+  import { UPLOAD_SAMPLES } from '../../data/firma2-geography';
+  import type { MapWorkArea, UploadFile, UploadLayer } from '../../data/firma2-geography';
+  import { formatExtent, pathMiles, ringAcres } from '../../lib/geo';
+  import type { LatLng } from '../../lib/geo';
+  import { loadLeaflet, createMap, shapeStyle } from '../../lib/leaflet';
+  import type { Leaflet } from '../../lib/leaflet';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string };
+  type Dialog = HTMLElement & { show: () => void; close: () => void };
+  type Step = 'pick' | 'reading' | 'refused' | 'choose' | 'preview';
+
+  const KIND_NAMES = { area: 'Area', reach: 'Reach', point: 'Point' } as const;
+
+  document.querySelectorAll<Dialog>('.firma2-work-area-upload').forEach((dialog) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => dialog.querySelector<T>(sel)!;
+    const center: LatLng = JSON.parse(dialog.dataset.center ?? '[38.5,-121.5]');
+    const layerPicker = $<Control>('[data-layer]');
+    const namePicker = $<Control>('[data-name-field]');
+    const pickers = $('[data-pickers]');
+
+    let file: UploadFile | null = null;
+    let layerName = '';
+    let nameField = '';
+    let rows: Omit<MapWorkArea, 'id'>[] = [];
+
+    // ---- states ---------------------------------------------------------------
+    const show = (step: Step) => {
+      dialog.querySelectorAll<HTMLElement>('[data-step]').forEach((el) => (el.hidden = el.dataset.step !== step));
+      const host =
+        step === 'refused' ? '[data-pickers-after-refusal]' : step === 'choose' ? '[data-pickers-choose]' : '[data-pickers-before-preview]';
+      $(host).append(pickers);
+      pickers.hidden = !(step === 'refused' || step === 'choose' || step === 'preview') || !file?.layers.length;
+      $('[data-again-wrap]').hidden = step === 'pick' || step === 'reading';
+      $('[data-commit-wrap]').hidden = step !== 'preview';
+      if (step === 'preview') void drawPreview();
+    };
+
+    const refuse = (errors: string[]) => {
+      $('[data-errors]').replaceChildren(
+        ...errors.map((e) => Object.assign(document.createElement('li'), { className: 'typography-body-sm', textContent: e })),
+      );
+      show('refused');
+    };
+
+    const currentLayer = (): UploadLayer | undefined => file?.layers.find((l) => l.name === layerName);
+
+    // ---- reading a file --------------------------------------------------------
+    const read = (sample: UploadFile, fileName = sample.fileName) => {
+      file = sample;
+      layerName = sample.layers.length === 1 ? sample.layers[0].name : '';
+      nameField = '';
+      $('[data-reading-label]').textContent = `Reading ${fileName}…`;
+      show('reading');
+      // The wait is real in the product (an archive on a slow line takes tens
+      // of seconds); a beat of it here keeps the state from flashing past.
+      window.setTimeout(() => {
+        if (sample.refusal) return refuse(sample.refusal);
+        customElements.whenDefined('esa-select').then(() => {
+          layerPicker.options = sample.layers.map((l) => ({ value: l.name, label: `${l.name} — ${l.features.length} ${l.features[0]?.kind === 'point' ? 'points' : 'shapes'}` }));
+          layerPicker.value = layerName;
+          layerPicker.hidden = sample.layers.length < 2;
+          evaluate();
+        });
+      }, 700);
+    };
+
+    /** Re-read with the current layer and name field — every change re-reads. */
+    const evaluate = () => {
+      const layer = currentLayer();
+      if (!layer) {
+        namePicker.hidden = true;
+        return show('choose');
+      }
+      const fields = Object.keys(layer.features[0]?.fields ?? {});
+      namePicker.hidden = false;
+      namePicker.options = [{ value: '', label: 'Its position in the file' }, ...fields.map((f) => ({ value: f, label: f }))];
+      namePicker.value = nameField;
+
+      const names = layer.features.map((f, i) => (nameField ? f.fields[nameField] : `Work area ${i + 1}`));
+      // A name that does not tell the shapes apart is refused where it is
+      // chosen, with the fields that would work named in the refusal.
+      if (nameField && new Set(names).size < names.length) {
+        const better = fields.filter((f) => new Set(layer.features.map((x) => x.fields[f])).size === layer.features.length);
+        return refuse([
+          `All ${names.length} shapes would be called “${names[0]}”. Name them from a field whose values differ${better.length ? `, such as ${better.join(' or ')}` : ''}.`,
+        ]);
+      }
+
+      rows = layer.features.map((feature, i) => {
+        const path = feature.offsets.map(([dLat, dLng]) => [Number((center[0] + dLat).toFixed(5)), Number((center[1] + dLng).toFixed(5))] as LatLng);
+        const extent =
+          feature.kind === 'area' ? Math.round(ringAcres(path)) : feature.kind === 'reach' ? Number(pathMiles(path).toFixed(1)) : null;
+        return {
+          label: names[i],
+          kind: feature.kind,
+          path,
+          extent,
+          unit: feature.kind === 'area' ? 'acres' : feature.kind === 'reach' ? 'miles' : null,
+          origin: 'upload' as const,
+        };
+      });
+
+      $('[data-upload-rows]').replaceChildren(
+        ...rows.map((row, i) => {
+          const tr = document.createElement('tr');
+          [String(i + 1), row.label, KIND_NAMES[row.kind], formatExtent(row.extent, row.unit) || '—'].forEach((text, c) => {
+            const td = document.createElement('td');
+            td.className = `typography-body-sm${c === 0 || c === 3 ? ' firma2-work-area-upload__num' : ''}`;
+            td.textContent = text;
+            tr.append(td);
+          });
+          return tr;
+        }),
+      );
+
+      // ONE LINE, a caption for the map above and the table below.
+      const count = rows.length;
+      const kind = rows[0]?.kind ?? 'area';
+      const plural = { area: count === 1 ? 'area' : 'areas', reach: count === 1 ? 'reach' : 'reaches', point: count === 1 ? 'point' : 'points' }[kind];
+      const acres = rows.reduce((n, r) => n + (r.unit === 'acres' ? (r.extent ?? 0) : 0), 0);
+      $('[data-summary]').textContent =
+        `${count} ${plural}${acres ? `, ${acres.toLocaleString('en-US')} acres in all` : ''}, named ${nameField ? `from ${nameField}` : 'by their position in the file'}.`;
+      const commitLabel = $('[data-commit]').querySelector('.esa-button__label') ?? $('[data-commit]');
+      commitLabel.textContent = `Add ${count === 1 ? 'this work area' : `these ${count} work areas`}`;
+      show('preview');
+    };
+
+    // ---- the preview map ---------------------------------------------------------
+    let map: Leaflet = null;
+    let drawn: Leaflet = null;
+    const drawPreview = async () => {
+      const L = await loadLeaflet().catch(() => null);
+      if (!L) return;
+      const canvas = $('[data-preview-map]');
+      if (!map) map = createMap(L, canvas, { zoomControl: true }, () => void drawPreview());
+      map.invalidateSize();
+      drawn?.remove();
+      drawn = L.featureGroup(
+        rows.map((row) =>
+          (row.kind === 'point'
+            ? L.circleMarker(row.path[0], { ...shapeStyle('point'), radius: 6 })
+            : row.kind === 'reach'
+              ? L.polyline(row.path, shapeStyle('reach'))
+              : L.polygon(row.path, shapeStyle('area'))
+          ).bindTooltip(row.label, { sticky: true, className: 'firma2-map-tip' }),
+        ),
+      ).addTo(map);
+      if (rows.length) map.fitBounds(drawn.getBounds(), { padding: [24, 24], maxZoom: 15 });
+    };
+
+    // ---- wiring -------------------------------------------------------------------
+    const reset = () => {
+      file = null;
+      layerName = '';
+      nameField = '';
+      rows = [];
+      show('pick');
+    };
+
+    dialog.addEventListener('firma2:upload-open', () => {
+      reset();
+      dialog.show();
+    });
+
+    $('[data-file]').addEventListener('change', (event) => {
+      const files = (event as CustomEvent<{ files?: File[] }>).detail?.files ?? [];
+      if (files[0]) read(UPLOAD_SAMPLES.gdb, files[0].name);
+    });
+
+    dialog.querySelectorAll<HTMLElement>('[data-sample]').forEach((button) =>
+      button.addEventListener('click', () => read(UPLOAD_SAMPLES[button.dataset.sample as 'gdb' | 'noprj'])),
+    );
+
+    layerPicker.addEventListener('change', () => {
+      layerName = String(layerPicker.value ?? '');
+      nameField = '';
+      evaluate();
+    });
+
+    namePicker.addEventListener('change', () => {
+      nameField = String(namePicker.value ?? '');
+      evaluate();
+    });
+
+    $('[data-again]').addEventListener('click', reset);
+    $('[data-cancel]').addEventListener('click', () => dialog.close());
+
+    $('[data-commit]').addEventListener('click', () => {
+      dialog.dispatchEvent(new CustomEvent('firma2:upload-commit', { bubbles: true, detail: { areas: rows } }));
+      dialog.close();
+    });
+
+    reset();
+  });
+</script>

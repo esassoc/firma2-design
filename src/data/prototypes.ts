@@ -52,6 +52,57 @@ export const prototypes: Prototype[] = [
     createdAt: '2026-10-01',
     status: 'in-progress',
   },
+  // Ported from ProjectFirma2's hackathon team 2 (geospatial). The ArcGIS
+  // service, the upload reader and the sync are scripted stand-ins.
+  {
+    slug: 'work-areas',
+    title: 'Place a project',
+    description:
+      'Draw an area or a reach, drop a point, paste a coordinate off a spec sheet, adopt a subwatershed or upload a shapefile — then reshape it in place.',
+    route: '/prototypes/projects/cosumnes-floodplain-reconnection',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'portfolio-map',
+    title: 'Portfolio map',
+    description: 'Every project on one map, the legend as the filter, the regions with no work counted, and the shapes exported as GeoJSON, KML or CSV.',
+    route: '/prototypes/map',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'gis-subscriptions',
+    title: 'GIS subscriptions',
+    description: 'Keep project footprints current from your own ArcGIS layer: sync, see what was refused and why, and leave without losing a shape.',
+    route: '/prototypes/gis-subscriptions',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'map-layers',
+    title: 'Map layers',
+    description: 'The reference boundaries every map sits against, checked against the service before they are saved.',
+    route: '/prototypes/workspace-settings/map-layers',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'organization-settings',
+    title: 'Organization settings',
+    description: 'Every page that configures your organization in one index, with leave, retire and delete priced in their own rows.',
+    route: '/prototypes/workspace-settings/organization-settings',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'project-source',
+    title: 'Project source',
+    description: 'Create projects in ProjectFirma, or keep them current from your GIS — with the cost of switching stated before it happens.',
+    route: '/prototypes/workspace-settings/project-source',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
   // Ported from ProjectFirma2's hackathon team 6 (performance measures),
   // reworked against this spoke's measure model. Both flows are scripted
   // stand-ins for live Claude calls.

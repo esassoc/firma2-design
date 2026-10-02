@@ -1,0 +1,418 @@
+---
+// firma2-map-layers — the reference boundaries every map in the workspace is
+// drawn against. Ported from ProjectFirma2 hackathon team 2's Tenant settings
+// › Map layers (story H).
+//
+// DRAWN FROM THE SERVICE, NEVER COPIED. A layer here is a URL and a style; the
+// browser asks the service for its shapes. So the screen's job is to stop the
+// two quiet failures team 2 hit, at the moment they are made:
+//
+//   A map server that is not cached draws nothing at all, silently. "Check
+//   service" says so before it is saved, and names the fix.
+//   A pop-up field is case-sensitive: a service can advertise NAME and key its
+//   data name, and every shape reads "NAME: undefined". Once the service has
+//   been checked, the field is chosen from what it actually returned.
+//
+// ONE KIND'S NOTE AT A TIME. Team 2's help text explained all four kinds in
+// one paragraph under the picker; here the picker's help is the chosen kind's
+// sentence, which is the one the reader is deciding about.
+//
+// IMAGES CANNOT BE RESTYLED. A map server or a WMS sends pictures, so their
+// appearance belongs to the publisher and the style controls are replaced by
+// one sentence saying so. Feature servers and GeoJSON send shapes, and those
+// you style — with "the publisher's colours" for a layer whose colours mean
+// something (ownership by type), and your own line and fill for a plain
+// boundary that would otherwise shout over the work areas.
+//
+// Adding is an act, so it has a button; editing an existing layer saves as it
+// happens, and every map in the workspace follows (the storage event).
+//
+// bcn-lego-checked: esa-card, esa-badge, esa-button, esa-side-dialog,
+// esa-select, esa-text-field, esa-switch-toggle, esa-color-picker,
+// esa-alert-box, esa-confirm-dialog. The style preview is one swatch box
+// painted from the chosen values — there is no swatch lego, and a full map in
+// the sheet would preview a basemap more than a style. Beacon is not cloned.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { LAYER_KINDS, PROBE_RESULTS } from '../../data/firma2-geography';
+
+const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
+---
+<div class="firma2-map-layers stack" data-gap="lg" data-config={JSON.stringify(config)}>
+  <p class="typography-body-md">Watersheds, ownership, priority areas: boundaries every map in this workspace can show under the work areas. Each is drawn from the service named here, and nothing is copied into ProjectFirma.</p>
+
+  <div class="stack" data-gap="md" data-list></div>
+  <div data-none hidden>
+    <EsaEmptyState title="No map layers yet" description="Add one to give your maps some geography to sit against." />
+  </div>
+
+  <template data-tpl-card>
+    <EsaCard title="Layer" subtitle="url">
+      <div slot="actions" class="cluster" data-gap="xs">
+        <EsaButton variant="secondary" appearance="outline" size="sm" data-edit>Edit</EsaButton>
+        <EsaButton variant="danger" appearance="soft" size="sm" data-delete>Delete</EsaButton>
+      </div>
+      <div class="stack" data-gap="sm">
+        <div class="cluster" data-gap="xs" data-badges></div>
+        <p class="typography-body-md firma2-map-layers__muted" data-description></p>
+      </div>
+    </EsaCard>
+  </template>
+  <template data-tpl-badge-info><EsaBadge variant="info" size="sm" value="kind" /></template>
+  <template data-tpl-badge-primary><EsaBadge variant="primary" size="sm" value="on" /></template>
+  <template data-tpl-badge-secondary><EsaBadge variant="secondary" size="sm" value="x" /></template>
+  <template data-tpl-badge-warning><EsaBadge variant="warning" size="sm" value="x" /></template>
+
+  <esa-side-dialog class="firma2-map-layers__sheet" heading="Add layer" size="md" position="right">
+    <div class="stack" data-gap="xl">
+      <section class="stack" data-gap="md">
+        <esa-text-field data-name label="Name" size="md" help-text="What it is called in a map’s layer list." placeholder="Subwatersheds"></esa-text-field>
+        <esa-select data-kind label="Kind of service" size="md"></esa-select>
+        <esa-text-field data-url label="Service URL" size="md" placeholder="https://…/FeatureServer/2"></esa-text-field>
+        <esa-text-field data-service-layer label="Layer name" size="md" placeholder="topp:states" help-text="As the service’s capabilities document names it." hidden></esa-text-field>
+        <div class="cluster" data-gap="sm">
+          <EsaButton variant="secondary" size="sm" data-probe>Check service</EsaButton>
+          <span class="typography-body-sm" data-probe-result></span>
+        </div>
+        <div data-probe-warning hidden>
+          <EsaAlertBox variant="warning" title="This will not draw"><p class="typography-body-sm" data-probe-warning-text></p></EsaAlertBox>
+        </div>
+        <esa-text-field data-description label="Description" size="md"></esa-text-field>
+        <esa-select data-popup-select label="Pop-up field" size="md" help-text="Shown when someone clicks a shape. Chosen from what the service returned." hidden></esa-select>
+        <esa-text-field data-popup-text label="Pop-up field" size="md" help-text="Shown when someone clicks a shape. Case matters: NAME and name are different fields. Check the service to choose from its own list."></esa-text-field>
+        <esa-text-field data-min-zoom label="Draw from zoom level" size="md" inputmode="numeric" placeholder="Every zoom" help-text="Worth setting on a large dataset: services cap how many shapes they send, so a layer drawn zoomed out is slow and incomplete."></esa-text-field>
+        <esa-switch-toggle data-on-default label="On when a map opens"></esa-switch-toggle>
+        <esa-switch-toggle data-active label="Offered on maps"></esa-switch-toggle>
+      </section>
+
+      <section class="stack" data-gap="md">
+        <h4 class="typography-label-md-strong firma2-map-layers__h">Appearance</h4>
+        <p class="typography-body-md" data-raster-note hidden>This kind of service sends pictures, so its colours and lines are set by whoever publishes it.</p>
+        <div class="stack" data-gap="md" data-style>
+          <esa-switch-toggle data-publisher label="Use the publisher’s colours"></esa-switch-toggle>
+          <div class="stack" data-gap="md" data-own-style>
+            <div class="firma2-map-layers__pair">
+              <esa-color-picker data-stroke label="Line colour"></esa-color-picker>
+              <esa-text-field data-stroke-width label="Line width" size="md" inputmode="decimal"></esa-text-field>
+            </div>
+            <div class="firma2-map-layers__pair">
+              <esa-color-picker data-fill label="Fill colour"></esa-color-picker>
+              <esa-text-field data-fill-opacity label="Fill opacity" size="md" inputmode="decimal" help-text="0 for no fill."></esa-text-field>
+            </div>
+          </div>
+          <div class="firma2-map-layers__preview-row cluster" data-gap="md">
+            <span class="firma2-map-layers__preview" data-preview aria-hidden="true"></span>
+            <span class="typography-body-sm firma2-map-layers__muted" data-preview-text></span>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div slot="footer" class="cluster" data-gap="xs">
+      <span data-add-wrap><EsaButton variant="primary" size="md" data-add>Add layer</EsaButton></span>
+      <span data-done-wrap hidden><EsaButton variant="secondary" size="md" data-done>Done</EsaButton></span>
+      <span data-cancel-wrap><EsaButton variant="ghost" size="md" data-cancel>Cancel</EsaButton></span>
+    </div>
+  </esa-side-dialog>
+
+  <esa-confirm-dialog class="firma2-map-layers__confirm" variant="danger" heading="Delete this layer?" confirm-label="Delete layer"></esa-confirm-dialog>
+</div>
+
+<style>
+  .firma2-map-layers [hidden] {
+    display: none !important;
+  }
+
+  .firma2-map-layers__muted {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-map-layers__h {
+    margin: 0;
+  }
+
+  .firma2-map-layers__pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-400);
+    align-items: start;
+  }
+
+  /* A patch of the style as it will draw: the line on top of the fill. */
+  .firma2-map-layers__preview {
+    inline-size: 4rem;
+    block-size: 2.5rem;
+    border-radius: var(--radius-sm, 0.25rem);
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-color-picker';
+  import '@esa/ecology/esa-confirm-dialog';
+  import type { LayerKind, ReferenceLayer } from '../../data/firma2-geography';
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
+  import { onGeoChange, readLayers, writeLayers } from '../../lib/work-areas';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string; helpText?: string; checked?: boolean; message?: string; show?: () => void; close?: () => void; heading?: string };
+
+  interface Config {
+    kinds: { value: LayerKind; label: string; note: string; raster: boolean }[];
+    probes: Record<LayerKind, { name: string; fields: string[]; warning?: string }>;
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-map-layers').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const clone = (name: string) => ($<HTMLTemplateElement>(`[data-tpl-${name}]`).content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+    const kindOf = (kind: LayerKind) => config.kinds.find((k) => k.value === kind)!;
+
+    const badge = (variant: string, text: string) => {
+      const el = clone(`badge-${variant}`);
+      el.querySelector('.esa-badge__text')!.textContent = text;
+      return el;
+    };
+
+    // ---- the list ----------------------------------------------------------------
+    const paint = () => {
+      const layers = readLayers();
+      $('[data-none]').hidden = layers.length > 0;
+      $('[data-list]').replaceChildren(
+        ...layers.map((layer) => {
+          const card = clone('card');
+          card.querySelector('.esa-card__title')!.textContent = layer.name;
+          card.querySelector('.esa-card__subtitle')!.textContent = layer.url;
+          card.querySelector('[data-badges]')!.append(
+            badge('info', kindOf(layer.kind).label),
+            ...(layer.active ? [] : [badge('warning', 'Not offered on maps')]),
+            ...(layer.active && layer.onByDefault ? [badge('primary', 'On when a map opens')] : []),
+            ...(layer.publisherColours ? [badge('secondary', 'Publisher’s colours')] : []),
+            ...(layer.minZoom != null ? [badge('secondary', `From zoom ${layer.minZoom}`)] : []),
+          );
+          card.querySelector('[data-description]')!.textContent = layer.description;
+          card.querySelector('[data-edit]')!.addEventListener('click', () => open(layer.id));
+          card.querySelector('[data-delete]')!.addEventListener('click', () => askDelete(layer));
+          return card;
+        }),
+      );
+    };
+
+    // ---- delete --------------------------------------------------------------------
+    const confirm = $<Control>('.firma2-map-layers__confirm');
+    let deleting: ReferenceLayer | null = null;
+    const askDelete = (layer: ReferenceLayer) => {
+      deleting = layer;
+      confirm.message = `“${layer.name}” leaves every map in this workspace. The service itself is not touched, and you can add it again from its URL.`;
+      confirm.show?.();
+    };
+    confirm.addEventListener('resolved', (e) => {
+      if ((e as CustomEvent<{ confirmed: boolean }>).detail.confirmed && deleting) writeLayers(readLayers().filter((l) => l.id !== deleting!.id));
+      deleting = null;
+    });
+
+    // ---- the editor -------------------------------------------------------------------
+    const sheet = $<Control & { show: () => void; close: () => void }>('.firma2-map-layers__sheet');
+    void fixSideDialog(sheet);
+    const f = {
+      name: $<Control>('[data-name]'),
+      kind: $<Control>('[data-kind]'),
+      url: $<Control>('[data-url]'),
+      serviceLayer: $<Control>('[data-service-layer]'),
+      description: $<Control>('[data-description]'),
+      popupSelect: $<Control>('[data-popup-select]'),
+      popupText: $<Control>('[data-popup-text]'),
+      minZoom: $<Control>('[data-min-zoom]'),
+      onDefault: $<Control>('[data-on-default]'),
+      active: $<Control>('[data-active]'),
+      publisher: $<Control>('[data-publisher]'),
+      stroke: $<Control>('[data-stroke]'),
+      strokeWidth: $<Control>('[data-stroke-width]'),
+      fill: $<Control>('[data-fill]'),
+      fillOpacity: $<Control>('[data-fill-opacity]'),
+    };
+
+    let draft: ReferenceLayer;
+    let editingId: string | null = null;
+    let probedFields: string[] = [];
+
+    const commit = () => {
+      if (editingId) writeLayers(readLayers().map((l) => (l.id === editingId ? draft : l)));
+      paintSheet();
+    };
+
+    const paintSheet = () => {
+      const kind = kindOf(draft.kind);
+      f.kind.helpText = kind.note;
+      f.serviceLayer.hidden = draft.kind !== 'wms';
+      f.popupSelect.hidden = probedFields.length === 0;
+      f.popupText.hidden = probedFields.length > 0;
+      $('[data-raster-note]').hidden = !kind.raster;
+      $('[data-style]').hidden = kind.raster;
+      $('[data-own-style]').hidden = draft.publisherColours;
+      const preview = $('[data-preview]');
+      if (draft.publisherColours) {
+        preview.style.border = '2px dashed var(--color-border-default)';
+        preview.style.background = 'var(--color-background-elevation-sunken)';
+        $('[data-preview-text]').textContent = 'Drawn in the colours the service gives it.';
+      } else {
+        const opacity = Math.max(0, Math.min(1, draft.fillOpacity));
+        preview.style.border = `${Math.max(0.5, draft.strokeWidth)}px solid ${draft.stroke}`;
+        preview.style.background = opacity
+          ? `color-mix(in srgb, ${draft.fill || draft.stroke} ${Math.round(opacity * 100)}%, var(--color-background-elevation-sunken))`
+          : 'var(--color-background-elevation-sunken)';
+        $('[data-preview-text]').textContent = opacity ? 'An outline over a fill, under the work areas.' : 'An outline with no fill, under the work areas.';
+      }
+    };
+
+    const fill = () => {
+      f.name.value = draft.name;
+      f.name.errorText = '';
+      f.kind.value = draft.kind;
+      f.url.value = draft.url;
+      f.url.errorText = '';
+      f.serviceLayer.value = draft.serviceLayer ?? '';
+      f.description.value = draft.description;
+      f.popupText.value = draft.popupField;
+      f.popupSelect.value = draft.popupField;
+      f.minZoom.value = draft.minZoom == null ? '' : String(draft.minZoom);
+      f.onDefault.checked = draft.onByDefault;
+      f.active.checked = draft.active;
+      f.publisher.checked = draft.publisherColours;
+      f.stroke.value = draft.stroke;
+      f.strokeWidth.value = String(draft.strokeWidth);
+      f.fill.value = draft.fill;
+      f.fillOpacity.value = String(draft.fillOpacity);
+      $('[data-probe-result]').textContent = '';
+      $('[data-probe-warning]').hidden = true;
+      paintSheet();
+    };
+
+    const open = (id: string | null) => {
+      editingId = id;
+      probedFields = [];
+      draft = id
+        ? { ...readLayers().find((l) => l.id === id)! }
+        : {
+            id: `layer-${Date.now().toString(36)}`,
+            name: '',
+            kind: 'feature',
+            url: '',
+            description: '',
+            popupField: '',
+            minZoom: null,
+            onByDefault: false,
+            active: true,
+            publisherColours: false,
+            stroke: '#6b7280',
+            strokeWidth: 1,
+            fill: '#6b7280',
+            fillOpacity: 0,
+            draws: null,
+          };
+      sheet.heading = id ? 'Edit layer' : 'Add layer';
+      $('[data-add-wrap]').hidden = Boolean(id);
+      $('[data-cancel-wrap]').hidden = Boolean(id);
+      $('[data-done-wrap]').hidden = !id;
+      void Promise.all(['esa-select', 'esa-text-field', 'esa-switch-toggle', 'esa-color-picker'].map((t) => customElements.whenDefined(t))).then(() => {
+        fill();
+        sheet.show();
+      });
+    };
+
+    customElements.whenDefined('esa-select').then(() => {
+      f.kind.options = config.kinds.map((k) => ({ value: k.value, label: k.label }));
+    });
+
+    const text = (c: Control) => String(c.value ?? '').trim();
+    const num = (c: Control, fallback: number) => {
+      const v = Number(text(c));
+      return Number.isFinite(v) && text(c) !== '' ? v : fallback;
+    };
+
+    f.name.addEventListener('change', () => ((draft = { ...draft, name: text(f.name) }), commit()));
+    f.kind.addEventListener('change', () => {
+      // An image service always draws in its publisher's colours; leaving one
+      // for a shape service hands the style back to you.
+      const next = (text(f.kind) || 'feature') as LayerKind;
+      const publisherColours = kindOf(next).raster ? true : kindOf(draft.kind).raster ? false : draft.publisherColours;
+      draft = { ...draft, kind: next, publisherColours };
+      f.publisher.checked = publisherColours;
+      probedFields = [];
+      $('[data-probe-result]').textContent = '';
+      $('[data-probe-warning]').hidden = true;
+      commit();
+    });
+    f.url.addEventListener('change', () => ((draft = { ...draft, url: text(f.url) }), commit()));
+    f.serviceLayer.addEventListener('change', () => ((draft = { ...draft, serviceLayer: text(f.serviceLayer) }), commit()));
+    f.description.addEventListener('change', () => ((draft = { ...draft, description: text(f.description) }), commit()));
+    f.popupText.addEventListener('change', () => ((draft = { ...draft, popupField: text(f.popupText) }), commit()));
+    f.popupSelect.addEventListener('change', () => ((draft = { ...draft, popupField: text(f.popupSelect) }), commit()));
+    f.minZoom.addEventListener('change', () => {
+      const z = text(f.minZoom);
+      const v = Number(z);
+      f.minZoom.errorText = z && (!Number.isInteger(v) || v < 1 || v > 19) ? 'A whole number from 1 (the world) to 19 (a street).' : '';
+      if (f.minZoom.errorText) return;
+      draft = { ...draft, minZoom: z ? v : null };
+      commit();
+    });
+    f.onDefault.addEventListener('change', () => ((draft = { ...draft, onByDefault: Boolean(f.onDefault.checked) }), commit()));
+    f.active.addEventListener('change', () => ((draft = { ...draft, active: Boolean(f.active.checked) }), commit()));
+    f.publisher.addEventListener('change', () => ((draft = { ...draft, publisherColours: Boolean(f.publisher.checked) }), commit()));
+    f.stroke.addEventListener('change', () => ((draft = { ...draft, stroke: text(f.stroke) || draft.stroke }), commit()));
+    f.fill.addEventListener('change', () => ((draft = { ...draft, fill: text(f.fill) || draft.fill }), commit()));
+    f.strokeWidth.addEventListener('change', () => ((draft = { ...draft, strokeWidth: num(f.strokeWidth, draft.strokeWidth) }), commit()));
+    f.fillOpacity.addEventListener('change', () => ((draft = { ...draft, fillOpacity: Math.max(0, Math.min(1, num(f.fillOpacity, draft.fillOpacity))) }), commit()));
+
+    // ---- check service: scripted, by kind ------------------------------------------
+    $('[data-probe]').addEventListener('click', () => {
+      if (!draft.url) {
+        f.url.errorText = 'Paste the service’s URL first.';
+        return;
+      }
+      f.url.errorText = '';
+      const probe = config.probes[draft.kind];
+      $('[data-probe-result]').textContent = 'Checking…';
+      window.setTimeout(() => {
+        $('[data-probe-warning]').hidden = !probe.warning;
+        $('[data-probe-warning-text]').textContent = probe.warning ?? '';
+        $('[data-probe-result]').textContent = probe.warning
+          ? `Reached ${probe.name}.`
+          : `Reached ${probe.name}.${probe.fields.length ? ` ${probe.fields.length} fields, listed under Pop-up field.` : ''}`;
+        probedFields = probe.fields;
+        if (probedFields.length) {
+          f.popupSelect.options = probedFields.map((x) => ({ value: x, label: x }));
+          const match = probedFields.find((x) => x.toLowerCase() === draft.popupField.toLowerCase());
+          draft = { ...draft, popupField: match ?? probedFields[0] };
+          f.popupSelect.value = draft.popupField;
+          commit();
+        }
+        if (!draft.name && !probe.warning) {
+          draft = { ...draft, name: probe.name.split(' — ').pop() ?? probe.name };
+          f.name.value = draft.name;
+          commit();
+        }
+        paintSheet();
+      }, 600);
+    });
+
+    $('[data-add]').addEventListener('click', () => {
+      f.name.errorText = draft.name ? '' : 'Name it the way it should read in a map’s layer list.';
+      f.url.errorText = draft.url ? '' : 'Paste the service’s URL.';
+      if (f.name.errorText || f.url.errorText) return;
+      writeLayers([...readLayers(), draft]);
+      sheet.close();
+    });
+    $('[data-done]').addEventListener('click', () => sheet.close());
+    $('[data-cancel]').addEventListener('click', () => sheet.close());
+    document.querySelectorAll('[data-add-layer]').forEach((b) => b.addEventListener('click', () => open(null)));
+
+    onGeoChange(paint);
+    paint();
+  });
+</script>

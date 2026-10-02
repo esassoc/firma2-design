@@ -49,7 +49,7 @@ export interface Firma2NavItem {
 // `/`, and a second one below it would be two affordances for one destination.
 export const navItems: Firma2NavItem[] = [
   { key: 'project-finder', label: 'Project Finder', icon: 'search', group: 'Explore' },
-  { key: 'map', label: 'Map', icon: 'map-pin', group: 'Explore' },
+  { key: 'map', label: 'Map', href: '/prototypes/map', icon: 'map-pin', group: 'Explore' },
 
   { key: 'projects', label: 'Projects', href: '/prototypes/projects', icon: 'folder', group: 'Track', aliasable: true },
   { key: 'organizations', label: 'Organizations', icon: 'users', group: 'Track', aliasable: true },
@@ -62,6 +62,7 @@ export const navItems: Firma2NavItem[] = [
   { key: 'users', label: 'Users', icon: 'user', group: 'Manage' },
   { key: 'manage-organizations', label: 'Manage Organizations', icon: 'users', group: 'Manage', aliasable: true },
   { key: 'manage-funding-sources', label: 'Manage Funding Sources', icon: 'database', group: 'Manage', aliasable: true },
+  { key: 'gis-subscriptions', label: 'GIS Subscriptions', href: '/prototypes/gis-subscriptions', icon: 'database', group: 'Manage' },
   { key: 'custom-pages', label: 'Custom Pages', icon: 'file-text', group: 'Manage' },
 ];
 
@@ -103,6 +104,11 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   { key: 'ws-custom-fields', label: 'Custom fields', href: '/prototypes/workspace-settings/custom-fields', icon: 'pencil', group: 'Projects' },
   { key: 'ws-classifications', label: 'Classifications', href: '/prototypes/workspace-settings/classifications', icon: 'trees', group: 'Projects' },
 
+  // MAPS: where projects come from, and what every map sits against. A
+  // workspace's GIS arrangement, set once — hackathon team 2.
+  { key: 'ws-project-source', label: 'Project source', href: '/prototypes/workspace-settings/project-source', icon: 'database', group: 'Maps', aliasable: true },
+  { key: 'ws-map-layers', label: 'Map layers', href: '/prototypes/workspace-settings/map-layers', icon: 'map-pin', group: 'Maps' },
+
   { key: 'ws-organization-types', label: 'Organization types', href: '/prototypes/workspace-settings/organization-types', icon: 'users', group: 'Organizations' },
   { key: 'ws-funding-fields', label: 'Funding source fields', href: '/prototypes/workspace-settings/funding-source-fields', icon: 'database', group: 'Funding' },
 
@@ -124,6 +130,9 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   // ellipsis, and the label read "…Restorati". Under the "Your organization"
   // heading, Profile says enough; the page's own title carries the full name.
   { key: 'ws-your-organization', label: 'Profile', href: '/prototypes/workspace-settings/your-organization', icon: 'home', group: 'Your organization' },
+  // The index of the organization's settings pages (General, Members, …) and
+  // the way out of it. Its sub-pages keep this row active.
+  { key: 'ws-organization-settings', label: 'Settings', href: '/prototypes/workspace-settings/organization-settings', icon: 'settings', group: 'Your organization' },
 ];
 
 export interface Firma2SearchEntry {

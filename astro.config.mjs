@@ -10,12 +10,13 @@ import { fileURLToPath } from 'node:url';
 // withBase() (src/lib/base.ts) reads whichever base is active.
 const base = process.env.NODE_ENV === 'production' ? '/firma2-design/' : '/';
 
-// Hugeicons trial (local only): `npm run dev:hugeicons` swaps the hub's Lucide
-// icon-registry for src/lib/hugeicons-registry.ts at resolve time. Off by default,
-// so normal dev, builds and deploys keep Lucide.
+// Hugeicons are this spoke's icons: the plugin swaps the hub's Lucide
+// icon-registry for src/lib/hugeicons-registry.ts at resolve time, in dev,
+// builds and deploys alike. `npm run dev:lucide` (ICONS=lucide) turns it off,
+// to compare against the hub's own glyphs.
 const HUGEICONS_REGISTRY = fileURLToPath(new URL('./src/lib/hugeicons-registry.ts', import.meta.url));
-const hugeiconsTrial = {
-  name: 'firma2-hugeicons-trial',
+const hugeicons = {
+  name: 'firma2-hugeicons',
   enforce: 'pre',
   async resolveId(source, importer, options) {
     if (!source.includes('icon-registry') || !importer || importer === HUGEICONS_REGISTRY) return null;
@@ -28,5 +29,5 @@ export default defineConfig({
   site: 'https://esassoc.github.io',
   base,
   server: { port: 4330 },
-  vite: { plugins: process.env.ICONS === 'hugeicons' ? [hugeiconsTrial] : [] },
+  vite: { plugins: process.env.ICONS === 'lucide' ? [] : [hugeicons] },
 });

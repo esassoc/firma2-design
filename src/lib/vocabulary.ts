@@ -27,7 +27,14 @@ import type { Vocabulary } from '../data/firma2-vocabulary';
 export const VOCABULARY_KEY = 'firma2:vocabulary:v1';
 export const VOCABULARY_CHANGE_EVENT = 'firma2:vocabulary-change';
 
-export const readVocabulary = (): Vocabulary => {
+// ALIASING HAS A MASTER SWITCH (Workspace settings › Labels and definitions).
+// Off, every reader gets the application's words, and the tenant's renamings
+// are KEPT, not cleared, so switching back on restores them. Unset, it follows
+// the data: a tenant that already renamed something stays renamed.
+export const ALIASING_KEY = 'firma2:vocabulary-enabled:v1';
+
+/** The renamings as stored, whether or not aliasing is on. For the editor. */
+export const readStoredVocabulary = (): Vocabulary => {
   try {
     const parsed = JSON.parse(localStorage.getItem(VOCABULARY_KEY) ?? '{}');
     return parsed && typeof parsed === 'object' ? (parsed as Vocabulary) : {};
@@ -35,6 +42,28 @@ export const readVocabulary = (): Vocabulary => {
     return {};
   }
 };
+
+export const isAliasingEnabled = (): boolean => {
+  try {
+    const flag = localStorage.getItem(ALIASING_KEY);
+    if (flag !== null) return flag === 'true';
+  } catch {
+    return false;
+  }
+  return Object.keys(readStoredVocabulary()).length > 0;
+};
+
+export const setAliasingEnabled = (on: boolean): void => {
+  try {
+    localStorage.setItem(ALIASING_KEY, String(on));
+  } catch {
+    // Storage blocked: there is nowhere to keep the choice, so it does not stick.
+  }
+  document.dispatchEvent(new Event(VOCABULARY_CHANGE_EVENT));
+};
+
+/** The vocabulary in EFFECT: the stored renamings, or none while aliasing is off. */
+export const readVocabulary = (): Vocabulary => (isAliasingEnabled() ? readStoredVocabulary() : {});
 
 export const writeVocabulary = (vocabulary: Vocabulary): boolean => {
   try {
@@ -138,6 +167,6 @@ export const bootVocabulary = (): void => {
   });
   document.addEventListener(VOCABULARY_CHANGE_EVENT, () => applyVocabulary());
   window.addEventListener('storage', (event) => {
-    if (event.key === VOCABULARY_KEY) applyVocabulary();
+    if (event.key === VOCABULARY_KEY || event.key === ALIASING_KEY) applyVocabulary();
   });
 };

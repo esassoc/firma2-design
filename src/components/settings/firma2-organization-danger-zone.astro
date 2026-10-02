@@ -1,0 +1,156 @@
+---
+// firma2-organization-danger-zone — the three ways out of an organization:
+// leave it yourself, retire it, delete it. Ordered by how much each destroys.
+//
+// EACH ROW SAYS WHAT IT COSTS, then offers the act. The consequence is the row's
+// body text, not a tooltip, because these are the only irreversible-or-nearly
+// acts on the page and the brief (§5.4) gives the irreversible the room.
+//
+// RETIRE BEFORE DELETE, the rule measure setup set: anything projects have filed
+// against retires, never deletes. Delete is therefore DISABLED while the
+// organization leads or funds a project — and that is a true statement, with the
+// reason in the row beside it ("Inert, not disabled" bounds the exception:
+// disabled must be telling the truth, with the reason in view).
+//
+// Leave and Retire ask first, in ONE esa-confirm-dialog retargeted by the
+// button pressed — map-layers' precedent. (Two sibling dialogs were tried: the
+// Astro compiler nested the second inside the first, so it never rendered.)
+// Nothing in the prototype acts on the answer; the dialog closes and the page
+// stays as it was.
+//
+// bcn-lego-checked: esa-danger-zone is the box and its heading, esa-button each
+// act, esa-confirm-dialog each question — all composed unchanged. The lego's
+// slot is a wrapping button row; three rows each with their own consequence need
+// a list inside it, which is the only CSS here (full width, ruled apart in the
+// zone's own danger border). Beacon is not cloned on this machine.
+import EsaDangerZone from '@esa/ecology/esa-danger-zone.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import type { Organization } from '../../data/firma2-directory';
+
+interface Props {
+  organization: Organization;
+}
+
+const { organization: org } = Astro.props;
+const hasProjects = org.projectsLed + org.projectsFunded > 0;
+const plural = (n: number) => `${n} project${n === 1 ? '' : 's'}`;
+
+// Only the counts that exist: "leads 0 and funds 9" makes the reader parse a zero.
+const holdings = [
+  org.projectsLed > 0 && `leads ${plural(org.projectsLed)}`,
+  org.projectsFunded > 0 && `funds ${plural(org.projectsFunded)}`,
+].filter(Boolean).join(' and ');
+
+const deleteReason = hasProjects
+  ? `Only an organization with no projects can be deleted. This one ${holdings} — retire it instead.`
+  : 'Removes the organization and every member’s access to it. This can’t be undone.';
+
+// What the dialog asks for each act, keyed by the button's data-danger.
+const confirms = JSON.stringify({
+  leave: {
+    heading: 'Leave this organization?',
+    message: `You’ll lose access to ${org.name}’s projects and settings until an administrator invites you back.`,
+    confirmLabel: 'Leave organization',
+  },
+  retire: {
+    heading: 'Retire this organization?',
+    message: `Its ${plural(org.projectsLed + org.projectsFunded)} keep their history. It leaves every list and picker, and members can’t add projects for it until it’s restored.`,
+    confirmLabel: 'Retire organization',
+  },
+});
+
+const rows = [
+  {
+    key: 'leave',
+    title: 'Leave organization',
+    body: 'You lose access to its projects and settings. An administrator can invite you back.',
+    action: 'Leave',
+    disabled: false,
+  },
+  {
+    key: 'retire',
+    title: 'Retire organization',
+    body: 'Its projects and history stay, but it drops out of lists and pickers and can’t take new projects. You can restore it.',
+    action: 'Retire',
+    disabled: false,
+  },
+  {
+    key: 'delete',
+    title: 'Delete organization',
+    body: deleteReason,
+    action: 'Delete',
+    disabled: hasProjects,
+  },
+];
+---
+<EsaDangerZone heading="Danger zone">
+  <ul class="firma2-organization-danger-zone" role="list">
+    {rows.map((row) => (
+      <li class="repel" data-gap="md">
+        <div class="stack" data-gap="3xs" id={`danger-${row.key}`}>
+          <span class="typography-label-md-strong">{row.title}</span>
+          <span class="typography-body-sm">{row.body}</span>
+        </div>
+        <EsaButton
+          variant="danger"
+          appearance="soft"
+          size="md"
+          disabled={row.disabled}
+          aria-describedby={`danger-${row.key}`}
+          data-danger={row.key}
+        >{row.action}</EsaButton>
+      </li>
+    ))}
+  </ul>
+</EsaDangerZone>
+
+<esa-confirm-dialog class="firma2-organization-danger-zone__confirm" variant="danger" data-confirms={confirms}></esa-confirm-dialog>
+
+<script>
+  import '@esa/ecology/esa-confirm-dialog';
+
+  type Copy = { heading: string; message: string; confirmLabel: string };
+  type Confirm = HTMLElement & Copy & { show?: () => void };
+
+  const dialog = document.querySelector<Confirm>('.firma2-organization-danger-zone__confirm');
+  const copy: Record<string, Copy> = JSON.parse(dialog?.dataset.confirms ?? '{}');
+
+  document.querySelectorAll<HTMLElement>('[data-danger]').forEach((button) => {
+    const act = copy[button.dataset.danger ?? ''];
+    if (!dialog || !act) return;
+    button.addEventListener('click', async () => {
+      // Assigned only after define, or the props shadow the lego's setters.
+      await customElements.whenDefined('esa-confirm-dialog');
+      Object.assign(dialog, act);
+      dialog.show?.();
+    });
+  });
+</script>
+
+<style>
+  /* The lego's slot is a wrapping flex row built for a few buttons; this list
+     takes the whole row so each act sits on its own line with its consequence. */
+  .firma2-organization-danger-zone {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-organization-danger-zone > li {
+    padding-block: var(--spacing-300, 0.75rem);
+  }
+  .firma2-organization-danger-zone > li:first-child { padding-block-start: 0; }
+  .firma2-organization-danger-zone > li:last-child { padding-block-end: 0; }
+  .firma2-organization-danger-zone > li + li {
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-utility-danger, #fdbdbe);
+  }
+
+  /* The consequence wraps; the button keeps its width, and drops under the
+     text once the zone is too narrow for both on one line (a phone). */
+  .firma2-organization-danger-zone .stack {
+    flex: 1 1 14rem;
+    min-inline-size: 0;
+  }
+</style>

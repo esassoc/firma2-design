@@ -1,0 +1,178 @@
+---
+// firma2-project-source — how this workspace gets its projects. Ported from
+// ProjectFirma2 hackathon team 2's Tenant settings › Projects (decision 15).
+//
+// ONE OR THE OTHER, NOT BOTH. Projects are either created in ProjectFirma —
+// someone adds one and draws, types, adopts or uploads its location — or kept
+// current from a GIS subscription, where the shapes are edited upstream. The
+// choice decides which tools EVERYONE here sees, so it is a decision about how
+// the organization works, not a preference, and it sits in workspace settings
+// rather than on the subscriptions page the GIS analyst uses.
+//
+// IT SAVES AS IT IS CHOSEN, and prices itself first (product brief §2):
+//   to subscriptions — a confirm that counts the projects no subscription
+//                      knows, which keep their shapes and stop being editable;
+//   back to ProjectFirma — refused while a subscription still keeps shapes
+//                      current, with the way out named: take over the shapes.
+//
+// bcn-lego-checked: esa-card, esa-radio-group, esa-alert-box,
+// esa-confirm-dialog, esa-button; the groups table is the
+// firma2-settings-table style (no table lego). Beacon is not cloned here.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { ARCGIS_GROUP, UNMAPPED_PROJECTS } from '../../data/firma2-geography';
+import { projects } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+const subscriptionsHref = withBase('/prototypes/gis-subscriptions');
+const config = { total: projects.length, unmapped: UNMAPPED_PROJECTS.size };
+---
+<div class="firma2-project-source stack" data-gap="xl" data-config={JSON.stringify(config)}>
+  <EsaCard title="Where projects come from">
+    <div class="stack" data-gap="lg">
+      <esa-radio-group data-source label="Projects in this workspace" aria-label="Projects in this workspace"></esa-radio-group>
+      <dl class="firma2-project-source__options stack" data-gap="md">
+        <div>
+          <dt class="typography-label-md-strong">Created in ProjectFirma</dt>
+          <dd class="typography-body-md">Someone adds a project and gives it a location: drawn on the map, typed off a spec sheet, adopted from a reference area, or uploaded from a shapefile.</dd>
+        </div>
+        <div>
+          <dt class="typography-label-md-strong">Kept current from your GIS</dt>
+          <dd class="typography-body-md">Projects and their shapes are read from a feature service your organization maintains. Shapes are edited there, not here. A sync never deletes: a project that stops appearing upstream is kept and marked.</dd>
+        </div>
+      </dl>
+      <p class="typography-body-md" data-counts></p>
+      <div data-blocked hidden>
+        <EsaAlertBox variant="danger" title="Retire the subscriptions first">
+          <div class="stack" data-gap="sm">
+            <p class="typography-body-sm" data-blocked-text></p>
+            <span><EsaButton variant="secondary" size="sm" tag="a" href={subscriptionsHref}>Open GIS subscriptions</EsaButton></span>
+          </div>
+        </EsaAlertBox>
+      </div>
+    </div>
+  </EsaCard>
+
+  <EsaCard title="ArcGIS groups">
+    <div class="stack" data-gap="md">
+      <p class="typography-body-md">A subscription can read only the services your organization shares into a group listed here, with the ProjectFirma ArcGIS account invited to it. That is what keeps one organization’s layers from appearing for another.</p>
+      <table class="firma2-project-source__table">
+        <thead><tr><th scope="col">Group</th><th scope="col">ArcGIS group ID</th></tr></thead>
+        <tbody>
+          <tr><td class="typography-body-md">{ARCGIS_GROUP.title}</td><td class="typography-body-md"><code>{ARCGIS_GROUP.id}</code></td></tr>
+        </tbody>
+      </table>
+      <p class="typography-body-sm firma2-project-source__muted">ESA binds a group to a workspace at onboarding. To add one, invite the ProjectFirma account to it and ask your ESA contact to bind it.</p>
+    </div>
+  </EsaCard>
+
+  <esa-confirm-dialog class="firma2-project-source__confirm" heading="Keep projects current from your GIS?" confirm-label="Switch to subscriptions" cancel-label="Keep creating them here"></esa-confirm-dialog>
+</div>
+
+<style>
+  .firma2-project-source [hidden] {
+    display: none !important;
+  }
+
+  .firma2-project-source__options {
+    margin: 0;
+  }
+
+  .firma2-project-source__options dd {
+    margin: var(--spacing-100) 0 0;
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-project-source__muted {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-project-source__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-project-source__table th,
+  .firma2-project-source__table td {
+    padding: var(--spacing-300) var(--spacing-400) var(--spacing-300) 0;
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    font-weight: normal;
+  }
+
+  .firma2-project-source__table thead th {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-project-source__table tbody tr:last-child > * {
+    border-block-end: 0;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-radio-group';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { onGeoChange, readProjectSource, readSubscriptions, writeProjectSource } from '../../lib/work-areas';
+  import type { ProjectSource } from '../../lib/work-areas';
+  import { label as vocab } from '../../lib/vocabulary';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; message?: string; show?: () => void };
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-source').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const { total, unmapped } = JSON.parse(root.dataset.config ?? '{}') as { total: number; unmapped: number };
+    const radio = $<Control>('[data-source]');
+    const confirm = $<Control>('.firma2-project-source__confirm');
+    const n = (count: number, noun: string) => `${count} ${vocab(count === 1 ? noun : `${noun}s`)}`;
+
+    const paint = () => {
+      const source = readProjectSource();
+      const subs = readSubscriptions();
+      radio.value = source;
+      const kept = source === 'subscribed' ? subs.reduce((t, s) => t + s.projectCount, 0) : 0;
+      $('[data-counts]').textContent =
+        source === 'subscribed'
+          ? `${n(kept, 'project')} kept current by ${subs.length} ${subs.length === 1 ? 'subscription' : 'subscriptions'}; ${n(total - kept, 'project')} created here, which no sync updates.`
+          : `All ${n(total, 'project')} are created here.`;
+    };
+
+    customElements.whenDefined('esa-radio-group').then(() => {
+      radio.options = [
+        { value: 'app', label: 'Created in ProjectFirma' },
+        { value: 'subscribed', label: 'Kept current from your GIS' },
+      ];
+      paint();
+    });
+
+    radio.addEventListener('change', () => {
+      const next = String(radio.value ?? 'app') as ProjectSource;
+      const current = readProjectSource();
+      $('[data-blocked]').hidden = true;
+      if (next === current) return;
+      if (next === 'app') {
+        // Leaving needs every subscription gone, or shapes would have two owners.
+        const active = readSubscriptions().filter((s) => s.workAreaCount > 0);
+        if (active.length) {
+          const kept = active.reduce((t, s) => t + s.projectCount, 0);
+          $('[data-blocked-text]').textContent = `${active.length === 1 ? 'A subscription still keeps' : `${active.length} subscriptions still keep`} ${n(kept, 'project')} current. Take over its shapes on the GIS subscriptions page and they stay on their projects, editable here. Then come back and switch.`;
+          $('[data-blocked]').hidden = false;
+          radio.value = current;
+          return;
+        }
+        writeProjectSource('app');
+        return;
+      }
+      confirm.message = `The drawing and upload tools leave every project page; shapes are edited in your GIS. ${n(unmapped, 'project')} with no shape yet, and any your layer does not carry, are kept but no sync will update them until your layer knows them by the same project number.`;
+      radio.value = current;
+      confirm.show?.();
+    });
+
+    confirm.addEventListener('resolved', (e) => {
+      if ((e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) writeProjectSource('subscribed');
+      paint();
+    });
+
+    onGeoChange(paint);
+  });
+</script>

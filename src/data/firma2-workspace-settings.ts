@@ -16,6 +16,20 @@ import { projects, STAGE_ORDER } from './firma2-projects';
 import { organizations, users } from './firma2-directory';
 import type { OrganizationType, UserRole } from './firma2-directory';
 import type { Classification, ProjectStage } from './firma2-projects';
+import {
+  CancelCircleIcon,
+  CheckmarkCircle02Icon,
+  CircleDashedIcon,
+  CircleDotDashedIcon,
+  CircleDotIcon,
+  CircleIcon,
+  PauseCircleIcon,
+  Progress02Icon,
+  Progress03Icon,
+  Progress04Icon,
+} from '@hugeicons/core-free-icons';
+import { toMarkup } from '../lib/hugeicon-markup';
+import type { CatalogIcon, IconNode } from '../lib/hugeicon-markup';
 
 export interface SettingsRow {
   name: string;
@@ -43,21 +57,6 @@ export const MONTHS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Labels and definitions
-// ---------------------------------------------------------------------------
-
-/** `label` is what the workspace calls it; `cells.default` is ProjectFirma's own word. */
-export const fieldDefinitions: SettingsRow[] = [
-  { name: 'Project', description: 'A discrete body of work with a budget, a lead, and a place on the map.', cells: { default: 'Project' } },
-  { name: 'Lead implementer', description: 'The organization accountable for delivering the project.', cells: { default: 'Lead implementer' } },
-  { name: 'Program', description: 'The funding program a project rolls up into for reporting.', cells: { default: 'Taxonomy branch' } },
-  { name: 'Goal', description: 'The outcome a project works toward. Each project has one or two.', cells: { default: 'Classification' } },
-  { name: 'Performance measure', description: 'A quantity a project reports each year, such as acres treated.', cells: { default: 'Performance measure' } },
-  { name: 'Expenditure', description: 'Money spent in a year, by funding source.', cells: { default: 'Expenditure' } },
-  { name: 'Work area', description: 'A mapped footprint where the project does its work.', cells: { default: 'Project location' } },
-].map((r) => ({ ...r, cells: { ...r.cells, changed: r.name === r.cells.default ? 'No' : 'Yes' } }));
-
-// ---------------------------------------------------------------------------
 // Stages — counted from the fixture
 // ---------------------------------------------------------------------------
 
@@ -78,6 +77,90 @@ export const stages: SettingsRow[] = STAGE_ORDER.map((stage) => ({
     reports: STAGE_COPY[stage].reports,
     publicPage: STAGE_COPY[stage].publicPage,
   },
+}));
+
+/**
+ * The icons a stage picker offers before anyone searches: one family of
+ * status circles, so a stage's icon can also say where it sits in the
+ * lifecycle. Any of the ~6,000 Hugeicons free glyphs can be searched and
+ * picked (bcn-icon-picker); these are only the shortlist.
+ *
+ * A stage stores the Hugeicons export name AND the glyph's markup, so a page
+ * draws its stages without loading the whole set — the set loads only when
+ * someone searches it.
+ */
+const SUGGESTED: [unknown, string, string][] = [
+  [CircleDashedIcon, 'CircleDashedIcon', 'Dashed circle'],
+  [CircleDotDashedIcon, 'CircleDotDashedIcon', 'Dashed circle with dot'],
+  [CircleIcon, 'CircleIcon', 'Circle'],
+  [CircleDotIcon, 'CircleDotIcon', 'Circle with dot'],
+  [Progress02Icon, 'Progress02Icon', 'Quarter circle'],
+  [Progress03Icon, 'Progress03Icon', 'Half circle'],
+  [Progress04Icon, 'Progress04Icon', 'Three-quarter circle'],
+  [CheckmarkCircle02Icon, 'CheckmarkCircle02Icon', 'Check circle'],
+  [PauseCircleIcon, 'PauseCircleIcon', 'Pause circle'],
+  [CancelCircleIcon, 'CancelCircleIcon', 'Cancel circle'],
+];
+
+export const STAGE_ICON_SUGGESTIONS: CatalogIcon[] = SUGGESTED.map(([node, name, label]) => ({
+  name,
+  label,
+  paths: toMarkup(node as IconNode),
+}));
+
+const suggested = (name: string): CatalogIcon => STAGE_ICON_SUGGESTIONS.find((i) => i.name === name)!;
+
+/**
+ * Suggested stage colours, as the branding picker offers its swatches. All
+ * are dark enough (step 11 of their ramps) to clear 3 : 1 as an icon on a
+ * white page; a free hex can still be typed, and is warned about if it cannot.
+ */
+export const STAGE_SWATCHES = [
+  { value: '#646464', label: 'Grey' },
+  { value: '#0d74ce', label: 'Blue' },
+  { value: '#167a7a', label: 'Teal' },
+  { value: '#218358', label: 'Green' },
+  { value: '#2a7e3b', label: 'Grass' },
+  { value: '#ab6400', label: 'Amber' },
+  { value: '#b5621f', label: 'Orange' },
+  { value: '#a8324a', label: 'Red' },
+  { value: '#6a5aa8', label: 'Purple' },
+  { value: '#1f3a5f', label: 'Navy' },
+];
+
+export interface StageSetting {
+  key: string;
+  name: string;
+  description: string;
+  /** Hugeicons export name, e.g. "Progress03Icon". */
+  icon: string;
+  /** That glyph's inner-SVG markup, stored so drawing needs no icon set. */
+  iconPaths: string;
+  /** Hex, tints the icon. */
+  color: string;
+  reportsYearly: boolean;
+  publicPage: boolean;
+  /** Added in this browser — the only stages that can be removed (none hold projects). */
+  added?: boolean;
+}
+
+const STAGE_LOOK: Record<ProjectStage, { icon: string; color: string }> = {
+  Proposal: { icon: 'CircleDashedIcon', color: '#646464' },
+  'Planning & Design': { icon: 'Progress02Icon', color: '#0d74ce' },
+  Implementation: { icon: 'Progress03Icon', color: '#2a7e3b' },
+  'Post-Implementation': { icon: 'Progress04Icon', color: '#167a7a' },
+  Completed: { icon: 'CheckmarkCircle02Icon', color: '#218358' },
+  Deferred: { icon: 'PauseCircleIcon', color: '#ab6400' },
+};
+
+export const stageSettings: StageSetting[] = STAGE_ORDER.map((stage) => ({
+  key: stage,
+  name: stage,
+  description: STAGE_COPY[stage].description,
+  ...STAGE_LOOK[stage],
+  iconPaths: suggested(STAGE_LOOK[stage].icon).paths,
+  reportsYearly: STAGE_COPY[stage].reports === 'Yes',
+  publicPage: STAGE_COPY[stage].publicPage === 'Shown',
 }));
 
 // ---------------------------------------------------------------------------

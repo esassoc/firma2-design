@@ -1,0 +1,846 @@
+---
+// firma2-portfolio-map — every project on one map, and the two questions the
+// geospatial mission said a map has to answer: WHERE IS THE WORK, and WHERE
+// ARE THE GAPS. Ported from ProjectFirma2 hackathon team 2's /projects/map.
+//
+// THE LEGEND IS THE FILTER. ProjectFirma 1.x has a colour-by dropdown and a
+// separate filter-by multiselect naming the same dimension, which allows a
+// state where they disagree. Here you filter by pointing at the swatch.
+//
+// THE GAPS ARE COUNTED, BECAUSE A MAP CANNOT SHOW THEM. A project with no
+// geometry is invisible on a map of geometry by construction, so "Not on this
+// map" is a number, with the projects named and linked — the place Dana goes
+// next. Regions with no work are counted the same way, and the shading puts
+// them on the canvas.
+//
+// ACRES AND MILES ARE NEVER ADDED TOGETHER. They measure different things,
+// and one "total extent" would be a number with no unit that could be true.
+//
+// EVERYTHING FOLLOWS THE FILTER except "Not on this map", which cannot: a
+// project with no work area has no colour to filter on. Its sentence says
+// which projects it counts, so it needs no caveat.
+//
+// bcn-lego-checked: legos throughout — esa-card, esa-select, esa-switch-toggle,
+// esa-dropdown-menu, esa-button, esa-chart, esa-collapsible,
+// esa-snackbar-container. The canvas is Leaflet (no map lego; see
+// firma2-project-map). The legend rows are toggle buttons with a swatch,
+// because the legend IS the control and no lego is a filterable legend
+// (esa-chip-group draws pills, which would separate the swatch from the
+// thing it keys). The stats are a <dl> for the same reason firma2-project-facts
+// uses one. Beacon is not cloned on this machine.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import { projects, projectHref, projectSlug, STAGE_ORDER } from '../../data/firma2-projects';
+import { HYDROLOGIC_REGIONS, PLACES, SUBWATERSHEDS, seedWorkAreas } from '../../data/firma2-geography';
+import { stages } from '../../data/firma2-workspace-settings';
+import { withBase } from '../../lib/base';
+
+const hiddenStages = stages.filter((s) => s.cells.publicPage === 'Hidden').map((s) => s.name);
+const config = {
+  projects: projects.map((p) => ({
+    slug: projectSlug(p),
+    name: p.projectName,
+    href: withBase(projectHref(p)),
+    program: p.program,
+    stage: p.stage,
+    classification: p.classifications[0],
+    isPublic: !hiddenStages.includes(p.stage),
+    seed: seedWorkAreas(p),
+  })),
+  stageOrder: STAGE_ORDER,
+  regions: HYDROLOGIC_REGIONS,
+  subwatersheds: SUBWATERSHEDS,
+  places: PLACES,
+};
+---
+<div class="firma2-portfolio-map" data-config={JSON.stringify(config)}>
+  <aside class="firma2-portfolio-map__side stack" data-gap="lg">
+    <EsaCard title="Color by">
+      <div class="stack" data-gap="md">
+        <esa-select data-facet aria-label="Color by" size="md"></esa-select>
+        <div class="stack" data-gap="xs">
+          <div class="repel">
+            <span class="typography-label-md">Click a row to filter</span>
+            <button type="button" class="firma2-portfolio-map__link typography-body-sm" data-show-all hidden>Show all</button>
+          </div>
+          <ul class="firma2-portfolio-map__legend" data-legend></ul>
+        </div>
+      </div>
+    </EsaCard>
+
+    <EsaCard title="On the map">
+      <dl class="firma2-portfolio-map__stats" data-stats></dl>
+    </EsaCard>
+
+    <EsaCard title="Coverage">
+      <div class="stack" data-gap="lg">
+        <div class="stack" data-gap="sm">
+          <h4 class="typography-label-md-strong firma2-portfolio-map__h">Hydrologic regions</h4>
+          <p class="typography-body-md" data-gap-sentence></p>
+          <ul class="firma2-portfolio-map__list typography-body-md" data-gap-list></ul>
+          <esa-switch-toggle data-shade label="Shade regions by projects" size="sm"></esa-switch-toggle>
+          <ul class="firma2-portfolio-map__key typography-body-sm" data-shade-key hidden aria-label="Shading key"></ul>
+        </div>
+        <div class="stack" data-gap="sm" data-unmapped hidden>
+          <h4 class="typography-label-md-strong firma2-portfolio-map__h">Not on this map</h4>
+          <p class="typography-body-md" data-unmapped-sentence></p>
+          <ul class="firma2-portfolio-map__list typography-body-md" data-unmapped-list></ul>
+        </div>
+      </div>
+    </EsaCard>
+  </aside>
+
+  <div class="firma2-portfolio-map__main stack" data-gap="lg">
+    <div class="firma2-portfolio-map__surface">
+      <div class="firma2-portfolio-map__canvas" role="application" aria-label="Portfolio map" data-canvas></div>
+      <div class="firma2-portfolio-map__search">
+        <esa-text-field data-search type="search" size="sm" label="Find a place" placeholder="A town, region or subwatershed" autocomplete="off"></esa-text-field>
+        <ul class="firma2-portfolio-map__results" data-results hidden></ul>
+      </div>
+    </div>
+
+    <div class="firma2-portfolio-map__charts">
+      <EsaCard title="Acres">
+        <div class="stack" data-gap="md">
+          <div class="firma2-portfolio-map__chart" data-chart="acres"></div>
+          <p class="typography-body-sm firma2-portfolio-map__note">Areas only, in the map’s colours. Reaches are measured in miles and points have no extent.</p>
+          <EsaCollapsible title="View as data" flush>
+            <table class="firma2-portfolio-map__table" data-table="acres"></table>
+          </EsaCollapsible>
+        </div>
+      </EsaCard>
+      <EsaCard title="Projects per region">
+        <div class="stack" data-gap="md">
+          <div class="firma2-portfolio-map__chart" data-chart="regions"></div>
+          <EsaCollapsible title="View as data" flush>
+            <table class="firma2-portfolio-map__table" data-table="regions"></table>
+          </EsaCollapsible>
+        </div>
+      </EsaCard>
+    </div>
+  </div>
+  <esa-snackbar-container class="firma2-portfolio-map__toasts"></esa-snackbar-container>
+</div>
+
+<style>
+  .firma2-portfolio-map [hidden] {
+    display: none !important;
+  }
+
+  .firma2-portfolio-map {
+    display: grid;
+    grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
+    gap: var(--spacing-600);
+    align-items: start;
+  }
+
+  @media (max-width: 64rem) {
+    .firma2-portfolio-map {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .firma2-portfolio-map__h {
+    margin: 0;
+  }
+
+  .firma2-portfolio-map__link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-content-link, #2a7e3b);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .firma2-portfolio-map__legend,
+  .firma2-portfolio-map__list,
+  .firma2-portfolio-map__key {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-portfolio-map__list {
+    display: grid;
+    gap: var(--spacing-100);
+  }
+
+  .firma2-portfolio-map__key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-200) var(--spacing-300);
+  }
+
+  :global(.firma2-portfolio-map__key-item) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-100);
+  }
+
+  :global(.firma2-portfolio-map__row) {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--spacing-200);
+    inline-size: 100%;
+    padding: var(--spacing-200);
+    border: 0;
+    border-radius: var(--radius-sm, 0.25rem);
+    background: none;
+    color: var(--color-content-default, #202020);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  :global(.firma2-portfolio-map__row:hover) {
+    background: var(--color-background-default-hover, #f0f0f0);
+  }
+
+  /* Filtered out: the row stays, quieter, so the way back is where it was. */
+  :global(.firma2-portfolio-map__row[aria-pressed='false']) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  :global(.firma2-portfolio-map__row[aria-pressed='false'] .firma2-portfolio-map__swatch) {
+    opacity: 0.25;
+  }
+
+  :global(.firma2-portfolio-map__swatch) {
+    inline-size: 0.875rem;
+    block-size: 0.875rem;
+    border-radius: var(--radius-xs, 0.125rem);
+  }
+
+  :global(.firma2-portfolio-map__swatch--none) {
+    border: 1px dashed var(--color-border-default, #cecece);
+  }
+
+  :global(.firma2-portfolio-map__count) {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-portfolio-map__stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-400);
+    margin: 0;
+  }
+
+  :global(.firma2-portfolio-map__stats dt) {
+    color: var(--color-text-secondary);
+  }
+
+  :global(.firma2-portfolio-map__stats dd) {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-portfolio-map__surface {
+    position: relative;
+    block-size: calc(100dvh - calc(var(--firma2-band-height, 148px) + var(--spacing-800, 4rem)));
+    min-block-size: 32rem;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md, 0.5rem);
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .firma2-portfolio-map__canvas {
+    position: absolute;
+    inset: 0;
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+    font-family: var(--typography-body-sm-font-family);
+    font-size: var(--typography-body-sm-font-size);
+    line-height: var(--typography-body-sm-line-height);
+  }
+
+  .firma2-portfolio-map__search {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: var(--spacing-400);
+    inset-inline-start: 4rem;
+    inline-size: min(20rem, calc(100% - 6rem));
+    padding: var(--spacing-200) var(--spacing-300);
+    background: var(--color-background-elevation-floating, #fcfcfc);
+    border: 1px solid var(--color-border-default-subtle, #d9d9d9);
+    border-radius: var(--radius-md, 0.5rem);
+    box-shadow: var(--elevation-2, 0 2px 12px 0 rgba(0, 0, 0, 0.04));
+  }
+
+  .firma2-portfolio-map__results {
+    margin: var(--spacing-200) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  :global(.firma2-portfolio-map__result) {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-300);
+    inline-size: 100%;
+    padding: var(--spacing-200);
+    border: 0;
+    border-radius: var(--radius-sm, 0.25rem);
+    background: none;
+    color: var(--color-content-default, #202020);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  :global(.firma2-portfolio-map__result:hover) {
+    background: var(--color-background-default-hover, #f0f0f0);
+  }
+
+  .firma2-portfolio-map__charts {
+    display: grid;
+    /* One per row: the category names run long, and a half-width chart
+       truncates them ("…tland Restoration"). */
+    grid-template-columns: 1fr;
+    gap: var(--spacing-600);
+  }
+
+  .firma2-portfolio-map__chart {
+    min-block-size: 18rem;
+  }
+
+  .firma2-portfolio-map__note {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-portfolio-map__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-portfolio-map__table :global(th),
+  .firma2-portfolio-map__table :global(td) {
+    padding: var(--spacing-200) 0;
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    font-weight: normal;
+  }
+
+  .firma2-portfolio-map__table :global(.num) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-portfolio-map :global(.leaflet-bar),
+  .firma2-portfolio-map :global(.leaflet-control-layers) {
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-sm, 0.25rem);
+    box-shadow: var(--elevation-1, 0 1px 4px rgba(0, 0, 0, 0.06));
+  }
+
+  .firma2-portfolio-map :global(.leaflet-bar a),
+  .firma2-portfolio-map :global(.leaflet-control-layers) {
+    background-color: var(--color-background-elevation-raised, #fcfcfc);
+    color: var(--color-content-default, #202020);
+  }
+
+  .firma2-portfolio-map :global(.leaflet-popup-content-wrapper),
+  .firma2-portfolio-map :global(.leaflet-popup-tip) {
+    background: var(--color-background-elevation-floating, #fcfcfc);
+    color: var(--color-content-default, #202020);
+    box-shadow: var(--elevation-2, 0 2px 12px 0 rgba(0, 0, 0, 0.08));
+  }
+
+  .firma2-portfolio-map :global(.leaflet-popup-content) {
+    margin: var(--spacing-300) var(--spacing-400);
+    font: inherit;
+  }
+
+  .firma2-portfolio-map :global(.leaflet-popup-content a) {
+    color: var(--color-content-link, #2a7e3b);
+  }
+
+  :global(.firma2-map-tip) {
+    padding: var(--spacing-200) var(--spacing-300);
+    background: var(--color-background-elevation-floating, #fcfcfc);
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-sm, 0.25rem);
+    color: var(--color-content-default, #202020);
+    box-shadow: var(--elevation-2, 0 2px 12px 0 rgba(0, 0, 0, 0.04));
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-chart';
+  import '@esa/ecology/esa-snackbar-container';
+  import type { MapWorkArea, Place, Region, Subwatershed } from '../../data/firma2-geography';
+  import { centroid, formatExtent, pointInRing } from '../../lib/geo';
+  import type { LatLng } from '../../lib/geo';
+  import { addReferenceLayers, createMap, loadLeaflet, token } from '../../lib/leaflet';
+  import type { Leaflet } from '../../lib/leaflet';
+  import { onGeoChange, readAllWorkAreas, readLayers } from '../../lib/work-areas';
+  import { label as vocab } from '../../lib/vocabulary';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean };
+  type Chart = HTMLElement & Record<string, unknown>;
+  type Facet = 'program' | 'stage' | 'classification';
+
+  interface ProjectRow {
+    slug: string;
+    name: string;
+    href: string;
+    program: string;
+    stage: string;
+    classification: string;
+    isPublic: boolean;
+    seed: MapWorkArea[];
+  }
+
+  interface Config {
+    projects: ProjectRow[];
+    stageOrder: string[];
+    regions: Region[];
+    subwatersheds: Subwatershed[];
+    places: Place[];
+  }
+
+  const FACETS: { value: Facet; label: string }[] = [
+    { value: 'program', label: 'Program' },
+    { value: 'stage', label: 'Stage' },
+    { value: 'classification', label: 'Classification' },
+  ];
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const n = (v: number, digits = 0) => v.toLocaleString('en-US', { maximumFractionDigits: digits });
+
+  async function initPortfolio(root: HTMLElement) {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const seeds = Object.fromEntries(config.projects.map((p) => [p.slug, p.seed]));
+
+    let facet: Facet = 'program';
+    let selected = new Set<string>();
+    let shading = false;
+    let all = readAllWorkAreas(seeds);
+
+    // ---- the facet's values, and their colours -------------------------------
+    const valuesFor = (f: Facet): string[] => {
+      const values = [...new Set(config.projects.map((p) => p[f]))];
+      return f === 'stage' ? config.stageOrder.filter((s) => values.includes(s)) : values.sort();
+    };
+    const colorOf = (value: string) => {
+      const index = valuesFor(facet).indexOf(value);
+      return token(`--color-background-dataviz-categorical-${(index % 8) + 1}`, '#3e9b4f');
+    };
+
+    /** Every work area on the map, with the project it belongs to. */
+    const placed = () =>
+      config.projects.flatMap((p) => (all[p.slug] ?? []).map((area) => ({ project: p, area, value: p[facet] })));
+    const visible = () => placed().filter((x) => selected.size === 0 || selected.has(x.value));
+    const unmapped = () => config.projects.filter((p) => (all[p.slug] ?? []).length === 0);
+    const regionOf = (areas: MapWorkArea[]): Region | null => {
+      if (!areas.length) return null;
+      const c = centroid(areas.flatMap((a) => a.path));
+      return config.regions.find((r) => pointInRing(c, r.ring)) ?? null;
+    };
+
+    // ---- the map ----------------------------------------------------------------
+    const L: Leaflet | null = await loadLeaflet().catch(() => null);
+    const canvas = $('[data-canvas]');
+    if (!L) {
+      canvas.hidden = true;
+      return;
+    }
+    const map = createMap(L, canvas, { zoomSnap: 0.5 }, () => paintAll());
+    map.setView([37.6, -120.4], 6);
+    addReferenceLayers(L, map, readLayers(), { regions: config.regions, subwatersheds: config.subwatersheds });
+    const regionLayer = L.featureGroup().addTo(map);
+    const shapeLayer = L.featureGroup().addTo(map);
+    const dotLayer = L.featureGroup();
+
+    // A STATE IS TOO BIG FOR A TREATMENT UNIT. At the zoom that shows the whole
+    // portfolio a 60-acre polygon is a speck, so each project also gets a dot
+    // at its work's center while zoomed out. A dot zooms to its project.
+    const DOT_ZOOM = 9;
+    const syncDots = () => {
+      const zoomedOut = map.getZoom() < DOT_ZOOM;
+      if (zoomedOut && !map.hasLayer(dotLayer)) dotLayer.addTo(map);
+      if (!zoomedOut && map.hasLayer(dotLayer)) map.removeLayer(dotLayer);
+    };
+    map.on('zoomend', syncDots);
+
+    const paintShapes = () => {
+      shapeLayer.clearLayers();
+      dotLayer.clearLayers();
+      const byProject = new Map<string, { project: ProjectRow; areas: MapWorkArea[]; value: string }>();
+      visible().forEach(({ project, area, value }) => {
+        const entry = byProject.get(project.slug) ?? { project, areas: [], value };
+        entry.areas.push(area);
+        byProject.set(project.slug, entry);
+      });
+      byProject.forEach(({ project, areas, value }) => {
+        const color = colorOf(value);
+        L.circleMarker(centroid(areas.flatMap((a) => a.path)), {
+          radius: 7,
+          color: token('--color-background-elevation-floating', '#fff'),
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 1,
+        })
+          .bindTooltip(`${esc(project.name)}<br>${areas.length} work ${areas.length === 1 ? 'area' : 'areas'}`, { className: 'firma2-map-tip', direction: 'top' })
+          .on('click', () => map.fitBounds(L.latLngBounds(areas.flatMap((a) => a.path)), { padding: [60, 60], maxZoom: 13 }))
+          .addTo(dotLayer);
+      });
+      syncDots();
+      visible().forEach(({ project, area, value }) => {
+        const color = colorOf(value);
+        const style =
+          area.kind === 'reach'
+            ? { color, weight: 3, opacity: 0.95 }
+            : { color, weight: 1.5, fillColor: color, fillOpacity: area.kind === 'point' ? 0.9 : 0.35 };
+        const shape =
+          area.kind === 'point'
+            ? L.circleMarker(area.path[0], { ...style, radius: 6 })
+            : area.kind === 'reach'
+              ? L.polyline(area.path, style)
+              : L.polygon(area.path, style);
+        const extent = formatExtent(area.extent, area.unit);
+        shape.bindTooltip(`${esc(project.name)}<br>${esc(area.label)}${extent ? ` — ${extent}` : ''}`, { sticky: true, className: 'firma2-map-tip' });
+        shape.bindPopup(
+          `<strong>${esc(project.name)}</strong><br>${esc(area.label)}${extent ? ` — ${extent}` : ''}<br><a href="${project.href}">${esc(vocab('Open project'))}</a>`,
+        );
+        shape.addTo(shapeLayer);
+      });
+    };
+
+    // A region's count is the projects whose work sits in it, under the filter.
+    const regionCounts = () => {
+      const counts = new Map(config.regions.map((r) => [r.id, 0]));
+      const byProject = new Map<string, MapWorkArea[]>();
+      visible().forEach(({ project, area }) => byProject.set(project.slug, [...(byProject.get(project.slug) ?? []), area]));
+      byProject.forEach((areas) => {
+        const region = regionOf(areas);
+        if (region) counts.set(region.id, (counts.get(region.id) ?? 0) + 1);
+      });
+      return counts;
+    };
+
+    const BINS = [
+      { label: '1', lower: 1, upper: 1, slot: 2 },
+      { label: '2–3', lower: 2, upper: 3, slot: 3 },
+      { label: '4–5', lower: 4, upper: 5, slot: 5 },
+      { label: '6 or more', lower: 6, upper: Infinity, slot: 7 },
+    ];
+
+    const paintRegions = () => {
+      regionLayer.clearLayers();
+      if (!shading) return;
+      const counts = regionCounts();
+      config.regions.forEach((region) => {
+        const count = counts.get(region.id) ?? 0;
+        const bin = BINS.find((b) => count >= b.lower && count <= b.upper);
+        const fill = bin ? token(`--color-background-dataviz-sequential-${bin.slot}`, '#9bd0a2') : 'transparent';
+        // NONE IS AN OUTLINE, not a pale fill: a pale fill reads as "a little work".
+        L.polygon(region.ring, {
+          color: token('--color-border-default', '#cecece'),
+          weight: 1,
+          dashArray: bin ? undefined : '4 4',
+          fillColor: fill,
+          fillOpacity: bin ? 0.45 : 0,
+          interactive: true,
+        })
+          .bindTooltip(`${region.name}: ${count} ${count === 1 ? 'project' : 'projects'}`, { sticky: true, className: 'firma2-map-tip' })
+          .addTo(regionLayer);
+      });
+      regionLayer.bringToBack();
+      $('[data-shade-key]').innerHTML = [
+        `<li class="firma2-portfolio-map__key-item"><span class="firma2-portfolio-map__swatch firma2-portfolio-map__swatch--none"></span>None</li>`,
+        ...BINS.map(
+          (b) =>
+            `<li class="firma2-portfolio-map__key-item"><span class="firma2-portfolio-map__swatch" style="background:${token(`--color-background-dataviz-sequential-${b.slot}`, '#9bd0a2')}"></span>${b.label}</li>`,
+        ),
+      ].join('');
+    };
+
+    // ---- the side column ----------------------------------------------------------
+    const paintLegend = () => {
+      const counts = new Map<string, number>();
+      placed().forEach(({ value }) => counts.set(value, (counts.get(value) ?? 0) + 1));
+      $('[data-legend]').replaceChildren(
+        ...valuesFor(facet).map((value) => {
+          const li = document.createElement('li');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'firma2-portfolio-map__row';
+          button.setAttribute('aria-pressed', String(selected.size === 0 || selected.has(value)));
+          button.innerHTML = `<span class="firma2-portfolio-map__swatch" style="background:${colorOf(value)}" aria-hidden="true"></span><span class="typography-body-sm">${esc(value)}</span><span class="typography-body-sm firma2-portfolio-map__count">${counts.get(value) ?? 0}</span>`;
+          button.addEventListener('click', () => {
+            // First click isolates; later clicks add or remove; emptying the
+            // selection shows everything again.
+            if (selected.has(value)) selected.delete(value);
+            else selected.add(value);
+            if (selected.size === valuesFor(facet).length) selected.clear();
+            paintAll();
+          });
+          li.append(button);
+          return li;
+        }),
+      );
+      $('[data-show-all]').hidden = selected.size === 0;
+    };
+
+    const paintStats = () => {
+      const rows = visible();
+      const projectsShown = new Set(rows.map((r) => r.project.slug)).size;
+      const acres = rows.reduce((t, r) => t + (r.area.unit === 'acres' ? (r.area.extent ?? 0) : 0), 0);
+      const miles = rows.reduce((t, r) => t + (r.area.unit === 'miles' ? (r.area.extent ?? 0) : 0), 0);
+      const points = rows.filter((r) => r.area.kind === 'point').length;
+      const stats: [string, string][] = [
+        ['Work areas', n(rows.length)],
+        [vocab('Projects'), n(projectsShown)],
+        ['Acres', n(acres)],
+        ['Stream miles', n(miles, 1)],
+        ...(points ? ([['Points', n(points)]] as [string, string][]) : []),
+      ];
+      $('[data-stats]').innerHTML = stats
+        .map(([dt, dd]) => `<div><dt class="typography-body-sm">${esc(dt)}</dt><dd class="typography-title-strong">${dd}</dd></div>`)
+        .join('');
+      const exportLabel = document.querySelector<HTMLElement>('[data-export-label]');
+      if (exportLabel) exportLabel.textContent = `Export ${rows.length} work ${rows.length === 1 ? 'area' : 'areas'}`;
+    };
+
+    const paintCoverage = () => {
+      const counts = regionCounts();
+      const empty = config.regions.filter((r) => (counts.get(r.id) ?? 0) === 0);
+      $('[data-gap-sentence]').innerHTML = empty.length
+        ? `<strong>${empty.length}</strong> of ${config.regions.length} carry no ${esc(vocab('project'))} work${selected.size ? ' of this kind' : ''} at all.`
+        : `Every one of the ${config.regions.length} carries work.`;
+      $('[data-gap-list]').innerHTML = empty.map((r) => `<li>${esc(r.name)}</li>`).join('');
+
+      const missing = unmapped();
+      $('[data-unmapped]').hidden = missing.length === 0;
+      $('[data-unmapped-sentence]').innerHTML = `<strong>${missing.length}</strong> of ${config.projects.length} ${esc(
+        vocab('projects'),
+      )} have no work area, so nothing on this page counts them.`;
+      $('[data-unmapped-list]').innerHTML = missing.map((p) => `<li><a href="${p.href}">${esc(p.name)}</a></li>`).join('');
+      $('[data-shade-key]').hidden = !shading;
+    };
+
+    // ---- charts --------------------------------------------------------------------
+    const charts: Record<string, Chart> = {};
+    // Category labels are long ("Meadow & Wetland Restoration"), so they wrap
+    // in a bounded column instead of running off the canvas's leading edge.
+    const HORIZONTAL_AXES = {
+      padding: { left: 32 },
+      axes: {
+        x: { type: 'category', position: 'left', label: { wrapping: 'on-space' } },
+        y: { type: 'number', position: 'bottom' },
+      },
+    };
+    const mountChart = (key: 'acres' | 'regions', label: string) =>
+      customElements.whenDefined('esa-chart').then(() => {
+        if (charts[key]) return charts[key];
+        const el = document.createElement('esa-chart') as Chart;
+        el.setAttribute('label', label);
+        el.setAttribute('height', '288px');
+        $(`[data-chart="${key}"]`).append(el);
+        charts[key] = el;
+        return el;
+      });
+
+    const table = (key: string, head: string[], rows: string[][]) => {
+      $(`[data-table="${key}"]`).innerHTML =
+        `<thead><tr>${head.map((h, i) => `<th scope="col"${i ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>` +
+        `<tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td class="typography-body-sm${i ? ' num' : ''}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    };
+
+    const paintCharts = async () => {
+      const facetLabel = FACETS.find((f) => f.value === facet)!.label;
+      const acresBy = new Map<string, number>();
+      visible().forEach(({ area, value }) => {
+        if (area.unit === 'acres') acresBy.set(value, (acresBy.get(value) ?? 0) + (area.extent ?? 0));
+      });
+      const acresData = valuesFor(facet)
+        .filter((v) => acresBy.has(v))
+        .map((v) => ({ label: v, acres: Math.round(acresBy.get(v)!), color: colorOf(v) }))
+        .sort((a, b) => b.acres - a.acres);
+      const acres = await mountChart('acres', `Acres by ${facetLabel.toLowerCase()}`);
+      root.querySelector('[data-chart="acres"]')!.closest('.esa-card')?.querySelector('.esa-card__title')?.replaceChildren(`Acres by ${facetLabel.toLowerCase()}`);
+      acres.data = acresData;
+      acres.series = [
+        {
+          type: 'bar',
+          direction: 'horizontal',
+          xKey: 'label',
+          yKey: 'acres',
+          yName: 'Acres',
+          cornerRadius: 4,
+          itemStyler: (p: { datum: { color: string } }) => ({ fill: p.datum.color, stroke: p.datum.color }),
+        },
+      ];
+      acres.options = HORIZONTAL_AXES;
+      table('acres', [facetLabel, 'Acres'], acresData.map((d) => [d.label, n(d.acres)]));
+
+      const counts = regionCounts();
+      const regionData = config.regions
+        .map((r) => ({ region: r.name, projects: counts.get(r.id) ?? 0 }))
+        .sort((a, b) => b.projects - a.projects || a.region.localeCompare(b.region));
+      const regions = await mountChart('regions', 'Projects per hydrologic region');
+      regions.data = regionData;
+      regions.series = [{ type: 'bar', direction: 'horizontal', xKey: 'region', yKey: 'projects', yName: vocab('Projects'), cornerRadius: 4 }];
+      regions.options = HORIZONTAL_AXES;
+      table('regions', ['Region', vocab('Projects')], regionData.map((d) => [d.region, String(d.projects)]));
+    };
+
+    const paintAll = () => {
+      paintShapes();
+      paintRegions();
+      paintLegend();
+      paintStats();
+      paintCoverage();
+      void paintCharts();
+    };
+
+    // ---- controls ---------------------------------------------------------------------
+    const facetPicker = $<Control>('[data-facet]');
+    customElements.whenDefined('esa-select').then(() => {
+      facetPicker.options = FACETS;
+      facetPicker.value = facet;
+    });
+    facetPicker.addEventListener('change', () => {
+      facet = (String(facetPicker.value ?? 'program') as Facet) || 'program';
+      selected = new Set();
+      paintAll();
+    });
+    $('[data-show-all]').addEventListener('click', () => {
+      selected = new Set();
+      paintAll();
+    });
+    const shade = $<Control>('[data-shade]');
+    shade.addEventListener('change', () => {
+      shading = Boolean(shade.checked);
+      paintAll();
+    });
+
+    // ---- place search: moves the map, filters nothing ------------------------------
+    const search = $<Control>('[data-search]');
+    const results = $('[data-results]');
+    L.DomEvent.disableClickPropagation($('.firma2-portfolio-map__search'));
+    search.addEventListener('change', () => {
+      const q = String(search.value ?? '').trim().toLowerCase();
+      const matches = q.length < 2 ? [] : config.places.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6);
+      results.hidden = q.length < 2;
+      results.replaceChildren(
+        ...(matches.length
+          ? matches.map((place) => {
+              const li = document.createElement('li');
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'firma2-portfolio-map__result typography-body-sm';
+              button.innerHTML = `<span>${esc(place.name)}</span><span class="firma2-portfolio-map__count">${place.kind}</span>`;
+              button.addEventListener('click', () => {
+                map.setView(place.center as LatLng, place.zoom);
+                results.hidden = true;
+              });
+              li.append(button);
+              return li;
+            })
+          : [Object.assign(document.createElement('li'), { className: 'typography-body-sm', textContent: 'No place by that name.' })]),
+      );
+    });
+    search.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') results.querySelector<HTMLButtonElement>('button')?.click();
+    });
+
+    // ---- export: the portfolio, as a GIS opens it ------------------------------------
+    const download = (name: string, type: string, body: string) => {
+      const url = URL.createObjectURL(new Blob([body], { type }));
+      const a = Object.assign(document.createElement('a'), { href: url, download: name });
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    const lngLat = ([lat, lng]: LatLng) => [lng, lat];
+    const geometryOf = (area: MapWorkArea) =>
+      area.kind === 'point'
+        ? { type: 'Point', coordinates: lngLat(area.path[0]) }
+        : area.kind === 'reach'
+          ? { type: 'LineString', coordinates: area.path.map(lngLat) }
+          : { type: 'Polygon', coordinates: [[...area.path, area.path[0]].map(lngLat)] };
+
+    document.addEventListener('firma2:portfolio-export', (event) => {
+      const format = (event as CustomEvent<string>).detail;
+      const rows = visible();
+      const stamp = 'portfolio-work-areas';
+      if (format === 'geojson') {
+        // Every feature says whether it is public, so the publication rule
+        // is inspectable in the file rather than implied by what is missing.
+        const fc = {
+          type: 'FeatureCollection',
+          features: rows.map(({ project, area }) => ({
+            type: 'Feature',
+            geometry: geometryOf(area),
+            properties: {
+              project: project.name,
+              work_area: area.label,
+              kind: area.kind,
+              extent: area.extent,
+              unit: area.unit,
+              program: project.program,
+              stage: project.stage,
+              classification: project.classification,
+              publicly_visible: project.isPublic,
+            },
+          })),
+        };
+        download(`${stamp}.geojson`, 'application/geo+json', JSON.stringify(fc, null, 2));
+      } else if (format === 'kml') {
+        const coords = (path: LatLng[]) => path.map(([lat, lng]) => `${lng},${lat},0`).join(' ');
+        const placemarks = rows
+          .map(({ project, area }) => {
+            const geom =
+              area.kind === 'point'
+                ? `<Point><coordinates>${coords(area.path)}</coordinates></Point>`
+                : area.kind === 'reach'
+                  ? `<LineString><coordinates>${coords(area.path)}</coordinates></LineString>`
+                  : `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coords([...area.path, area.path[0]])}</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+            return `<Placemark><name>${esc(area.label)}</name><description>${esc(project.name)}</description>${geom}</Placemark>`;
+          })
+          .join('');
+        download(`${stamp}.kml`, 'application/vnd.google-earth.kml+xml', `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`);
+      } else if (format === 'csv') {
+        const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const lines = [
+          ['project', 'work_area', 'kind', 'extent', 'unit', 'latitude', 'longitude', 'program', 'stage'].join(','),
+          ...rows.map(({ project, area }) => {
+            const [lat, lng] = centroid(area.path);
+            return [project.name, area.label, area.kind, area.extent ?? '', area.unit ?? '', lat.toFixed(5), lng.toFixed(5), project.program, project.stage].map(q).join(',');
+          }),
+        ];
+        download(`${stamp}.csv`, 'text/csv', lines.join('\n'));
+      } else {
+        const toasts = $<HTMLElement & { info: (m: string) => void }>('.firma2-portfolio-map__toasts');
+        toasts.info?.(
+          format === 'shapefile'
+            ? 'Shapefiles are zipped on the server, one per geometry type. This prototype downloads GeoJSON, KML and CSV.'
+            : 'Geodatabases are built on the server. This prototype downloads GeoJSON, KML and CSV.',
+        );
+      }
+    });
+
+    // ---- another window changed the work areas -----------------------------------------
+    onGeoChange(() => {
+      all = readAllWorkAreas(seeds);
+      paintAll();
+    });
+
+    paintAll();
+    // The portfolio frames itself ONCE, on arrival. Refitting on every filter
+    // would throw away the reader's own pan and zoom.
+    const everything = placed().flatMap((x) => x.area.path);
+    if (everything.length) map.fitBounds(L.latLngBounds(everything), { padding: [40, 40] });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-portfolio-map').forEach((root) => void initPortfolio(root));
+</script>
