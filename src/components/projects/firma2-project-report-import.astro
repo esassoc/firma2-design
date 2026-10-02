@@ -1,0 +1,430 @@
+---
+// firma2-project-report-import — "Import a report": the reporter's own
+// spreadsheet or paragraph, read against this project's measures, checked
+// row by row before anything is saved. Ported from ProjectFirma2 hackathon
+// team 6 ("Report from a document").
+//
+// THE THIRD DOOR. The measures card already has two ways to report: the
+// per-row Record (measure-first, for the fluent) and Record work
+// (activity-first — "what did you do?"). This one is document-first: the
+// reporter already wrote it down once, for the crew or for the funder, and
+// should not have to type it a second time. All three file the same entry.
+//
+// A HUMAN COMMITS. The sheet only proposes. Every row shows the cell or the
+// sentence it came from, any arithmetic done to it, and how sure the reading
+// is; every row's figure and answers stay editable; nothing is written until
+// "Add". Rows the record already holds arrive unticked — checked in code
+// against what this browser has filed, never left to the model.
+//
+// WHAT IS NOT DATA STAYS OUT. Figures no measure asks for are listed, not
+// filed: that list is the program lead's evidence of a question they are not
+// asking. The TOTAL row is named as skipped, so the reporter can see it was
+// seen.
+//
+// REFINED FROM THE HACKATHON: the confidence badge is shown only when a row
+// is NOT high-confidence. Six identical "High confidence" badges are noise
+// that teaches the reader to stop reading the badge — the one that says
+// "check this" has to stand out.
+//
+// SCRIPTED — see src/data/firma2-report-import.ts. Renders nothing for a
+// project without a fixture, rather than a button that cannot work.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
+import { IMPORT_FIXTURES, SAMPLE_SHEET_NAME, SAMPLE_TEXT } from '../../data/firma2-report-import';
+
+interface Props {
+  projectSlug: string;
+  /** Closed reporting years, newest first — the periods an entry can land in. */
+  years: number[];
+  /** Units by measure name, for the amount labels. */
+  units: Record<string, string>;
+}
+
+const { projectSlug, years, units } = Astro.props;
+const fixture = IMPORT_FIXTURES[projectSlug];
+const sourceOptions = [
+  { label: 'Spreadsheet', value: 'sheet' },
+  { label: 'Paste text', value: 'text' },
+];
+---
+{fixture && (
+  <div
+    class="firma2-report-import"
+    data-project-slug={projectSlug}
+    data-years={JSON.stringify(years)}
+    data-units={JSON.stringify(units)}
+    data-fixture={JSON.stringify(fixture)}
+    data-sample-name={SAMPLE_SHEET_NAME}
+  >
+    <!-- bcn-lego-checked: every control is a lego (esa-side-dialog,
+         esa-button-toggle, esa-file-upload, esa-textarea, esa-checkbox,
+         esa-text-field, esa-select, esa-badge, esa-alert-box); the classes
+         lay out the proposal rows, which no esa- component does. Beacon is
+         not cloned on this machine. -->
+    <esa-side-dialog class="firma2-report-import__sheet" heading="Import a report" size="lg" position="right">
+      <div class="stack" data-gap="lg">
+        <!-- ===== READ ===== -->
+        <div class="stack" data-gap="lg" data-step="read">
+          <p class="typography-body-md">
+            Upload the spreadsheet or report you already keep. Claude matches it to this project’s measures, and you check every row before anything is saved.
+          </p>
+          <esa-button-toggle size="md" data-source data-options={JSON.stringify(sourceOptions)}></esa-button-toggle>
+          <div class="stack" data-gap="sm" data-source-panel="sheet">
+            <esa-file-upload label="Spreadsheet" accept=".xlsx,.xls,.csv" max-size-mb="5" data-file></esa-file-upload>
+            <div>
+              <EsaButton variant="ghost" size="sm" data-use-sample>Use the sample crew log</EsaButton>
+            </div>
+          </div>
+          <div data-source-panel="text" hidden>
+            <esa-textarea label="Your report" rows="6" data-text value={SAMPLE_TEXT}></esa-textarea>
+          </div>
+          <p class="typography-body-sm" data-read-error hidden>Choose a spreadsheet, or switch to Paste text.</p>
+        </div>
+
+        <!-- ===== READING ===== -->
+        <div class="cluster" data-gap="sm" role="status" data-step="reading" hidden>
+          <EsaLoadingSpinner size="sm" decorative />
+          <p class="typography-body-md" data-reading-line>Reading your report…</p>
+        </div>
+
+        <!-- ===== REVIEW ===== -->
+        <div class="stack" data-gap="lg" data-step="review" hidden>
+          <div class="repel">
+            <p class="typography-title" data-review-heading></p>
+            <EsaButton variant="ghost" size="sm" icon="rotate-ccw" data-read-another>Read another</EsaButton>
+          </div>
+          <ul class="firma2-report-import__rows stack" data-gap="md" data-rows></ul>
+          <div data-not-asked-block hidden>
+            <EsaAlertBox variant="info" title="Not asked by any measure">
+              <div class="stack" data-gap="xs">
+                <p>These were in your report, but nothing on this project asks for them. They won’t be saved; your program lead sees what’s missing.</p>
+                <ul class="firma2-report-import__list" data-not-asked></ul>
+              </div>
+            </EsaAlertBox>
+          </div>
+          <p class="typography-body-sm" data-skipped hidden></p>
+        </div>
+      </div>
+
+      <div slot="footer" class="cluster" data-gap="xs">
+        <!-- Wrappers carry `hidden`: esa-button's own display rule beats [hidden]. -->
+        <span data-read-wrap><EsaButton variant="primary" size="md" data-read>Read it</EsaButton></span>
+        <span data-add-wrap hidden><EsaButton variant="primary" size="md" data-add>Add entries</EsaButton></span>
+        <EsaButton variant="ghost" size="md" data-cancel>Cancel</EsaButton>
+      </div>
+    </esa-side-dialog>
+
+    <template data-badge-medium><EsaBadge variant="warning" size="sm" value="Check this" /></template>
+    <template data-badge-low><EsaBadge variant="danger" size="sm" value="Unsure" /></template>
+    <template data-badge-on-file><EsaBadge variant="secondary" size="sm" value="Already on file" /></template>
+  </div>
+)}
+
+<style>
+  /* Layout primitives set `display`, which beats the UA's [hidden]. Steps
+     and blocks here toggle `hidden`, so it has to win inside this component. */
+  .firma2-report-import [hidden] {
+    display: none !important;
+  }
+
+  .firma2-report-import__rows,
+  .firma2-report-import__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-report-import__list {
+    padding-inline-start: var(--spacing-400);
+    list-style: disc;
+  }
+
+  .firma2-report-import__rows > :global(li) {
+    padding: var(--spacing-400);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-sm);
+  }
+
+  /* An unticked row stays readable — it may be ticked back — but recedes. */
+  .firma2-report-import__rows > :global(li[data-off]) {
+    background: var(--color-background-elevation-sunken);
+  }
+
+  .firma2-report-import__rows :global(.firma2-report-import__fields) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: var(--spacing-300);
+  }
+
+  .firma2-report-import__rows :global(.firma2-report-import__source) {
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-file-upload';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-checkbox';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import { addEntry, readEntries } from '../../lib/entry-draft';
+  import { withDraft } from '../../lib/measure-draft';
+  import { allSchemas } from '../../lib/schema-draft';
+  import { measures as catalogSeeds, measureDisplayName } from '../../data/firma2-performance-measures';
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
+  import type { ImportProposal, ImportReading } from '../../data/firma2-report-import';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean; errorText?: string };
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
+
+  /** Fired on `document` after entries are filed, so the measures table repaints. */
+  const ENTRIES_CHANGE_EVENT = 'firma2:entries-change';
+  const READ_DELAY_MS = 1600;
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  /** The lists a reporter answers for a measure — system lists answer themselves. */
+  const reportedListsFor = (measureName: string) => {
+    const seed = catalogSeeds.find((m) => measureDisplayName(m).toLowerCase() === measureName.toLowerCase());
+    if (!seed) return [];
+    const schemas = allSchemas();
+    return withDraft(seed.slug)
+      .subcategorySchemaIds.map((id) => schemas.find((s) => s.id === id))
+      .filter((s) => s && s.origin !== 'system') as { name: string; options: string[] }[];
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-report-import').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const sheet = $<Sheet>('.firma2-report-import__sheet');
+    void fixSideDialog(sheet);
+
+    const slug = root.dataset.projectSlug ?? '';
+    const years: number[] = JSON.parse(root.dataset.years ?? '[]');
+    const units: Record<string, string> = JSON.parse(root.dataset.units ?? '{}');
+    const fixture: { sheet: ImportReading; text: ImportReading } = JSON.parse(root.dataset.fixture ?? '{}');
+
+    const source = $<Control>('[data-source]');
+    const fileInput = $<Control>('[data-file]');
+    const textInput = $<Control>('[data-text]');
+    const rowsList = $('[data-rows]');
+    const readButton = $('[data-read-wrap]');
+    const addWrap = $('[data-add-wrap]');
+    const addLabel = $('[data-add]').querySelector('.esa-button__label')!;
+
+    let mode: 'sheet' | 'text' = 'sheet';
+    let fileName = '';
+    let reading: ImportReading | null = null;
+
+    customElements.whenDefined('esa-button-toggle').then(() => {
+      source.options = JSON.parse(source.dataset.options ?? '[]');
+      source.value = 'sheet';
+    });
+
+    const step = (name: 'read' | 'reading' | 'review') => {
+      root.querySelectorAll<HTMLElement>('[data-step]').forEach((el) => (el.hidden = el.dataset.step !== name));
+      readButton.hidden = name !== 'read';
+      addWrap.hidden = name !== 'review';
+    };
+
+    const reset = () => {
+      reading = null;
+      $('[data-read-error]').hidden = true;
+      step('read');
+    };
+
+    source.addEventListener('change', () => {
+      mode = String(source.value) === 'text' ? 'text' : 'sheet';
+      root.querySelectorAll<HTMLElement>('[data-source-panel]').forEach((p) => (p.hidden = p.dataset.sourcePanel !== mode));
+      $('[data-read-error]').hidden = true;
+    });
+
+    fileInput.addEventListener('change', (event) => {
+      const files = (event as CustomEvent<{ files: File[] }>).detail?.files ?? [];
+      fileName = files[0]?.name ?? '';
+      if (fileName) $('[data-read-error]').hidden = true;
+    });
+
+    // ---- reading ---------------------------------------------------------------
+    const read = (name: string) => {
+      reading = mode === 'sheet' ? fixture.sheet : fixture.text;
+      $('[data-reading-line]').textContent = `Reading ${name}…`;
+      step('reading');
+      window.setTimeout(() => {
+        paintReview(name);
+        step('review');
+      }, READ_DELAY_MS);
+    };
+
+    $('[data-read]').addEventListener('click', () => {
+      if (mode === 'sheet') {
+        if (!fileName) {
+          $('[data-read-error]').hidden = false;
+          return;
+        }
+        read(fileName);
+      } else {
+        if (!String(textInput.value ?? '').trim()) {
+          textInput.errorText = 'Paste the report text first.';
+          return;
+        }
+        textInput.errorText = '';
+        read('your report');
+      }
+    });
+
+    $('[data-use-sample]').addEventListener('click', () => {
+      fileName = root.dataset.sampleName ?? '';
+      read(fileName);
+    });
+
+    $('[data-read-another]').addEventListener('click', reset);
+
+    // ---- review ----------------------------------------------------------------
+    /** Already filed in this browser: same measure, year, figure and answers. */
+    const isOnFile = (p: ImportProposal): boolean =>
+      readEntries(slug).some(
+        (e) =>
+          e.measureKey === `name:${p.measure}` &&
+          e.year === p.year &&
+          e.amount === p.amount &&
+          JSON.stringify(e.answers) === JSON.stringify(p.answers),
+      );
+
+    const badge = (name: string) => $<HTMLTemplateElement>(`[data-badge-${name}]`).innerHTML.trim();
+
+    const paintCount = () => {
+      const n = rowsList.querySelectorAll('li:not([data-off])').length;
+      addLabel.textContent = n === 1 ? 'Add 1 entry' : `Add ${n} entries`;
+      // Disabled tells the truth here — nothing is ticked — and the label says so.
+      const add = $('[data-add]');
+      add.toggleAttribute('disabled', n === 0);
+      add.closest('.esa-button')?.classList.toggle('esa-button--disabled', n === 0);
+    };
+
+    const paintReview = (name: string) => {
+      if (!reading) return;
+      const n = reading.proposals.length;
+      $('[data-review-heading]').textContent = `${n} ${n === 1 ? 'entry' : 'entries'} found in ${name}`;
+
+      rowsList.replaceChildren(
+        ...reading.proposals.map((p) => {
+          const onFile = isOnFile(p);
+          const li = document.createElement('li');
+          li.className = 'stack';
+          li.dataset.gap = 'sm';
+          li.dataset.proposal = p.id;
+          if (onFile) li.dataset.off = '';
+          const unit = units[p.measure] ?? '';
+          const badges = [
+            onFile ? badge('on-file') : '',
+            p.confidence === 'Medium' ? badge('medium') : '',
+            p.confidence === 'Low' ? badge('low') : '',
+          ].join('');
+          li.innerHTML = `
+            <div class="repel">
+              <esa-checkbox data-pick label="${esc(`${p.measure} · ${p.year}`)}"></esa-checkbox>
+              <span class="cluster" data-gap="xs">${badges}</span>
+            </div>
+            <div class="firma2-report-import__fields">
+              <esa-text-field data-amount size="md" inputmode="decimal" label="${esc(unit ? `Amount (${unit})` : 'Amount')}"></esa-text-field>
+              <esa-select data-year size="md" label="Reporting year"></esa-select>
+            </div>
+            <div class="stack" data-gap="2xs">
+              <p class="firma2-report-import__source typography-body-sm">${esc(p.quote)}</p>
+              ${p.conversion ? `<p class="typography-body-sm">Converted: ${esc(p.conversion)}</p>` : ''}
+              ${p.note ? `<p class="typography-body-sm">${esc(p.note)}</p>` : ''}
+            </div>`;
+
+          const fields = li.querySelector<HTMLElement>('.firma2-report-import__fields')!;
+          reportedListsFor(p.measure).forEach((list) => {
+            const select = document.createElement('esa-select') as Control;
+            select.setAttribute('size', 'md');
+            select.setAttribute('label', list.name);
+            select.dataset.answer = list.name;
+            fields.append(select);
+            customElements.whenDefined('esa-select').then(() => {
+              select.options = list.options.map((o) => ({ label: o, value: o }));
+              select.value = p.answers[list.name] ?? '';
+            });
+          });
+
+          customElements.whenDefined('esa-checkbox').then(() => {
+            const pick = li.querySelector<Control>('[data-pick]')!;
+            pick.checked = !onFile;
+            pick.addEventListener('change', () => {
+              li.toggleAttribute('data-off', !pick.checked);
+              paintCount();
+            });
+          });
+          customElements.whenDefined('esa-text-field').then(() => {
+            li.querySelector<Control>('[data-amount]')!.value = String(p.amount);
+          });
+          customElements.whenDefined('esa-select').then(() => {
+            const year = li.querySelector<Control>('[data-year]')!;
+            year.options = years.map((y) => ({ label: String(y), value: String(y) }));
+            year.value = String(p.year);
+          });
+          return li;
+        }),
+      );
+
+      $('[data-not-asked-block]').hidden = reading.notAsked.length === 0;
+      $('[data-not-asked]').innerHTML = reading.notAsked.map((t) => `<li>${esc(t)}</li>`).join('');
+      const skipped = $('[data-skipped]');
+      skipped.hidden = reading.skipped.length === 0;
+      skipped.textContent = reading.skipped.length ? `Skipped: ${reading.skipped.join(' ')}` : '';
+      paintCount();
+    };
+
+    // ---- commit ----------------------------------------------------------------
+    $('[data-add]').addEventListener('click', () => {
+      const picked = [...rowsList.querySelectorAll<HTMLElement>('li:not([data-off])')];
+      let bad = false;
+      const entries = picked.map((li) => {
+        const amountField = li.querySelector<Control>('[data-amount]')!;
+        const amount = Number(String(amountField.value ?? '').replace(/,/g, ''));
+        if (!Number.isFinite(amount) || amount <= 0) {
+          amountField.errorText = 'Enter a figure above zero.';
+          bad = true;
+        } else {
+          amountField.errorText = '';
+        }
+        const answers: Record<string, string> = {};
+        li.querySelectorAll<Control>('[data-answer]').forEach((s) => {
+          const v = String(s.value ?? '');
+          if (v) answers[s.dataset.answer!] = v;
+        });
+        const proposal = reading!.proposals.find((p) => p.id === li.dataset.proposal)!;
+        return {
+          measureKey: `name:${proposal.measure}`,
+          year: Number(li.querySelector<Control>('[data-year]')!.value),
+          amount,
+          answers,
+        };
+      });
+      if (bad) return;
+      entries.forEach((e) => addEntry(slug, e));
+      document.dispatchEvent(new Event(ENTRIES_CHANGE_EVENT));
+      sheet.close();
+      reset();
+    });
+
+    $('[data-cancel]').addEventListener('click', () => {
+      sheet.close();
+      reset();
+    });
+
+    // THE TRIGGER SEAM: anything carrying data-open-report-import opens this
+    // sheet — the measures card's header button today.
+    document.addEventListener('click', (event) => {
+      if (!(event.target as Element).closest('[data-open-report-import]')) return;
+      reset();
+      sheet.show();
+    });
+  });
+</script>

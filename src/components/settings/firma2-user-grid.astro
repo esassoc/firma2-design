@@ -1,0 +1,183 @@
+---
+// firma2-user-grid — Workspace settings › Users: everyone with an account, the
+// organization they sign in for, and the role that decides what they can do,
+// searchable by name or email and filterable by role and organization.
+//
+// Same chrome as firma2-organization-grid and firma2-project-grid; see there.
+//
+// NO STATUS COLUMN. Nearly every row would say "Active", and a column of one
+// repeated word is the noise design-principles cuts. The exception is the row
+// an administrator most needs to find — an invitation nobody has accepted — and
+// it has no last-active date to show anyway, so the badge takes that cell.
+//
+// bcn-lego-checked: ecology has NO table/grid lego — esa-grid is a
+// documentation-only page with nothing to import; checked the full
+// node_modules/@esa/ecology/src/components catalog. Beacon is not cloned on
+// this machine. Same AG Grid surface as firma2-project-grid (the precedent),
+// framed by shared/firma2-data-grid-chrome.css. Every control around it IS a
+// lego: esa-text-field, esa-filter-container + esa-filter-dropdown, esa-button,
+// esa-empty-state, and the Invited cell clones a server-rendered esa-badge.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { users, userRoles, organizations, CURRENT_USER } from '../../data/firma2-directory';
+import { withBase } from '../../lib/base';
+
+const roleOptions = userRoles.map((r) => ({ value: r, label: r }));
+const organizationOptions = organizations
+  .filter((o) => o.people > 0)
+  .map((o) => ({ value: o.name, label: o.name }));
+
+const slugOf = new Map(organizations.map((o) => [o.name, o.slug]));
+const rows = users.map((u) => ({
+  ...u,
+  organizationHref: withBase(
+    u.organization === CURRENT_USER.organization
+      ? '/prototypes/workspace-settings/your-organization'
+      : `/prototypes/workspace-settings/organizations/${slugOf.get(u.organization)}`,
+  ),
+}));
+---
+<section class="firma2-user-grid stack" data-gap="md" data-role-order={JSON.stringify(userRoles)}>
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__controls-filters cluster">
+      <div class="firma2-data-grid__search">
+        <esa-text-field
+          label="Search users"
+          placeholder="Name or email"
+          size="md"
+          data-users-search
+        ></esa-text-field>
+      </div>
+      <EsaFilterContainer>
+        <esa-filter-dropdown
+          data-users-role-filter
+          name="role"
+          label="Role"
+          size="md"
+          multiple
+          placeholder="Search roles"
+          options={JSON.stringify(roleOptions)}
+        ></esa-filter-dropdown>
+        <esa-filter-dropdown
+          data-users-org-filter
+          name="organization"
+          label="Organization"
+          data-aliasable-attr="label"
+          size="md"
+          multiple
+          placeholder="Search organizations"
+          options={JSON.stringify(organizationOptions)}
+        ></esa-filter-dropdown>
+      </EsaFilterContainer>
+    </div>
+    <EsaButton variant="chrome" iconOnly icon="download" label="Download CSV" size="sm" data-users-csv />
+  </div>
+
+  <div class="firma2-data-grid__grid" data-users-grid></div>
+
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-users-count>{rows.length} users</span>
+  </footer>
+
+  <div data-users-invited-template hidden aria-hidden="true">
+    <EsaBadge value="Invited" variant="info" size="sm" />
+  </div>
+
+  <div data-users-empty hidden aria-hidden="true">
+    <EsaEmptyState
+      size="sm"
+      title="No matching users"
+      description="Try a different search, or clear the Role and Organization filters."
+    />
+  </div>
+
+  <script type="application/json" data-users-data set:html={JSON.stringify(rows)}></script>
+</section>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-filter-dropdown';
+  import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import { label } from '../../lib/vocabulary';
+  // Types only from the directory: a value import would ship the whole project
+  // fixture to the browser. The role order rides in on the section instead.
+  import type { WorkspaceUser } from '../../data/firma2-directory';
+  import type { ColDef } from 'ag-grid-community';
+
+  type Row = WorkspaceUser & { organizationHref: string };
+
+  // An invitation has never been active, so it sorts as the oldest.
+  const activeTime = (row?: Row): number => (row?.lastActive ? Date.parse(row.lastActive) : -Infinity);
+
+  function initUserGrid(root: HTMLElement) {
+    const emptyState = root.querySelector<HTMLElement>('[data-users-empty] > *');
+    const invitedHTML = root.querySelector('[data-users-invited-template]')?.innerHTML ?? 'Invited';
+    const roleFilter = root.querySelector<HTMLElement>('[data-users-role-filter]');
+    const orgFilter = root.querySelector<HTMLElement>('[data-users-org-filter]');
+    let roleValues: string[] = [];
+    let orgValues: string[] = [];
+    const roleOrder: string[] = JSON.parse(root.dataset.roleOrder ?? '[]');
+
+    const handle = wireDataGrid<Row>({
+      root,
+      gridSelector: '[data-users-grid]',
+      dataSelector: '[data-users-data]',
+      searchSelector: '[data-users-search]',
+      countSelector: '[data-users-count]',
+      csvSelector: '[data-users-csv]',
+      countNoun: 'users',
+      csvFileName: 'projectfirma-users.csv',
+      suppressCellFocus: true,
+      columnDefs: [
+        {
+          headerName: 'Name', field: 'name', colId: 'name', flex: 1, minWidth: 170,
+          cellClass: 'firma2-grid-name', tooltipField: 'name',
+          getQuickFilterText: (p) => p.data?.name ?? '',
+        },
+        {
+          headerName: 'Email', field: 'email', colId: 'email', flex: 1, minWidth: 190, tooltipField: 'email',
+          getQuickFilterText: (p) => p.data?.email ?? '',
+        },
+        {
+          headerName: label('Organization'), field: 'organization', colId: 'organization',
+          flex: 1.4, minWidth: 200, tooltipField: 'organization',
+          cellRenderer: (p: { data?: Row }) =>
+            p.data
+              ? `<a class="firma2-grid-link" href="${esc(p.data.organizationHref)}">${esc(p.data.organization)}</a>`
+              : '',
+        },
+        {
+          headerName: 'Role', field: 'role', colId: 'role', width: 150,
+          headerTooltip: 'What each role can do is set in Roles and permissions.',
+          comparator: (a: string, b: string) => roleOrder.indexOf(a) - roleOrder.indexOf(b),
+        },
+        {
+          headerName: 'Last active', field: 'lastActive', colId: 'lastActive', width: 170,
+          comparator: (_a, _b, nodeA, nodeB) => activeTime(nodeA.data) - activeTime(nodeB.data),
+          cellRenderer: (p: { data?: Row }) =>
+            p.data?.status === 'Invited' ? `<span class="firma2-grid-status">${invitedHTML}</span>` : esc(p.data?.lastActive ?? ''),
+        },
+      ] satisfies ColDef<Row>[],
+      gridOptions: {
+        overlayNoRowsTemplate: emptyState?.outerHTML,
+        isExternalFilterPresent: () => roleValues.length > 0 || orgValues.length > 0,
+        doesExternalFilterPass: (node) =>
+          (roleValues.length === 0 || roleValues.includes(node.data?.role ?? '')) &&
+          (orgValues.length === 0 || orgValues.includes(node.data?.organization ?? '')),
+      },
+    });
+    if (!handle) return;
+
+    const onSelection = (apply: (values: string[]) => void) => (event: Event) => {
+      apply((event as CustomEvent<{ value?: string[] }>).detail?.value ?? []);
+      handle.gridApi.onFilterChanged();
+    };
+    roleFilter?.addEventListener('selection-change', onSelection((v) => { roleValues = v; }));
+    orgFilter?.addEventListener('selection-change', onSelection((v) => { orgValues = v; }));
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-user-grid').forEach(initUserGrid);
+</script>

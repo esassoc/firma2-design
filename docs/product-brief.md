@@ -532,6 +532,28 @@ carries its own.
 
 *Applies to: every section on the project detail page.*
 
+### A record reads first; a form shows its boxes
+
+There are two field patterns, and the question that picks one is "did the
+reader come here to read, or to fill something in?"
+
+- **Record** — a page that is mostly read and occasionally corrected (project
+  detail, an organization's record). `firma2-editable-field`: the value sits in
+  a borderless box, the ring appears on hover, the control on click. Borders on
+  every value would turn a page you read into a page you have to fill in.
+- **Form** — a surface whose only job is input (Settings, Workspace settings ›
+  General, any sheet that creates something). The legos as they ship —
+  `esa-text-field` / `esa-select` with their own label and their border drawn
+  at rest. The reader came to change something; hiding the box makes them hunt
+  for it.
+
+Both are still "always saved" — the difference is chrome, not commit. Working
+reference (how each is built, how to choose): `docs/field-patterns.md`.
+
+*Applies to: firma2-settings-account and firma2-workspace-general (switched
+from the record pattern 2026-10-01); the type studio's New field sheet already
+followed it.*
+
 ---
 
 ## 5. How to open a new screen
@@ -581,6 +603,8 @@ a styling problem.
 | Report | **Measure setup** (one per measure) | built |
 | Report | Progress Dashboard, Funding Status | not built |
 | Manage | Users, Manage Organizations, Manage Funding Sources, Custom Pages | not built |
+| Workspace settings › Administration | **Workspace**, **Organizations**, **Users**, **Import & export** | built |
+| Workspace settings › Your organization | **Organization record** (also each organization's page from the list) | built |
 
 The two built areas are deliberately different exercises: the project pages are
 about **reading a record**, the measure pages about **setting one up**. Most

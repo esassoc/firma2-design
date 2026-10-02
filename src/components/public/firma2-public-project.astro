@@ -1,0 +1,332 @@
+---
+// firma2-public-project — a project's public page, built by its project type
+// and worn in the tenant's brand. Ported from ProjectFirma2 hackathon team 3.
+//
+// WHO READS THIS: the brief's hardest reader — the public or a funder,
+// arrived from a link with no account, no task and no vocabulary. Their first
+// question is "what is this, whose is it, and is it real?", so the tenant's
+// name sits above the project's, and the page states facts rather than
+// offering edits.
+//
+// THE TYPE BUILDS THE PAGE. Which sections appear, in what order, and which
+// of the tenant's own fields sit in the rail or under Project details all
+// come from the project's type (src/data/firma2-project-types.ts). The
+// sections render once at build; the script folds the type's current delta
+// over them — the same resolver the studio's preview runs, because the
+// preview IS this page, in a frame.
+//
+// SAME SECTIONS AS THE STEWARD'S PAGE where they read cleanly: the timeline,
+// photos and map are the project page's own components in their `readonly`
+// mode. Funding, expenditures and measures get plain public tables, because
+// their steward versions are editors.
+//
+// WITHHELD, NOT HIDDEN — in production. The hackathon's sharpest point: a
+// section switched off is pruned from the data the page is served, so it
+// cannot be found in dev tools. A static prototype cannot prune; it hides.
+// Said here so nobody mistakes the prototype's mechanism for the design.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import Firma2ProjectTimeline from '../projects/firma2-project-timeline.astro';
+import Firma2ProjectGallery from '../projects/firma2-project-gallery.astro';
+import Firma2ProjectMap from '../projects/firma2-project-map.astro';
+import type { ProjectDetail } from '../../data/firma2-project-detail';
+import { latestReport } from '../../data/firma2-project-detail';
+import {
+  FIELD_DEFINITIONS,
+  PAGE_SECTIONS,
+  TENANT_NAME,
+  fieldRows,
+  resolveSections,
+  typeForProject,
+} from '../../data/firma2-project-types';
+import type { FieldRow } from '../../data/firma2-project-types';
+import { currencyFormatter } from '../../lib/format';
+
+interface Props {
+  detail: ProjectDetail;
+}
+
+const { detail } = Astro.props;
+const { project } = detail;
+const type = typeForProject(project);
+const years = `${project.implementationStartYear}–${project.completionYear}`;
+const fmt = (n: number) => n.toLocaleString('en-US');
+
+const rows = (placement: 'rail' | 'details'): FieldRow[] =>
+  type ? fieldRows(type, project, FIELD_DEFINITIONS, placement) : [];
+
+/** One <div><dt><dd></div> per row — the markup the script rebuilds, identically. */
+const rowsHtml = (list: FieldRow[]) =>
+  list
+    .map(
+      (r) =>
+        `<div><dt>${r.label}</dt><dd>${r.value || '<span class="firma2-public-project__none">Not answered</span>'}</dd></div>`,
+    )
+    .join('');
+
+// Build-time resolution, so the page is right before the script runs.
+const resolved = resolveSections(type?.sections);
+const orderIndex = new Map(resolved.map((r, i) => [r.section.key, i]));
+const hiddenAtBuild = new Set(resolved.filter((r) => !r.visible).map((r) => r.section.key));
+const label = (key: string) => PAGE_SECTIONS.find((s) => s.key === key)?.label ?? key;
+const spent = detail.expenditures.filter((e) => e.spent > 0);
+---
+<!-- bcn-lego-checked: sections are esa-card legos and the project page's own
+     section components; the classes lay out the hero, the rail/main split and
+     the facts list, which no esa- component does. Beacon is not cloned on
+     this machine. -->
+<article
+  class="firma2-public-project"
+  data-type-slug={type?.slug ?? ''}
+  data-project={JSON.stringify({ projectName: project.projectName, implementationStartYear: project.implementationStartYear })}
+>
+  <header class="firma2-public-project__hero">
+    <div class="firma2-public-project__hero-inner stack" data-gap="sm">
+      <p class="firma2-public-project__tenant typography-label-md-strong">{TENANT_NAME}</p>
+      {type && (
+        <p class="firma2-public-project__type cluster typography-label-md" data-gap="xs">
+          <span class="firma2-public-project__swatch" style={`background:${type.color}`} aria-hidden="true"></span>
+          {type.name}
+        </p>
+      )}
+      <h1 class="typography-display-sm">{project.projectName}</h1>
+      <p class="typography-body-lg">{project.stage} · {years} · {project.leadOrganization}</p>
+    </div>
+  </header>
+
+  <div class="firma2-public-project__body">
+    <aside class="firma2-public-project__rail stack" data-gap="lg" data-aliasable-labels>
+      <EsaCard title="Key facts">
+        <dl class="firma2-public-project__facts">
+          <div><dt>Lead organization</dt><dd>{project.leadOrganization}</dd></div>
+          <div><dt>County</dt><dd>{project.county} County</dd></div>
+          <div><dt>Timeline</dt><dd>{years}</dd></div>
+          <div><dt>Estimated cost</dt><dd>{currencyFormatter.format(project.estimatedTotalCost)}</dd></div>
+        </dl>
+        <!-- The tenant's own questions, placed in the rail by the type. -->
+        <dl class="firma2-public-project__facts firma2-public-project__facts--custom" data-fields="rail" set:html={rowsHtml(rows('rail'))}></dl>
+      </EsaCard>
+    </aside>
+
+    <div class="firma2-public-project__main" data-sections>
+      <div data-section="details" data-aliasable-title style={`order:${orderIndex.get('details')}`} hidden={hiddenAtBuild.has('details')}>
+        <EsaCard title={label('details')}>
+          <div class="stack" data-gap="md">
+            <p class="typography-body-md">{detail.projectDescription}</p>
+            <dl class="firma2-public-project__facts" data-fields="details" set:html={rowsHtml(rows('details'))}></dl>
+          </div>
+        </EsaCard>
+      </div>
+
+      <div data-section="measures" data-aliasable-title style={`order:${orderIndex.get('measures')}`} hidden={hiddenAtBuild.has('measures')}>
+        <EsaCard title={label('measures')}>
+          <table class="firma2-public-project__table">
+            <thead><tr><th scope="col">Measure</th><th scope="col">Delivered</th><th scope="col">Last reported</th></tr></thead>
+            <tbody>
+              {detail.measures.map((m) => (
+                <tr>
+                  <th scope="row">{m.name}</th>
+                  <td>{fmt(m.reported)} of {fmt(m.expected)} {m.unit}</td>
+                  <td>{latestReport(m.series)?.year ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </EsaCard>
+      </div>
+
+      <div data-section="funding" data-aliasable-title style={`order:${orderIndex.get('funding')}`} hidden={hiddenAtBuild.has('funding')}>
+        <EsaCard title={label('funding')}>
+          <table class="firma2-public-project__table">
+            <thead><tr><th scope="col">Source</th><th scope="col">From</th><th scope="col">Amount</th></tr></thead>
+            <tbody>
+              {detail.funding.map((f) => (
+                <tr><th scope="row">{f.name}</th><td>{f.organization}</td><td>{currencyFormatter.format(f.amount)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </EsaCard>
+      </div>
+
+      <div data-section="expenditures" data-aliasable-title style={`order:${orderIndex.get('expenditures')}`} hidden={hiddenAtBuild.has('expenditures')}>
+        <EsaCard title={label('expenditures')}>
+          {spent.length === 0 ? (
+            <p class="typography-body-md">Nothing has been spent yet.</p>
+          ) : (
+            <table class="firma2-public-project__table">
+              <thead><tr><th scope="col">Year</th><th scope="col">Spent</th></tr></thead>
+              <tbody>
+                {spent.map((e) => (
+                  <tr><th scope="row">{e.year}</th><td>{currencyFormatter.format(e.spent)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </EsaCard>
+      </div>
+
+      <div data-section="timeline" data-aliasable-title style={`order:${orderIndex.get('timeline')}`} hidden={hiddenAtBuild.has('timeline')}>
+        <Firma2ProjectTimeline milestones={detail.milestones} readonly />
+      </div>
+
+      <div data-section="gallery" data-aliasable-title style={`order:${orderIndex.get('gallery')}`} hidden={hiddenAtBuild.has('gallery')}>
+        <Firma2ProjectGallery photos={detail.photos} readonly />
+      </div>
+
+      <div data-section="map" data-aliasable-title style={`order:${orderIndex.get('map')}`} hidden={hiddenAtBuild.has('map')}>
+        <Firma2ProjectMap detail={detail} readonly />
+      </div>
+    </div>
+  </div>
+
+  <footer class="firma2-public-project__footer typography-body-sm">
+    Published by {TENANT_NAME}
+  </footer>
+</article>
+
+<style>
+  .firma2-public-project [hidden] {
+    display: none !important;
+  }
+
+  /* THE HERO WEARS THE BRAND — the one surface on this page that does. The
+     design rules keep product chrome neutral; a public page is the tenant's
+     identity surface, which is exactly where the rules invite colour. */
+  .firma2-public-project__hero {
+    padding-block: var(--spacing-900) var(--spacing-800);
+    background: var(--color-background-brand-subtle);
+    border-block-end: 1px solid var(--color-border-brand);
+  }
+
+  .firma2-public-project__hero-inner,
+  .firma2-public-project__body,
+  .firma2-public-project__footer {
+    max-width: 76rem;
+    margin-inline: auto;
+  }
+
+  /* Same inset as the body below, so the title lines up with the cards. */
+  .firma2-public-project__hero-inner {
+    padding-inline: var(--spacing-600);
+  }
+
+  .firma2-public-project__tenant {
+    color: var(--color-content-brand);
+  }
+
+  .firma2-public-project__swatch {
+    width: var(--spacing-300);
+    height: var(--spacing-300);
+    border-radius: var(--radius-sm);
+  }
+
+  .firma2-public-project__body {
+    display: grid;
+    grid-template-columns: minmax(16rem, 22rem) 1fr;
+    gap: var(--spacing-600);
+    padding: var(--spacing-600);
+    align-items: start;
+  }
+
+  @media (max-width: 56rem) {
+    .firma2-public-project__body {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .firma2-public-project__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-600);
+    min-width: 0;
+  }
+
+  .firma2-public-project__facts {
+    display: grid;
+    gap: var(--spacing-300);
+    margin: 0;
+  }
+
+  .firma2-public-project__facts--custom:not(:empty) {
+    margin-block-start: var(--spacing-300);
+    padding-block-start: var(--spacing-300);
+    border-block-start: 1px solid var(--color-border-default);
+  }
+
+  .firma2-public-project__facts :global(dt) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-public-project__facts :global(dd) {
+    margin: 0;
+  }
+
+  .firma2-public-project__facts :global(.firma2-public-project__none) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-public-project__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-public-project__table th,
+  .firma2-public-project__table td {
+    padding: var(--spacing-200) var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    font-weight: normal;
+  }
+
+  .firma2-public-project__table thead th {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-public-project__footer {
+    padding: var(--spacing-600);
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import { fieldRows, resolveSections } from '../../data/firma2-project-types';
+  import { allFields, isProjectTypeKey, withTypeDraft } from '../../lib/project-type-draft';
+  import { applyBrand, readBrand, TENANT_BRAND_KEY } from '../../lib/tenant-brand';
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-public-project').forEach((root) => {
+    const slug = root.dataset.typeSlug ?? '';
+    const project = JSON.parse(root.dataset.project ?? '{}');
+
+    /** Fold the type's current state over the page — the studio's preview runs this too. */
+    const resolve = () => {
+      const type = withTypeDraft(slug);
+      if (!type) return;
+      resolveSections(type.sections).forEach(({ section, visible }, index) => {
+        const el = root.querySelector<HTMLElement>(`[data-section="${section.key}"]`);
+        if (!el) return;
+        el.style.order = String(index);
+        el.hidden = !visible;
+      });
+      const defs = allFields();
+      (['rail', 'details'] as const).forEach((placement) => {
+        const dl = root.querySelector<HTMLElement>(`[data-fields="${placement}"]`);
+        if (!dl) return;
+        dl.innerHTML = fieldRows(type, project, defs, placement)
+          .map(
+            (r) =>
+              `<div><dt>${esc(r.label)}</dt><dd>${r.value ? esc(r.value) : '<span class="firma2-public-project__none">Not answered</span>'}</dd></div>`,
+          )
+          .join('');
+      });
+    };
+
+    resolve();
+    // The studio and the branding screen write in another window; this one follows.
+    window.addEventListener('storage', (event) => {
+      if (isProjectTypeKey(event.key)) resolve();
+      if (event.key === TENANT_BRAND_KEY) applyBrand(readBrand());
+    });
+  });
+</script>

@@ -12,6 +12,8 @@ import '@esa/tokens/layouts.css';
 import '@esa/tokens/focus.css';
 import '@esa/tokens/a11y.css';
 import '../styles/theme-firma2.css';
+import '../styles/tenant-brand.css';
+import '../styles/interface-prefs.css';
 // Runtime handoff inspector — self-gating: dormant unless the current route
 // has a bundle at public/handoff/<slug>/ (generated via `npx handoff`).
 import HandoffInspector from '@esa/handoff/HandoffInspector.astro';
@@ -92,6 +94,53 @@ const { title = 'ProjectFirma 2.0' } = Astro.props;
         document.documentElement.setAttribute('data-scheme-preference', pref);
       })();
     </script>
+    {/* INTERFACE PREFERENCES — underline links, pointer cursors — before first
+        paint, for the same reason as the scheme. A DELIBERATE DUPLICATE of
+        readPref() + applyPref() in src/lib/interface-prefs.ts; change one,
+        change the other. Only the non-default state writes an attribute. */}
+    <script is:inline>
+      (function () {
+        var u, p;
+        try {
+          u = localStorage.getItem('firma2-underline-links');
+          p = localStorage.getItem('firma2-pointer-cursors');
+        } catch (e) { return; }
+        if (u === 'on') document.documentElement.setAttribute('data-underline-links', '');
+        if (p === 'off') document.documentElement.setAttribute('data-pointer-cursors', 'off');
+      })();
+    </script>
+    {/* THE TENANT'S BRAND, applied before first paint for the same reason. A
+        DELIBERATE DUPLICATE of brandVars() + onBrand() in src/lib/tenant-brand.ts
+        — change the percentages there, change them here. */}
+    <script is:inline>
+      (function () {
+        try {
+          var b = JSON.parse(localStorage.getItem('firma2:tenant-brand:v1') || 'null');
+          if (!b || !/^#[0-9a-f]{6}$/i.test(b.primary)) return;
+          var h = b.primary, s = document.documentElement.style, i;
+          var T = [4, 8, 14, 22, 32, 46, 62, 80], S = [88, 62, 38], DT = [3, 6, 14, 22, 30, 38, 48, 60], DL = [88, 65, 30];
+          for (i = 0; i < 8; i++) {
+            s.setProperty('--tenant-brand-' + (i + 1), 'color-mix(in oklab, ' + h + ' ' + T[i] + '%, white)');
+            s.setProperty('--tenant-brand-dark-' + (i + 1), 'color-mix(in oklab, ' + h + ' ' + DT[i] + '%, #111210)');
+          }
+          for (i = 0; i < 3; i++) {
+            s.setProperty('--tenant-brand-' + (i + 10), 'color-mix(in oklab, ' + h + ' ' + S[i] + '%, black)');
+            s.setProperty('--tenant-brand-dark-' + (i + 10), 'color-mix(in oklab, ' + h + ' ' + DL[i] + '%, white)');
+          }
+          s.setProperty('--tenant-brand-9', h);
+          s.setProperty('--tenant-brand-dark-9', h);
+          var lum = function (x) {
+            var v = parseInt(x.slice(1), 16), c = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map(function (n) {
+              n /= 255; return n <= 0.03928 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4);
+            });
+            return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+          };
+          var L = lum(h), white = 1.05 / (L + 0.05), dark = (L + 0.05) / (lum('#1b1d1a') + 0.05);
+          s.setProperty('--tenant-on-brand', white >= dark ? '#ffffff' : '#1b1d1a');
+          document.documentElement.setAttribute('data-tenant-brand', '');
+        } catch (e) { /* storage blocked or corrupt — the house brand stands */ }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- TODO(spoke-init): add the brand's Google Fonts <link> tags -->
@@ -137,7 +186,17 @@ const { title = 'ProjectFirma 2.0' } = Astro.props;
       // BASE layout so it covers every page, not only the screen that owns the
       // control: the setting is app-wide, so its live behaviour has to be too.
       import { watchSystemScheme } from '../lib/scheme';
+      import { syncShadowCursors } from '../lib/interface-prefs';
       watchSystemScheme();
+      // "Use pointer cursors" off has to reach inside the legos' shadow roots,
+      // which the inline script above cannot. No-op while the setting is on.
+      syncShadowCursors();
     </script>
-  </body>
+    <script>
+    // The tenant's vocabulary, applied to every page's marked labels and the
+    // nav. See src/lib/vocabulary.ts.
+    import { bootVocabulary } from '../lib/vocabulary';
+    bootVocabulary();
+  </script>
+</body>
 </html>

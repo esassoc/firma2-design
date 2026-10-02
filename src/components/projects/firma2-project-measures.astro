@@ -69,6 +69,8 @@
 import EsaCard from '@esa/ecology/esa-card.astro';
 import '../shared/firma2-card-section.css';
 import Firma2ProjectMeasureRow from './firma2-project-measure-row.astro';
+import Firma2ProjectReportImport from './firma2-project-report-import.astro';
+import { IMPORT_FIXTURES } from '../../data/firma2-report-import';
 // esa-icon-button is the name in the house convention for this affordance, but
 // reading it shows it was deprecated (2026-08-14) into a shim that forwards
 // verbatim to `<EsaButton variant="chrome" iconOnly>` and console.warns on every
@@ -132,9 +134,13 @@ const hasYears = years.length > 0;
 // three-year project over its container and starts it scrolling, which is the
 // worse trade. The `title` carries the full string.
 const longestName = Math.max(0, ...measures.map((measure) => measure.name.length));
+
+// The document-first door, offered only where a reading exists to show.
+const canImport = Boolean(IMPORT_FIXTURES[projectSlug]);
+const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, measure.unit]));
 ---
 {measures.length > 0 && (
-  <div class="firma2-project-measures">
+  <div class="firma2-project-measures" data-aliasable-title>
   <EsaCard title="Performance measures">
     <!-- RECORD WORK is the reporter's door, and it is ACTIVITY-FIRST: the
          sheet opens on "What did you do?" — a search over every subcategory
@@ -149,6 +155,11 @@ const longestName = Math.max(0, ...measures.map((measure) => measure.name.length
          is the affordance, permanently — the same rule bcn-tag-editor's add
          slot states ("the empty row IS the affordance"). -->
     <EsaButton slot="actions" variant="chrome" size="sm" icon="notepad-text" data-firma2-pm-record-work>Record work</EsaButton>
+    <!-- THE DOCUMENT-FIRST DOOR (hackathon team 6): the crew log or grant
+         report the reporter already keeps, read against these measures. -->
+    {canImport && (
+      <EsaButton slot="actions" variant="chrome" size="sm" icon="upload" data-open-report-import>Import a report</EsaButton>
+    )}
 
     <!-- THE VIEW SWITCH. Both views named, the current one filled — a reader
          never has to press it to learn what the other one is, which is the
@@ -268,6 +279,9 @@ const longestName = Math.max(0, ...measures.map((measure) => measure.name.length
   <div data-firma2-pm-remove-template hidden aria-hidden="true">
     <EsaButton variant="chrome" iconOnly icon="x" size="sm" aria-label="Remove measure">Remove measure</EsaButton>
   </div>
+  {canImport && (
+    <Firma2ProjectReportImport projectSlug={projectSlug} years={[...years].reverse()} units={unitsByName} />
+  )}
   </div>
 )}
 
@@ -1412,6 +1426,13 @@ const longestName = Math.max(0, ...measures.map((measure) => measure.name.length
       removeEntry(slug, li.dataset.entryId);
       paintLog();
       paintAllRows();
+    });
+
+    // Entries filed from elsewhere — the report import — land in the same
+    // store; repaint so the table shows them without a reload.
+    document.addEventListener('firma2:entries-change', () => {
+      paintAllRows();
+      paintLog();
     });
 
     // ---- boot -------------------------------------------------------------

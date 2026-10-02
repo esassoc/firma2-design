@@ -1,0 +1,222 @@
+---
+// firma2-grid-defaults-editor — the workspace's default columns for each data
+// table: which show, in what order. Ported from ProjectFirma2 hackathon team
+// 3's Grid Defaults tab.
+//
+// THE SAME ROWS AS PAGE SECTIONS. A column here is switched and moved exactly
+// as a section is in the project-type studio — a switch and two arrows — and
+// stored the same way, as a delta. That sameness is the team's point: one way
+// to arrange things, wherever things are arranged.
+//
+// REFINED FROM THE HACKATHON: the team arranged columns by dragging a header
+// strip and then pressing Save. Here a change applies as it is made, and the
+// preview is the grid's own page in a frame, following along — the same
+// pattern as the type studio and Branding, so an administrator learns it
+// once. Drag is not offered: arrows are the keyboard path, and with seven
+// columns they are also the quick one.
+//
+// THE IDENTIFYING COLUMN IS PINNED — first and always shown, because a row
+// nobody can name is a row nobody can find.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { GRIDS } from '../../data/firma2-grid-defaults';
+import { withBase } from '../../lib/base';
+
+const grids = GRIDS.map((g) => ({ key: g.key, label: g.label, page: withBase(g.page) }));
+---
+<!-- bcn-lego-checked: esa-card, esa-button-toggle, esa-switch-toggle and
+     esa-button legos; the classes lay out the editor/preview split and the
+     row list, which no esa- component does. Beacon is not cloned on this
+     machine. -->
+<div class="firma2-grid-defaults" data-grids={JSON.stringify(grids)}>
+  <div class="stack" data-gap="xl">
+    <EsaCard>
+      <div class="stack" data-gap="lg">
+        <esa-button-toggle data-grid-picker size="md" aria-label="Table"></esa-button-toggle>
+        <p class="typography-body-md">Everyone in the workspace sees this table with these columns, in this order. A column switched off can still be exported.</p>
+        <ol class="firma2-grid-defaults__rows" data-column-rows></ol>
+        <div>
+          <span data-reset-wrap hidden>
+            <EsaButton variant="ghost" size="sm" icon="rotate-ccw" data-reset>Use the standard columns</EsaButton>
+          </span>
+        </div>
+      </div>
+    </EsaCard>
+  </div>
+
+  <aside class="firma2-grid-defaults__preview">
+    <EsaCard title="The table, as everyone sees it">
+      <div class="firma2-grid-defaults__frame">
+        <iframe data-preview-frame title="Table preview" tabindex="-1"></iframe>
+      </div>
+    </EsaCard>
+  </aside>
+
+  <template data-tpl-up><EsaButton variant="chrome" size="sm" iconOnly icon="arrow-up" aria-label="Move up">Move up</EsaButton></template>
+  <template data-tpl-down><EsaButton variant="chrome" size="sm" iconOnly icon="arrow-down" aria-label="Move down">Move down</EsaButton></template>
+</div>
+
+<style>
+  .firma2-grid-defaults [hidden] {
+    display: none !important;
+  }
+
+  .firma2-grid-defaults {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 38rem);
+    gap: var(--spacing-600);
+    align-items: start;
+  }
+
+  @media (max-width: 72rem) {
+    .firma2-grid-defaults {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .firma2-grid-defaults__preview {
+    position: sticky;
+    top: var(--spacing-400);
+  }
+
+  .firma2-grid-defaults__frame {
+    height: 30rem;
+    overflow: hidden;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-sm);
+  }
+
+  .firma2-grid-defaults__frame iframe {
+    width: 200%;
+    height: 200%;
+    border: 0;
+    transform: scale(0.5);
+    transform-origin: 0 0;
+  }
+
+  .firma2-grid-defaults__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-grid-defaults__rows :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+
+  .firma2-grid-defaults__rows :global(.firma2-grid-defaults__name) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .firma2-grid-defaults__rows :global(.firma2-grid-defaults__meta) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-grid-defaults__rows :global(.firma2-grid-defaults__controls) {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--spacing-200);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-switch-toggle';
+  import { getGrid, resolveColumns } from '../../data/firma2-grid-defaults';
+  import { readGridDefault, writeGridDefault } from '../../lib/grid-defaults';
+  import { label } from '../../lib/vocabulary';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean };
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-grid-defaults').forEach((root) => {
+    const grids: { key: string; label: string; page: string }[] = JSON.parse(root.dataset.grids ?? '[]');
+    const picker = root.querySelector<Control>('[data-grid-picker]')!;
+    const list = root.querySelector<HTMLElement>('[data-column-rows]')!;
+    const frame = root.querySelector<HTMLIFrameElement>('[data-preview-frame]')!;
+    let gridKey = grids[0]?.key ?? '';
+
+    const clone = (name: string, onClick: () => void): HTMLElement => {
+      const tpl = root.querySelector<HTMLTemplateElement>(`[data-tpl-${name}]`)!;
+      const node = tpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      node.querySelector('button')!.addEventListener('click', onClick);
+      return node;
+    };
+
+    const save = (delta: { order?: string[]; hidden?: string[] }) => {
+      const empty = !delta.order?.length && !delta.hidden?.length;
+      writeGridDefault(gridKey, empty ? null : delta);
+      paint();
+    };
+
+    const paint = () => {
+      const grid = getGrid(gridKey);
+      if (!grid) return;
+      const delta = readGridDefault(gridKey);
+      const resolved = resolveColumns(grid, delta);
+      const movable = resolved.filter((r) => !r.column.pinned);
+      list.replaceChildren(
+        ...resolved.map(({ column, visible }) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<div class="firma2-grid-defaults__name stack" data-gap="2xs">
+              <span class="typography-body-md">${esc(label(column.label))}</span>
+              ${column.pinned ? '<span class="firma2-grid-defaults__meta typography-body-sm">Always first, always shown</span>' : ''}
+            </div>`;
+          if (column.pinned) return li;
+          const controls = document.createElement('div');
+          controls.className = 'firma2-grid-defaults__controls';
+          const sw = document.createElement('esa-switch-toggle') as Control;
+          sw.setAttribute('label', 'Shown');
+          sw.setAttribute('size', 'sm');
+          customElements.whenDefined('esa-switch-toggle').then(() => (sw.checked = visible));
+          sw.addEventListener('change', () => {
+            const hidden = new Set(delta.hidden ?? []);
+            if (sw.checked) hidden.delete(column.key);
+            else hidden.add(column.key);
+            save({ ...delta, hidden: [...hidden] });
+          });
+          const i = movable.findIndex((r) => r.column.key === column.key);
+          const reorder = (by: number) => {
+            const keys = movable.map((r) => r.column.key);
+            const j = i + by;
+            if (j < 0 || j >= keys.length) return;
+            [keys[i], keys[j]] = [keys[j], keys[i]];
+            save({ ...delta, order: keys });
+          };
+          controls.append(sw, clone('up', () => reorder(-1)), clone('down', () => reorder(1)));
+          li.append(controls);
+          return li;
+        }),
+      );
+      root.querySelector<HTMLElement>('[data-reset-wrap]')!.hidden = !delta.order?.length && !delta.hidden?.length;
+    };
+
+    const choose = (key: string) => {
+      gridKey = key;
+      const grid = grids.find((g) => g.key === key);
+      if (grid && frame.getAttribute('src') !== grid.page) frame.src = grid.page;
+      paint();
+    };
+
+    customElements.whenDefined('esa-button-toggle').then(() => {
+      picker.options = grids.map((g) => ({ value: g.key, label: label(g.label) }));
+      picker.value = gridKey;
+    });
+    picker.addEventListener('change', () => choose(String(picker.value ?? '')));
+
+    root.querySelector('[data-reset]')?.addEventListener('click', () => {
+      writeGridDefault(gridKey, null);
+      paint();
+    });
+
+    choose(gridKey);
+  });
+</script>

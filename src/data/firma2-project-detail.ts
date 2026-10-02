@@ -789,6 +789,17 @@ const FUNDERS: Record<string, string> = {
   'Local Sponsor Match': LOCAL_MATCH,
 };
 
+/** Each outside funder and the grant programs it administers, for the
+ *  organization registry — the same table the funding sources are built from,
+ *  so a funder's page and a project's funding table can never disagree. */
+export const funderPrograms: Map<string, string[]> = Object.entries(FUNDERS).reduce(
+  (acc, [program, organization]) => {
+    if (organization !== LOCAL_MATCH) acc.set(organization, [...(acc.get(organization) ?? []), program]);
+    return acc;
+  },
+  new Map<string, string[]>(),
+);
+
 const buildFunding = (
   project: Project,
   authored: [name: string, share: number][],

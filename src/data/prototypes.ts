@@ -23,6 +23,56 @@ export interface Prototype {
 }
 
 export const prototypes: Prototype[] = [
+  // Ported from ProjectFirma2's hackathon team 3 (customizations): a tenant's
+  // difference expressed as data — project types build pages, one colour
+  // brands everything. Edits are browser-local.
+  {
+    slug: 'project-types',
+    title: 'Project types',
+    description:
+      'Each kind of project gets its own fields and its own public page layout, with the page live beside the editor.',
+    route: '/prototypes/workspace-settings/project-types',
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  {
+    slug: 'public-project-page',
+    title: 'Public project page',
+    description:
+      'One project as the public sees it — no account, the tenant’s brand, and only the sections its type publishes.',
+    route: '/prototypes/public/scott-river-fish-passage-barrier-removal',
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  {
+    slug: 'branding',
+    title: 'Branding',
+    description: 'Pick one colour and every screen and public page follows, with its contrast graded as you choose.',
+    route: '/prototypes/workspace-settings/branding',
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  // Ported from ProjectFirma2's hackathon team 6 (performance measures),
+  // reworked against this spoke's measure model. Both flows are scripted
+  // stand-ins for live Claude calls.
+  {
+    slug: 'measure-drafting',
+    title: 'Draft a measure from a claim',
+    description:
+      'Write what you owe your funder, or answer two clickable questions, and get a measure drafted with its reporting cost priced.',
+    route: '/prototypes/performance-measures/new',
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  {
+    slug: 'report-import',
+    title: 'Report from a document',
+    description:
+      'Upload a crew log or paste a report; each proposed entry shows its source and is checked before it is saved.',
+    route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement',
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
   // The one screen here that is not a record. Listed because the colour-scheme
   // control on it is app-wide and live — it is the fastest way to see every
   // other prototype in this list rendered in the dark scheme.
@@ -30,7 +80,7 @@ export const prototypes: Prototype[] = [
     slug: 'settings',
     title: 'Settings',
     description:
-      'One account’s own preferences: name and email, the light / dark / system theme, and which events send mail.',
+      'One account’s own settings, in four pages: theme, name and email, which events send mail, and sign-in and sessions.',
     route: '/prototypes/settings',
     createdAt: '2026-08-24',
     status: 'in-progress',

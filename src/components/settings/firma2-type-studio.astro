@@ -1,0 +1,469 @@
+---
+// firma2-type-studio — one project type's fields and page, with its public
+// page live beside them. Ported from ProjectFirma2 hackathon team 3's
+// "Project Type Studio".
+//
+// WHO CONFIGURES THIS: a tenant's administrator, rarely — the brief's
+// customization reader arrives with almost no context, having set this up two
+// years ago or inherited it. So nothing here needs remembering: every row
+// says what it is, every change shows on the real page beside it, and
+// everything saves the moment it is made (product brief §3.4).
+//
+// WHO IS NOT HERE: everyone who fills in a project of this type. A field
+// added here is a question asked of every one of them, and the Fields card
+// says how many, at the moment of adding — the compliance loop from the
+// measure screens, applied to custom fields.
+//
+// THE PREVIEW IS THE PAGE. The hackathon rendered the public component inside
+// the studio. Here the preview is the public page itself, in a frame, kept in
+// step by the storage event — one renderer, so the preview cannot disagree
+// with what the public sees. It is not a mockup of somebody else's UI (the
+// brief's banned pattern): the editor is the rows on the left; the frame only
+// shows their result.
+//
+// REFINED FROM THE HACKATHON:
+//   - Defining a field and placing it happen here, as two named acts —
+//     "Add a field" offers the tenant's existing definitions (reused, never
+//     copied) and "New field" defines one. The hackathon put definitions on a
+//     separate Custom Fields screen and placement here, which made a
+//     once-a-year admin learn two screens for one decision.
+//   - Shown/Hidden toggled by a switch, not a button whose label is its
+//     state; a placement is a two-segment toggle naming both choices.
+//   - Kind is priced at definition: a Text field says nothing can be totalled
+//     by it, because free text where a vocabulary belongs breaks roll-ups.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import type { ProjectType } from '../../data/firma2-project-types';
+import { FIELD_KINDS } from '../../data/firma2-project-types';
+import { UNITS } from '../../data/firma2-performance-measures';
+
+interface Props {
+  type: ProjectType;
+  /** This type's projects, by name and public-page URL. */
+  projects: { name: string; publicHref: string }[];
+}
+
+const { type, projects } = Astro.props;
+const kindOptions = FIELD_KINDS.map((k) => ({ value: k.id, label: k.name }));
+const unitOptions = UNITS.map((u) => ({ value: u, label: u }));
+const previewOptions = projects.map((p) => ({ value: p.publicHref, label: p.name }));
+---
+<!-- bcn-lego-checked: every control is a lego (esa-card, esa-button,
+     esa-button-toggle, esa-switch-toggle, esa-select, esa-side-dialog,
+     esa-text-field, esa-textarea, esa-input-tag) or the spoke's own
+     bcn-sortable-list, which reorders both row lists; the classes lay out the
+     editor/preview split and the row lists, which no esa- component does.
+     Beacon is not cloned on this machine. -->
+<div
+  class="firma2-type-studio"
+  data-type-slug={type.slug}
+  data-project-count={projects.length}
+  data-kind-options={JSON.stringify(kindOptions)}
+  data-unit-options={JSON.stringify(unitOptions)}
+  data-preview-options={JSON.stringify(previewOptions)}
+>
+  <div class="firma2-type-studio__editor stack" data-gap="xl">
+    <EsaCard title="Fields">
+      <div class="stack" data-gap="lg">
+        <p class="typography-body-md" data-field-cost></p>
+        <bcn-sortable-list data-field-sort>
+          <template data-sort-handle><EsaButton variant="chrome" size="sm" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+          <ol class="firma2-type-studio__rows" data-field-rows></ol>
+        </bcn-sortable-list>
+        <p class="typography-body-md" data-field-empty hidden>No fields yet. Projects of this type show only the facts every project has.</p>
+        <div class="firma2-type-studio__add">
+          <esa-select data-add-field size="md" label="Add a field you already use" placeholder="Choose a field"></esa-select>
+          <EsaButton variant="secondary" size="md" icon="plus" data-new-field>New field</EsaButton>
+        </div>
+      </div>
+    </EsaCard>
+
+    <EsaCard title="Page sections">
+      <div class="stack" data-gap="lg">
+        <p class="typography-body-md">What the public page for each of these projects shows, top to bottom. A section switched off is left out of the page entirely.</p>
+        <bcn-sortable-list data-section-sort>
+          <template data-sort-handle><EsaButton variant="chrome" size="sm" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+          <ol class="firma2-type-studio__rows" data-section-rows></ol>
+        </bcn-sortable-list>
+      </div>
+    </EsaCard>
+  </div>
+
+  <aside class="firma2-type-studio__preview">
+    <EsaCard title="Public page">
+      <div class="stack" data-gap="md">
+        <div class="repel">
+          <esa-select data-preview-project size="sm" aria-label="Project to preview"></esa-select>
+          <EsaButton variant="ghost" size="sm" icon="external-link" tag="a" href={projects[0]?.publicHref ?? '#'} target="_blank" data-preview-open>Open</EsaButton>
+        </div>
+        <div class="firma2-type-studio__frame">
+          <iframe data-preview-frame src={projects[0]?.publicHref} title="Public page preview" tabindex="-1"></iframe>
+        </div>
+      </div>
+    </EsaCard>
+  </aside>
+
+  <!-- Defining a field. A sheet over the studio, because a field has a few
+       facts of its own and the page behind it is where it will land. -->
+  <esa-side-dialog class="firma2-type-studio__sheet" heading="New field" size="md" position="right">
+    <div class="stack" data-gap="lg">
+      <esa-text-field data-def-label label="Name" size="md" placeholder="e.g. Barrier type" required></esa-text-field>
+      <esa-select data-def-kind label="Kind" size="md"></esa-select>
+      <esa-input-tag data-def-options label="Choices" hint="Press Enter after each choice." hidden></esa-input-tag>
+      <esa-select data-def-unit label="Unit" size="md" hidden></esa-select>
+      <esa-textarea data-def-help label="Help text" rows="2" placeholder="Shown to whoever fills this in."></esa-textarea>
+    </div>
+    <div slot="footer" class="cluster" data-gap="xs">
+      <EsaButton variant="primary" size="md" data-def-save>Add field</EsaButton>
+      <EsaButton variant="ghost" size="md" data-def-cancel>Cancel</EsaButton>
+    </div>
+  </esa-side-dialog>
+
+  <!-- Clone sources for the row controls: real legos, copied by the script. -->
+  <template data-tpl-remove><EsaButton variant="chrome" size="sm" iconOnly icon="x" aria-label="Remove from this type">Remove from this type</EsaButton></template>
+</div>
+
+<style>
+  .firma2-type-studio [hidden] {
+    display: none !important;
+  }
+
+  .firma2-type-studio {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 34rem);
+    gap: var(--spacing-600);
+    align-items: start;
+  }
+
+  @media (max-width: 72rem) {
+    .firma2-type-studio {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .firma2-type-studio__preview {
+    position: sticky;
+    top: var(--spacing-400);
+  }
+
+  /* The public page at half size: a real 1100px-wide document, scaled, so
+     its own layout is the one the public gets. */
+  .firma2-type-studio__frame {
+    height: 36rem;
+    overflow: hidden;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-sm);
+  }
+
+  .firma2-type-studio__frame iframe {
+    width: 200%;
+    height: 200%;
+    border: 0;
+    transform: scale(0.5);
+    transform-origin: 0 0;
+  }
+
+  .firma2-type-studio__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-type-studio__rows :global(li) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+
+  .firma2-type-studio__rows :global(.firma2-type-studio__name) {
+    flex: 1 1 14rem;
+    min-width: 0;
+  }
+
+  .firma2-type-studio__rows :global(.firma2-type-studio__controls) {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--spacing-200);
+    margin-inline-start: auto;
+  }
+
+  .firma2-type-studio__rows :global(.firma2-type-studio__meta) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-type-studio__rows :global(li[data-off] .firma2-type-studio__name) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-type-studio__add {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--spacing-300);
+  }
+
+  .firma2-type-studio__add esa-select {
+    flex: 1 1 16rem;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-input-tag';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '../shared/bcn-sortable-list';
+  import { FIELD_KINDS, PROJECT_TYPES, kindName, resolveSections } from '../../data/firma2-project-types';
+  import type { FieldDefinition, FieldKind, ProjectType } from '../../data/firma2-project-types';
+  import { allFields, nextLocalFieldId, persistType, withTypeDraft, writeLocalField } from '../../lib/project-type-draft';
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
+  import { label } from '../../lib/vocabulary';
+
+  type Control = HTMLElement & {
+    value?: unknown;
+    options?: unknown;
+    checked?: boolean;
+    errorText?: string;
+    helpText?: string;
+  };
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  const PLACEMENTS = [
+    { value: 'rail', label: 'Key facts' },
+    { value: 'details', label: 'Project details' },
+  ];
+
+  document.querySelectorAll<HTMLElement>('.firma2-type-studio').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const slug = root.dataset.typeSlug ?? '';
+    const projectCount = Number(root.dataset.projectCount ?? 0);
+    let type = withTypeDraft(slug) as ProjectType;
+    if (!type) return;
+
+    const save = () => persistType(type);
+
+    const clone = (name: string, onClick: () => void): HTMLElement => {
+      const node = $<HTMLTemplateElement>(`[data-tpl-${name}]`).content.firstElementChild!.cloneNode(true) as HTMLElement;
+      node.querySelector('button')!.addEventListener('click', onClick);
+      return node;
+    };
+
+    /** How many OTHER types already place this field. */
+    const usedElsewhere = (fieldId: string) =>
+      PROJECT_TYPES.filter((t) => t.slug !== slug && withTypeDraft(t.slug)?.fields.some((f) => f.fieldId === fieldId)).length;
+
+    // ---- fields ----------------------------------------------------------------
+    const describe = (d: FieldDefinition): string => {
+      if (d.kind === 'choice') return `${kindName(d.kind)} · ${(d.options ?? []).join(', ')}`;
+      if (d.kind === 'number') return `${kindName(d.kind)} · ${d.unit ?? 'no unit'}`;
+      return kindName(d.kind);
+    };
+
+    const paintFields = () => {
+      const defs = allFields();
+      const list = $('[data-field-rows]');
+      list.replaceChildren(
+        ...type.fields.map((tf) => {
+          const d = defs.find((x) => x.id === tf.fieldId);
+          const li = document.createElement('li');
+          li.dataset.sortKey = tf.fieldId;
+          li.dataset.sortLabel = d?.label ?? tf.fieldId;
+          li.innerHTML = `<div class="firma2-type-studio__name stack" data-gap="2xs">
+              <span class="typography-body-md">${esc(d?.label ?? tf.fieldId)}</span>
+              <span class="firma2-type-studio__meta typography-body-sm">${esc(d ? describe(d) : '')}</span>
+            </div>`;
+          const toggle = document.createElement('esa-button-toggle') as Control;
+          toggle.setAttribute('size', 'sm');
+          toggle.setAttribute('aria-label', `Where ${d?.label ?? 'this field'} appears`);
+          customElements.whenDefined('esa-button-toggle').then(() => {
+            toggle.options = PLACEMENTS;
+            toggle.value = tf.placement;
+          });
+          toggle.addEventListener('change', () => {
+            type = { ...type, fields: type.fields.map((f) => (f.fieldId === tf.fieldId ? { ...f, placement: String(toggle.value) as 'rail' | 'details' } : f)) };
+            save();
+          });
+          // The controls travel as one group, so a narrow column wraps the
+          // group under the name rather than splitting it across two lines.
+          const controls = document.createElement('div');
+          controls.className = 'firma2-type-studio__controls';
+          li.append(controls);
+          controls.append(
+            toggle,
+            clone('remove', () => {
+              type = { ...type, fields: type.fields.filter((f) => f.fieldId !== tf.fieldId) };
+              save();
+              paintFields();
+            }),
+          );
+          return li;
+        }),
+      );
+      $('[data-field-empty]').hidden = type.fields.length > 0;
+      $('[data-field-cost]').textContent =
+        label(`Every field here is asked of all ${projectCount} ${projectCount === 1 ? 'project' : 'projects'} of this type, and every one added later.`);
+
+      // The picker offers what the tenant already defined and this type does not use.
+      const picker = $<Control>('[data-add-field]');
+      customElements.whenDefined('esa-select').then(() => {
+        picker.options = defs
+          .filter((d) => !type.fields.some((f) => f.fieldId === d.id))
+          .map((d) => {
+            const n = usedElsewhere(d.id);
+            return { value: d.id, label: `${d.label} — ${n ? `on ${n} other ${n === 1 ? 'type' : 'types'}` : 'not used yet'}` };
+          });
+        picker.value = '';
+      });
+    };
+
+    // A drag or a move from the grip's menu: the list hands back the new
+    // order of field ids, which is the whole of what a type stores about it.
+    $('[data-field-sort]').addEventListener('sort-change', (e) => {
+      const { order } = (e as CustomEvent<{ order: string[] }>).detail;
+      type = { ...type, fields: order.map((id) => type.fields.find((f) => f.fieldId === id)!) };
+      save();
+      paintFields();
+    });
+
+    $('[data-add-field]').addEventListener('change', () => {
+      const id = String($<Control>('[data-add-field]').value ?? '');
+      if (!id || type.fields.some((f) => f.fieldId === id)) return;
+      type = { ...type, fields: [...type.fields, { fieldId: id, placement: 'rail' }] };
+      save();
+      paintFields();
+    });
+
+    // ---- sections --------------------------------------------------------------
+    const paintSections = () => {
+      const resolved = resolveSections(type.sections);
+      const list = $('[data-section-rows]');
+      list.replaceChildren(
+        ...resolved.map(({ section, visible }) => {
+          const li = document.createElement('li');
+          li.dataset.sortKey = section.key;
+          li.dataset.sortLabel = label(section.label);
+          // Spatial content always closes the page, so the map row neither
+          // moves nor can be dragged past.
+          if (section.pinnedLast) li.dataset.sortLocked = '';
+          if (!visible) li.dataset.off = '';
+          li.innerHTML = `<div class="firma2-type-studio__name stack" data-gap="2xs">
+              <span class="typography-body-md">${esc(label(section.label))}</span>
+              ${section.pinnedLast ? '<span class="firma2-type-studio__meta typography-body-sm">Always last</span>' : ''}
+            </div>`;
+          const sw = document.createElement('esa-switch-toggle') as Control;
+          sw.setAttribute('label', 'Shown');
+          sw.setAttribute('size', 'sm');
+          customElements.whenDefined('esa-switch-toggle').then(() => (sw.checked = visible));
+          sw.addEventListener('change', () => {
+            const hidden = new Set(type.sections.hidden ?? []);
+            if (sw.checked) hidden.delete(section.key);
+            else hidden.add(section.key);
+            type = { ...type, sections: { ...type.sections, hidden: [...hidden] } };
+            save();
+            paintSections();
+          });
+          const controls = document.createElement('div');
+          controls.className = 'firma2-type-studio__controls';
+          li.append(controls);
+          controls.append(sw);
+          return li;
+        }),
+      );
+    };
+
+    $('[data-section-sort]').addEventListener('sort-change', (e) => {
+      const { order } = (e as CustomEvent<{ order: string[] }>).detail;
+      type = { ...type, sections: { ...type.sections, order } };
+      save();
+      paintSections();
+    });
+
+    // ---- preview ---------------------------------------------------------------
+    const frame = $<HTMLIFrameElement>('[data-preview-frame]');
+    const previewPicker = $<Control>('[data-preview-project]');
+    const openLink = root.querySelector<HTMLAnchorElement>('[data-preview-open]');
+    customElements.whenDefined('esa-select').then(() => {
+      const options = JSON.parse(root.dataset.previewOptions ?? '[]');
+      previewPicker.options = options;
+      previewPicker.value = options[0]?.value ?? '';
+    });
+    previewPicker.addEventListener('change', () => {
+      const href = String(previewPicker.value ?? '');
+      if (!href) return;
+      frame.src = href;
+      if (openLink) openLink.href = href;
+    });
+
+    // ---- defining a field --------------------------------------------------------
+    const sheet = $<Sheet>('.firma2-type-studio__sheet');
+    void fixSideDialog(sheet);
+    const defLabel = $<Control>('[data-def-label]');
+    const defKind = $<Control>('[data-def-kind]');
+    const defOptions = $<Control>('[data-def-options]');
+    const defUnit = $<Control>('[data-def-unit]');
+    const defHelp = $<Control>('[data-def-help]');
+
+    const syncKind = () => {
+      const kind = String(defKind.value ?? 'choice') as FieldKind;
+      defOptions.hidden = kind !== 'choice';
+      defUnit.hidden = kind !== 'number';
+      defKind.helpText = FIELD_KINDS.find((k) => k.id === kind)?.note ?? '';
+    };
+
+    customElements.whenDefined('esa-select').then(() => {
+      defKind.options = JSON.parse(root.dataset.kindOptions ?? '[]');
+      defUnit.options = JSON.parse(root.dataset.unitOptions ?? '[]');
+    });
+    defKind.addEventListener('change', syncKind);
+
+    $('[data-new-field]').addEventListener('click', () => {
+      defLabel.value = '';
+      defLabel.errorText = '';
+      defKind.value = 'choice';
+      defOptions.value = [];
+      defOptions.errorText = '';
+      defUnit.value = '';
+      defHelp.value = '';
+      syncKind();
+      sheet.show();
+    });
+
+    $('[data-def-cancel]').addEventListener('click', () => sheet.close());
+
+    $('[data-def-save]').addEventListener('click', () => {
+      const label = String(defLabel.value ?? '').trim();
+      const kind = String(defKind.value ?? 'choice') as FieldKind;
+      const options = (Array.isArray(defOptions.value) ? defOptions.value : []).map(String).filter(Boolean);
+      defLabel.errorText = label ? '' : 'Name the field.';
+      defOptions.errorText = kind === 'choice' && options.length < 2 ? 'Add at least two choices.' : '';
+      if (!label || defOptions.errorText) return;
+      const field: FieldDefinition = {
+        id: nextLocalFieldId(label),
+        label,
+        kind,
+        options: kind === 'choice' ? options : undefined,
+        unit: kind === 'number' ? String(defUnit.value ?? '') || undefined : undefined,
+        helpText: String(defHelp.value ?? '').trim() || undefined,
+      };
+      writeLocalField(field);
+      type = { ...type, fields: [...type.fields, { fieldId: field.id, placement: 'rail' }] };
+      save();
+      paintFields();
+      sheet.close();
+    });
+
+    paintFields();
+    paintSections();
+  });
+</script>

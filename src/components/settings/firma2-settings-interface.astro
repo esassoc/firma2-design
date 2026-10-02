@@ -1,6 +1,15 @@
 ---
-// firma2-settings-appearance — the colour-scheme control, and the only setting
-// on this screen that actually does something.
+// firma2-settings-interface — Preferences › Interface and theme: the colour
+// scheme, then two switches that change how links and controls read — underline
+// links, use pointer cursors. All three are real and apply on the spot; the
+// switches' plumbing is src/lib/interface-prefs.ts + src/styles/interface-prefs.css.
+//
+// NOT A CARD. This is the only section on the page, under the page's own header,
+// so a card's border was boxing the whole screen and saying nothing. A heading
+// and a step of space mark the section — firma2-rail-section, the spoke's
+// card-less section, already used the same way on Workspace › General.
+//
+// THE SWITCHES SIT RIGHT, like Email notifications — firma2-switch-list.css.
 //
 // THREE OPTIONS, NOT A SWITCH. A two-state toggle can express "light" and
 // "dark" and cannot express "whatever my machine is doing", which is the option
@@ -32,30 +41,34 @@
 // primitive this spoke must not copy, and it is two-state so it could not carry
 // System anyway. esa-radio-group would also express one-of-three but reads as a
 // form question rather than a display control. Beacon is not cloned on this
-// machine. The card is esa-card; the only local element is the <esa-button-toggle>
-// tag itself, so this component has no <style> block at all.
+// machine. The switches are esa-switch-toggle; this component has no <style> block.
 
-// The spoke's card-as-section convention: drops esa-card's internal rule under
-// the title, because a bordered card stacked down a page already says where its
-// section starts and the second line inside it draws a boundary the reader can
-// see without it. Imported per component, the way all six project-detail
-// sections import it, so the component carries the convention in isolation.
-import '../shared/firma2-card-section.css';
-import EsaCard from '@esa/ecology/esa-card.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import '../shared/firma2-switch-list.css';
 ---
-<EsaCard title="Appearance">
+<Firma2RailSection title="Interface and theme">
   {/* Options are an ARRAY, so they are set as a property from the script below
       rather than as an attribute — the same contract esa-select and
       esa-sidebar-nav use. The element renders empty for the one frame before
       hydration, which is why it carries no fallback content: a row of segments
       that briefly says something else is worse than a row that briefly says
       nothing. */}
-  <esa-button-toggle id="firma2-scheme" label="Theme" size="md"></esa-button-toggle>
-</EsaCard>
+  <div class="stack" data-gap="lg">
+    <esa-button-toggle id="firma2-scheme" label="Theme" size="md"></esa-button-toggle>
+    {/* Defaults are the app as it shipped — links bare, pointers on — so the
+        `checked` state is set from storage in the script, not here. */}
+    <div class="firma2-switch-list">
+      <esa-switch-toggle id="firma2-underline-links" label="Underline links" label-position="before"></esa-switch-toggle>
+      <esa-switch-toggle id="firma2-pointer-cursors" label="Use pointer cursors" label-position="before"></esa-switch-toggle>
+    </div>
+  </div>
+</Firma2RailSection>
 
 <script>
   import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-switch-toggle';
   import { readScheme, setScheme, type SchemePreference } from '../../lib/scheme';
+  import { readPref, setPref, type InterfacePref } from '../../lib/interface-prefs';
 
   // Lucide inner markup — the `paths` convention esa-button-toggle documents for
   // its `icon` field: the children only, no <svg> wrapper, which the component
@@ -96,4 +109,22 @@ import EsaCard from '@esa/ecology/esa-card.astro';
       if (value === 'light' || value === 'dark' || value === 'system') setScheme(value);
     });
   }
+
+  // The switches. `checked` assigned after define — a property set on a
+  // not-yet-upgraded element shadows the lego's accessor for good.
+  type SwitchEl = HTMLElement & { checked: boolean };
+  const SWITCHES: Array<[string, InterfacePref]> = [
+    ['firma2-underline-links', 'underlineLinks'],
+    ['firma2-pointer-cursors', 'pointerCursors'],
+  ];
+  customElements.whenDefined('esa-switch-toggle').then(() => {
+    for (const [id, pref] of SWITCHES) {
+      const el = document.getElementById(id) as SwitchEl | null;
+      if (!el) continue;
+      el.checked = readPref(pref);
+      el.addEventListener('change', (event) => {
+        setPref(pref, Boolean((event as CustomEvent<{ checked: boolean }>).detail?.checked));
+      });
+    }
+  });
 </script>

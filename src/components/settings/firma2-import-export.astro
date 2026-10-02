@@ -1,0 +1,164 @@
+---
+// firma2-import-export — Workspace settings › Import & export: getting
+// records into the workspace from a spreadsheet, and out of it as CSV.
+//
+// TWO CARDS OF THE SAME SHAPE: name the records, then move the file. Import
+// takes a file (and offers the template whose headings it expects); export
+// hands one back. One select per card rather than a row per record type,
+// because the record type is the only thing that varies and a list of four
+// identical rows would say it four times.
+//
+// EXPORT IS REAL: the CSV is built in the browser from the same fixture every
+// screen reads, so what downloads matches what the grids show. IMPORT STOPS AT
+// THE FILE. There is no store behind this prototype, so the Import button is
+// enabled and inert — the product brief's "inert, not disabled" — rather than
+// pretending to save rows it cannot keep. The template download is real.
+//
+// NO LEADING ICONS ON THE BUTTONS. At md, esa-button's 20px icon makes the
+// box 46px against 41px for a text-only one, so "Download template" stood 5px
+// taller than Import beside it. "Download" already says what the glyph would.
+//
+// bcn-lego-checked: every control is a lego — esa-card for each section,
+// esa-select for the record type, esa-file-upload for the file, esa-button for
+// the actions. `.stack` and `.cluster` lay them out; no bespoke flex and no
+// <style> block.
+import '../shared/firma2-card-section.css';
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { projects } from '../../data/firma2-projects';
+import { organizations, users } from '../../data/firma2-directory';
+
+// The columns each import expects, in template order. What an export writes is
+// the record's own fields, so the two lists are allowed to differ.
+const TEMPLATES: Record<string, string[]> = {
+  projects: ['Project name', 'Program', 'Lead organization', 'County', 'Stage', 'Implementation start year', 'Completion year', 'Estimated total cost'],
+  organizations: ['Organization', 'Type', 'Website', 'Primary contact email'],
+  users: ['Name', 'Email', 'Organization', 'Role'],
+  expenditures: ['Project name', 'Funding source', 'Year', 'Amount'],
+};
+
+const importOptions = [
+  { value: 'projects', label: 'Projects' },
+  { value: 'organizations', label: 'Organizations' },
+  { value: 'users', label: 'Users' },
+  { value: 'expenditures', label: 'Expenditures' },
+];
+
+const exports = {
+  projects: projects.map((p) => ({
+    'Project name': p.projectName,
+    Program: p.program,
+    'Lead organization': p.leadOrganization,
+    County: p.county,
+    Stage: p.stage,
+    'Implementation start year': p.implementationStartYear,
+    'Completion year': p.completionYear,
+    'Estimated total cost': p.estimatedTotalCost,
+  })),
+  organizations: organizations.map((o) => ({
+    Organization: o.name,
+    Type: o.type,
+    Website: o.website,
+    'Primary contact': o.primaryContact,
+    'Projects led': o.projectsLed,
+    'Projects funded': o.projectsFunded,
+    People: o.people,
+  })),
+  users: users.map((u) => ({
+    Name: u.name,
+    Email: u.email,
+    Organization: u.organization,
+    Role: u.role,
+    Status: u.status,
+    'Last active': u.lastActive,
+  })),
+};
+
+const exportOptions = [
+  { value: 'projects', label: `Projects (${exports.projects.length})` },
+  { value: 'organizations', label: `Organizations (${exports.organizations.length})` },
+  { value: 'users', label: `Users (${exports.users.length})` },
+];
+---
+<div class="firma2-import-export stack" data-gap="xl">
+  <EsaCard title="Import">
+    <div class="stack" data-gap="lg">
+      <esa-select
+        id="import-kind"
+        label="Records in the file"
+        size="md"
+        data-options={JSON.stringify(importOptions)}
+        data-initial="projects"
+      ></esa-select>
+      <esa-file-upload label="Spreadsheet" accept=".csv,.xlsx"></esa-file-upload>
+      <div class="cluster" data-gap="sm">
+        <EsaButton variant="primary" size="md">Import</EsaButton>
+        <EsaButton variant="secondary" size="md" data-import-template>Download template</EsaButton>
+      </div>
+    </div>
+  </EsaCard>
+
+  <EsaCard title="Export">
+    <div class="stack" data-gap="lg">
+      <esa-select
+        id="export-kind"
+        label="Records to export"
+        size="md"
+        data-options={JSON.stringify(exportOptions)}
+        data-initial="projects"
+      ></esa-select>
+      <div class="cluster" data-gap="sm">
+        <EsaButton variant="secondary" size="md" data-export-csv>Download CSV</EsaButton>
+      </div>
+    </div>
+  </EsaCard>
+
+  <script type="application/json" data-templates set:html={JSON.stringify(TEMPLATES)}></script>
+  <script type="application/json" data-exports set:html={JSON.stringify(exports)}></script>
+</div>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-file-upload';
+  import { hydrateSelect } from '../../lib/hydrate-select';
+
+  type Row = Record<string, string | number>;
+
+  // RFC 4180: quote every field and double any quote inside it, so a comma in
+  // an organization's name cannot split its row.
+  const csvOf = (headers: string[], rows: Row[]): string =>
+    [headers, ...rows.map((r) => headers.map((h) => String(r[h] ?? '')))]
+      .map((cells) => cells.map((c) => `"${c.replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+
+  const download = (fileName: string, text: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: fileName });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  customElements.whenDefined('esa-select').then(() => {
+    document.querySelectorAll<HTMLElement>('.firma2-import-export').forEach((root) => {
+      const templates: Record<string, string[]> = JSON.parse(root.querySelector('[data-templates]')?.textContent ?? '{}');
+      const exports: Record<string, Row[]> = JSON.parse(root.querySelector('[data-exports]')?.textContent ?? '{}');
+      const importKind = root.querySelector<HTMLElement & { value?: string }>('#import-kind');
+      const exportKind = root.querySelector<HTMLElement & { value?: string }>('#export-kind');
+
+      for (const select of [importKind, exportKind]) {
+        if (select) hydrateSelect(select.id, JSON.parse(select.dataset.options ?? '[]'), select.dataset.initial);
+      }
+
+      root.querySelector('[data-import-template]')?.addEventListener('click', () => {
+        const kind = importKind?.value || 'projects';
+        download(`projectfirma-${kind}-template.csv`, csvOf(templates[kind] ?? [], []));
+      });
+
+      root.querySelector('[data-export-csv]')?.addEventListener('click', () => {
+        const kind = exportKind?.value || 'projects';
+        const rows = exports[kind] ?? [];
+        download(`projectfirma-${kind}.csv`, csvOf(Object.keys(rows[0] ?? {}), rows));
+      });
+    });
+  });
+</script>

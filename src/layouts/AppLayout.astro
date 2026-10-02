@@ -11,17 +11,37 @@
 // design-system browser, which carry DocsLayout's own chrome instead.
 import BaseLayout from './BaseLayout.astro';
 import EsaAppShell from '@esa/ecology/esa-app-shell.astro';
-import { navItems, searchIndex } from '../data/firma2-nav';
+import EsaContainer from '@esa/ecology/esa-container.astro';
+import { navItems, workspaceSettingsNavItems, searchIndex } from '../data/firma2-nav';
 import { withBase } from '../lib/base';
+import { CONTENT_MAX, CONTENT_READING } from '../lib/content-width';
 
 interface Props {
   /** Document title. The shell's wordmark is the product name and does not change. */
   title?: string;
   /** `key` of the nav item to mark current. */
   active?: string;
+  /** Which rail to show: the app's navigation, or Workspace settings' sections. */
+  nav?: 'app' | 'workspace-settings';
+  /**
+   * How wide the page's content may grow. `default` caps it at CONTENT_MAX and
+   * centres it in the pane. `full` hands the whole pane to the page: the project
+   * map, where the canvas IS the page, and any page with a trailing rail, which
+   * wraps its own main column in an EsaContainer at CONTENT_MAX so the rail
+   * stays on the window's edge. `reading` caps at CONTENT_READING for pages
+   * that are read rather than surveyed: settings sections, forms, short lists.
+   */
+  width?: 'default' | 'reading' | 'full';
 }
 
-const { title = 'ProjectFirma 2.0', active } = Astro.props;
+const { title = 'ProjectFirma 2.0', active, nav = 'app', width = 'default' } = Astro.props;
+
+// THE CONTENT COLUMN HAS A CEILING. On a wide monitor an uncapped pane stretches
+// tables, forms and cards into lines too long to read and rows too wide to scan;
+// past CONTENT_MAX the column stops growing and centres instead (the settings-page
+// pattern Linear uses). The pane's own padding still supplies the gutter below it,
+// so nothing changes until the pane outgrows it. The number and its reasoning
+// live in lib/content-width, shared with the pages that cap only a main column.
 
 // The nav model and search index are stored base-less; the base prefix is a
 // render-time concern (dev serves at /, the GitHub Pages build at /firma2-design/).
@@ -39,7 +59,7 @@ const { title = 'ProjectFirma 2.0', active } = Astro.props;
 // Most of the rail is dimmed today because most of the product is unbuilt. That
 // is an accurate picture of a spoke with one working screen, not a styling
 // problem — the dimming recedes on its own as pages land.
-const items = navItems.map((item) => ({
+const items = (nav === 'workspace-settings' ? workspaceSettingsNavItems : navItems).map((item) => ({
   ...item,
   href: item.href ? withBase(item.href) : undefined,
   disabled: !item.href,
@@ -52,7 +72,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
 // design-principles wants the identity RESEARCHED, not fabricated.
 ---
 <BaseLayout title={title}>
-  <div class="firma2-app-frame">
+  <div class="firma2-app-frame" data-nav={nav}>
     <EsaAppShell
       title="ProjectFirma 2.0"
       active={active}
@@ -62,7 +82,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
       userName="Dana Whitfield"
       brandHref={withBase('/')}
     >
-      <slot />
+      {width === 'full' ? <slot /> : <EsaContainer maxWidth={width === 'reading' ? CONTENT_READING : CONTENT_MAX}><slot /></EsaContainer>}
     </EsaAppShell>
   </div>
 </BaseLayout>
@@ -86,6 +106,8 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
 
   const ROUTES: Record<string, string> = {
     settings: '/prototypes/settings',
+    // The workspace menu on the rail's wordmark emits the same event.
+    'workspace-settings': '/prototypes/workspace-settings/project-types',
   };
 
   // On `document`, not on the menu: the event is composed and bubbling, and the
@@ -241,6 +263,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
         search.setAttribute('slot', 'header');
         brand.insertAdjacentElement('afterend', search);
       }
+      if (brand) mountWorkspaceMenu(brand);
 
       // ---- foot: the account menu and the collapse toggle ----
       const menu = shell.querySelector<HTMLElement>('.esa-app-shell__bar esa-dropdown-menu');
@@ -267,6 +290,60 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
       // slots — worth a /request-lego for `header` room and a `footer` on the
       // rail, and then most of this function goes away.
       shell.appendChild(foot);
+    });
+  }
+
+  // ---- THE WORDMARK IS THE WORKSPACE MENU ----
+  //
+  // The top of the rail names where you are, so it is also where you go to
+  // change it or configure it — the workspace switcher convention (Slack, Linear,
+  // Notion). The menu is esa-dropdown-menu, the same lego as the account menu at
+  // the foot; nothing about the panel is re-implemented.
+  //
+  // The shell renders its brand as an <a> to brandHref, and a link cannot also be
+  // a menu trigger — a click would both navigate and open. So the anchor is
+  // swapped for a <button> carrying the SAME attributes (the class and Astro's
+  // scope attribute, so every shell rule for `.esa-app-shell__brand` still
+  // matches) and the same children. Home stays one click away on the nav.
+  const WORKSPACE_MENU = [
+    { label: 'Workspace settings', action: 'workspace-settings' },
+    { label: 'Change workspace', action: 'change-workspace' },
+  ];
+
+  const CHEVRON = '<svg class="firma2-app-frame__workspace-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+
+  function mountWorkspaceMenu(brand: HTMLElement): void {
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    for (const { name, value } of Array.from(brand.attributes)) {
+      if (name !== 'href' && name !== 'slot') trigger.setAttribute(name, value);
+    }
+    trigger.append(...Array.from(brand.childNodes));
+    trigger.insertAdjacentHTML('beforeend', CHEVRON);
+
+    const menu = document.createElement('esa-dropdown-menu');
+    menu.className = 'firma2-app-frame__workspace';
+    menu.setAttribute('slot', 'header');
+    menu.setAttribute('width', 'trigger');
+    menu.appendChild(trigger);
+    brand.replaceWith(menu);
+
+    // `items` is a property, not an attribute, and it is assigned only once the
+    // element is defined: set before upgrade it would land as an own property and
+    // shadow the reactive accessor the constructor initialises.
+    // The lego wraps its trigger in two inline-block boxes, so a slotted
+    // `width: 100%` resolves against the trigger's own content. The rail row
+    // needs it full-width; there is no hook, so the same adopted-sheet move as
+    // stackRailHead below.
+    customElements.whenDefined('esa-dropdown-menu').then(() => {
+      (menu as HTMLElement & { items: unknown }).items = WORKSPACE_MENU;
+      requestAnimationFrame(() => {
+        const root = menu.shadowRoot;
+        if (!root) return;
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync('.esa-dropdown, .esa-dropdown__trigger { display: block; }');
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      });
     });
   }
 
@@ -358,8 +435,17 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   // `align-items: stretch` is the load-bearing half. The row centres its items,
   // which in a column means both the wordmark and the search shrink-wrap to
   // their content instead of spanning the rail.
+  //
+  // THE LIST SCROLLS, which the lego only arranges for its drawer mode. At full
+  // width `.nav-content` is a `flex: 1; min-height: 0` column with no overflow
+  // rule, so a list taller than the rail spills past it and the host's
+  // `overflow: hidden` clips the last rows — under the account strip, where they
+  // cannot be reached at all. Workspace settings was the first rail long enough
+  // to hit it (Your organization, at 950px tall). `overflow-y: auto` on the
+  // region the lego already sizes is the whole fix. A hub gap: /request-lego.
   const RAIL_HEAD_CSS = `
     .rail-head { flex-direction: column; align-items: stretch; }
+    .nav-content { overflow-y: auto; }
   `;
 
   function stackRailHead(): void {
@@ -531,6 +617,24 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
        inside it — `overflow: visible` replaces the shell's `overflow-y: auto`.
        Without it the bar would scroll away and the content would not follow. */
     overflow: visible;
+  }
+
+  /* THE CAP, WITHOUT A SECOND GUTTER. esa-container brings its own 2rem
+     padding-inline, written for a page with no other gutter. Here the shell's
+     pane already pads its content, so keeping both would inset every page by an
+     extra 2rem at all widths — the container is only here for its max-width and
+     centring.
+
+     A DESCENDANT, not a child: a page with a trailing rail places its container
+     inside its `.sidebar` main track rather than at the top of the pane, and
+     that column is already guttered by the sidebar's own gap.
+
+     NO `min-width` HERE, deliberately. In a `.sidebar` the container IS the
+     main track, and layouts.css floors that track with `min-inline-size:
+     var(--sidebar-content-min)` — the same property. Zeroing it stopped the
+     record's rail from wrapping below the content on narrow windows. */
+  .firma2-app-frame :global(.esa-app-shell__content .esa-container) {
+    padding-inline: 0;
   }
 
   /* ---- THE RAIL'S FOOT: ACCOUNT + COLLAPSE ----
@@ -736,5 +840,59 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
      intact, in both rail states. */
   .firma2-app-frame :global(.esa-app-shell__search) {
     width: 100%;
+  }
+
+  /* ---- SETTINGS PAGES START LOWER ----
+     A record page puts its title against the top edge because the record is
+     dense and the band is working chrome. A settings page is short and read
+     top-down, and the title hugging the edge read as cramped. --spacing-800
+     (64px) from the top of the window to the title.
+
+     Added ABOVE the band, not inside it: firma2-page-header is sticky, so
+     padding inside it would make the band that stays pinned while you scroll
+     48px taller. The band normally pulls itself up through the pane's
+     --spacing-500 gutter with a negative margin; replacing that margin with
+     a positive one puts the band's top at 24 + 24 = 48px, and its own
+     --spacing-400 padding puts the title text at 64. */
+  .firma2-app-frame[data-nav='workspace-settings'] :global(.firma2-page-header) {
+    margin-block-start: calc(var(--spacing-800, 4rem) - var(--spacing-500, 1.5rem) - var(--spacing-400, 1rem));
+  }
+
+  /* ---- THE WORKSPACE MENU ----
+     The companion script swaps the shell's brand <a> for a <button> inside an
+     esa-dropdown-menu (see mountWorkspaceMenu). The shell's own brand rules
+     still apply — the button carries the same class and scope attribute — so
+     these lines only undo the UA button chrome and stretch it to the rail. */
+  /* The rail's `::slotted([slot='header'])` gives header content its own
+     padding and `overflow: hidden`. The anchor escaped both by carrying the
+     shell's brand rules; the menu host is now the slotted element, so it has to
+     undo them itself — the padding would double the brand's, and the clip would
+     cut the panel off at the rail head. Outer-tree declarations beat ::slotted.
+     The z-index lifts the open panel over the search and nav rows below it. */
+  .firma2-app-frame :global(.firma2-app-frame__workspace) {
+    display: block;
+    padding: 0;
+    overflow: visible;
+    position: relative;
+    z-index: var(--z-dropdown, 50);
+  }
+  .firma2-app-frame :global(button.esa-app-shell__brand) {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .firma2-app-frame :global(button.esa-app-shell__brand[aria-expanded='true']) {
+    background: var(--app-shell-brand-bg-hover, color-mix(in srgb, currentColor 8%, transparent));
+  }
+  .firma2-app-frame :global(.firma2-app-frame__workspace-chevron) {
+    flex: none;
+    margin-inline-start: auto;
+    color: var(--color-content-subtle, #646464);
+  }
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__workspace-chevron) {
+    display: none;
   }
 </style>

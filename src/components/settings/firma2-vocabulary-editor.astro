@@ -1,0 +1,135 @@
+---
+// firma2-vocabulary-editor — the tenant's own words for the application's
+// nouns. Ported from ProjectFirma2 hackathon team 3's Vocabulary tab.
+//
+// ONE TABLE, NOT A CARD PER NOUN. The hackathon gave each noun its own card
+// with its own Save; ten cards of two fields is a long page that hides the
+// fact it is one list. Here it is one table — the application's word, your
+// singular, your plural — and a field saves when you leave it, like every
+// other record in this spoke. The menu beside you renames as you do: the
+// whole application is the preview.
+//
+// THE PLURAL IS SUGGESTED, NOT DEMANDED. Typing "Grant" is enough; the plural
+// field shows "Grants" as its placeholder and that is what gets used until
+// someone types otherwise.
+//
+// THE LIMIT IS STATED: renamings reach labels — menus, titles, headings,
+// field labels, columns — never data. A funding source named "…Program"
+// keeps its name. That is the team's "aim the pipe" rule, said where the
+// administrator can see it.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { NOUNS } from '../../data/firma2-vocabulary';
+---
+<!-- bcn-lego-checked: esa-card, esa-text-field and esa-button legos; the
+     classes lay out a three-column table of fields, which no esa- component
+     does. Beacon is not cloned on this machine. -->
+<div class="firma2-vocabulary-editor">
+  <EsaCard>
+    <div class="stack" data-gap="lg">
+      <p class="typography-body-md">
+        Call things what your program calls them. Your words replace the application’s in menus, page titles, headings, field labels, table columns and public pages. Records keep the names they were given.
+      </p>
+      <table class="firma2-vocabulary-editor__table">
+        <thead>
+          <tr>
+            <th scope="col">The application says</th>
+            <th scope="col">Your word</th>
+            <th scope="col">Your plural</th>
+            <th scope="col"><span class="visually-hidden">Reset</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {NOUNS.map((noun) => (
+            <tr data-noun={noun.key} data-singular={noun.singular} data-plural={noun.plural}>
+              <th scope="row">{noun.singular} <span class="firma2-vocabulary-editor__plural">· {noun.plural}</span></th>
+              <td><esa-text-field data-field="singular" size="md" aria-label={`Your word for ${noun.singular.toLowerCase()}`} placeholder={noun.singular}></esa-text-field></td>
+              <td><esa-text-field data-field="plural" size="md" aria-label={`Your plural for ${noun.plural.toLowerCase()}`} placeholder={noun.plural}></esa-text-field></td>
+              <td>
+                <span data-reset-wrap hidden>
+                  <EsaButton variant="ghost" size="sm" iconOnly icon="rotate-ccw" aria-label={`Use the application’s word for ${noun.singular.toLowerCase()}`} data-reset>Reset</EsaButton>
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </EsaCard>
+</div>
+
+<style>
+  .firma2-vocabulary-editor [hidden] {
+    display: none !important;
+  }
+
+  .firma2-vocabulary-editor__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-vocabulary-editor__table th,
+  .firma2-vocabulary-editor__table td {
+    padding: var(--spacing-200) var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    vertical-align: middle;
+    font-weight: normal;
+  }
+
+  .firma2-vocabulary-editor__table thead th {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-vocabulary-editor__plural {
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import { suggestPlural } from '../../data/firma2-vocabulary';
+  import type { Vocabulary } from '../../data/firma2-vocabulary';
+  import { readVocabulary, writeVocabulary } from '../../lib/vocabulary';
+
+  type Field = HTMLElement & { value?: string; placeholder?: string };
+
+  document.querySelectorAll<HTMLElement>('.firma2-vocabulary-editor').forEach((root) => {
+    const rows = [...root.querySelectorAll<HTMLTableRowElement>('tr[data-noun]')];
+
+    const paintRow = (tr: HTMLTableRowElement, vocabulary: Vocabulary) => {
+      const alias = vocabulary[tr.dataset.noun!] ?? {};
+      const singular = tr.querySelector<Field>('[data-field="singular"]')!;
+      const plural = tr.querySelector<Field>('[data-field="plural"]')!;
+      singular.value = alias.singular ?? '';
+      plural.value = alias.plural ?? '';
+      // The plural the application WILL use, shown before anyone types it.
+      plural.placeholder = alias.singular?.trim() ? suggestPlural(alias.singular) : tr.dataset.plural!;
+      tr.querySelector<HTMLElement>('[data-reset-wrap]')!.hidden = !alias.singular?.trim() && !alias.plural?.trim();
+    };
+
+    customElements.whenDefined('esa-text-field').then(() => {
+      const vocabulary = readVocabulary();
+      rows.forEach((tr) => paintRow(tr, vocabulary));
+    });
+
+    const commit = (tr: HTMLTableRowElement) => {
+      const singular = String(tr.querySelector<Field>('[data-field="singular"]')!.value ?? '').trim();
+      const plural = String(tr.querySelector<Field>('[data-field="plural"]')!.value ?? '').trim();
+      const vocabulary = readVocabulary();
+      if (singular || plural) vocabulary[tr.dataset.noun!] = { singular: singular || undefined, plural: plural || undefined };
+      else delete vocabulary[tr.dataset.noun!];
+      writeVocabulary(vocabulary);
+      paintRow(tr, vocabulary);
+    };
+
+    rows.forEach((tr) => {
+      // `change` fires when the field is left — the spoke's save boundary.
+      tr.querySelectorAll('esa-text-field').forEach((f) => f.addEventListener('change', () => commit(tr)));
+      tr.querySelector('[data-reset]')?.addEventListener('click', () => {
+        tr.querySelectorAll<Field>('esa-text-field').forEach((f) => (f.value = ''));
+        commit(tr);
+      });
+    });
+  });
+</script>
