@@ -139,7 +139,9 @@ export const applyVocabulary = (vocabulary: Vocabulary = readVocabulary()): void
   });
   document.querySelectorAll<HTMLElement>('[data-aliasable-attr]').forEach((el) => {
     (el.dataset.aliasableAttr ?? '').split(',').map((a) => a.trim()).filter(Boolean).forEach((attr) => {
-      const key = `canonical${attr.charAt(0).toUpperCase()}${attr.slice(1)}`;
+      // camelCase, so a hyphenated attribute ("aria-label") is a legal dataset key.
+      const camel = attr.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+      const key = `canonical${camel.charAt(0).toUpperCase()}${camel.slice(1)}`;
       if (el.dataset[key] === undefined) el.dataset[key] = el.getAttribute(attr) ?? '';
       el.setAttribute(attr, resolveText(el.dataset[key]!, vocabulary));
     });

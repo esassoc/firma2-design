@@ -1,0 +1,441 @@
+---
+// firma2-work-area-import — boundaries for many projects at once, from one
+// file. Ported from ProjectFirma2 hackathon team 2's /projects/import-work-areas.
+//
+// THE ONBOARDING CASE. A partner sends a zipped shapefile of every project's
+// boundary; this matches each shape to a project by a field the file carries
+// and adds them in one go. One project at a time is Upload shapes on its own
+// page — this is the other job, and it says so first.
+//
+// THE MATCH IS STATED BEFORE ANYTHING IS ADDED. Which field in the file, against
+// which of the project's (number or name), and the result as two tables: what
+// will be added, and what matched nothing.
+//
+// A SHAPE THAT MATCHED NOTHING CAN BE MATCHED BY HAND. Team 2 skipped them and
+// said so; here each unmatched row carries a project picker, because the most
+// common cause is a typo in the partner's file ("PROJ-0230", "Reconection"),
+// and the person importing knows which project it is. Left unmatched, a row is
+// skipped and nothing about it is kept — said in the warning, not discovered.
+//
+// A project that already has work areas is not replaced: the new shapes are
+// added beside them, and the row says how many it already had.
+//
+// bcn-lego-checked: esa-card, esa-file-upload, esa-select, esa-button,
+// esa-alert-box, esa-loading-spinner; the preview canvas is Leaflet (no map
+// lego — see firma2-project-map); the tables are the settings-table style.
+// Beacon is not cloned here.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
+import { projects, projectHref, projectSlug } from '../../data/firma2-projects';
+import { BULK_IMPORT_SAMPLE, projectCenter, projectNumber, seedWorkAreas } from '../../data/firma2-geography';
+import { withBase } from '../../lib/base';
+
+const config = {
+  sample: BULK_IMPORT_SAMPLE,
+  projects: projects.map((p) => ({
+    slug: projectSlug(p),
+    name: p.projectName,
+    number: projectNumber(p),
+    href: withBase(projectHref(p)),
+    center: projectCenter(p),
+    seed: seedWorkAreas(p),
+  })),
+};
+const sourceHref = withBase('/prototypes/workspace-settings/project-source');
+---
+<div class="firma2-work-area-import stack" data-gap="xl" data-config={JSON.stringify(config)}>
+  <div data-off hidden>
+    <EsaEmptyState title="Shapes come from your GIS" description="This workspace keeps its projects current from a GIS subscription, so their shapes are edited there and synced here. Importing a file would give them a second owner." />
+    <div class="firma2-work-area-import__center">
+      <EsaButton variant="secondary" size="md" tag="a" href={sourceHref}>Open Project source</EsaButton>
+    </div>
+  </div>
+
+  <div class="stack" data-gap="xl" data-on>
+    <EsaCard title="File">
+      <div class="stack" data-gap="md">
+        <p class="typography-body-md">A zipped shapefile or file geodatabase with boundaries for many projects. For one project, use Upload shapes on its own page.</p>
+        <esa-file-upload label="File" accept=".zip" max-size-mb="100" data-file></esa-file-upload>
+        <p class="typography-body-sm">
+          No file to hand? <button type="button" class="firma2-work-area-import__link" data-sample>Use a partner’s sample file</button>.
+        </p>
+        <div class="cluster" data-gap="sm" data-reading hidden>
+          <EsaLoadingSpinner size="sm" label="Reading the file" />
+          <span class="typography-body-md" data-reading-label></span>
+        </div>
+      </div>
+    </EsaCard>
+
+    <div class="stack" data-gap="xl" data-read hidden>
+      <EsaCard title="Matching">
+        <div class="stack" data-gap="md">
+          <p class="typography-body-md" data-file-line></p>
+          <div class="firma2-work-area-import__controls">
+            <esa-select data-join label="Match each shape using" size="md"></esa-select>
+            <esa-select data-against label="Against the project’s" size="md"></esa-select>
+            <esa-select data-name label="Name each work area from" size="md"></esa-select>
+          </div>
+        </div>
+      </EsaCard>
+
+      <div class="firma2-work-area-import__map" role="application" aria-label="Shapes that will be added" data-map></div>
+
+      <EsaAlertBox variant="info" title="Nothing is added yet"><p class="typography-body-sm" data-summary></p></EsaAlertBox>
+
+      <section class="stack" data-gap="md" data-matched-section>
+        <h3 class="typography-title-strong firma2-work-area-import__h">Will be added</h3>
+        <table class="firma2-work-area-import__table">
+          <thead><tr><th scope="col" class="num">#</th><th scope="col">Project</th><th scope="col">Work area</th><th scope="col">Kind</th><th scope="col" class="num">Extent</th><th scope="col">Already has</th></tr></thead>
+          <tbody data-matched></tbody>
+        </table>
+      </section>
+
+      <section class="stack" data-gap="md" data-unmatched-section>
+        <div data-unmatched-warning>
+          <EsaAlertBox variant="warning" title="Some shapes match no project">
+            <p class="typography-body-sm" data-unmatched-text></p>
+          </EsaAlertBox>
+        </div>
+        <table class="firma2-work-area-import__table">
+          <thead><tr><th scope="col" class="num">#</th><th scope="col">In the file</th><th scope="col">Work area</th><th scope="col">Match to</th></tr></thead>
+          <tbody data-unmatched></tbody>
+        </table>
+      </section>
+
+      <div class="cluster" data-gap="xs">
+        <span data-commit-wrap><EsaButton variant="primary" size="md" data-commit>Add work areas</EsaButton></span>
+        <EsaButton variant="ghost" size="md" data-again>Choose a different file</EsaButton>
+      </div>
+    </div>
+
+    <div data-done hidden>
+      <EsaAlertBox variant="success" title="Work areas added">
+        <div class="stack" data-gap="xs">
+          <p class="typography-body-sm" data-done-text></p>
+          <ul class="firma2-work-area-import__list typography-body-sm" data-done-list></ul>
+        </div>
+      </EsaAlertBox>
+    </div>
+  </div>
+</div>
+
+<style>
+  .firma2-work-area-import [hidden] {
+    display: none !important;
+  }
+
+  .firma2-work-area-import__center {
+    display: flex;
+    justify-content: center;
+  }
+
+  .firma2-work-area-import__h {
+    margin: 0;
+  }
+
+  .firma2-work-area-import__link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-content-link, #2a7e3b);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .firma2-work-area-import__controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--spacing-400);
+  }
+
+  .firma2-work-area-import__map {
+    block-size: 22rem;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+    font-family: var(--typography-body-sm-font-family);
+    font-size: var(--typography-body-sm-font-size);
+  }
+
+  .firma2-work-area-import__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-work-area-import__table th,
+  .firma2-work-area-import__table :global(td) {
+    padding: var(--spacing-300) var(--spacing-400) var(--spacing-300) 0;
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    vertical-align: middle;
+    font-weight: normal;
+  }
+
+  .firma2-work-area-import__table thead th {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-work-area-import__table th.num,
+  .firma2-work-area-import__table :global(td.num) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .firma2-work-area-import :global(.firma2-work-area-import__muted) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-work-area-import__list {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+  }
+
+  :global(.firma2-map-tip) {
+    padding: var(--spacing-200) var(--spacing-300);
+    background: var(--color-background-elevation-floating, #fcfcfc);
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-sm, 0.25rem);
+    color: var(--color-content-default, #202020);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-file-upload';
+  import type { BulkFeature, MapWorkArea } from '../../data/firma2-geography';
+  import { centroid, formatExtent, pathMiles, ringAcres } from '../../lib/geo';
+  import type { LatLng } from '../../lib/geo';
+  import { createMap, loadLeaflet, shapeStyle } from '../../lib/leaflet';
+  import type { Leaflet } from '../../lib/leaflet';
+  import { newWorkAreaId, onGeoChange, readProjectSource, readWorkAreas, writeWorkAreas } from '../../lib/work-areas';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown };
+  interface ProjectRow {
+    slug: string;
+    name: string;
+    number: string;
+    href: string;
+    center: LatLng;
+    seed: MapWorkArea[];
+  }
+  interface Config {
+    sample: { fileName: string; layer: string; features: BulkFeature[] };
+    projects: ProjectRow[];
+  }
+
+  const KIND = { area: 'Area', reach: 'Reach', point: 'Point' } as const;
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-work-area-import').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const join = $<Control>('[data-join]');
+    const against = $<Control>('[data-against]');
+    const name = $<Control>('[data-name]');
+
+    let loaded = false;
+    let joinField = 'PROJ_NO';
+    let againstField: 'number' | 'name' = 'number';
+    let nameField = 'UNIT';
+    const handMatched = new Map<number, string>();
+
+    const fields = Object.keys(config.sample.features[0].fields);
+    const norm = (s: string) => s.trim().toLowerCase();
+
+    /** The project a feature belongs to: the hand match if any, else the file's own value. */
+    const matchOf = (feature: BulkFeature, i: number): ProjectRow | undefined => {
+      const byHand = handMatched.get(i);
+      if (byHand) return config.projects.find((p) => p.slug === byHand);
+      const value = norm(feature.fields[joinField] ?? '');
+      if (!value) return undefined;
+      return config.projects.find((p) => norm(againstField === 'number' ? p.number : p.name) === value);
+    };
+
+    const shapeFor = (feature: BulkFeature, i: number, project: ProjectRow): MapWorkArea => {
+      const path = feature.offsets.map(([a, b]) => [Number((project.center[0] + a).toFixed(5)), Number((project.center[1] + b).toFixed(5))] as LatLng);
+      const extent = feature.kind === 'area' ? Math.round(ringAcres(path)) : feature.kind === 'reach' ? Number(pathMiles(path).toFixed(1)) : null;
+      return {
+        id: '',
+        label: (nameField && feature.fields[nameField]) || `Work area ${i + 1}`,
+        kind: feature.kind,
+        path,
+        extent,
+        unit: feature.kind === 'area' ? 'acres' : feature.kind === 'reach' ? 'miles' : null,
+        origin: 'upload',
+      };
+    };
+
+    // ---- the preview map -----------------------------------------------------------
+    let map: Leaflet = null;
+    let drawn: Leaflet = null;
+    const drawMap = async (rows: { area: MapWorkArea; project: ProjectRow }[]) => {
+      const L = await loadLeaflet().catch(() => null);
+      if (!L) return;
+      if (!map) map = createMap(L, $('[data-map]'), {}, () => void drawMap(rows));
+      map.invalidateSize();
+      drawn?.remove();
+      drawn = L.featureGroup(
+        rows.map(({ area, project }) =>
+          (area.kind === 'point'
+            ? L.circleMarker(area.path[0], { ...shapeStyle('point'), radius: 6 })
+            : area.kind === 'reach'
+              ? L.polyline(area.path, shapeStyle('reach'))
+              : L.polygon(area.path, shapeStyle('area'))
+          ).bindTooltip(`${esc(project.name)}<br>${esc(area.label)}`, { sticky: true, className: 'firma2-map-tip' }),
+        ),
+      ).addTo(map);
+      // A partner's file spans the state, where a treatment unit is a speck:
+      // a dot on each shape says where it landed at any zoom.
+      rows.forEach(({ area, project }) =>
+        L.circleMarker(centroid(area.path), { ...shapeStyle(area.kind), radius: 5, fillOpacity: 0.9 })
+          .bindTooltip(`${esc(project.name)}<br>${esc(area.label)}`, { className: 'firma2-map-tip' })
+          .addTo(drawn),
+      );
+      if (rows.length) map.fitBounds(drawn.getBounds(), { padding: [40, 40], maxZoom: 13 });
+      else map.setView([37.6, -120.4], 6);
+    };
+
+    // ---- the two tables ----------------------------------------------------------------
+    const paint = () => {
+      const subscribed = readProjectSource() === 'subscribed';
+      $('[data-off]').hidden = !subscribed;
+      $('[data-on]').hidden = subscribed;
+      $('[data-read]').hidden = !loaded;
+      if (!loaded) return;
+
+      const matched: { i: number; area: MapWorkArea; project: ProjectRow }[] = [];
+      const unmatched: { i: number; feature: BulkFeature }[] = [];
+      config.sample.features.forEach((feature, i) => {
+        const project = matchOf(feature, i);
+        if (project) matched.push({ i, area: shapeFor(feature, i, project), project });
+        else unmatched.push({ i, feature });
+      });
+
+      const already = (p: ProjectRow) => readWorkAreas(p.slug, p.seed).length;
+      $('[data-matched]').innerHTML = matched
+        .map(({ i, area, project }) => {
+          const n = already(project);
+          return `<tr><td class="typography-body-sm num">${i + 1}</td><td class="typography-body-sm"><a href="${project.href}">${esc(project.name)}</a></td><td class="typography-body-sm">${esc(area.label)}</td><td class="typography-body-sm">${KIND[area.kind]}</td><td class="typography-body-sm num">${formatExtent(area.extent, area.unit) || '—'}</td><td class="typography-body-sm firma2-work-area-import__muted">${n ? `${n} — these are added beside them` : 'None — its first'}</td></tr>`;
+        })
+        .join('');
+      $('[data-matched-section]').hidden = matched.length === 0;
+
+      const tbody = $('[data-unmatched]');
+      tbody.replaceChildren(
+        ...unmatched.map(({ i, feature }) => {
+          const tr = document.createElement('tr');
+          const value = feature.fields[joinField];
+          tr.innerHTML = `<td class="typography-body-sm num">${i + 1}</td><td class="typography-body-sm">${value ? `<code>${esc(value)}</code>` : '<span class="firma2-work-area-import__muted">(blank)</span>'}</td><td class="typography-body-sm">${esc((nameField && feature.fields[nameField]) || `Work area ${i + 1}`)}</td>`;
+          const td = document.createElement('td');
+          const pick = document.createElement('esa-select') as Control;
+          pick.setAttribute('size', 'sm');
+          pick.setAttribute('aria-label', `Project for shape ${i + 1}`);
+          pick.setAttribute('placeholder', 'Skip this shape');
+          customElements.whenDefined('esa-select').then(() => {
+            pick.options = config.projects.map((p) => ({ value: p.slug, label: `${p.name} — ${p.number}` }));
+          });
+          pick.addEventListener('change', () => {
+            if (pick.value) handMatched.set(i, String(pick.value));
+            paint();
+          });
+          td.append(pick);
+          tr.append(td);
+          return tr;
+        }),
+      );
+      $('[data-unmatched-section]').hidden = unmatched.length === 0;
+      $('[data-unmatched-text]').textContent =
+        `${unmatched.length} ${unmatched.length === 1 ? 'shape matches' : 'shapes match'} no project by ${joinField}. Choose its project below, or it is skipped and nothing about it is kept.`;
+
+      const projectCount = new Set(matched.map((m) => m.project.slug)).size;
+      $('[data-summary]').textContent = matched.length
+        ? `${matched.length} ${matched.length === 1 ? 'shape' : 'shapes'} will be added to ${projectCount} ${projectCount === 1 ? 'project' : 'projects'}${handMatched.size ? `, ${handMatched.size} of them matched by hand` : ''}.`
+        : `No shape matches a project by ${joinField}. Try another field, or compare against the project’s ${againstField === 'number' ? 'name' : 'number'}.`;
+      $('[data-commit-wrap]').classList.toggle('esa-button--disabled', matched.length === 0);
+      const label = $('[data-commit]').querySelector('.esa-button__label') ?? $('[data-commit]');
+      label.textContent = matched.length ? `Add ${matched.length} work ${matched.length === 1 ? 'area' : 'areas'} to ${projectCount} ${projectCount === 1 ? 'project' : 'projects'}` : 'Add work areas';
+      void drawMap(matched);
+
+      // Kept for the commit, so it adds exactly what the tables show.
+      root.dataset.pending = JSON.stringify(matched.map(({ area, project }) => ({ slug: project.slug, area })));
+    };
+
+    // ---- reading -----------------------------------------------------------------------
+    const read = (fileName: string) => {
+      $('[data-done]').hidden = true;
+      $('[data-reading-label]').textContent = `Reading ${fileName}…`;
+      $('[data-reading]').hidden = false;
+      window.setTimeout(() => {
+        $('[data-reading]').hidden = true;
+        loaded = true;
+        handMatched.clear();
+        $('[data-file-line]').textContent = `${fileName}: one layer, ${config.sample.layer}, with ${config.sample.features.length} shapes and the fields ${fields.join(', ')}.`;
+        customElements.whenDefined('esa-select').then(() => {
+          join.options = fields.map((f) => ({ value: f, label: f }));
+          join.value = joinField;
+          against.options = [
+            { value: 'number', label: 'Project number (PROJ-0101…)' },
+            { value: 'name', label: 'Name' },
+          ];
+          against.value = againstField;
+          name.options = [{ value: '', label: 'Its position in the file' }, ...fields.map((f) => ({ value: f, label: f }))];
+          name.value = nameField;
+          paint();
+        });
+      }, 700);
+    };
+
+    $('[data-sample]').addEventListener('click', () => read(config.sample.fileName));
+    $('[data-file]').addEventListener('change', (event) => {
+      const files = (event as CustomEvent<{ files?: File[] }>).detail?.files ?? [];
+      if (files[0]) read(files[0].name);
+    });
+    join.addEventListener('change', () => {
+      joinField = String(join.value ?? 'PROJ_NO');
+      handMatched.clear();
+      paint();
+    });
+    against.addEventListener('change', () => {
+      againstField = (String(against.value ?? 'number') as 'number' | 'name') || 'number';
+      handMatched.clear();
+      paint();
+    });
+    name.addEventListener('change', () => {
+      nameField = String(name.value ?? '');
+      paint();
+    });
+    $('[data-again]').addEventListener('click', () => {
+      loaded = false;
+      paint();
+    });
+
+    $('[data-commit]').addEventListener('click', () => {
+      const pending: { slug: string; area: MapWorkArea }[] = JSON.parse(root.dataset.pending ?? '[]');
+      if (!pending.length) return;
+      const bySlug = new Map<string, MapWorkArea[]>();
+      pending.forEach(({ slug, area }) => bySlug.set(slug, [...(bySlug.get(slug) ?? []), { ...area, id: newWorkAreaId(slug) }]));
+      bySlug.forEach((added, slug) => {
+        const project = config.projects.find((p) => p.slug === slug)!;
+        writeWorkAreas(slug, [...readWorkAreas(slug, project.seed), ...added]);
+      });
+      loaded = false;
+      paint();
+      $('[data-done-text]').textContent = `${pending.length} work ${pending.length === 1 ? 'area' : 'areas'} added to ${bySlug.size} ${bySlug.size === 1 ? 'project' : 'projects'}.`;
+      $('[data-done-list]').innerHTML = [...bySlug.entries()]
+        .map(([slug, added]) => {
+          const p = config.projects.find((x) => x.slug === slug)!;
+          return `<li><a href="${p.href}">${esc(p.name)}</a> — ${added.length} added</li>`;
+        })
+        .join('');
+      $('[data-done]').hidden = false;
+    });
+
+    onGeoChange(paint);
+    paint();
+  });
+</script>

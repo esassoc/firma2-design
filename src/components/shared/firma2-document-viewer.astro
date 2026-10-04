@@ -1,0 +1,113 @@
+---
+// firma2-document-viewer — one file, read on the site: a PDF in the browser's
+// own PDF reader (pages, zoom, search, print — none of it rebuilt here), any
+// other format as an empty state that offers the download instead.
+//
+// FED FROM THE CLIENT. The files it shows are mostly kept in this browser
+// (src/lib/page-files.ts), so there is nothing to render at build time. A
+// caller dispatches `firma2:document-show` on the element:
+//   { url, name, type }  — show this file
+//   { missing: true }    — the file is not in this browser
+// and the viewer swaps its one visible state.
+//
+// NO PDF READER, NO FRAME. A browser set to download PDFs (Chrome's "Download
+// PDFs" setting, some managed machines) reports navigator.pdfViewerEnabled =
+// false, and a frame there stays blank. The viewer shows the download state
+// instead, saying why.
+//
+// THE PDF FRAME IS SIZED TO THE WINDOW, not the page: a PDF reader scrolls
+// itself, so it takes the height left under the pinned page header (never less
+// than a readable 32rem) and the page around it does not scroll twice.
+//
+// bcn-lego-checked: no esa- lego shows a document — the catalog's file legos
+// are esa-file-upload (a drop zone) and esa-file-list (rows of names); walked
+// `ls node_modules/@esa/ecology/src/components/`. Beacon is not cloned in this
+// checkout. The frame is the one element drawn here, framed with tokens only;
+// the other states are esa-empty-state and esa-button, composed unchanged.
+// Reusable wherever a file should be read in place.
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+---
+<div class="firma2-document-viewer" data-document-viewer>
+  <iframe class="firma2-document-viewer__frame" style="display: none" title="Document" data-viewer-frame></iframe>
+  <div style="display: none" data-viewer-other>
+    <EsaEmptyState title="File" description="Only PDFs open on the site. Download this one to read it." size="lg">
+      <EsaButton variant="secondary" size="md" icon="download" data-viewer-download>Download</EsaButton>
+    </EsaEmptyState>
+  </div>
+  <div style="display: none" data-viewer-missing>
+    <EsaEmptyState
+      title="This file isn’t in this browser"
+      description="It was added in another browser, or this browser’s site data was cleared. Replace the file to read it here."
+      size="lg"
+    />
+  </div>
+</div>
+
+<script>
+  interface Show {
+    url?: string;
+    name?: string;
+    type?: string;
+    missing?: boolean;
+  }
+
+  const isPdf = (d: Show): boolean => d.type === 'application/pdf' || /\.pdf$/i.test(d.name ?? '');
+  // Older browsers lack the property; only an explicit false means no reader.
+  const canReadPdf = (): boolean => (navigator as Navigator & { pdfViewerEnabled?: boolean }).pdfViewerEnabled !== false;
+  const OTHER_COPY = 'Only PDFs open on the site. Download this one to read it.';
+  const NO_READER_COPY = 'This browser is set to download PDFs rather than show them. Download this one to read it.';
+
+  document.querySelectorAll<HTMLElement>('[data-document-viewer]').forEach((root) => {
+    const frame = root.querySelector<HTMLIFrameElement>('[data-viewer-frame]')!;
+    const other = root.querySelector<HTMLElement>('[data-viewer-other]')!;
+    const missing = root.querySelector<HTMLElement>('[data-viewer-missing]')!;
+    const download = other.querySelector<HTMLElement>('[data-viewer-download]');
+    let current: Show = {};
+
+    // display, not `hidden`: author display rules on the legos out-rank the UA
+    // [hidden] rule.
+    const only = (shown: HTMLElement | null): void => {
+      for (const el of [frame, other, missing]) el.style.display = el === shown ? '' : 'none';
+    };
+
+    root.addEventListener('firma2:document-show', (event) => {
+      current = (event as CustomEvent<Show>).detail;
+      if (current.missing || !current.url) {
+        frame.removeAttribute('src');
+        return only(missing);
+      }
+      if (isPdf(current) && canReadPdf()) {
+        frame.title = current.name ?? 'Document';
+        // A new src, not the same one, or a replaced file would not reload.
+        if (frame.getAttribute('src') !== current.url) frame.src = current.url;
+        return only(frame);
+      }
+      frame.removeAttribute('src');
+      const title = other.querySelector<HTMLElement>('.esa-empty-state__title');
+      if (title) title.textContent = current.name ?? 'File';
+      const description = other.querySelector<HTMLElement>('.esa-empty-state__description');
+      if (description) description.textContent = isPdf(current) ? NO_READER_COPY : OTHER_COPY;
+      only(other);
+    });
+
+    download?.addEventListener('click', () => {
+      if (!current.url) return;
+      const a = document.createElement('a');
+      a.href = current.url;
+      a.download = current.name ?? '';
+      a.click();
+    });
+  });
+</script>
+
+<style>
+  .firma2-document-viewer__frame {
+    display: block;
+    inline-size: 100%;
+    block-size: max(32rem, calc(100dvh - 12rem));
+    border: 1px solid var(--color-border-default-subtle);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken);
+  }
+</style>

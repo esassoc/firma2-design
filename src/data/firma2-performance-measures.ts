@@ -35,7 +35,7 @@
 // DETERMINISTIC — literal arrays, no Math.random(), no Date.now().
 
 import { classifications } from './firma2-projects';
-import type { Classification } from './firma2-projects';
+import type { ClassificationName } from './firma2-projects';
 
 // ---------------------------------------------------------------------------
 // Subcategory schemas — the shared option lists measures reference
@@ -215,10 +215,10 @@ export const SYSTEM_SCHEMAS: SubcategorySchema[] = [
     options: [],
   },
   {
-    id: 'system-program',
-    name: 'Program',
+    id: 'system-primary-classification',
+    name: 'Primary classification',
     origin: 'system',
-    description: 'Answered from the record — the taxonomy branch the project rolls up into.',
+    description: "Answered from the record — the project's first classification.",
     options: [],
   },
 ];
@@ -349,6 +349,8 @@ export const UNITS = [
   'each', 'plants', 'people', 'events',
   // mass and load
   'pounds', 'tons', 'tons per year',
+  // water
+  'acre-feet per year',
   // effort and money
   'hours', 'dollars',
   // condition readings — outcome measures live here
@@ -388,7 +390,7 @@ export interface PerformanceMeasureDefinition {
    * serves several goals at once. Empty is a real state on a draft, and one
    * outstandingFields() flags.
    */
-  classifications: Classification[];
+  classifications: ClassificationName[];
   /**
    * THE NUMBER. A measure is one figure a reporter types, so the unit, its
    * precision and its counting rule sit directly on the measure. `unit` and
@@ -416,7 +418,7 @@ export const measures: PerformanceMeasureDefinition[] = [
     name: 'Acres of forest fuels reduction treatment',
     definition:
       'Acres where surface or ladder fuels were removed, rearranged, or consumed under an approved prescription. Measured as the extent actually treated, not the unit planned.',
-    classifications: ['Wildfire resilience'],
+    classifications: ['Wildfire resilience', 'Forest thinning'],
     unit: 'acres',
     decimalPlaces: 0,
     countingRule: 'sum',
@@ -496,7 +498,7 @@ export const measures: PerformanceMeasureDefinition[] = [
     name: 'Fish passage barriers removed',
     definition:
       'Structures no longer impeding passage at any life stage, confirmed by a post-construction passage assessment.',
-    classifications: ['Salmon & steelhead recovery'],
+    classifications: ['Salmon & steelhead recovery', 'Barrier removal & fish screens'],
     unit: 'each',
     decimalPlaces: 0,
     countingRule: 'distinct-places',
@@ -528,6 +530,178 @@ export const measures: PerformanceMeasureDefinition[] = [
       'Survey the same units each year so the series stays comparable. Report the plot average, not a whole-site estimate.',
     status: 'Active',
   },
+  // ---- KPIs added so every goal is tracked (2026-10-03). A classification is
+  // a goal; the measures that list it are its KPIs, two to five each. Work
+  // types carry none: they are becoming tags, which track without KPIs. ----
+  {
+    slug: 'native-plants-installed',
+    kind: 'output',
+    name: 'Native plants installed',
+    definition: 'Container stock, cuttings and stakes of native species set in the ground. Seed is reported by weight elsewhere, not here.',
+    classifications: ['Riparian & wetland habitat', 'Native planting'],
+    unit: 'plants',
+    decimalPlaces: 0,
+    countingRule: 'sum',
+    subcategorySchemaIds: ['riparian-treatments', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Count plants installed this season, including replacements for losses. Survival is a separate measure.',
+    status: 'Active',
+  },
+  {
+    slug: 'stream-miles-reopened',
+    kind: 'output',
+    name: 'Stream miles reopened to fish',
+    definition: 'Miles of stream upstream of a fixed or removed barrier that migrating fish can now reach, to the next barrier or the natural limit.',
+    classifications: ['Salmon & steelhead recovery'],
+    unit: 'miles',
+    decimalPlaces: 1,
+    countingRule: 'spatial-union',
+    subcategorySchemaIds: ['barrier-types', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Measure to the next barrier upstream, not to the headwaters. Report a reach once, the year its barrier is cleared.',
+    status: 'Active',
+  },
+  {
+    slug: 'miles-fuel-break',
+    kind: 'output',
+    name: 'Miles of fuel break completed',
+    definition: 'Shaded or cleared fuel break built to its prescribed width along a ridge, road or community edge.',
+    classifications: ['Wildfire resilience', 'Fuel breaks'],
+    unit: 'miles',
+    decimalPlaces: 1,
+    countingRule: 'spatial-union',
+    subcategorySchemaIds: ['treatment-phases', 'system-land-ownership', 'system-reporting-year'],
+    reporterGuidance: 'Report a segment once it meets prescribed width end to end. Maintenance passes are entered as maintenance, not new miles.',
+    status: 'Active',
+  },
+  {
+    slug: 'acres-wetland-meadow-restored',
+    kind: 'output',
+    name: 'Acres of wetland and meadow restored',
+    definition: 'Acres of tidal marsh, wet meadow or seasonal wetland where hydrology was restored and wetland vegetation is establishing.',
+    classifications: ['Riparian & wetland habitat', 'Flood risk reduction', 'Meadow & marsh rewetting'],
+    unit: 'acres',
+    decimalPlaces: 0,
+    countingRule: 'spatial-union',
+    subcategorySchemaIds: ['restoration-actions', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Count acres once water is back on the ground — breach open, plugs in, or channel raised. Graded but still dry ground is not reported yet.',
+    status: 'Active',
+  },
+  {
+    slug: 'stream-miles-floodplain-reconnected',
+    kind: 'output',
+    name: 'Stream miles reconnected to floodplain',
+    definition: 'Miles of channel that now spill onto their floodplain at a typical winter high flow.',
+    classifications: ['Water supply reliability'],
+    unit: 'miles',
+    decimalPlaces: 1,
+    countingRule: 'spatial-union',
+    subcategorySchemaIds: ['restoration-actions', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Report the reach once the first overbank flow is observed or modeled at the design discharge.',
+    status: 'Active',
+  },
+  {
+    slug: 'stream-miles-instream-habitat',
+    kind: 'output',
+    name: 'Stream miles of instream habitat improved',
+    definition: 'Miles of channel where wood, gravel, pools or side channels were added to give fish places to spawn, rear or hold.',
+    classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'],
+    unit: 'miles',
+    decimalPlaces: 1,
+    countingRule: 'spatial-union',
+    subcategorySchemaIds: ['restoration-actions', 'focal-species', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Measure the treated reach along the thalweg. A reach treated again in a later year is not new miles.',
+    status: 'Active',
+  },
+  {
+    slug: 'acres-floodplain-habitat',
+    kind: 'output',
+    name: 'Acres of floodplain habitat reconnected',
+    definition: 'Acres of floodplain, side channel or off-channel rearing habitat that floods at the design flow.',
+    classifications: ['Flood risk reduction', 'Salmon & steelhead recovery', 'Side channels & floodplains'],
+    unit: 'acres',
+    decimalPlaces: 0,
+    countingRule: 'spatial-union',
+    subcategorySchemaIds: ['restoration-actions', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Count acres inside the inundation boundary at the design flow, from the as-built survey.',
+    status: 'Active',
+  },
+  {
+    slug: 'tons-sediment-prevented',
+    kind: 'output',
+    name: 'Tons of fine sediment prevented per year',
+    definition: 'Estimated annual load of fine sediment kept out of the stream by a stabilized bank, upgraded crossing or treated road.',
+    classifications: ['Water quality', 'Erosion & sediment control'],
+    unit: 'tons per year',
+    decimalPlaces: 0,
+    countingRule: 'sum',
+    subcategorySchemaIds: ['conservation-practices', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Use the approved load-reduction calculator for the practice. Report once, the year the practice is complete.',
+    status: 'Active',
+  },
+  {
+    slug: 'miles-road-decommissioned',
+    kind: 'output',
+    name: 'Miles of road decommissioned',
+    definition: 'Miles of unpaved road ripped, outsloped and closed so it no longer routes runoff and sediment to streams.',
+    classifications: ['Water quality'],
+    unit: 'miles',
+    decimalPlaces: 1,
+    countingRule: 'sum',
+    subcategorySchemaIds: ['system-land-ownership', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Report miles once the closure is complete and crossings are pulled. Seasonal gates do not count.',
+    status: 'Active',
+  },
+  {
+    slug: 'stormwater-captured',
+    kind: 'output',
+    name: 'Stormwater captured per year',
+    definition: 'Estimated average annual runoff held, infiltrated or treated before it reaches a stream.',
+    classifications: ['Water quality', 'Stormwater capture'],
+    unit: 'acre-feet per year',
+    decimalPlaces: 0,
+    countingRule: 'sum',
+    subcategorySchemaIds: ['conservation-practices', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Use the design capture volume for an average rainfall year, not the largest storm.',
+    status: 'Active',
+  },
+  {
+    slug: 'water-supply-gained',
+    kind: 'output',
+    name: 'Water supply gained per year',
+    definition: 'Acre-feet added to dry-season supply each year — by raised groundwater, new storage, or water use avoided.',
+    classifications: ['Water supply reliability', 'Groundwater recharge'],
+    unit: 'acre-feet per year',
+    decimalPlaces: 0,
+    countingRule: 'sum',
+    subcategorySchemaIds: ['restoration-actions', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Report the modeled average-year gain once the work is complete. Do not add a site again for a wet year.',
+    status: 'Active',
+  },
+  {
+    slug: 'miles-levee-setback',
+    kind: 'output',
+    name: 'Miles of levee set back',
+    definition: 'Miles of levee moved back from the channel to give high water room, measured along the old alignment.',
+    classifications: ['Flood risk reduction'],
+    unit: 'miles',
+    decimalPlaces: 1,
+    countingRule: 'sum',
+    subcategorySchemaIds: ['system-land-ownership', 'system-watershed', 'system-reporting-year'],
+    reporterGuidance: 'Report once the new levee is certified and the old one is breached.',
+    status: 'Active',
+  },
+  {
+    slug: 'miles-trail-opened',
+    kind: 'output',
+    name: 'Miles of trail and greenway opened',
+    definition: 'Miles of trail, greenway or river access route opened to the public.',
+    classifications: ['Public access & recreation'],
+    unit: 'miles',
+    decimalPlaces: 1,
+    countingRule: 'sum',
+    subcategorySchemaIds: ['system-land-ownership', 'system-reporting-year'],
+    reporterGuidance: 'Report miles the day the route opens to the public, not when construction ends.',
+    status: 'Active',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -539,7 +713,7 @@ export const measures: PerformanceMeasureDefinition[] = [
  * than rebuilt: a measure and a project must offer the SAME list, or a roll-up
  * across the two silently splits a bucket.
  */
-export const CLASSIFICATIONS: Classification[] = [...classifications];
+export const CLASSIFICATION_NAMES: ClassificationName[] = [...classifications];
 
 export const measureDisplayName = (m: PerformanceMeasureDefinition): string =>
   m.name.trim() || 'Untitled measure';

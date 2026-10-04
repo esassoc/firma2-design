@@ -157,7 +157,7 @@ Stated as jobs, because a job survives a redesign and a feature list does not.
   against delivered, planned against reached, spent against the budget it was
   given. This is the question the project detail page is organized around, and
   the one an executive and a member of the public turn out to share.
-- **Place a record.** "Whose is this, under what program, where, over what
+- **Place a record.** "Whose is this, filed under what, where, over what
   years?" Nobody comes for these facts, and nobody can read the numbers without
   them.
 - **Correct what is wrong.** A record is only as good as the last person willing
@@ -196,6 +196,18 @@ decision gets written down where it was made.
 4. **Always editable, always saved.** This is the stance the whole site takes,
    not a feature of one screen. There is no view mode and no edit mode; there is
    no Save. Every screen is a live record you are already inside.
+
+   **The exception, decided 2026-10-02 (user-directed): record pages read
+   first.** Custom pages and the project detail page open in a VIEW mode — every
+   field read-only, the Add affordances out of sight — with a ghost **Edit**
+   beside the title that turns into a primary **Update**. Inside edit mode the
+   gesture below still holds: click the value, change it, leave. What the mode
+   buys is a page that reads cleanly to the many who only read it, and an edit
+   that is a deliberate act for the few who change it. A custom page holds its
+   changes until Update; the project page saves each as it is made and Update
+   closes the edit. Reporting acts (Record work, Record spend) stay available
+   while reading — filing a year's numbers is not editing the record. See
+   `components/shared/firma2-record-mode.astro`.
 
    **The challenge we set ourselves: see something you want to change, and change
    it with the least friction possible.** Count the steps between noticing and
@@ -236,7 +248,7 @@ can be read in full where it was written.
 A **series** has an account over time worth reading — what was delivered against
 what was expected, reached against planned, drawn down year after year. A
 **scalar** is a fact that can be corrected but has no interesting history: lead
-organization, program, county, the description — and the budget, which is
+organization, county, the description — and the budget, which is
 authored once for the whole project (see the next principle).
 
 Series lead. Scalars go in the rail — present, because the numbers cannot be read
@@ -277,10 +289,10 @@ committed the budget" from "what has been spent of it" — two halves of one
 question, a screen apart.
 
 "Scalar" here really means *no series*: a small fixed SET passes too, when each
-member is one short label. Classifications — one or two goal chips per project —
+member is one short label. Classifications — a goal or two per project —
 joined the Key facts panel as its one set-valued pair. A set is added to and
 removed from rather than retyped, so its editor is the multi-select combobox
-(vocabulary-locked, like Program's select), and a pick does not commit the row
+(vocabulary-locked), and a pick does not commit the row
 the way a select choice does — one member of a set is not "done", so the set
 commits at the boundary like a text row.
 
@@ -307,6 +319,34 @@ chips, never to scalar text.
 still wants the same treatment (link + hover card) and is blocked on an
 `esa-popover` gap — no block-level anchor mode — filed in the system
 improvement ledger.*
+
+### Three ways to file a project: what it is, what it is for, what it is like
+
+*(Revised 2026-10-03, user-directed. This was "One vocabulary for what a
+project is; groups sort it, the first one builds it" — project types,
+programs and classifications merged into one list, the first entry building
+the page. The merge was half right.)*
+
+The merge was right that programs and plan goals were one axis. It was wrong to
+fold the kind of work in with them, because the three answer different
+questions and behave differently:
+
+| | Per project | Carries | Answers |
+|---|---|---|---|
+| **Project type** | exactly one | the record's fields and page layout | "what kind of work is this?" |
+| **Classifications** | one or more | KPIs: the catalog measures that list it, with goal targets | "which goals does it move?" |
+| **Tags** | any, possibly none | nothing but the label | "is it an education and outreach project?" |
+
+A classification is the initiative's goal (or another grouping, like a
+species), and its performance measures are the KPIs tracking progress against
+it. That is why the Classifications page is a board of goals with progress
+meters, not a list of tagged projects. Kinds of work have no goal to report
+toward, so they left; a single type builds the page so no two values can
+compete over section order, which was the only thing the "first one is
+primary" rule ever bought. Tags are for functional filtering and nothing else.
+
+*Proved on: Classifications (index and detail), Workspace settings › Project
+types / Classifications / Tags, and the project detail page's Key facts.*
 
 ### Room and position are different currencies
 
@@ -554,6 +594,41 @@ reference (how each is built, how to choose): `docs/field-patterns.md`.
 from the record pattern 2026-10-01); the type studio's New field sheet already
 followed it.*
 
+### Roles are fixed; who-can thresholds flex — Linear's model
+
+Access is modelled on Linear's members and roles (settled 2026-10-02):
+
+- **Three fixed workspace roles**, each holding everything below it —
+  Administrator ⊃ Contributor ⊃ Viewer (Linear's Admin ⊃ Member ⊃ Guest). No
+  custom roles, no per-project overrides. Set on Workspace settings › Users.
+- **Steward is not a role.** It is a flag on one organization membership —
+  Linear's team owner — set on that organization's Members page. It runs the
+  organization's members, settings and approvals. Administrators steward every
+  organization without the flag; a Viewer can never be one.
+- **Membership is a list, separate from the role.** A person belongs to any
+  number of organizations. A Contributor needs at least one; a Viewer may have
+  none. Removing a Contributor from their last organization makes them an
+  organizationless Viewer, the same place a Viewer lands.
+- **Flexibility lives on the act, not the role.** Each workspace act (invite,
+  import, export, tokens…) has a "who can" setting in Security; each
+  organization act is "All members / Only stewards" on its Access page. Nothing
+  inherits from workspace to organization. A few acts never widen: making an
+  organization private, naming a steward, granting Administrator.
+- **Accounts are suspended, not deleted.** Suspended people lose access at
+  once but stay listed, so the work they touched still names them.
+- **Anyone can see who the administrators are.** "An administrator sets your
+  role" is a dead end until it names someone to ask.
+
+The data model follows: `WorkspaceUser` = `role` + `organizations[]` + `stewardOf[]` + `status`
+(`Active | Invited | Suspended`) in `firma2-directory.ts`. The Users list
+is one table grouped into Active, Invited and Suspended bands, as Linear's is.
+Full reference — every default, who manages members, the invitation rule:
+`docs/roles-and-permissions.md`.
+
+*Applies to: firma2-user-grid (row "…": Change role…, Suspend…),
+firma2-organization-members (Make steward), firma2-organization-access,
+firma2-administrators-note (Account, Security and access).*
+
 ---
 
 ## 5. How to open a new screen
@@ -603,8 +678,9 @@ a styling problem.
 | Report | **Measure setup** (one per measure) | built |
 | Report | Progress Dashboard, Funding Status | not built |
 | Manage | Users, Manage Organizations, Manage Funding Sources, Custom Pages | not built |
-| Workspace settings › Administration | **Workspace**, **Organizations**, **Users**, **Import & export** | built |
-| Workspace settings › Your organization | **Organization record** (also each organization's page from the list) | built |
+| Workspace settings › Administration | **Workspace**, **Organizations**, **Users**, **Security**, **Custom pages**, **Import & export** | built |
+| Workspace settings › Organizations | **Organization record** (each organization's page from the list, your own included) | built |
+| Workspace settings › Your organization | **Settings** (General, Members, Access, Notifications) | built |
 
 The two built areas are deliberately different exercises: the project pages are
 about **reading a record**, the measure pages about **setting one up**. Most

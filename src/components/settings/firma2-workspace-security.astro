@@ -1,0 +1,225 @@
+---
+// firma2-workspace-security — Administration › Security: how people get into
+// the workspace, how they sign in, and who may take the workspace-wide acts.
+//
+// LINEAR'S SECURITY PAGE, RE-CUT FOR A GRANT PROGRAM. Kept: invite link,
+// sign-in methods, and the "who can…" threshold per act. Changed: approved
+// email domains moved to each organization's Access settings (user call) —
+// someone let in by domain belongs to that organization — so the invite link
+// is the only door left here, and it admits Viewers only: a Contributor needs
+// an organization, and the link names none. Sign-in is Microsoft first
+// because agency staff sign in with agency accounts. Cut: AI and compliance, and Linear's
+// plan-gated rows ("Available on Enterprise") — advanced customizations will
+// likely sit behind a higher tier, but which ones, and how a locked row
+// looks, is not decided yet. What the
+// public site shows lives on Custom pages › Public site (user call): it sits
+// beside the setting that publishes a page there.
+//
+// THE ACTS, NOT THE ROLES. What each role may edit and approve is fixed by the
+// role (Linear's model — docs/roles-and-permissions.md); the selects here are
+// the acts that touch the whole workspace (invite, import, export, tokens).
+//
+// SAME CONTROLS AS THE REST OF SETTINGS. Switches are firma2-switch-list rows
+// (Notifications' construction, track pinned right); every threshold is a
+// labelled esa-select with its help line under it (Organization settings ›
+// Access) — not Linear's inline right-hand selects, because a stacked label is
+// this spoke's settings form. Each control commits on change; no Save.
+//
+// THE ONE ACT THAT CANNOT BE TAKEN BACK is resetting the invite link — the old
+// link dies, and anyone holding it is locked out — so it asks first, in an
+// esa-confirm-dialog. Everything else is one edit back.
+//
+// MOCK: nothing persists. Copy really writes to the clipboard; Reset swaps the
+// token on this page until it reloads.
+//
+// bcn-lego-checked: firma2-rail-section is each section; esa-switch-toggle,
+// esa-select is the threshold control; esa-button the link actions;
+// esa-confirm-dialog the reset question; esa-snackbar-container the receipts —
+// all composed unchanged. The only CSS lets the invite URL wrap at any
+// character on a phone instead of pushing the page sideways. Beacon is not
+// cloned on this machine.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import '../shared/firma2-switch-list.css';
+import {
+  workspaceSecurity as sec,
+  SIGN_IN_METHODS,
+  SIGN_IN_RULES,
+  IDLE_TIMEOUTS,
+  PERMISSION_AUDIENCES,
+  SECURITY_PERMISSIONS,
+} from '../../data/firma2-workspace-settings';
+
+const json = (v: unknown) => JSON.stringify(v);
+---
+<div class="stack" data-gap="2xl">
+  <Firma2RailSection title="Joining">
+    <div class="stack" data-gap="lg">
+      <div class="stack" data-gap="sm">
+        <div class="firma2-switch-list">
+          <div class="firma2-switch-list__row">
+            <esa-switch-toggle
+              name="invite-link"
+              label="Invite link"
+              label-position="before"
+              checked={sec.inviteLinkOn ? true : undefined}
+              data-hint="Anyone with the link can join the workspace as a Viewer."
+              data-invite-toggle
+            ></esa-switch-toggle>
+            <p class="firma2-switch-list__hint typography-body-sm">Anyone with the link can join the workspace as a Viewer.</p>
+          </div>
+        </div>
+        <!-- A plain div, so `hidden` is not out-ranked by a layout class. -->
+        <div data-invite-row hidden={!sec.inviteLinkOn}>
+          <div class="repel" data-gap="sm">
+            <span class="firma2-workspace-security__url typography-body-md" data-invite-url>{sec.inviteLink}</span>
+            <div class="cluster" data-gap="xs">
+              <EsaButton variant="secondary" size="md" icon="copy" data-invite-copy>Copy link</EsaButton>
+              <EsaButton variant="ghost" size="md" data-invite-reset>Reset link</EsaButton>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="typography-body-sm">Email domains are approved per organization, in each organization’s Access and permissions.</p>
+    </div>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Sign-in methods">
+    <div class="firma2-switch-list" data-sign-in-methods>
+      {SIGN_IN_METHODS.map((s) => (
+        <div class="firma2-switch-list__row">
+          <esa-switch-toggle name={s.key} label={s.label} label-position="before" checked={s.on ? true : undefined} data-hint={s.hint}></esa-switch-toggle>
+          <p class="firma2-switch-list__hint typography-body-sm">{s.hint}</p>
+        </div>
+      ))}
+    </div>
+    <p class="typography-body-sm">At least one stays on. Administrators can always sign in with email and password.</p>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Sign-in rules">
+    <div class="stack" data-gap="lg">
+      <div class="firma2-switch-list">
+        {SIGN_IN_RULES.map((s) => (
+          <div class="firma2-switch-list__row">
+            <esa-switch-toggle name={s.key} label={s.label} label-position="before" checked={s.on ? true : undefined} data-hint={s.hint}></esa-switch-toggle>
+            <p class="firma2-switch-list__hint typography-body-sm">{s.hint}</p>
+          </div>
+        ))}
+      </div>
+      <esa-select
+        name="idle-timeout"
+        label="Sign out after inactivity"
+        help-text="Anyone idle this long signs in again."
+        size="md"
+        options={json(IDLE_TIMEOUTS)}
+        data-seed={sec.idleTimeout}
+      ></esa-select>
+    </div>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Workspace permissions">
+    <div class="stack" data-gap="md">
+      {SECURITY_PERMISSIONS.map((p) => (
+        <esa-select
+          name={p.key}
+          label={p.label}
+          help-text={p.hint}
+          size="md"
+          options={json(PERMISSION_AUDIENCES)}
+          data-seed={p.value}
+        ></esa-select>
+      ))}
+    </div>
+  </Firma2RailSection>
+
+</div>
+
+<esa-confirm-dialog
+  class="firma2-workspace-security__confirm"
+  variant="warning"
+  heading="Reset the invite link?"
+  message="The current link stops working right away. Anyone who hasn’t joined yet will need the new one."
+  confirm-label="Reset link"
+  cancel-label="Cancel"
+></esa-confirm-dialog>
+
+<esa-snackbar-container class="firma2-workspace-security__toasts"></esa-snackbar-container>
+
+<script>
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-snackbar-container';
+
+  type SwitchEl = HTMLElement & { checked: boolean; updateComplete: Promise<unknown> };
+  type Toasts = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
+  type Confirm = HTMLElement & { show?: () => void };
+
+  const toasts = document.querySelector<Toasts>('.firma2-workspace-security__toasts');
+
+  // Seeds, assigned only after define — a `.value` set on a not-yet-upgraded
+  // element becomes an own property that shadows the lego's setter for good.
+  customElements.whenDefined('esa-select').then(() => {
+    document.querySelectorAll<HTMLElement & { value: string }>('esa-select[data-seed]').forEach((el) => {
+      el.value = el.dataset.seed ?? '';
+    });
+  });
+
+  // Each switch's description, handed to its inner button as aria-description —
+  // the lego has no description prop (esassoc/ecology#40); same as Notifications.
+  customElements.whenDefined('esa-switch-toggle').then(() => {
+    document.querySelectorAll<SwitchEl>('.firma2-switch-list esa-switch-toggle[data-hint]').forEach(async (el) => {
+      await el.updateComplete;
+      el.shadowRoot?.querySelector('[role="switch"]')?.setAttribute('aria-description', el.dataset.hint ?? '');
+    });
+  });
+
+  // INVITE LINK. Off hides the link — a URL that no longer admits anyone
+  // should not sit on the page looking copyable.
+  const inviteRow = document.querySelector<HTMLElement>('[data-invite-row]');
+  const inviteUrl = document.querySelector<HTMLElement>('[data-invite-url]');
+  document.querySelector<SwitchEl>('[data-invite-toggle]')?.addEventListener('change', (e) => {
+    if (inviteRow) inviteRow.hidden = !(e.currentTarget as SwitchEl).checked;
+  });
+
+  document.querySelector('[data-invite-copy]')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(`https://${inviteUrl?.textContent ?? ''}`);
+      toasts?.show({ message: 'Invite link copied', variant: 'success' });
+    } catch {
+      toasts?.show({ message: 'Couldn’t copy — select the link and copy it', variant: 'danger' });
+    }
+  });
+
+  const confirm = document.querySelector<Confirm>('.firma2-workspace-security__confirm');
+  document.querySelector('[data-invite-reset]')?.addEventListener('click', async () => {
+    await customElements.whenDefined('esa-confirm-dialog');
+    confirm?.show?.();
+  });
+  confirm?.addEventListener('confirm', () => {
+    if (!inviteUrl) return;
+    const token = Array.from({ length: 3 }, () => Math.random().toString(36).slice(2, 6)).join('-');
+    inviteUrl.textContent = inviteUrl.textContent!.replace(/[^/]+$/, token);
+    toasts?.show({ message: 'Invite link reset. The old link no longer works.', variant: 'success' });
+  });
+
+  // AT LEAST ONE SIGN-IN METHOD. Turning off the last one would lock out
+  // everyone but administrators, so the switch flips back and says why.
+  const methods = Array.from(document.querySelectorAll<SwitchEl>('[data-sign-in-methods] esa-switch-toggle'));
+  methods.forEach((el) => {
+    el.addEventListener('change', () => {
+      if (methods.some((m) => m.checked)) return;
+      el.checked = true;
+      toasts?.show({ message: 'Keep at least one sign-in method on', variant: 'warning' });
+    });
+  });
+</script>
+
+<style>
+  /* The URL is one unbroken word; on a phone it would push the page sideways. */
+  .firma2-workspace-security__url {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+</style>

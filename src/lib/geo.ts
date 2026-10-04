@@ -105,3 +105,19 @@ export const formatExtent = (extent: number | null, unit: 'acres' | 'miles' | nu
   const digits = unit === 'acres' ? (extent < 10 ? 1 : 0) : 1;
   return `${extent.toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: 0 })} ${unit}`;
 };
+
+/**
+ * A project's size in one line — its areas' acres summed, or, for a project
+ * of reaches alone, their miles. Acres win because an area is the footprint;
+ * a reach crossing it adds no ground. `label` names what the figure is — an
+ * Area or a Length — for whoever cannot see the glyph that leads it.
+ */
+export const projectSize = (
+  areas: { unit: 'acres' | 'miles' | null; extent: number | null }[],
+): { label: 'Area' | 'Length'; text: string } => {
+  const acres = areas.reduce((t, a) => t + (a.unit === 'acres' ? (a.extent ?? 0) : 0), 0);
+  const miles = areas.reduce((t, a) => t + (a.unit === 'miles' ? (a.extent ?? 0) : 0), 0);
+  if (acres) return { label: 'Area', text: formatExtent(Math.round(acres), 'acres') };
+  if (miles) return { label: 'Length', text: formatExtent(miles, 'miles') };
+  return { label: 'Area', text: 'No work areas mapped' };
+};

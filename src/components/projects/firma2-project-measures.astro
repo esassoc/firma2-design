@@ -77,6 +77,7 @@ import { IMPORT_FIXTURES } from '../../data/firma2-report-import';
 // render. Calling the real component renders byte-identical markup without the
 // build noise.
 import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import type { PerformanceMeasure } from '../../data/firma2-project-detail';
 import { isClosedPeriod } from '../../data/firma2-project-detail';
 
@@ -138,9 +139,12 @@ const longestName = Math.max(0, ...measures.map((measure) => measure.name.length
 // The document-first door, offered only where a reading exists to show.
 const canImport = Boolean(IMPORT_FIXTURES[projectSlug]);
 const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, measure.unit]));
+// The clone source for rows added in the browser, when the record has none to
+// clone — a project nobody has asked anything yet (team 6's empty state).
+const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0, reported: 0, series: [] };
 ---
-{measures.length > 0 && (
-  <div class="firma2-project-measures" data-aliasable-title>
+{(measures.length > 0 || projectSlug) && (
+  <div class="firma2-project-measures" data-aliasable-title data-view="total">
   <EsaCard title="Performance measures">
     <!-- RECORD WORK is the reporter's door, and it is ACTIVITY-FIRST: the
          sheet opens on "What did you do?" — a search over every subcategory
@@ -154,6 +158,10 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
          There is NO "Add measure" button: the GHOST ROW at the table's foot
          is the affordance, permanently — the same rule bcn-tag-editor's add
          slot states ("the empty row IS the affordance"). -->
+    <!-- CHOOSE MEASURES (hackathon team 6). A project answers only the measures
+         ticked for it, so a new question reaches the projects it applies to and
+         no others. The sheet below; a measure with reports cannot be unticked. -->
+    <EsaButton slot="actions" variant="chrome" size="sm" icon="check" data-firma2-pm-choose>Choose measures</EsaButton>
     <EsaButton slot="actions" variant="chrome" size="sm" icon="notepad-text" data-firma2-pm-record-work>Record work</EsaButton>
     <!-- THE DOCUMENT-FIRST DOOR (hackathon team 6): the crew log or grant
          report the reporter already keeps, read against these measures. -->
@@ -172,15 +180,36 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
          the ornamental micro-label the house rules ban. The lego has no
          hidden-label prop, so the script names the radiogroup for assistive
          technology instead — see the note there. -->
-    {hasYears && (
-      <esa-button-toggle
-        slot="actions"
-        size="sm"
-        data-firma2-measure-view
-      ></esa-button-toggle>
-    )}
+    <!-- THREE VIEWS: Report (team 6 — one period, entered in place), Total
+         and By year (the history table). Total stays the default. -->
+    <esa-button-toggle
+      slot="actions"
+      size="sm"
+      data-firma2-measure-view
+      data-has-years={hasYears ? '' : undefined}
+    ></esa-button-toggle>
 
     <div class="firma2-project-measures__body stack" data-gap="md" data-firma2-pm-section data-project-slug={projectSlug}>
+      <!-- NOTHING ASKED YET. Never an invitation to DEFINE a measure — that is
+           the program lead's job, on the catalog. Choosing which published
+           measures apply is offered here. -->
+      <div data-pm-empty hidden>
+        <EsaEmptyState size="sm" headingLevel={4} title="Nothing is being asked of this project yet" description="Choose which of your program’s published measures this project reports on." />
+        <div class="firma2-project-measures__empty-action">
+          <EsaButton variant="primary" size="sm" icon="check" data-firma2-pm-choose-empty>Choose measures</EsaButton>
+        </div>
+      </div>
+
+      <!-- REPORT: one period at a time (team 6). Segments rather than a
+           dropdown, because a reporter arriving from a reminder is reporting
+           for THIS period and the others are context. -->
+      <div class="firma2-project-measures__report stack" data-gap="lg" data-pm-report>
+        <div class="firma2-project-measures__report-head stack" data-gap="sm">
+          <esa-button-toggle size="sm" data-pm-period aria-label="Reporting period"></esa-button-toggle>
+          <p class="typography-label-md firma2-project-measures__report-progress" data-pm-progress></p>
+        </div>
+        <div class="stack" data-gap="lg" data-pm-report-list></div>
+      </div>
       <!-- The scroller is the ONLY place this card may scroll, and only once the
            year columns are showing: a fifteen-year window plus a measure name and
            its total cannot fit the 22rem map panel at any type size, and the
@@ -254,10 +283,17 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
         hidden
       ></esa-combobox>
       <p class="firma2-project-measures__entry-lede typography-meta" data-entry-lede></p>
+      <!-- What this measure said last period, so this period's figure is typed
+           beside the last one rather than from memory (team 6). -->
+      <p class="firma2-project-measures__entry-previous typography-body-sm" data-entry-previous hidden></p>
       <div class="stack" data-gap="lg" data-entry-body>
         <esa-select data-entry-year label="Reporting year" size="md"></esa-select>
-        <esa-text-field data-entry-amount label="Amount" size="md" inputmode="decimal" required></esa-text-field>
         <div class="stack" data-gap="md" data-entry-questions></div>
+        <esa-text-field data-entry-amount label="Amount" size="md" inputmode="decimal" required></esa-text-field>
+        <!-- ONE AMOUNT PER OPTION when the first question is answered with
+             several (team 6's pivot): planting AND fencing in one sitting, each
+             with its own figure, each saved as its own entry. -->
+        <div class="stack" data-gap="md" data-entry-split hidden></div>
         <p class="firma2-project-measures__entry-autos typography-meta" data-entry-autos hidden></p>
         <section class="stack" data-gap="2xs" data-entry-log-block hidden>
           <h3 class="firma2-project-measures__entry-log-title typography-label-sm">Recorded in this browser</h3>
@@ -273,6 +309,28 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
 
   <!-- Row affordance templates, cloned into name cells by the script:
        Record on every row, Remove only on rows added in this browser. -->
+  <esa-side-dialog class="firma2-project-measures__picker" heading="Measures this project reports on" size="md" position="right">
+    <div class="stack" data-gap="lg">
+      <p class="typography-body-md">Each measure you tick is a question this project answers every reporting period. Tick only the ones its work applies to.</p>
+      <ul class="firma2-project-measures__picker-list stack" data-gap="md" data-picker-list></ul>
+    </div>
+    <div slot="footer" class="cluster" data-gap="xs">
+      <EsaButton variant="primary" size="md" data-picker-done>Done</EsaButton>
+    </div>
+  </esa-side-dialog>
+  <template data-pm-seed-template>
+    <table><tbody><Firma2ProjectMeasureRow measure={placeholderMeasure} /></tbody></table>
+  </template>
+  <esa-confirm-dialog class="firma2-project-measures__bin" variant="danger" heading="Remove these figures?" confirm-label="Remove" cancel-label="Keep them"></esa-confirm-dialog>
+  <div data-pm-bin-template hidden aria-hidden="true">
+    <EsaButton variant="ghost" iconOnly icon="trash-2" size="sm" aria-label="Remove these figures">Remove these figures</EsaButton>
+  </div>
+  <div data-pm-clear-template hidden aria-hidden="true">
+    <EsaButton variant="ghost" iconOnly icon="x" size="sm" aria-label="Clear this entry">Clear this entry</EsaButton>
+  </div>
+  <div data-firma2-pm-divide-template hidden aria-hidden="true">
+    <EsaButton variant="chrome" iconOnly icon="chevron-down" size="sm" aria-label="Show how it divides">Show how it divides</EsaButton>
+  </div>
   <div data-firma2-pm-record-template hidden aria-hidden="true">
     <EsaButton variant="chrome" iconOnly icon="plus" size="sm" aria-label="Record an entry">Record an entry</EsaButton>
   </div>
@@ -648,9 +706,114 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
   .firma2-project-measures :global([data-entry-lede][hidden]) {
     display: none !important;
   }
+
+  /* FOUR ACTIONS AND A THREE-WAY SWITCH no longer fit beside the title at
+     this column width; they wrap to a second line, trailing-aligned, rather
+     than running past the card's edge. */
+  .firma2-project-measures :global(.esa-card__actions) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-inline-size: 0;
+  }
+
+  /* ---- report view (team 6) ---------------------------------------------- */
+  .firma2-project-measures:not([data-view='report']) [data-pm-report] {
+    display: none;
+  }
+  .firma2-project-measures[data-view='report'] .firma2-project-measures__scroller {
+    display: none;
+  }
+  .firma2-project-measures[data-empty] .firma2-project-measures__scroller,
+  .firma2-project-measures[data-empty] [data-pm-report] {
+    display: none;
+  }
+  .firma2-project-measures__empty-action {
+    display: flex;
+    justify-content: center;
+    margin-block-start: var(--spacing-300);
+  }
+  .firma2-project-measures__report-progress {
+    margin: 0;
+  }
+  :global(.firma2-project-measures__rm) {
+    padding-block-end: var(--spacing-500);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  :global(.firma2-project-measures__rm:last-child) {
+    border-block-end: 0;
+  }
+  :global(.firma2-project-measures__rm-head) {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-300);
+  }
+  :global(.firma2-project-measures__rm-head h4) {
+    margin: 0;
+  }
+  :global(.firma2-project-measures__rm-done) {
+    color: var(--color-content-brand, #2a7e3b);
+  }
+  :global(.firma2-project-measures__rm-meta) {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+  /* A block: the questions on one line, the amounts under them, and the
+     block's own remove control in the corner, out of the questions' way. */
+  :global(.firma2-project-measures__block) {
+    position: relative;
+    display: grid;
+    gap: var(--spacing-300);
+    padding: var(--spacing-400);
+    padding-inline-end: var(--spacing-800, 3rem);
+    border: 1px solid var(--color-border-default-subtle, #d9d9d9);
+    border-radius: var(--radius-md, 0.5rem);
+  }
+  :global(.firma2-project-measures__block--blank) {
+    border-style: dashed;
+  }
+  :global(.firma2-project-measures__block-row) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: var(--spacing-300);
+  }
+  :global(.firma2-project-measures__block-corner) {
+    position: absolute;
+    inset-block-start: var(--spacing-200);
+    inset-inline-end: var(--spacing-200);
+  }
+  /* ---- team 6 additions -------------------------------------------------- */
+  .firma2-project-measures [hidden] {
+    display: none !important;
+  }
+  .firma2-project-measures__entry-previous {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-project-measures__picker-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  :global(.firma2-project-measures__picker-meta) {
+    margin: var(--spacing-100) 0 0;
+    padding-inline-start: var(--spacing-700, 2rem);
+    color: var(--color-content-default-secondary, #646464);
+  }
+  /* A breakdown row reads as part of its measure: indented, secondary ink. */
+  .firma2-project-measures__table :global(tr[data-breakdown-of] th) {
+    padding-inline-start: var(--spacing-700, 2rem);
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-project-measures__table :global(tr[data-breakdown-of] td) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-project-measures__table :global(.firma2-project-measures__divide[aria-expanded='true'] svg) {
+    transform: rotate(180deg);
+  }
 </style>
 
 <script>
+  import { isViewMode } from '../../lib/record-mode';
   import '@esa/ecology/esa-button-toggle';
 
   // THE WHOLE OF THE VIEW SWITCH. It writes one attribute on the scroller; every
@@ -683,9 +846,13 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
    */
   const VIEW_TOTAL = 'total';
   const VIEW_YEARS = 'years';
-  const VIEW_OPTIONS = [
+  const VIEW_REPORT = 'report';
+  // REPORT is team 6's view: one period, entered in place. It sits beside the
+  // history table rather than replacing it — Total stays the default.
+  const viewOptions = (hasYears: boolean) => [
+    { label: 'Report', value: VIEW_REPORT },
     { label: 'Total', value: VIEW_TOTAL },
-    { label: 'By year', value: VIEW_YEARS },
+    ...(hasYears ? [{ label: 'By year', value: VIEW_YEARS }] : []),
   ];
 
   /** Names the radiogroup for assistive technology, since it shows no label. */
@@ -702,8 +869,9 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
     // Options are an array, so they are a PROPERTY, not an attribute — and safe
     // to assign before the element upgrades: Lit reclaims a property set on an
     // un-upgraded element when it defines it.
-    toggle.options = VIEW_OPTIONS;
+    toggle.options = viewOptions(toggle.hasAttribute('data-has-years'));
     toggle.value = VIEW_TOTAL;
+    const section = toggle.closest<HTMLElement>('.firma2-project-measures');
 
     // THE GROUP'S ACCESSIBLE NAME. The lego names its radiogroup from its
     // VISIBLE label and offers no hidden-label prop, and a visible label here
@@ -721,6 +889,8 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
     });
 
     toggle.addEventListener('change', () => {
+      if (section) section.dataset.view = String(toggle.value ?? VIEW_TOTAL);
+      section?.dispatchEvent(new CustomEvent('firma2:pm-view'));
       const years = toggle.value === VIEW_YEARS;
       scroller.dataset.firma2MeasureYears = years ? 'shown' : 'hidden';
 
@@ -767,6 +937,9 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
   import '@esa/ecology/esa-select';
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-combobox';
+  import '@esa/ecology/esa-checkbox';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-button-toggle';
   import {
     measures as catalogSeeds,
     measureDisplayName,
@@ -828,11 +1001,14 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
     void fixSideDialog(sheet);
 
     // The clone source, captured before any injection so it is always a seed.
-    const seedRow = tbody.querySelector('tr');
+    const seedRow =
+      tbody.querySelector('tr') ??
+      root.querySelector<HTMLTemplateElement>('[data-pm-seed-template]')?.content.querySelector('tr') ??
+      null;
     if (!seedRow) return;
 
     const realRows = (): HTMLElement[] =>
-      [...tbody.querySelectorAll<HTMLElement>('tr:not([data-ghost])')];
+      [...tbody.querySelectorAll<HTMLElement>('tr:not([data-ghost]):not([data-breakdown-of])')];
 
     const nameOf = (tr: HTMLElement): string =>
       (
@@ -874,7 +1050,9 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
         : entries.length > 0
           ? entries[entries.length - 1].amount
           : baseReported;
-      total.textContent = `${fmtNum(reported)} of ${fmtNum(expected)} ${unit}`.trim();
+      // A measure ticked in the picker arrives with no target yet; "of 0" would
+      // read as a target of zero, so it says so instead (click to set one).
+      total.textContent = expected > 0 ? `${fmtNum(reported)} of ${fmtNum(expected)} ${unit}`.trim() : `${fmtNum(reported)} ${unit} · no target yet`.trim();
 
       // The ring follows — same never-reads-full-until-it-is rule the row
       // component states: the fraction is clamped, not rounded up.
@@ -906,7 +1084,378 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
       });
     };
 
-    const paintAllRows = () => realRows().forEach(paintRow);
+    const paintAllRows = () => {
+      realRows().forEach(paintRow);
+      paintBreakdowns();
+      syncEmpty();
+      paintReport();
+    };
+
+    // ---- nothing asked yet (team 6) ---------------------------------------
+    const syncEmpty = () => {
+      const empty = realRows().length === 0;
+      root.toggleAttribute('data-empty', empty);
+      const box = root.querySelector<HTMLElement>('[data-pm-empty]');
+      if (box) box.hidden = !empty;
+      root
+        .querySelectorAll<HTMLElement>('[data-firma2-pm-record-work], [data-open-report-import], [data-firma2-measure-view], [data-firma2-pm-choose]')
+        .forEach((el) => {
+          const host = (el.closest('.esa-button') as HTMLElement | null) ?? el;
+          host.style.display = empty ? 'none' : '';
+        });
+    };
+
+    // ---- report: one period, in place (team 6) ----------------------------
+    // ONE SHAPE FOR ENTERING AND CORRECTING. Each block is one combination of
+    // a measure's earlier questions, its last question answered with as many
+    // options as apply, and an amount against each. A block holding figures
+    // already filed looks exactly like the blank one at the foot — its amounts
+    // are simply already in it. Amounts commit on leaving the field; clearing
+    // one removes the entry, because "we did not work there after all" has to
+    // be sayable, and a 0 would claim the work happened and achieved nothing.
+    const PRESENT = 2026;
+    const periodToggle = root.querySelector<Control>('[data-pm-period]');
+    const reportList = root.querySelector<HTMLElement>('[data-pm-report-list]');
+    const progressLine = root.querySelector<HTMLElement>('[data-pm-progress]');
+    const binDialog = root.querySelector<Control & { show: () => void; message?: string }>('.firma2-project-measures__bin');
+    const binTemplate = root.querySelector<HTMLElement>('[data-pm-bin-template]');
+    const clearTemplate = root.querySelector<HTMLElement>('[data-pm-clear-template]');
+
+    const reportPeriods = (): number[] => [...new Set([...axisYears(), PRESENT])].sort((a, b) => a - b).slice(-5);
+    let period = PRESENT;
+    type Blank = { fixed: Record<string, string>; picks: string[] };
+    const blanks = new Map<string, Blank>();
+    const extraPicks = new Map<string, string[]>();
+    let pendingBin: (() => void) | null = null;
+
+    const baseValue = (tr: HTMLElement, year: number): number | null => {
+      const td = tr.querySelector<HTMLElement>(`.firma2-project-measure-row__year[data-year="${year}"]`);
+      return td && td.dataset.value !== undefined && td.dataset.value !== '' ? Number(td.dataset.value) : null;
+    };
+
+    const entriesFor = (key: string, year: number) => readEntries(slug).filter((e) => e.measureKey === key && e.year === year);
+
+    const matches = (e: { answers: Record<string, string> }, fixed: Record<string, string>, pivot: string | null, option?: string) =>
+      Object.entries(fixed).every(([k, v]) => (e.answers[k] ?? '') === v) && (pivot === null || option === undefined || (e.answers[pivot] ?? '') === option);
+
+    /** Replace whatever this block holds for one option with one figure (or none). */
+    const setAmount = (key: string, fixed: Record<string, string>, pivot: string | null, option: string, amount: number | null) => {
+      entriesFor(key, period)
+        .filter((e) => matches(e, fixed, pivot, pivot === null ? undefined : option))
+        .forEach((e) => removeEntry(slug, e.id));
+      if (amount !== null && amount > 0) {
+        addEntry(slug, { measureKey: key, year: period, amount, answers: pivot === null ? { ...fixed } : { ...fixed, [pivot]: option } });
+      }
+    };
+
+    const field = (label: string, value: string, unit: string, fk: string) => {
+      const f = document.createElement('esa-text-field') as Control;
+      f.setAttribute('label', unit ? `${label} (${unit})` : label);
+      f.setAttribute('size', 'sm');
+      f.setAttribute('inputmode', 'decimal');
+      f.dataset.fk = fk;
+      f.value = value;
+      return f;
+    };
+
+    const select = (label: string, options: string[], value: string | string[], fk: string, multiple = false) => {
+      const el = document.createElement('esa-select') as Control & { multiple?: boolean; disabled?: boolean };
+      el.setAttribute('label', label);
+      el.setAttribute('size', 'sm');
+      el.setAttribute('placeholder', 'Choose…');
+      el.dataset.fk = fk;
+      if (multiple) el.multiple = true;
+      el.options = options.map((o) => ({ label: o, value: o }));
+      el.value = value;
+      return el;
+    };
+
+    /** Commit an amount when its field is left (or Enter), then repaint. */
+    const onCommit = (f: Control, commit: (amount: number | null) => void) => {
+      const go = () => {
+        const raw = String(f.value ?? '').replace(/,/g, '').trim();
+        const n = raw === '' ? null : Number(raw);
+        if (n !== null && (!Number.isFinite(n) || n < 0)) {
+          f.errorText = 'A figure of zero or more.';
+          return;
+        }
+        commit(n);
+        paintAllRows();
+      };
+      f.addEventListener('focusout', go);
+      f.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Enter') (e.target as HTMLElement).blur();
+      });
+    };
+
+    const paintReport = () => {
+      if (!reportList || !periodToggle || !progressLine) return;
+      const periods = reportPeriods();
+      if (!periods.includes(period)) period = periods[periods.length - 1];
+      periodToggle.options = periods.map((y) => ({ label: y === PRESENT ? `${y} (now)` : String(y), value: String(y) }));
+      periodToggle.value = String(period);
+      if (root.dataset.view !== 'report') return;
+
+      // Keep focus where the reader was going when a commit repaints.
+      const focusKey = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[data-fk]')?.dataset.fk;
+      const rows = realRows();
+      let reportedCount = 0;
+
+      reportList.replaceChildren(
+        ...rows.map((tr) => {
+          const key = rowKey(tr);
+          const name = nameOf(tr);
+          const cat = catalogFor(key);
+          const unit = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total')?.dataset.unit ?? cat?.unit ?? '';
+          const questions = reportedSchemasOf(cat).filter((sch) => sch.origin !== 'system');
+          const pivot = questions.length ? questions[questions.length - 1] : null;
+          const fixedQs = questions.slice(0, -1);
+          const entries = entriesFor(key, period);
+          const base = baseValue(tr, period);
+          const reported = base !== null || entries.length > 0;
+          if (reported) reportedCount += 1;
+
+          const sec = document.createElement('section');
+          sec.className = 'firma2-project-measures__rm stack';
+          sec.dataset.gap = 'sm';
+          sec.innerHTML = `<div class="firma2-project-measures__rm-head"><h4 class="typography-label-lg"></h4>${reported ? '<span class="typography-label-sm firma2-project-measures__rm-done">Reported</span>' : ''}</div>`;
+          sec.querySelector('h4')!.textContent = name;
+          const meta = (text: string) => {
+            const p = document.createElement('p');
+            p.className = 'typography-body-sm firma2-project-measures__rm-meta';
+            p.textContent = text;
+            sec.append(p);
+          };
+          if (cat?.reporterGuidance?.trim()) meta(cat.reporterGuidance.trim());
+          // LAST PERIOD, as a hint and never pre-filled: the system remembers,
+          // the person still commits.
+          const prevYear = periods.filter((y) => y < period).pop();
+          if (prevYear !== undefined) {
+            const prevBase = baseValue(tr, prevYear);
+            const prevEntries = entriesFor(key, prevYear).reduce((t, e) => t + e.amount, 0);
+            const prev = (prevBase ?? 0) + prevEntries;
+            if (prevBase !== null || prevEntries) meta(`Last period (${prevYear}): ${fmtNum(prev)} ${unit}`.trim());
+          }
+          if (base !== null) meta(`Filed for ${period}: ${fmtNum(base)} ${unit}${questions.length ? ', without a breakdown' : ''}. Amounts below are added to it.`);
+
+          // ---- the blocks ----
+          const blocks: HTMLElement[] = [];
+          const blockFor = (opts: { fixed: Record<string, string>; picks: string[]; amounts: Record<string, string>; filed: boolean; gk: string }) => {
+            const b = document.createElement('div');
+            b.className = `firma2-project-measures__block${opts.filed ? '' : ' firma2-project-measures__block--blank'}`;
+            const row = document.createElement('div');
+            row.className = 'firma2-project-measures__block-row';
+            const fixedDone = fixedQs.every((q) => opts.fixed[q.name]);
+            fixedQs.forEach((q) => {
+              const el = select(q.name, q.options, opts.fixed[q.name] ?? '', `${key}|${opts.gk}|q|${q.name}`);
+              el.addEventListener('change', () => {
+                const next = { ...opts.fixed, [q.name]: String(el.value ?? '') };
+                if (opts.filed) {
+                  // Re-key every figure in the block to the new answer.
+                  entries.filter((e) => matches(e, opts.fixed, null)).forEach((e) => {
+                    removeEntry(slug, e.id);
+                    addEntry(slug, { measureKey: key, year: period, amount: e.amount, answers: { ...e.answers, [q.name]: next[q.name] } });
+                  });
+                  paintAllRows();
+                } else {
+                  blanks.set(key, { ...(blanks.get(key) ?? { fixed: {}, picks: [] }), fixed: next });
+                  paintReport();
+                }
+              });
+              row.append(el);
+            });
+            if (pivot) {
+              const el = select(pivot.name, pivot.options, opts.picks, `${key}|${opts.gk}|pivot`, true) as Control & { disabled?: boolean };
+              if (!fixedDone) {
+                el.disabled = true;
+                el.setAttribute('placeholder', 'Answer the first question');
+              }
+              el.addEventListener('change', () => {
+                const picks = Array.isArray(el.value) ? (el.value as string[]) : [];
+                if (opts.filed) {
+                  // An option taken out takes its figure with it.
+                  opts.picks.filter((o) => !picks.includes(o)).forEach((o) => setAmount(key, opts.fixed, pivot.name, o, null));
+                  extraPicks.set(`${key}|${opts.gk}`, picks);
+                  paintAllRows();
+                } else {
+                  blanks.set(key, { fixed: opts.fixed, picks });
+                  paintReport();
+                }
+              });
+              row.append(el);
+            }
+            if (row.childElementCount) b.append(row);
+
+            const amounts = document.createElement('div');
+            amounts.className = 'firma2-project-measures__block-row';
+            const targets = pivot ? opts.picks : [''];
+            targets.forEach((option) => {
+              const f = field(pivot ? option : base !== null ? 'Add an amount' : 'Amount', opts.amounts[option] ?? '', unit, `${key}|${opts.gk}|a|${option}`);
+              onCommit(f, (amount) => {
+                if (fixedQs.length && !fixedDone) return;
+                setAmount(key, opts.fixed, pivot?.name ?? null, option, amount);
+                if (!opts.filed) {
+                  const gk = JSON.stringify(opts.fixed);
+                  extraPicks.set(`${key}|${gk}`, opts.picks);
+                  blanks.delete(key);
+                }
+              });
+              amounts.append(f);
+            });
+            if (amounts.childElementCount) b.append(amounts);
+
+            // TWO CORNER CONTROLS, deliberately different: a filed block gets a
+            // bin (deletes figures, after saying how many); the blank block a
+            // cross once touched (discards choices, never data).
+            const corner = document.createElement('div');
+            corner.className = 'firma2-project-measures__block-corner';
+            if (opts.filed) {
+              const bin = cloneButton(binTemplate, 'firma2-project-measures__bin-btn', `Remove these ${name} figures`);
+              bin?.addEventListener('click', () => {
+                const doomed = entries.filter((e) => matches(e, opts.fixed, null));
+                pendingBin = () => doomed.forEach((e) => removeEntry(slug, e.id));
+                if (binDialog) {
+                  binDialog.message = `${doomed.length === 1 ? 'This figure is' : `These ${doomed.length} figures are`} deleted from ${period}. The measure stays on the project.`;
+                  binDialog.show();
+                }
+              });
+              if (bin) corner.append(bin);
+            } else if (Object.keys(opts.fixed).length || opts.picks.length) {
+              const clear = cloneButton(clearTemplate, 'firma2-project-measures__clear-btn', 'Clear this entry');
+              clear?.addEventListener('click', () => {
+                blanks.delete(key);
+                paintReport();
+              });
+              if (clear) corner.append(clear);
+            }
+            if (corner.childElementCount) b.append(corner);
+            return b;
+          };
+
+          if (!pivot && !fixedQs.length) {
+            // No questions: one figure for the period.
+            const sum = entries.reduce((t, e) => t + e.amount, 0);
+            blocks.push(blockFor({ fixed: {}, picks: [], amounts: { '': sum ? String(sum) : '' }, filed: false, gk: 'single' }));
+          } else {
+            const groups = new Map<string, { fixed: Record<string, string>; amounts: Record<string, number> }>();
+            entries.forEach((e) => {
+              const fixed = Object.fromEntries(fixedQs.map((q) => [q.name, e.answers[q.name] ?? '']));
+              const gk = JSON.stringify(fixed);
+              const g = groups.get(gk) ?? { fixed, amounts: {} };
+              const option = pivot ? e.answers[pivot.name] ?? '' : '';
+              g.amounts[option] = (g.amounts[option] ?? 0) + e.amount;
+              groups.set(gk, g);
+            });
+            groups.forEach((g, gk) => {
+              const filedPicks = Object.keys(g.amounts);
+              const picks = [...new Set([...filedPicks, ...(extraPicks.get(`${key}|${gk}`) ?? [])])];
+              blocks.push(
+                blockFor({
+                  fixed: g.fixed,
+                  picks,
+                  amounts: Object.fromEntries(Object.entries(g.amounts).map(([o, n]) => [o, String(n)])),
+                  filed: true,
+                  gk,
+                }),
+              );
+            });
+            const blank = blanks.get(key) ?? { fixed: {}, picks: [] };
+            blocks.push(blockFor({ fixed: blank.fixed, picks: blank.picks, amounts: {}, filed: false, gk: 'blank' }));
+          }
+          sec.append(...blocks);
+          return sec;
+        }),
+      );
+      progressLine.textContent = `${reportedCount} of ${rows.length} ${rows.length === 1 ? 'measure' : 'measures'} reported for ${period}`;
+
+      if (focusKey) {
+        const target = reportList.querySelector<HTMLElement>(`[data-fk="${CSS.escape(focusKey)}"]`);
+        requestAnimationFrame(() => (target?.shadowRoot?.querySelector<HTMLElement>('input, button') ?? target)?.focus());
+      }
+    };
+
+    periodToggle?.addEventListener('change', () => {
+      period = Number(periodToggle.value ?? PRESENT);
+      blanks.clear();
+      paintReport();
+    });
+    root.addEventListener('firma2:pm-view', () => paintReport());
+    binDialog?.addEventListener('resolved', (e) => {
+      if ((e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) pendingBin?.();
+      pendingBin = null;
+      paintAllRows();
+    });
+
+    // ---- how a measure divides (team 6) -------------------------------------
+    // A measure's figure is the sum of answers to its questions; opening it
+    // shows the split by its first answered question, period by period. Only
+    // entries carry answers — the seeded history is a single figure — so the
+    // control appears once something has been recorded with an answer.
+    const divideTemplate = root.querySelector<HTMLElement>('[data-firma2-pm-divide-template]');
+    const openBreakdowns = new Set<string>();
+
+    const splitOf = (key: string) => {
+      const entries = readEntries(slug).filter((e) => e.measureKey === key && Object.keys(e.answers).length);
+      if (!entries.length) return null;
+      const order = reportedSchemasOf(catalogFor(key)).map((sch) => sch.name);
+      const answered = [...new Set(entries.flatMap((e) => Object.keys(e.answers)))];
+      const schema = order.find((n) => answered.includes(n)) ?? answered[0];
+      const options = [...new Set(entries.map((e) => e.answers[schema]).filter(Boolean))];
+      return { schema, options, entries: entries.filter((e) => e.answers[schema]) };
+    };
+
+    const paintBreakdowns = () => {
+      tbody.querySelectorAll('tr[data-breakdown-of]').forEach((tr) => tr.remove());
+      realRows().forEach((tr) => {
+        const key = rowKey(tr);
+        const split = splitOf(key);
+        const dock = tr.querySelector('.firma2-project-measure-row__measure-inner') ?? tr.querySelector('th');
+        let toggle = tr.querySelector<HTMLElement>('.firma2-project-measures__divide');
+        if (!split) {
+          toggle?.remove();
+          openBreakdowns.delete(key);
+          return;
+        }
+        if (!toggle && dock) {
+          toggle = cloneButton(divideTemplate, 'firma2-project-measures__divide', `Show how ${nameOf(tr)} divides`);
+          if (toggle) dock.append(toggle);
+        }
+        const open = openBreakdowns.has(key);
+        toggle?.setAttribute('aria-expanded', String(open));
+        toggle?.querySelector('button')?.setAttribute('aria-expanded', String(open));
+        if (!open) return;
+        const unit = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total')?.dataset.unit ?? '';
+        const summing = SUM_RULES.has(catalogFor(key)?.countingRule ?? 'sum');
+        let after: Element = tr;
+        split.options.forEach((option) => {
+          const mine = split.entries.filter((e) => e.answers[split.schema] === option);
+          const row = tr.cloneNode(true) as HTMLElement;
+          row.dataset.breakdownOf = key;
+          delete row.dataset.addedMeasure;
+          row.querySelectorAll('.bcn-progress-ring, .firma2-project-measures__record, .firma2-project-measures__remove, .firma2-project-measures__divide').forEach((el) => el.remove());
+          const name = row.querySelector<HTMLElement>('.firma2-project-measure-row__name');
+          if (name) {
+            name.textContent = option;
+            name.setAttribute('title', `${split.schema}: ${option}`);
+          }
+          const figure = (list: typeof mine) => (summing ? list.reduce((t, e) => t + e.amount, 0) : list[list.length - 1]?.amount ?? 0);
+          const total = row.querySelector<HTMLElement>('.firma2-project-measure-row__total');
+          if (total) total.textContent = `${fmtNum(figure(mine))} ${unit}`.trim();
+          row.querySelectorAll<HTMLElement>('.firma2-project-measure-row__year').forEach((td) => {
+            const inYear = mine.filter((e) => e.year === Number(td.dataset.year));
+            if (inYear.length) {
+              td.classList.remove('firma2-project-measure-row__year--none');
+              td.textContent = fmtNum(figure(inYear));
+            } else {
+              td.classList.add('firma2-project-measure-row__year--none');
+              td.innerHTML = DASH;
+            }
+          });
+          after.after(row);
+          after = row;
+        });
+      });
+    };
 
     // ---- row affordances --------------------------------------------------
     const cloneButton = (
@@ -939,7 +1488,11 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
             'firma2-project-measures__remove',
             `Remove ${nameOf(tr)} from this project`,
           );
-          if (remove) dock.append(remove);
+          // Hidden while the record is read (firma2-record-mode).
+          if (remove) {
+            remove.dataset.editOnly = '';
+            dock.append(remove);
+          }
         }
       });
     };
@@ -1096,6 +1649,8 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
       }
       const tr = seedRow.cloneNode(true) as HTMLElement;
       tr.dataset.ghost = '';
+      // Adding a measure changes the record's makeup: edit mode only.
+      tr.dataset.editOnly = '';
       delete tr.dataset.addedMeasure;
       const totalCell = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total');
       if (totalCell) {
@@ -1199,6 +1754,7 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
     };
 
     tbody.addEventListener('dblclick', (event) => {
+      if (isViewMode()) return;
       const td = (event.target as Element).closest<HTMLElement>('.firma2-project-measure-row__total');
       if (td) editTarget(td);
     });
@@ -1316,8 +1872,57 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
       autos.textContent =
         free.length > 0 ? `Added automatically: ${free.map((s) => s.name).join(', ')}.` : '';
 
+      // LAST PERIOD, read off the row as painted — the seeded history and
+      // this browser's entries, through the same painter the table uses.
+      const previous = root.querySelector<HTMLElement>('[data-entry-previous]');
+      if (previous) {
+        const last = [...tr.querySelectorAll<HTMLElement>('.firma2-project-measure-row__year')]
+          .reverse()
+          .find((td) => !td.classList.contains('firma2-project-measure-row__year--none'));
+        previous.hidden = !last;
+        if (last) previous.textContent = `Last period, ${last.dataset.year}: ${last.textContent?.trim()} ${entryUnit}`.trim();
+      }
+
+      // The FIRST question may take several answers; picking two or more
+      // swaps the one Amount for an amount per answer.
+      const first = questions.querySelector<Control & { multiple?: boolean }>('[data-entry-question]');
+      if (first) {
+        first.multiple = true;
+        first.setAttribute('help-text', 'Pick several to enter an amount for each.');
+        if (prefill && prefill.schemaName === first.getAttribute('data-entry-question')) first.value = [prefill.option];
+        first.addEventListener('change', paintSplit);
+      }
+      paintSplit();
       paintLog();
     };
+
+    const splitBox = root.querySelector<HTMLElement>('[data-entry-split]');
+    const splitPicks = (): { schema: string; options: string[] } | null => {
+      const first = questions?.querySelector<Control>('[data-entry-question]');
+      const picked = Array.isArray(first?.value) ? (first!.value as string[]).filter(Boolean) : [];
+      return first && picked.length >= 2 ? { schema: first.getAttribute('data-entry-question') ?? '', options: picked } : null;
+    };
+    function paintSplit() {
+      if (!splitBox || !amountField) return;
+      const picks = splitPicks();
+      splitBox.hidden = !picks;
+      amountField.hidden = Boolean(picks);
+      if (!picks) return splitBox.replaceChildren();
+      // Keep what was already typed for an option that stays picked.
+      const typed = new Map([...splitBox.querySelectorAll<Control>('[data-split-option]')].map((f) => [f.getAttribute('data-split-option') ?? '', String(f.value ?? '')]));
+      splitBox.replaceChildren(
+        ...picks.options.map((option) => {
+          const field = document.createElement('esa-text-field') as Control;
+          field.setAttribute('label', option);
+          field.setAttribute('size', 'md');
+          field.setAttribute('inputmode', 'decimal');
+          field.setAttribute('data-split-option', option);
+          if (entryUnit) field.setAttribute('suffix', entryUnit);
+          field.value = typed.get(option) ?? '';
+          return field;
+        }),
+      );
+    }
 
     /** The per-row, measure-first path. */
     const openEntry = (tr: HTMLElement) => {
@@ -1380,6 +1985,15 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
     }
 
     tbody.addEventListener('click', (event) => {
+      const divide = (event.target as Element).closest('.firma2-project-measures__divide');
+      const divideRow = divide?.closest<HTMLElement>('tr');
+      if (divideRow) {
+        const key = rowKey(divideRow);
+        if (openBreakdowns.has(key)) openBreakdowns.delete(key);
+        else openBreakdowns.add(key);
+        paintBreakdowns();
+        return;
+      }
       const btn = (event.target as Element).closest('.firma2-project-measures__record');
       const tr = btn?.closest<HTMLElement>('tr');
       if (tr) openEntry(tr);
@@ -1389,6 +2003,30 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
 
     root.querySelector('[data-entry-save]')?.addEventListener('click', () => {
       if (!yearField || !amountField || !questions) return;
+      const picks = splitPicks();
+      if (picks && splitBox) {
+        const year = Number(String(yearField.value ?? ''));
+        const others: Record<string, string> = {};
+        questions.querySelectorAll<Control>('[data-entry-question]').forEach((q, i) => {
+          const v = String(q.value ?? '');
+          const name = q.getAttribute('data-entry-question') ?? '';
+          if (i > 0 && v && name) others[name] = v;
+        });
+        const fields = [...splitBox.querySelectorAll<Control>('[data-split-option]')];
+        const filled = fields.map((f) => ({ f, amount: Number(String(f.value ?? '').replace(/,/g, '')) })).filter(({ amount }) => Number.isFinite(amount) && amount > 0);
+        fields.forEach((f) => (f.errorText = ''));
+        if (!filled.length) {
+          if (fields[0]) fields[0].errorText = 'Enter a figure for at least one of these.';
+          return;
+        }
+        filled.forEach(({ f, amount }) =>
+          addEntry(slug, { measureKey: entryKey, year, amount, answers: { ...others, [picks.schema]: f.getAttribute('data-split-option') ?? '' } }),
+        );
+        paintLog();
+        paintAllRows();
+        fields.forEach((f) => (f.value = ''));
+        return;
+      }
       const amount = Number(String(amountField.value ?? '').replace(/,/g, ''));
       if (!Number.isFinite(amount) || amount <= 0) {
         amountField.errorText = 'Enter the figure for this period.';
@@ -1413,7 +2051,7 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
       amountField.value = '';
       if (!activityMode) {
         questions.querySelectorAll<Control>('[data-entry-question]').forEach((q) => {
-          q.value = '';
+          q.value = Array.isArray(q.value) ? [] : '';
         });
       }
       amountField.focus();
@@ -1434,6 +2072,64 @@ const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, 
       paintAllRows();
       paintLog();
     });
+
+    // ---- choose measures (team 6) ----------------------------------------
+    // Ticked: the project answers it every period. Seeded measures have a
+    // reporting history, and an added one with entries has some too — those
+    // stay ticked, and say why, because unticking would orphan what was filed.
+    const picker = root.querySelector<Sheet>('.firma2-project-measures__picker');
+    const pickerList = root.querySelector<HTMLElement>('[data-picker-list]');
+    if (picker) void fixSideDialog(picker);
+
+    const paintPicker = () => {
+      if (!pickerList) return;
+      const onProject = new Map(realRows().map((tr) => [nameOf(tr).toLowerCase(), tr]));
+      pickerList.replaceChildren(
+        ...[...catalogActive()]
+          .sort((a, b) => measureDisplayName(a).localeCompare(measureDisplayName(b)))
+          .map((m) => {
+            const name = measureDisplayName(m);
+            const tr = onProject.get(name.toLowerCase());
+            const seeded = Boolean(tr && !tr.dataset.addedMeasure);
+            const hasEntries = readEntries(slug).some((e) => e.measureKey === (tr ? rowKey(tr) : m.slug));
+            const locked = seeded || hasEntries;
+            const li = document.createElement('li');
+            const box = document.createElement('esa-checkbox') as Control & { checked?: boolean; disabled?: boolean };
+            box.setAttribute('label', name);
+            box.checked = Boolean(tr);
+            box.disabled = locked;
+            box.addEventListener('change', () => {
+              if (box.checked) addProjectMeasure(slug, { measureSlug: m.slug, target: 0 });
+              else removeProjectMeasure(slug, m.slug);
+              paintAdded();
+              paintPicker();
+            });
+            const meta = document.createElement('p');
+            meta.className = 'firma2-project-measures__picker-meta typography-body-sm';
+            meta.textContent = seeded
+              ? 'Already reported on, so it stays.'
+              : hasEntries
+                ? 'Has entries, so it stays. Remove its entries to take it off.'
+                : m.definition || 'No definition yet.';
+            li.append(box, meta);
+            return li;
+          }),
+      );
+    };
+
+    root.querySelector('[data-firma2-pm-choose-empty]')?.addEventListener('click', () => {
+      void customElements.whenDefined('esa-checkbox').then(() => {
+        paintPicker();
+        picker?.show();
+      });
+    });
+    root.querySelector('[data-firma2-pm-choose]')?.addEventListener('click', () => {
+      void customElements.whenDefined('esa-checkbox').then(() => {
+        paintPicker();
+        picker?.show();
+      });
+    });
+    root.querySelector('[data-picker-done]')?.addEventListener('click', () => picker?.close());
 
     // ---- boot -------------------------------------------------------------
     paintAdded();

@@ -1,0 +1,420 @@
+---
+// firma2-organization-domains — Organization settings › Access: the email
+// domains whose holders join this organization without an invitation, each
+// proven before it admits anyone.
+//
+// LINEAR'S APPROVED DOMAINS, SCOPED TO ONE ORGANIZATION — AND VERIFIED (user
+// call). A domain is a standing invitation into the workspace, so typing one
+// is not enough: Add domain asks for the domain AND an address at it, emails
+// that address a six-digit code, and the domain admits nobody until the code
+// comes back. Closing the dialog first is allowed — "Verify later" — and the
+// row waits as Pending, with Enter code and Resend code in its "…".
+//
+// ONE DIALOG, TWO STEPS. Domain and address, then the code. Both are one
+// question about one domain, so they share a dialog instead of a page: the
+// spoke's create flows are pages, but this adds to an organization that
+// already exists, as Add members does.
+//
+// WHAT THE FIELD REFUSES, before any email goes out: a personal provider
+// (gmail.com — anyone could join), a domain another organization has verified
+// (a domain belongs to one organization at most), one already on this list,
+// and an address that is not at the domain being claimed.
+//
+// THE JOIN-AS CHOICE shows once a domain is verified — before that it governs
+// nobody. Someone already in the workspace keeps their role.
+//
+// MOCK: no email is sent. Any six digits verify.
+//
+// bcn-lego-checked: firma2-rail-section is the section, esa-button its Add
+// domain action; the list is firma2-settings-table's markup and stylesheet
+// (rows come and go at runtime, as on Members — no esa- table lego exists);
+// esa-badge marks a pending row, esa-dropdown-menu around an icon esa-button
+// is each row's "…", esa-dialog + esa-text-field the add-and-verify flow,
+// esa-confirm-dialog the removal, esa-select the join role, esa-empty-state
+// the empty list, esa-snackbar-container the receipts. No <style> block.
+// Beacon is not cloned on this machine.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import './firma2-settings-table.css';
+import { organizations, grantableRoles } from '../../data/firma2-directory';
+import type { Organization, ApprovedDomain } from '../../data/firma2-directory';
+
+interface Props {
+  organization: Organization;
+}
+
+const { organization: org } = Astro.props;
+
+// Which organization already holds each VERIFIED domain — a pending claim
+// proves nothing, so it blocks no one.
+const owners = Object.fromEntries(
+  organizations
+    .filter((o) => o.name !== org.name)
+    .flatMap((o) => o.approvedDomains.filter((d) => d.status === 'verified').map((d) => [d.domain, o.name])),
+);
+const joinRoles = JSON.stringify([...grantableRoles].reverse().map((r) => ({ value: r, label: r })));
+const meta = (d: ApprovedDomain) =>
+  d.status === 'verified' ? `Verified by ${d.email} on ${d.date}` : `Code sent to ${d.email} on ${d.date}`;
+const anyVerified = org.approvedDomains.some((d) => d.status === 'verified');
+---
+<Firma2RailSection title="Approved email domains">
+  <EsaButton slot="actions" variant="chrome" size="sm" icon="plus" data-domains-add>Add domain</EsaButton>
+
+  <div class="firma2-organization-domains stack" data-gap="lg" data-owners={JSON.stringify(owners)}>
+    <div data-domains-empty hidden={org.approvedDomains.length > 0}>
+      <EsaEmptyState
+        size="sm"
+        title="No approved domains"
+        description="Add your organization’s email domain so its staff can join without an invitation."
+      />
+    </div>
+
+    <table
+      class="firma2-settings-table firma2-settings-table--actions"
+      aria-label={`Approved email domains for ${org.name}`}
+      hidden={org.approvedDomains.length === 0}
+      data-domains-table
+    >
+      <thead>
+        <tr>
+          <th scope="col">Domain</th>
+          <th scope="col" class="firma2-settings-table__act"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody data-domains-body>
+        {org.approvedDomains.map((d) => (
+          <tr data-domain={d.domain} data-email={d.email} data-status={d.status}>
+            <th scope="row">
+              <span class="cluster" data-gap="xs">
+                <span class="firma2-settings-table__name">{d.domain}</span>
+                {d.status === 'pending' && <span data-slot="badge"><EsaBadge value="Pending" variant="warning" size="sm" /></span>}
+              </span>
+              <span class="firma2-settings-table__meta typography-body-sm" data-slot="meta">{meta(d)}</span>
+            </th>
+            <td class="firma2-settings-table__act">
+              <esa-dropdown-menu class="firma2-settings-table__menu" position="below-end">
+                <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label={`Actions for ${d.domain}`} data-domain-actions />
+              </esa-dropdown-menu>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+
+    {/* A plain div, so `hidden` is not out-ranked by a lego's own display. */}
+    <div data-domains-role hidden={!anyVerified}>
+      <esa-select
+        name="domain-role"
+        label="People new to the workspace join as"
+        help-text="Anyone with an address at a verified domain joins without an invitation. People already in the workspace keep their role."
+        size="md"
+        options={joinRoles}
+        data-seed="Viewer"
+      ></esa-select>
+    </div>
+
+    {/* The row every added domain is cloned from — the markup above, empty. */}
+    <template data-domain-template>
+      <tr>
+        <th scope="row">
+          <span class="cluster" data-gap="xs">
+            <span class="firma2-settings-table__name" data-slot="name"></span>
+            <span data-slot="badge"><EsaBadge value="Pending" variant="warning" size="sm" /></span>
+          </span>
+          <span class="firma2-settings-table__meta typography-body-sm" data-slot="meta"></span>
+        </th>
+        <td class="firma2-settings-table__act">
+          <esa-dropdown-menu class="firma2-settings-table__menu" position="below-end">
+            <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="Actions" data-domain-actions />
+          </esa-dropdown-menu>
+        </td>
+      </tr>
+    </template>
+
+    <esa-dialog class="firma2-organization-domains__dialog" heading="Add an email domain" size="md" show-close-button>
+      {/* Each step is a plain div: `hidden` on a .stack or .cluster is
+          out-ranked by the layout class's own display. */}
+      <div data-step="claim"><div class="stack" data-gap="lg">
+        <esa-text-field
+          label="Domain"
+          help-text="People with an email address at this domain will join without an invitation."
+          placeholder="agency.gov"
+          size="md"
+          name="domain"
+          autocomplete="off"
+          data-domain-field
+        ></esa-text-field>
+        <esa-text-field
+          label="Send a verification code to"
+          help-text="An address at this domain that you can open."
+          placeholder="you@agency.gov"
+          size="md"
+          type="email"
+          name="verify-email"
+          autocomplete="email"
+          data-email-field
+        ></esa-text-field>
+      </div></div>
+      <div data-step="code" hidden><div class="stack" data-gap="lg">
+        <p class="typography-body-md" data-code-sent></p>
+        <esa-text-field
+          label="Code"
+          help-text="It works for 24 hours."
+          size="md"
+          name="code"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          data-code-field
+        ></esa-text-field>
+      </div></div>
+      <div slot="footer">
+        <div data-step="claim"><div class="cluster" data-gap="xs">
+          <EsaButton variant="ghost" size="md" data-domains-cancel>Cancel</EsaButton>
+          <EsaButton variant="primary" size="md" data-domains-send>Send code</EsaButton>
+        </div></div>
+        <div data-step="code" hidden><div class="cluster" data-gap="xs">
+          <EsaButton variant="ghost" size="md" data-domains-resend>Resend code</EsaButton>
+          <EsaButton variant="ghost" size="md" data-domains-later>Verify later</EsaButton>
+          <EsaButton variant="primary" size="md" data-domains-verify>Verify domain</EsaButton>
+        </div></div>
+      </div>
+    </esa-dialog>
+
+    <esa-confirm-dialog class="firma2-organization-domains__confirm" variant="danger"></esa-confirm-dialog>
+    <esa-snackbar-container class="firma2-organization-domains__toasts"></esa-snackbar-container>
+  </div>
+</Firma2RailSection>
+
+<script>
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-snackbar-container';
+
+  type Dialog = HTMLElement & { show(): void; close(): void; heading: string; updateComplete: Promise<unknown> };
+  type Field = HTMLElement & { value: string; errorText: string };
+  type Confirm = HTMLElement & {
+    heading: string; message: string; confirmLabel: string; cancelLabel: string; show(): void;
+  };
+  type Menu = HTMLElement & { items: { label: string; action: string; variant?: string }[] };
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
+
+  // Anyone with an address at a personal provider could join, so these are
+  // refused outright. Not exhaustive — the ones agency staff actually use.
+  const PERSONAL = new Set([
+    'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com',
+    'yahoo.com', 'icloud.com', 'me.com', 'aol.com', 'proton.me', 'protonmail.com',
+  ]);
+  const DOMAIN = /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const today = () => { const d = new Date(); return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
+
+  function initDomains(root: HTMLElement) {
+    const section = root.closest('section') ?? document;
+    const owners: Record<string, string> = JSON.parse(root.dataset.owners ?? '{}');
+    const body = root.querySelector<HTMLElement>('[data-domains-body]');
+    const table = root.querySelector<HTMLElement>('[data-domains-table]');
+    const empty = root.querySelector<HTMLElement>('[data-domains-empty]');
+    const roleRow = root.querySelector<HTMLElement>('[data-domains-role]');
+    const template = root.querySelector<HTMLTemplateElement>('[data-domain-template]');
+    const dialog = root.querySelector<Dialog>('.firma2-organization-domains__dialog');
+    const domainField = root.querySelector<Field>('[data-domain-field]');
+    const emailField = root.querySelector<Field>('[data-email-field]');
+    const codeField = root.querySelector<Field>('[data-code-field]');
+    const sent = root.querySelector<HTMLElement>('[data-code-sent]');
+    const confirm = root.querySelector<Confirm>('.firma2-organization-domains__confirm');
+    const toasts = root.querySelector<Toasts>('.firma2-organization-domains__toasts');
+    if (!body || !template || !dialog || !domainField || !emailField || !codeField || !confirm) return;
+
+    const rows = () => Array.from(body.querySelectorAll<HTMLElement>('tr[data-domain]'));
+    const rowFor = (domain: string) => rows().find((r) => r.dataset.domain === domain);
+
+    // The table, the empty state and the join-as choice follow the list.
+    function sync() {
+      const all = rows();
+      if (table) table.hidden = all.length === 0;
+      if (empty) empty.hidden = all.length > 0;
+      if (roleRow) roleRow.hidden = !all.some((r) => r.dataset.status === 'verified');
+    }
+
+    // ---- The row menu --------------------------------------------------------
+
+    function fillMenu(row: HTMLElement) {
+      const menu = row.querySelector<Menu>('esa-dropdown-menu');
+      if (!menu) return;
+      const pending = row.dataset.status === 'pending';
+      void customElements.whenDefined('esa-dropdown-menu').then(() => {
+        menu.items = [
+          ...(pending
+            ? [{ label: 'Enter code', action: 'enter-code' }, { label: 'Resend code', action: 'resend' }]
+            : []),
+          { label: 'Remove domain', action: 'remove', variant: 'danger' },
+        ];
+      });
+    }
+    rows().forEach(fillMenu);
+
+    function setRow(row: HTMLElement, status: 'pending' | 'verified', email: string) {
+      row.dataset.status = status;
+      row.dataset.email = email;
+      row.querySelector('[data-slot="meta"]')!.textContent =
+        status === 'verified' ? `Verified by ${email} on ${today()}` : `Code sent to ${email} on ${today()}`;
+      if (status === 'verified') row.querySelector('[data-slot="badge"]')?.remove();
+      fillMenu(row);
+    }
+
+    function addRow(domain: string, email: string): HTMLElement {
+      const row = (template!.content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+      row.dataset.domain = domain;
+      row.querySelector('[data-slot="name"]')!.textContent = domain;
+      row.querySelector('[data-domain-actions]')?.setAttribute('aria-label', `Actions for ${domain}`);
+      body!.append(row);
+      setRow(row, 'pending', email);
+      sync();
+      return row;
+    }
+
+    // ---- The dialog ----------------------------------------------------------
+
+    // The domain being verified, while the dialog is on its code step.
+    let current = '';
+
+    function step(name: 'claim' | 'code') {
+      dialog!.querySelectorAll<HTMLElement>('[data-step]').forEach((el) => { el.hidden = el.dataset.step !== name; });
+    }
+
+    async function openClaim() {
+      await customElements.whenDefined('esa-text-field');
+      current = '';
+      domainField!.value = '';
+      emailField!.value = '';
+      domainField!.errorText = '';
+      emailField!.errorText = '';
+      dialog!.heading = 'Add an email domain';
+      step('claim');
+      dialog!.show();
+      await dialog!.updateComplete;
+      domainField!.focus();
+    }
+
+    async function openCode(domain: string, email: string) {
+      await customElements.whenDefined('esa-text-field');
+      current = domain;
+      codeField!.value = '';
+      codeField!.errorText = '';
+      dialog!.heading = `Verify ${domain}`;
+      if (sent) sent.textContent = `We sent a 6-digit code to ${email}. Enter it here to verify the domain.`;
+      step('code');
+      dialog!.show();
+      await dialog!.updateComplete;
+      codeField!.focus();
+    }
+
+    section.querySelector('[data-domains-add]')?.addEventListener('click', () => void openClaim());
+    root.querySelector('[data-domains-cancel]')?.addEventListener('click', () => dialog.close());
+    domainField.addEventListener('input', () => { domainField.errorText = ''; });
+    emailField.addEventListener('input', () => { emailField.errorText = ''; });
+    codeField.addEventListener('input', () => { codeField.errorText = ''; });
+
+    // Everything that would let strangers in is refused before an email goes out.
+    root.querySelector('[data-domains-send]')?.addEventListener('click', () => {
+      const domain = (domainField.value ?? '').trim().toLowerCase().replace(/^@/, '');
+      const email = (emailField.value ?? '').trim().toLowerCase();
+      let bad = false;
+      if (!DOMAIN.test(domain)) {
+        domainField.errorText = domain ? `“${domain}” isn’t a domain. Enter one like agency.gov.` : 'Enter a domain, like agency.gov.';
+        bad = true;
+      } else if (PERSONAL.has(domain)) {
+        domainField.errorText = `${domain} is a personal email provider, so anyone could join. Use a domain your organization owns.`;
+        bad = true;
+      } else if (owners[domain]) {
+        domainField.errorText = `${domain} is already verified for ${owners[domain]}. A domain can belong to only one organization.`;
+        bad = true;
+      } else if (rowFor(domain)) {
+        domainField.errorText = `${domain} is already on this list.`;
+        bad = true;
+      }
+      if (!bad && !email.endsWith(`@${domain}`)) {
+        emailField.errorText = `Use an address at ${domain}, so the code proves you control it.`;
+        bad = true;
+      }
+      if (bad) return;
+      addRow(domain, email);
+      void openCode(domain, email);
+    });
+
+    root.querySelector('[data-domains-verify]')?.addEventListener('click', () => {
+      const code = (codeField.value ?? '').trim();
+      if (!/^\d{6}$/.test(code)) {
+        codeField.errorText = 'Enter the 6-digit code from the email.';
+        return;
+      }
+      const row = rowFor(current);
+      if (row) setRow(row, 'verified', row.dataset.email ?? '');
+      sync();
+      dialog.close();
+      toasts?.show({ message: `${current} verified. People with an address there can now join.`, variant: 'success' });
+    });
+
+    root.querySelector('[data-domains-resend]')?.addEventListener('click', () => {
+      const row = rowFor(current);
+      toasts?.show({ message: `New code sent to ${row?.dataset.email ?? ''}.`, variant: 'success' });
+    });
+
+    // The row stays, pending; its "…" picks the flow back up.
+    root.querySelector('[data-domains-later]')?.addEventListener('click', () => dialog.close());
+
+    // ---- Row actions ---------------------------------------------------------
+
+    let removing: HTMLElement | null = null;
+
+    body.addEventListener('menu-action', async (event) => {
+      const row = (event.target as Element).closest<HTMLElement>('tr[data-domain]');
+      if (!row) return;
+      const domain = row.dataset.domain ?? '';
+      const action = (event as CustomEvent<string>).detail;
+      if (action === 'enter-code') void openCode(domain, row.dataset.email ?? '');
+      if (action === 'resend') toasts?.show({ message: `New code sent to ${row.dataset.email ?? ''}.`, variant: 'success' });
+      if (action === 'remove') {
+        removing = row;
+        await customElements.whenDefined('esa-confirm-dialog');
+        Object.assign(
+          confirm,
+          row.dataset.status === 'pending'
+            ? {
+                heading: `Remove ${domain}?`,
+                message: 'The code we sent stops working. You can add the domain again later.',
+                confirmLabel: 'Remove domain',
+                cancelLabel: 'Keep domain',
+              }
+            : {
+                heading: `Remove ${domain}?`,
+                message: `People with an address at ${domain} will need an invitation to join. Anyone who already joined stays a member.`,
+                confirmLabel: 'Remove domain',
+                cancelLabel: 'Keep domain',
+              },
+        );
+        confirm.show();
+      }
+    });
+
+    confirm.addEventListener('confirm', () => {
+      if (!removing) return;
+      const domain = removing.dataset.domain ?? '';
+      removing.remove();
+      removing = null;
+      sync();
+      // Focus would fall to <body> with the row gone.
+      section.querySelector<HTMLElement>('[data-domains-add]')?.focus();
+      toasts?.show({ message: `${domain} removed.`, variant: 'success' });
+    });
+    confirm.addEventListener('cancel', () => { removing = null; });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-organization-domains').forEach(initDomains);
+</script>

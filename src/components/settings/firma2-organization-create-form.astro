@@ -1,0 +1,231 @@
+---
+// firma2-organization-create-form — Workspace settings › Organizations › Add
+// organization: name it, give it a logo, decide who can see it and how people
+// join, and optionally start from another organization's settings.
+//
+// A PAGE, LIKE EVERY OTHER ADD in this spoke (/performance-measures/new,
+// /gis-subscriptions/new): the add has a URL of its own, keeps its place in
+// the browser, and returns to the list when it is done.
+//
+// A FORM, NOT A RECORD (brief §4): every field draws its border at rest with
+// its label above — the legos as they ship, the same as Organization settings ›
+// General and Access. Two sections, the same two those pages split into:
+// Details (what it is) and Access (who gets in).
+//
+// "COPY SETTINGS FROM" SITS ABOVE the two access selects because picking a
+// source fills them in — a control that rewrites the fields below it reads as
+// cause and effect; one that rewrites fields above it reads as a glitch. It
+// carries access, permissions and notifications, never members, projects or
+// details; the help line says so, since "settings" alone does not say where
+// it stops.
+//
+// NOTHING REACHES A SERVER. Add writes the new organization to this viewer's
+// browser (src/lib/added-organizations.ts) and returns to the list, which
+// shows it at the top. The logo is accepted and not kept — a File does not
+// survive the trip.
+//
+// bcn-lego-checked: firma2-rail-section is each section; esa-text-field,
+// esa-file-upload, esa-select and esa-button are the controls — all existing,
+// composed unchanged. `.stack` / `.cluster` space them; no bespoke flex and no
+// <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { organizations, visibilityChoices, joiningChoices } from '../../data/firma2-directory';
+import { withBase } from '../../lib/base';
+
+const listHref = withBase('/prototypes/workspace-settings/organizations');
+
+const sourceOptions = [
+  // A real value, not '': esa-select reads an empty value as "nothing chosen"
+  // and shows its placeholder instead of this option.
+  { value: 'none', label: 'Nothing — use workspace defaults' },
+  ...organizations.map((o) => ({ value: o.slug, label: o.name })),
+];
+// What each source copies into the access selects. Every fixture organization
+// requires an invitation to join — the safe default — so only visibility varies.
+const sources = Object.fromEntries(
+  organizations.map((o) => [o.slug, { name: o.name, visibility: o.visibility, joining: 'invite' }]),
+);
+
+const toOptions = (choices: { value: string; label: string }[]) =>
+  JSON.stringify(choices.map(({ value, label }) => ({ value, label })));
+const hintsOf = (choices: { value: string; hint: string }[]) =>
+  JSON.stringify(Object.fromEntries(choices.map((c) => [c.value, c.hint])));
+const hintFor = (choices: { value: string; hint: string }[], value: string) =>
+  choices.find((c) => c.value === value)?.hint ?? '';
+
+// Workspace defaults, the same as Organization settings › Access: Public (a
+// restoration organization's projects are public record) and invitation
+// required (widening later is one edit; narrowing cannot un-admit anyone).
+const DEFAULTS = { visibility: 'public', joining: 'invite' };
+const SOURCE_HINT_NONE = 'Start from the workspace defaults.';
+const SOURCE_HINT_COPY = 'Copies access, permissions, and notifications. Members, projects, and details aren’t copied.';
+---
+<form
+  class="firma2-organization-create-form stack"
+  data-gap="2xl"
+  novalidate
+  data-list-href={listHref}
+  data-sources={JSON.stringify(sources)}
+  data-names={JSON.stringify(organizations.map((o) => o.name))}
+  data-defaults={JSON.stringify(DEFAULTS)}
+  data-source-hint-none={SOURCE_HINT_NONE}
+  data-source-hint-copy={SOURCE_HINT_COPY}
+>
+  <Firma2RailSection title="Details">
+    <div class="stack" data-gap="md">
+      <esa-text-field name="name" label="Name" size="md" required autocomplete="organization" data-org-name></esa-text-field>
+      <esa-file-upload
+        name="logo"
+        label="Logo"
+        accept="image/png,image/jpeg,image/svg+xml"
+        max-size-mb="2"
+      ></esa-file-upload>
+    </div>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Access">
+    <div class="stack" data-gap="md">
+      <esa-select
+        name="copyFrom"
+        label="Copy settings from"
+        size="md"
+        options={JSON.stringify(sourceOptions)}
+        help-text={SOURCE_HINT_NONE}
+        data-seed="none"
+        data-org-source
+      ></esa-select>
+      <esa-select
+        name="visibility"
+        label="Who can see this organization and its projects"
+        size="md"
+        options={toOptions(visibilityChoices)}
+        help-text={hintFor(visibilityChoices, DEFAULTS.visibility)}
+        data-hints={hintsOf(visibilityChoices)}
+        data-seed={DEFAULTS.visibility}
+        data-org-visibility
+      ></esa-select>
+      <esa-select
+        name="joining"
+        label="How people join"
+        size="md"
+        options={toOptions(joiningChoices)}
+        help-text={hintFor(joiningChoices, DEFAULTS.joining)}
+        data-hints={hintsOf(joiningChoices)}
+        data-seed={DEFAULTS.joining}
+        data-org-joining
+      ></esa-select>
+    </div>
+  </Firma2RailSection>
+
+  <!-- House order: the primary first, then Cancel — as the GIS subscription wizard. -->
+  <div class="cluster" data-gap="xs">
+    <EsaButton variant="primary" size="md" type="submit">Add organization</EsaButton>
+    <EsaButton variant="ghost" size="md" tag="a" href={listHref}>Cancel</EsaButton>
+  </div>
+</form>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-file-upload';
+  import '@esa/ecology/esa-select';
+  import { organizationSlug } from '../../data/firma2-directory';
+  import type { Organization, OrganizationVisibility } from '../../data/firma2-directory';
+  import { addOrganization, readAddedOrganizations } from '../../lib/added-organizations';
+
+  type Field = HTMLElement & { value: string; helpText: string; errorText: string };
+  interface Source { name: string; visibility: OrganizationVisibility; joining: string }
+
+  document.querySelectorAll<HTMLFormElement>('.firma2-organization-create-form').forEach((form) => {
+    const name = form.querySelector<Field>('[data-org-name]')!;
+    const source = form.querySelector<Field>('[data-org-source]')!;
+    const visibility = form.querySelector<Field>('[data-org-visibility]')!;
+    const joining = form.querySelector<Field>('[data-org-joining]')!;
+
+    const sources: Record<string, Source> = JSON.parse(form.dataset.sources ?? '{}');
+    const defaults: { visibility: string; joining: string } = JSON.parse(form.dataset.defaults ?? '{}');
+    // Names already taken, including organizations added earlier in this browser.
+    const taken = new Set<string>(
+      [...(JSON.parse(form.dataset.names ?? '[]') as string[]), ...readAddedOrganizations().map((o) => o.name)]
+        .map((n) => n.trim().toLowerCase()),
+    );
+
+    // The help line under each access select states what the SELECTED choice
+    // means — the same rule as Organization settings › Access.
+    const syncHint = (el: Field) => {
+      const hints: Record<string, string> = JSON.parse(el.dataset.hints ?? '{}');
+      el.helpText = hints[el.value] ?? '';
+    };
+    const setAccess = (v: string, j: string) => {
+      visibility.value = v;
+      joining.value = j;
+      syncHint(visibility);
+      syncHint(joining);
+    };
+
+    // Assigned only after define — a `.value` set on a not-yet-upgraded element
+    // becomes an own property that shadows the lego's setter for good.
+    customElements.whenDefined('esa-select').then(() => {
+      source.value = source.dataset.seed ?? 'none';
+      setAccess(visibility.dataset.seed ?? defaults.visibility, joining.dataset.seed ?? defaults.joining);
+      [visibility, joining].forEach((el) => el.addEventListener('change', () => syncHint(el)));
+      source.addEventListener('change', () => {
+        const picked = sources[source.value];
+        source.helpText = picked ? form.dataset.sourceHintCopy ?? '' : form.dataset.sourceHintNone ?? '';
+        if (picked) setAccess(picked.visibility, picked.joining);
+        else setAccess(defaults.visibility, defaults.joining);
+      });
+    });
+
+    // Enter in the name field submits, as it would in a native input — the
+    // lego's input sits in a shadow root, so implicit submission never fires.
+    name.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key === 'Enter') form.requestSubmit();
+    });
+
+    // Clear the error as soon as the reader starts fixing it.
+    name.addEventListener('input', () => {
+      if (name.errorText) name.errorText = '';
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = (name.value ?? '').trim();
+      const error = !value
+        ? 'Enter the organization’s name.'
+        : taken.has(value.toLowerCase())
+          ? 'An organization with this name is already in the workspace.'
+          : '';
+      if (error) {
+        name.errorText = error;
+        name.focus();
+        return;
+      }
+
+      const copied = sources[source.value];
+      const organization: Organization = {
+        name: value,
+        slug: organizationSlug(value),
+        // Type is set later, in Organization settings › General.
+        type: '' as Organization['type'],
+        website: '',
+        description: '',
+        primaryContact: '',
+        projectsLed: 0,
+        projectsFunded: 0,
+        people: 0,
+        projects: 0,
+        visibility: visibility.value as OrganizationVisibility,
+        // Today in the reader's own time zone — toISOString() is UTC and turns
+        // an evening add on the West Coast into tomorrow.
+        created: new Date().toLocaleDateString('en-CA'),
+        programs: [],
+      };
+      addOrganization(organization, { name: value, copiedFrom: copied?.name });
+      window.location.assign(form.dataset.listHref ?? '');
+    });
+
+    // Focus the first field, where the add starts.
+    customElements.whenDefined('esa-text-field').then(() => name.focus());
+  });
+</script>

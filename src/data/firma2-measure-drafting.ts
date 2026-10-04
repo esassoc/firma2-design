@@ -36,7 +36,7 @@
 // from public restoration practice. Deterministic: literal data, no
 // randomness, no clock.
 
-import type { Classification } from './firma2-projects';
+import type { ClassificationName } from './firma2-projects';
 import type { CountingRule, MeasureKind, MeasureUnit } from './firma2-performance-measures';
 
 // ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ export type DraftSplit =
 
 export interface DraftActivity {
   id: string;
-  theme: Classification;
+  theme: ClassificationName;
   /** The answer chip in the interview — the work, in the author's words. */
   activity: string;
   /** Lower-case fragments that place a typed claim on this activity. */

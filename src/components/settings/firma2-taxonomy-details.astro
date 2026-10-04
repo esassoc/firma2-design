@@ -1,0 +1,84 @@
+---
+// firma2-taxonomy-details — the name and description of a project type,
+// classification or tag (and a classification's group), on its settings page.
+//
+// A FORM, NOT A RECORD: this is a settings surface, so the legos keep their
+// labels and borders (brief §4, "A record reads first; a form shows its
+// boxes"). Always saved: each field writes when the reader leaves it, the
+// same `change` boundary every settings screen uses — no Save button.
+//
+// RENAMING SAYS SO EVERYWHERE ON THE PAGE: the title, the last crumb and the
+// tab follow the name the moment it saves. A blank or duplicate name is
+// refused in place and the stored name stands.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { CLASSIFICATION_GROUPS } from '../../data/firma2-classifications';
+import type { TaxonomyKind } from '../../lib/taxonomy-edits';
+
+interface Props {
+  kind: TaxonomyKind;
+  /** The seeded record's slug. Omitted on a draft route, where `?slug=` names it. */
+  slug?: string;
+  /** "project type", "classification", "tag" — for the duplicate-name error. */
+  noun: string;
+}
+
+const { kind, slug, noun } = Astro.props;
+const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g.name }));
+---
+<Firma2RailSection title="Details">
+<div class="firma2-taxonomy-details stack" data-gap="md" data-kind={kind} data-slug={slug} data-noun={noun}>
+  <esa-text-field label="Name" size="md" required data-name></esa-text-field>
+  <esa-textarea label="Description" size="md" rows="2" auto-resize data-description></esa-textarea>
+  {kind === 'classification' && (
+    <esa-select label="Group" size="md" options={JSON.stringify(groupOptions)} data-group></esa-select>
+  )}
+</div>
+</Firma2RailSection>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-select';
+  import { editEntry, entries, getEntry, nameTaken } from '../../lib/taxonomy-edits';
+  import type { TaxonomyKind } from '../../lib/taxonomy-edits';
+  import { recordSlug, retitle } from '../../lib/taxonomy-record';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+
+  document.querySelectorAll<HTMLElement>('.firma2-taxonomy-details').forEach((root) => {
+    const kind = root.dataset.kind as TaxonomyKind;
+    const slug = recordSlug(root);
+    const entry = getEntry(kind, slug);
+    if (!entry) return;
+    const name = root.querySelector<Field>('[data-name]')!;
+    const description = root.querySelector<Field>('[data-description]')!;
+    const group = root.querySelector<Field>('[data-group]');
+
+    retitle(entry.name);
+    Promise.all(['esa-text-field', 'esa-textarea', 'esa-select'].map((t) => customElements.whenDefined(t))).then(() => {
+      name.value = entry.name;
+      description.value = entry.description;
+      if (group) {
+        // From the store, so a group added in this browser can be chosen.
+        (group as Field & { options: unknown }).options = entries('classificationGroup').map((g) => ({ value: g.slug, label: g.name }));
+        group.value = entry.group ?? '';
+      }
+    });
+
+    name.addEventListener('input', () => {
+      if (name.errorText) name.errorText = '';
+    });
+    name.addEventListener('change', () => {
+      const value = (name.value ?? '').trim();
+      const error = !value ? 'Enter a name.' : nameTaken(kind, value, slug) ? `A ${root.dataset.noun} with this name already exists.` : '';
+      if (error) {
+        name.errorText = error;
+        return;
+      }
+      editEntry(kind, slug, { name: value });
+      retitle(value);
+    });
+    description.addEventListener('change', () => editEntry(kind, slug, { description: (description.value ?? '').trim() }));
+    group?.addEventListener('change', () => editEntry(kind, slug, { group: group.value }));
+  });
+</script>

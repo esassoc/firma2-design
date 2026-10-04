@@ -1,0 +1,135 @@
+---
+// firma2-taxonomy-create-form — the add page for a project type, a
+// classification or a tag. One form for the three because they are one shape:
+// a name, a line saying what it is, and for a classification the group it
+// sorts into. A classification group uses it too: it is the same shape.
+//
+// THE GROUP LIST IS READ IN THE BROWSER, so a group added in this browser can
+// be picked; `?group=<slug>` preselects one — each group's own "Add
+// classification" door passes it, so a classification starts in its group.
+//
+// ASKS ONLY WHAT EVERYTHING ELSE DEPENDS ON, then hands back the new record's
+// own page — the measure-setup rule ("setup is not a wizard"): a type's fields
+// and a goal's KPIs are configured there, over as many sittings as they take.
+//
+// Same construction as firma2-organization-create-form: form legos with their
+// own labels (a form shows its boxes), the primary then Cancel, the name
+// checked for blanks and duplicates on submit, the error cleared on the next
+// keystroke.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { CLASSIFICATION_GROUPS } from '../../data/firma2-classifications';
+import { withBase } from '../../lib/base';
+import type { TaxonomyKind } from '../../lib/taxonomy-edits';
+
+interface Props {
+  kind: TaxonomyKind;
+}
+
+const { kind } = Astro.props;
+const COPY: Record<TaxonomyKind, { noun: string; list: string; records?: string; describe: string }> = {
+  projectType: {
+    noun: 'project type',
+    list: '/prototypes/workspace-settings/project-types',
+    describe: 'One line on the kind of work. Shown under the name in settings and on public pages.',
+  },
+  classification: {
+    noun: 'classification',
+    list: '/prototypes/workspace-settings/classifications',
+    describe: 'One line on what the goal is for. Shown under the name on the Classifications page.',
+  },
+  classificationGroup: {
+    noun: 'group',
+    list: '/prototypes/workspace-settings/classifications',
+    records: '/prototypes/workspace-settings/classifications/groups',
+    describe: 'What the classifications in this group have in common. Shown under the group’s name on the Classifications board.',
+  },
+  tag: {
+    noun: 'tag',
+    list: '/prototypes/workspace-settings/tags',
+    describe: 'What earns a project this tag — the test a sponsor applies when choosing it.',
+  },
+};
+const copy = COPY[kind];
+const listHref = withBase(copy.list);
+const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g.name }));
+---
+<form
+  class="firma2-taxonomy-create-form stack"
+  data-gap="xl"
+  novalidate
+  data-kind={kind}
+  data-noun={copy.noun}
+  data-record-href={withBase(`${copy.records ?? copy.list}/draft`)}
+>
+  <esa-text-field name="name" label="Name" size="md" required data-name></esa-text-field>
+  <esa-textarea name="description" label="Description" size="md" rows="2" help-text={copy.describe} data-description></esa-textarea>
+  {kind === 'classification' && (
+    <esa-select
+      name="group"
+      label="Group"
+      size="md"
+      options={JSON.stringify(groupOptions)}
+      data-seed={groupOptions[0]?.value}
+      data-group
+    ></esa-select>
+  )}
+  <div class="cluster" data-gap="xs">
+    <EsaButton variant="primary" size="md" type="submit">{`Add ${copy.noun}`}</EsaButton>
+    <EsaButton variant="ghost" size="md" tag="a" href={listHref}>Cancel</EsaButton>
+  </div>
+</form>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-select';
+  import { addEntry, entries, nameTaken } from '../../lib/taxonomy-edits';
+  import type { TaxonomyKind } from '../../lib/taxonomy-edits';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+
+  document.querySelectorAll<HTMLFormElement>('.firma2-taxonomy-create-form').forEach((form) => {
+    const kind = form.dataset.kind as TaxonomyKind;
+    const noun = form.dataset.noun ?? '';
+    const name = form.querySelector<Field>('[data-name]')!;
+    const description = form.querySelector<Field>('[data-description]')!;
+    const group = form.querySelector<Field>('[data-group]');
+
+    // Assigned only after define — a `.value` set on a not-yet-upgraded element
+    // shadows the lego's setter for good.
+    // Options from the store, so groups added in this browser are offered; the
+    // build's list is only the no-script fallback.
+    if (group) {
+      const groups = entries('classificationGroup');
+      const asked = new URLSearchParams(window.location.search).get('group');
+      const seed = groups.some((g) => g.slug === asked) ? asked! : groups[0]?.slug ?? group.dataset.seed ?? '';
+      customElements.whenDefined('esa-select').then(() => {
+        (group as Field & { options: unknown }).options = groups.map((g) => ({ value: g.slug, label: g.name }));
+        group.value = seed;
+      });
+    }
+
+    // Enter submits, as in a native input — the lego's input sits in a shadow root.
+    name.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key === 'Enter') form.requestSubmit();
+    });
+    name.addEventListener('input', () => {
+      if (name.errorText) name.errorText = '';
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = (name.value ?? '').trim();
+      const error = !value ? 'Enter a name.' : nameTaken(kind, value) ? `A ${noun} with this name already exists.` : '';
+      if (error) {
+        name.errorText = error;
+        name.focus();
+        return;
+      }
+      const entry = addEntry(kind, { name: value, description: description.value ?? '', group: group?.value });
+      window.location.assign(`${form.dataset.recordHref}?slug=${encodeURIComponent(entry.slug)}`);
+    });
+
+    customElements.whenDefined('esa-text-field').then(() => name.focus());
+  });
+</script>

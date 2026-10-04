@@ -5,12 +5,16 @@
 // tenant's default (this), and a person's own arrangement. Each layer is a
 // DELTA over the one below — `{ order, hidden }` — never an absolute list, so
 // a column added to the code next release still reaches a tenant that already
-// arranged its grid: it lands at the end, switched on. The team's project
-// types use the same grammar for page sections (firma2-project-types.ts), and
-// that sameness was their headline: one way to arrange things, everywhere.
+// arranged its grid: it lands at the end, switched on. The team's
+// project types (firma2-project-types.ts) use the same
+// grammar for page sections, and that sameness was their headline: one way
+// to arrange things, everywhere.
 //
-// This spoke has no personal layer yet, so the tenant default is what every
-// reader of the grid sees.
+// THE PERSONAL LAYER (Settings › Preferences) sits on top, and is the one
+// layer that is NOT a pure delta: once a person reorders, their order stands;
+// once they switch a column, their whole shown/hidden set stands. Either part
+// left untouched keeps following the workspace — so an administrator's later
+// change still reaches everyone who only changed the other half.
 //
 // THE IDENTIFYING COLUMN IS PINNED. A row with no name is a row nobody can
 // find, so a grid's first column is always first and always shown.
@@ -38,7 +42,8 @@ export const GRIDS: GridDefinition[] = [
     page: '/prototypes/projects',
     columns: [
       { key: 'projectName', label: 'Project', pinned: true },
-      { key: 'program', label: 'Program' },
+      { key: 'projectType', label: 'Project type' },
+      { key: 'classifications', label: 'Classifications' },
       { key: 'leadOrganization', label: 'Lead organization' },
       { key: 'county', label: 'County' },
       { key: 'stage', label: 'Stage' },
@@ -57,7 +62,6 @@ export const GRIDS: GridDefinition[] = [
       { key: 'classifications', label: 'Classifications' },
       { key: 'unit', label: 'Unit' },
       { key: 'countingRule', label: 'Counting rule' },
-      { key: 'subcategorySchemas', label: 'Subcategory schemas' },
     ],
   },
 ];
@@ -81,4 +85,21 @@ export const resolveColumns = (grid: GridDefinition, delta: ColumnsDelta = {}): 
   const rest = grid.columns.filter((c) => !c.pinned && !order.includes(c));
   const hidden = new Set(delta.hidden ?? []);
   return [...pinned, ...order, ...rest].map((column) => ({ column, visible: column.pinned || !hidden.has(column.key) }));
+};
+
+/**
+ * The columns a person sees: the workspace default folded over the code, then
+ * their own choices over that. `personal.order` and `personal.hidden` each
+ * REPLACE the workspace's when present; a column neither layer has placed
+ * still lands at the end, shown.
+ */
+export const resolveLayered = (
+  grid: GridDefinition,
+  workspace: ColumnsDelta = {},
+  personal: ColumnsDelta = {},
+): { column: GridColumn; visible: boolean }[] => {
+  const base = resolveColumns(grid, workspace);
+  const arranged: GridDefinition = { ...grid, columns: base.map((r) => r.column) };
+  const hidden = personal.hidden ?? base.filter((r) => !r.visible).map((r) => r.column.key);
+  return resolveColumns(arranged, { order: personal.order, hidden });
 };

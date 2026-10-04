@@ -32,7 +32,9 @@ import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
 import { projects, projectHref, projectSlug, STAGE_ORDER } from '../../data/firma2-projects';
 import { HYDROLOGIC_REGIONS, PLACES, SUBWATERSHEDS, seedWorkAreas } from '../../data/firma2-geography';
+import { classificationInGroup, practiceAreaOf } from '../../data/firma2-classifications';
 import { stages } from '../../data/firma2-workspace-settings';
+import { TAGS } from '../../data/firma2-tags';
 import { withBase } from '../../lib/base';
 
 const hiddenStages = stages.filter((s) => s.cells.publicPage === 'Hidden').map((s) => s.name);
@@ -41,13 +43,19 @@ const config = {
     slug: projectSlug(p),
     name: p.projectName,
     href: withBase(projectHref(p)),
-    program: p.program,
+    // One value per project for each colour-by choice: its type, its first
+    // classification in the goal group, and the area its first practice sits in.
+    projectType: p.projectType,
     stage: p.stage,
-    classification: p.classifications[0],
+    planGoal: classificationInGroup(p, 'plan-goal') ?? 'Unclassified',
+    practiceArea: practiceAreaOf(p) ?? 'Unclassified',
+    classifications: p.classifications.join('; '),
+    tags: p.tags,
     isPublic: !hiddenStages.includes(p.stage),
     seed: seedWorkAreas(p),
   })),
   stageOrder: STAGE_ORDER,
+  tagOptions: TAGS.filter((t) => projects.some((p) => p.tags.includes(t.name))).map((t) => ({ value: t.name, label: t.name })),
   regions: HYDROLOGIC_REGIONS,
   subwatersheds: SUBWATERSHEDS,
   places: PLACES,
@@ -66,6 +74,14 @@ const config = {
           <ul class="firma2-portfolio-map__legend" data-legend></ul>
         </div>
       </div>
+    </EsaCard>
+
+    <!-- TAGS NARROW EVERYTHING, "Not on this map" included: unlike a colour,
+         a tag does not need a shape to be read, so a project with no work
+         area can still be filtered by one. Same lego and wording as the
+         Projects grid's Tags filter. -->
+    <EsaCard title="Tags">
+      <esa-filter-dropdown data-tag-filter name="tag" label="Tags" size="md" multiple placeholder="Search tags"></esa-filter-dropdown>
     </EsaCard>
 
     <EsaCard title="On the map">
@@ -127,17 +143,27 @@ const config = {
     display: none !important;
   }
 
+  /* Filters beside the map while the map has room for itself, under it once
+     it does not. Wraps on the space this component actually gets, not the
+     viewport: the project side panel can take half the window, and a
+     viewport query left the map a 200px sliver beside the filters. */
   .firma2-portfolio-map {
-    display: grid;
-    grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: var(--spacing-600);
-    align-items: start;
+    align-items: flex-start;
   }
 
-  @media (max-width: 64rem) {
-    .firma2-portfolio-map {
-      grid-template-columns: 1fr;
-    }
+  /* The .sidebar primitive's arithmetic: beside the map the filters keep
+     their 20rem basis (the map's 999 grow takes the slack); wrapped under it
+     they grow to the full width. */
+  .firma2-portfolio-map__side {
+    flex: 1 1 20rem;
+  }
+
+  .firma2-portfolio-map__main {
+    flex: 999 1 0;
+    min-inline-size: min(32rem, 100%);
   }
 
   .firma2-portfolio-map__h {
@@ -170,6 +196,13 @@ const config = {
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-200) var(--spacing-300);
+  }
+
+  /* A popup's two doors: the page link and the side-panel button beside it. */
+  :global(.firma2-portfolio-map__popup-doors) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-100, 0.25rem);
   }
 
   :global(.firma2-portfolio-map__key-item) {
@@ -371,6 +404,8 @@ const config = {
 
 <script>
   import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-filter-dropdown';
+  import { currentTags, tagsOfProject } from '../../lib/project-tags';
   import '@esa/ecology/esa-switch-toggle';
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-chart';
@@ -382,18 +417,22 @@ const config = {
   import type { Leaflet } from '../../lib/leaflet';
   import { onGeoChange, readAllWorkAreas, readLayers } from '../../lib/work-areas';
   import { label as vocab } from '../../lib/vocabulary';
+  import { projectPeekButtonHTML } from '../../lib/project-peek';
 
   type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean };
   type Chart = HTMLElement & Record<string, unknown>;
-  type Facet = 'program' | 'stage' | 'classification';
+  type Facet = 'projectType' | 'stage' | 'planGoal' | 'practiceArea';
 
   interface ProjectRow {
     slug: string;
     name: string;
     href: string;
-    program: string;
+    projectType: string;
     stage: string;
-    classification: string;
+    planGoal: string;
+    practiceArea: string;
+    classifications: string;
+    tags: string[];
     isPublic: boolean;
     seed: MapWorkArea[];
   }
@@ -401,15 +440,17 @@ const config = {
   interface Config {
     projects: ProjectRow[];
     stageOrder: string[];
+    tagOptions: { value: string; label: string }[];
     regions: Region[];
     subwatersheds: Subwatershed[];
     places: Place[];
   }
 
   const FACETS: { value: Facet; label: string }[] = [
-    { value: 'program', label: 'Program' },
+    { value: 'projectType', label: 'Project type' },
     { value: 'stage', label: 'Stage' },
-    { value: 'classification', label: 'Classification' },
+    { value: 'planGoal', label: 'Plan goal' },
+    { value: 'practiceArea', label: 'Practice area' },
   ];
 
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -420,8 +461,11 @@ const config = {
     const config: Config = JSON.parse(root.dataset.config ?? '{}');
     const seeds = Object.fromEntries(config.projects.map((p) => [p.slug, p.seed]));
 
-    let facet: Facet = 'program';
+    let facet: Facet = 'projectType';
     let selected = new Set<string>();
+    let tagValues: string[] = [];
+    // Each project's saved tags (src/lib/project-tags.ts), not the build's.
+    const tagged = (p: ProjectRow) => tagValues.length === 0 || tagsOfProject(p.slug).some((t) => tagValues.includes(t.name));
     let shading = false;
     let all = readAllWorkAreas(seeds);
 
@@ -437,9 +481,9 @@ const config = {
 
     /** Every work area on the map, with the project it belongs to. */
     const placed = () =>
-      config.projects.flatMap((p) => (all[p.slug] ?? []).map((area) => ({ project: p, area, value: p[facet] })));
+      config.projects.filter(tagged).flatMap((p) => (all[p.slug] ?? []).map((area) => ({ project: p, area, value: p[facet] })));
     const visible = () => placed().filter((x) => selected.size === 0 || selected.has(x.value));
-    const unmapped = () => config.projects.filter((p) => (all[p.slug] ?? []).length === 0);
+    const unmapped = () => config.projects.filter((p) => tagged(p) && (all[p.slug] ?? []).length === 0);
     const regionOf = (areas: MapWorkArea[]): Region | null => {
       if (!areas.length) return null;
       const c = centroid(areas.flatMap((a) => a.path));
@@ -509,7 +553,7 @@ const config = {
         const extent = formatExtent(area.extent, area.unit);
         shape.bindTooltip(`${esc(project.name)}<br>${esc(area.label)}${extent ? ` — ${extent}` : ''}`, { sticky: true, className: 'firma2-map-tip' });
         shape.bindPopup(
-          `<strong>${esc(project.name)}</strong><br>${esc(area.label)}${extent ? ` — ${extent}` : ''}<br><a href="${project.href}">${esc(vocab('Open project'))}</a>`,
+          `<strong>${esc(project.name)}</strong><br>${esc(area.label)}${extent ? ` — ${extent}` : ''}<br><span class="firma2-portfolio-map__popup-doors"><a href="${project.href}">${esc(vocab('Open project'))}</a>${projectPeekButtonHTML(project.slug, project.name)}</span>`,
         );
         shape.addTo(shapeLayer);
       });
@@ -624,13 +668,15 @@ const config = {
       $('[data-unmapped-sentence]').innerHTML = `<strong>${missing.length}</strong> of ${config.projects.length} ${esc(
         vocab('projects'),
       )} have no work area, so nothing on this page counts them.`;
-      $('[data-unmapped-list]').innerHTML = missing.map((p) => `<li><a href="${p.href}">${esc(p.name)}</a></li>`).join('');
+      $('[data-unmapped-list]').innerHTML = missing
+        .map((p) => `<li class="firma2-peek-pair" data-peek-row><a href="${p.href}">${esc(p.name)}</a>${projectPeekButtonHTML(p.slug, p.name)}</li>`)
+        .join('');
       $('[data-shade-key]').hidden = !shading;
     };
 
     // ---- charts --------------------------------------------------------------------
     const charts: Record<string, Chart> = {};
-    // Category labels are long ("Meadow & Wetland Restoration"), so they wrap
+    // Category labels are long ("Meadow & wetland restoration"), so they wrap
     // in a bounded column instead of running off the canvas's leading edge.
     const HORIZONTAL_AXES = {
       padding: { left: 32 },
@@ -710,8 +756,16 @@ const config = {
       facetPicker.value = facet;
     });
     facetPicker.addEventListener('change', () => {
-      facet = (String(facetPicker.value ?? 'program') as Facet) || 'program';
+      facet = (String(facetPicker.value ?? 'projectType') as Facet) || 'projectType';
       selected = new Set();
+      paintAll();
+    });
+    const tagFilter = $<Control>('[data-tag-filter]');
+    customElements.whenDefined('esa-filter-dropdown').then(() => {
+      (tagFilter as unknown as { options: unknown }).options = currentTags().map((t) => ({ value: t.name, label: t.name }));
+    });
+    tagFilter.addEventListener('selection-change', (event) => {
+      tagValues = (event as CustomEvent<{ value?: string[] }>).detail?.value ?? [];
       paintAll();
     });
     $('[data-show-all]').addEventListener('click', () => {
@@ -787,9 +841,8 @@ const config = {
               kind: area.kind,
               extent: area.extent,
               unit: area.unit,
-              program: project.program,
+              classifications: project.classifications,
               stage: project.stage,
-              classification: project.classification,
               publicly_visible: project.isPublic,
             },
           })),
@@ -812,10 +865,10 @@ const config = {
       } else if (format === 'csv') {
         const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
         const lines = [
-          ['project', 'work_area', 'kind', 'extent', 'unit', 'latitude', 'longitude', 'program', 'stage'].join(','),
+          ['project', 'work_area', 'kind', 'extent', 'unit', 'latitude', 'longitude', 'classifications', 'stage'].join(','),
           ...rows.map(({ project, area }) => {
             const [lat, lng] = centroid(area.path);
-            return [project.name, area.label, area.kind, area.extent ?? '', area.unit ?? '', lat.toFixed(5), lng.toFixed(5), project.program, project.stage].map(q).join(',');
+            return [project.name, area.label, area.kind, area.extent ?? '', area.unit ?? '', lat.toFixed(5), lng.toFixed(5), project.classifications, project.stage].map(q).join(',');
           }),
         ];
         download(`${stamp}.csv`, 'text/csv', lines.join('\n'));

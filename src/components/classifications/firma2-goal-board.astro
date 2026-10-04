@@ -1,0 +1,174 @@
+---
+// firma2-goal-board — the classifications index body: every goal, grouped by
+// classification group, each a card of its KPIs against their goals. The
+// bird's-eye view of an initiative — how the work is tracking toward what it
+// set out to do.
+//
+// GROUPS SORT IT. Each group gets its heading and its stored description, and
+// its goals in a two-up grid: a KPI's name and its "reported of goal" figure
+// need about 26rem on one line, and two cards at the content cap give it that.
+//
+// SETTINGS EDITS SHOW HERE. Goals added, renamed or removed in Workspace
+// settings, KPIs linked or unlinked, and targets changed are applied in the
+// browser over the build's figures (src/lib/goal-kpis.ts); a goal added in
+// this browser joins its group with no projects, so its KPIs read "Not
+// reported" until projects take it on.
+//
+// GROUPS FOLLOW SETTINGS TOO: a group added there gets a section here (a copy
+// of the first, emptied) once a goal sits in it; renamed and re-described
+// groups update; groups and the goals within each follow the order arranged
+// in settings; a group with no goals left is hidden.
+import Firma2GoalCard from './firma2-goal-card.astro';
+import Firma2KpiProgress from './firma2-kpi-progress.astro';
+import { CLASSIFICATION_GROUPS, classificationsInGroup } from '../../data/firma2-classifications';
+import { kpiFigureTable, rollupClassification } from '../../data/firma2-classification-rollup';
+import { measures } from '../../data/firma2-performance-measures';
+import { projectHref } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+// Every seeded group renders, even an empty one — the script hides what has
+// no goals, and a group can gain goals in this browser.
+const groups = CLASSIFICATION_GROUPS.map((group) => ({
+  group,
+  rollups: classificationsInGroup(group.slug).map(rollupClassification),
+}));
+const data = {
+  seeded: kpiFigureTable((p) => withBase(projectHref(p))),
+  catalog: Object.fromEntries(measures.map((m) => [m.slug, { name: m.name, unit: m.unit ?? '', decimals: m.decimalPlaces }])),
+};
+---
+<div class="firma2-goal-board stack" data-gap="2xl" data-goal-board data-goals={JSON.stringify(data)}>
+  {groups.map(({ group, rollups }) => (
+    <section class="stack" data-gap="md" aria-labelledby={`group-${group.slug}`} data-group={group.slug}>
+      <div class="stack" data-gap="2xs">
+        <h2 class="typography-title-strong" id={`group-${group.slug}`} data-group-name>{group.name}</h2>
+        <p class="firma2-goal-board__description typography-body-md" data-group-desc>{group.description}</p>
+      </div>
+      <div class="firma2-goal-board__grid grid" data-gap="lg" data-cards>
+        {rollups.map((rollup) => <Firma2GoalCard rollup={rollup} />)}
+      </div>
+    </section>
+  ))}
+  <template data-kpi-row>
+    <li>
+      <Firma2KpiProgress name="" unit="" decimals={0} reported={null} committed={null} from={[]} />
+    </li>
+  </template>
+</div>
+
+<style>
+  .firma2-goal-board__description {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* `.stack` sets display, which would outrank the UA's [hidden]. */
+  .firma2-goal-board section[hidden] {
+    display: none;
+  }
+
+  .firma2-goal-board__description:empty {
+    display: none;
+  }
+
+  /* auto-FILL, not the primitive's auto-fit: a group with one goal keeps a
+     card the width of its neighbours' instead of stretching across the row. */
+  .firma2-goal-board__grid {
+    --grid-min: min(26rem, 100%);
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr));
+  }
+</style>
+
+<script>
+  import { entries } from '../../lib/taxonomy-edits';
+  import { recordHref } from '../../lib/taxonomy-record';
+  import { renderKpis } from '../../lib/goal-kpis';
+  import type { GoalData } from '../../lib/goal-kpis';
+
+  document.querySelectorAll<HTMLElement>('[data-goal-board]').forEach((board) => {
+    const data: GoalData = JSON.parse(board.dataset.goals ?? '{}');
+    const template = board.querySelector<HTMLTemplateElement>('template[data-kpi-row]')!;
+    const current = entries('classification');
+    const groups = entries('classificationGroup');
+    // Copies to clone from, taken before anything is removed: any card, and a
+    // section emptied of its cards.
+    const cardTemplate = board.querySelector<HTMLElement>('[data-goal-card]')?.cloneNode(true) as HTMLElement | undefined;
+    const sectionTemplate = board.querySelector<HTMLElement>('section[data-group]')?.cloneNode(true) as HTMLElement | undefined;
+    sectionTemplate?.querySelectorAll('[data-goal-card]').forEach((c) => c.remove());
+
+    const sections = new Map([...board.querySelectorAll<HTMLElement>('section[data-group]')].map((s) => [s.dataset.group ?? '', s]));
+    for (const [slug, section] of sections) if (!groups.some((g) => g.slug === slug)) section.remove();
+    const anchor = board.querySelector('template[data-kpi-row]')!;
+    for (const g of groups) {
+      let section = sections.get(g.slug);
+      if (!section) {
+        if (!sectionTemplate) continue;
+        section = sectionTemplate.cloneNode(true) as HTMLElement;
+        section.dataset.group = g.slug;
+        section.setAttribute('aria-labelledby', `group-${g.slug}`);
+        section.querySelector('h2')?.setAttribute('id', `group-${g.slug}`);
+      }
+      const name = section.querySelector('[data-group-name]');
+      if (name) name.textContent = g.name;
+      const desc = section.querySelector('[data-group-desc]');
+      if (desc) desc.textContent = g.description;
+      board.insertBefore(section, anchor); // in stored group order
+    }
+
+    board.querySelectorAll<HTMLElement>('section[data-group]').forEach((section) => {
+      const grid = section.querySelector<HTMLElement>('[data-cards]')!;
+      const cards = [...grid.querySelectorAll<HTMLElement>('[data-goal-card]')];
+      const inGroup = current.filter((e) => e.group === section.dataset.group);
+      const shown = new Set(cards.map((c) => c.dataset.slug));
+
+      // Goals moved here from another group keep their card — its figures
+      // are real. Goals added in this browser get a copy of a card, emptied.
+      for (const e of inGroup.filter((x) => !shown.has(x.slug))) {
+        const moved = board.querySelector<HTMLElement>(`[data-goal-card][data-slug="${CSS.escape(e.slug)}"]`);
+        if (moved) {
+          grid.append(moved);
+          cards.push(moved);
+          continue;
+        }
+        if (!cardTemplate) break;
+        const card = cardTemplate.cloneNode(true) as HTMLElement;
+        card.dataset.slug = e.slug;
+        const h3 = card.querySelector('h3');
+        h3?.setAttribute('id', `goal-${e.slug}`);
+        card.querySelector('[data-kpi-list]')?.setAttribute('aria-labelledby', `goal-${e.slug}`);
+        const link = card.querySelector<HTMLAnchorElement>('[data-card-link]');
+        // No goal page exists for it yet; its settings page is where it lives.
+        if (link) link.href = recordHref('/prototypes/workspace-settings/classifications', e.slug);
+        const count = card.querySelector('[data-card-count]');
+        if (count) count.textContent = '0 projects';
+        grid.append(card);
+        cards.push(card);
+      }
+
+      for (const card of cards) {
+        const e = inGroup.find((x) => x.slug === card.dataset.slug);
+        if (!e) {
+          // Removed goals go; a goal now in another group waits for that
+          // group's section to take its card.
+          if (!current.some((x) => x.slug === card.dataset.slug)) card.remove();
+          continue;
+        }
+        const name = card.querySelector('[data-card-name]');
+        if (name) name.textContent = e.name;
+        const swatch = card.querySelector<HTMLElement>('[data-card-swatch]');
+        if (swatch && e.color) swatch.style.background = e.color;
+        const list = card.querySelector<HTMLElement>('[data-kpi-list]')!;
+        const n = renderKpis(list, template, e.slug, data);
+        const empty = card.querySelector<HTMLElement>('[data-kpi-empty]');
+        if (empty) empty.hidden = n > 0;
+      }
+
+      // Stored order within the group; a group with no goals is not shown.
+      for (const e of inGroup) {
+        const card = grid.querySelector<HTMLElement>(`[data-goal-card][data-slug="${CSS.escape(e.slug)}"]`);
+        if (card) grid.append(card);
+      }
+      section.hidden = inGroup.length === 0;
+    });
+  });
+</script>

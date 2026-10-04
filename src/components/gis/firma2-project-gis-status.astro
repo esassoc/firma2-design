@@ -1,0 +1,101 @@
+---
+// firma2-project-gis-status — what a subscribed workspace's GIS says about
+// THIS project, in the two places it changes the page. Ported from
+// ProjectFirma2 hackathon team 2 (decisions 9, 11 and 26).
+//
+//   NO LONGER IN THE LAYER. When the subscription stops returning every shape
+//   of a project, the project is kept, its shapes are kept, and the page says
+//   so — stated, not acted on. Nothing is deleted, and whoever knows why the
+//   layer dropped it is the person who can act.
+//
+//   KEPT BY THE LAYER. A project field mapped to a layer field (decision 26)
+//   is maintained on every sync, so it is read-only here: its Key facts row is
+//   locked (firma2-editable-field's data-locked) and names the field that
+//   keeps it. An edit here would be overwritten by the next sync, which is
+//   worse than no edit at all.
+//
+// bcn-lego-checked: esa-alert-box; the lock is the editable field's own
+// contract, not a second control. Beacon is not cloned here.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import type { Project } from '../../data/firma2-projects';
+import { projectSlug } from '../../data/firma2-projects';
+import { FACT_ROW_FOR_FIELD, seedWorkAreas } from '../../data/firma2-geography';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  project: Project;
+}
+
+const { project } = Astro.props;
+const config = {
+  slug: projectSlug(project),
+  seed: seedWorkAreas(project),
+  rows: FACT_ROW_FOR_FIELD,
+};
+const subscriptionsHref = withBase('/prototypes/workspace-settings/gis-subscriptions');
+---
+<div class="firma2-project-gis-status" data-config={JSON.stringify(config)} hidden>
+  <EsaAlertBox variant="info" title="No longer in your GIS">
+    <p class="typography-body-sm">
+      The last sync of <a href={subscriptionsHref} data-gis-subscription></a> did not return this project. Nothing was deleted: its shapes are kept and marked stale. If it was removed from the layer on purpose, take its shapes over; if not, check its project number in your GIS.
+    </p>
+  </EsaAlertBox>
+</div>
+
+<style>
+  .firma2-project-gis-status[hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import type { MapWorkArea } from '../../data/firma2-geography';
+  import { onGeoChange, readProjectSource, readSubscriptions, readWorkAreas } from '../../lib/work-areas';
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-gis-status').forEach((root) => {
+    const { slug, seed, rows } = JSON.parse(root.dataset.config ?? '{}') as { slug: string; seed: MapWorkArea[]; rows: Record<string, string> };
+
+    const paint = () => {
+      const sub = readProjectSource() === 'subscribed' ? readSubscriptions()[0] : undefined;
+      const areas = readWorkAreas(slug, seed).filter((a) => a.origin === 'record');
+      const stale = sub?.staleLabels ?? [];
+      root.hidden = !sub || areas.length === 0 || !areas.every((a) => stale.includes(a.label));
+      const link = root.querySelector('[data-gis-subscription]');
+      if (link) link.textContent = sub?.name ?? 'the subscription';
+
+      // Lock every Key facts row a mapped field keeps, and release the rest.
+      const kept = new Map<string, string>();
+      sub?.mappings.forEach((m) => {
+        const row = rows[m.projectField];
+        if (row && m.layerField) kept.set(row, [kept.get(row), m.layerField].filter(Boolean).join(' and '));
+      });
+      document.querySelectorAll<HTMLElement>('[data-editable-field][data-field]').forEach((field) => {
+        const layerField = kept.get(field.dataset.field!);
+        const note = field.querySelector<HTMLElement>('.firma2-editable-field__locked-note');
+        if (!layerField) {
+          if (field.dataset.locked !== undefined) {
+            delete field.dataset.locked;
+            note?.remove();
+            const hint = field.querySelector<HTMLElement>('span.visually-hidden[id]');
+            if (hint?.dataset.editHint) hint.textContent = hint.dataset.editHint;
+          }
+          return;
+        }
+        field.dataset.locked = '';
+        const text = `From your GIS (${layerField}). Change it there.`;
+        // A <dd>, because the row is a <dl> group, which admits only dt and dd.
+        if (note) note.textContent = text;
+        else field.append(Object.assign(document.createElement('dd'), { className: 'firma2-editable-field__locked-note typography-body-sm', textContent: text }));
+        // The display button's description said "Edit …"; it now says why it won't.
+        const hint = field.querySelector<HTMLElement>('span.visually-hidden[id]');
+        if (hint) {
+          hint.dataset.editHint ??= hint.textContent ?? '';
+          hint.textContent = text;
+        }
+      });
+    };
+
+    onGeoChange(paint);
+    paint();
+  });
+</script>

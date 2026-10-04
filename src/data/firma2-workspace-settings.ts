@@ -5,17 +5,13 @@
 // source attributes, field definitions, roles), regrouped by the object they
 // configure — see workspaceSettingsNavItems in firma2-nav.ts.
 //
-// DERIVED WHERE THE FIXTURE ALREADY KNOWS: stage and classification counts are
+// DERIVED WHERE THE FIXTURE ALREADY KNOWS: stage counts are
 // read off the project list, so a settings screen and the Projects index can
-// never disagree about how many projects sit in a stage; organization-type and
-// role counts are read off the directory (firma2-directory.ts) for the same
-// reason. Everything else is INVENTED — never copied or sanitized from a client
-// document.
+// never disagree about how many projects sit in a stage. Everything else is
+// INVENTED — never copied or sanitized from a client document.
 
 import { projects, STAGE_ORDER } from './firma2-projects';
-import { organizations, users } from './firma2-directory';
-import type { OrganizationType, UserRole } from './firma2-directory';
-import type { Classification, ProjectStage } from './firma2-projects';
+import type { ProjectStage } from './firma2-projects';
 import {
   CancelCircleIcon,
   CheckmarkCircle02Icon,
@@ -32,9 +28,14 @@ import { toMarkup } from '../lib/hugeicon-markup';
 import type { CatalogIcon, IconNode } from '../lib/hugeicon-markup';
 
 export interface SettingsRow {
+  /** The record's slug, when a client script keeps the row in step with browser edits. */
+  slug?: string;
   name: string;
   /** Makes the name a link to the record the row stands for. */
   href?: string;
+  /** A project's slug: adds the button that opens it in the side panel. The
+   *  page must use firma2-project-peek-layout. */
+  peek?: string;
   description?: string;
   /** Cell text by column key. */
   cells: Record<string, string | number>;
@@ -169,52 +170,12 @@ export const stageSettings: StageSetting[] = STAGE_ORDER.map((stage) => ({
 
 export const customFields: SettingsRow[] = [
   { name: 'Grant agreement number', description: 'The number on the signed agreement.', cells: { kind: 'Text', types: 'All types', required: 'Yes' } },
-  { name: 'Stream miles opened', description: 'Upstream habitat made reachable by the work.', cells: { kind: 'Number', types: 'Fish Passage', required: 'Yes' } },
-  { name: 'Permits held', description: 'Permits secured before construction.', cells: { kind: 'Pick list', types: '3 types', required: 'No' } },
-  { name: 'CEQA document', description: 'The environmental review the project relied on.', cells: { kind: 'Pick list', types: 'All types', required: 'No' } },
+  { name: 'Stream miles opened', description: 'Upstream habitat made reachable by the work.', cells: { kind: 'Number', types: 'Fish passage', required: 'Yes' } },
+  { name: 'Permits held', description: 'Permits secured before construction.', cells: { kind: 'Choice', types: '3 types', required: 'No' } },
+  { name: 'CEQA document', description: 'The environmental review the project relied on.', cells: { kind: 'Choice', types: 'All types', required: 'No' } },
   { name: 'Landowner agreement signed', description: 'Whether access is secured for the life of the project.', cells: { kind: 'Yes or no', types: '4 types', required: 'No' } },
-  { name: 'Burn window', description: 'The season prescribed fire is allowed.', cells: { kind: 'Date range', types: 'Forest Health & Fuels', required: 'No' } },
+  { name: 'Burn window', description: 'The season prescribed fire is allowed.', cells: { kind: 'Date range', types: 'Forest health & fuels', required: 'No' } },
 ];
-
-// ---------------------------------------------------------------------------
-// Classifications — the Goals system, counted from the fixture
-// ---------------------------------------------------------------------------
-
-const GOAL_COPY: Record<Classification, string> = {
-  'Salmon & steelhead recovery': 'Spawning and rearing habitat for listed runs.',
-  'Riparian & wetland habitat': 'Streamside and wetland vegetation and the wildlife it holds.',
-  'Water quality': 'Sediment, temperature, and nutrient loads.',
-  'Water supply reliability': 'Groundwater recharge and dry-year flows.',
-  'Wildfire resilience': 'Fuel loads and fire behavior near communities and habitat.',
-  'Flood risk reduction': 'Room for high water away from homes and roads.',
-  'Public access & recreation': 'Trails, river access, and places to learn.',
-};
-
-export const classifications: SettingsRow[] = (Object.keys(GOAL_COPY) as Classification[]).map((goal) => ({
-  name: goal,
-  description: GOAL_COPY[goal],
-  cells: { projects: projects.filter((p) => p.classifications.includes(goal)).length },
-}));
-
-// ---------------------------------------------------------------------------
-// Organization types
-// ---------------------------------------------------------------------------
-
-const ORGANIZATION_TYPE_COPY: { name: OrganizationType; description?: string; lead: string; fund: string }[] = [
-  { name: 'Nonprofit', description: 'Land trusts, watershed councils, and conservancies.', lead: 'Yes', fund: 'Yes' },
-  { name: 'Resource conservation district', lead: 'Yes', fund: 'No' },
-  { name: 'Tribal government', lead: 'Yes', fund: 'Yes' },
-  { name: 'Local government', description: 'Counties, cities, and special districts.', lead: 'Yes', fund: 'Yes' },
-  { name: 'State agency', lead: 'Yes', fund: 'Yes' },
-  { name: 'Federal agency', lead: 'Yes', fund: 'Yes' },
-  { name: 'Private company', description: 'Contractors and consultants.', lead: 'No', fund: 'No' },
-];
-
-export const organizationTypes: SettingsRow[] = ORGANIZATION_TYPE_COPY.map(({ name, description, lead, fund }) => ({
-  name,
-  description,
-  cells: { organizations: organizations.filter((o) => o.type === name).length, lead, fund },
-}));
 
 // ---------------------------------------------------------------------------
 // Funding source fields
@@ -225,22 +186,137 @@ export const fundingSourceFields: SettingsRow[] = [
   { name: 'Match required', description: 'Share of the award the grantee must raise.', cells: { kind: 'Percent', required: 'Yes' } },
   { name: 'Award period', description: 'When the money can be spent.', cells: { kind: 'Date range', required: 'Yes' } },
   { name: 'Program officer', description: 'Who to call at the funder.', cells: { kind: 'Text', required: 'No' } },
-  { name: 'Restricted to', description: 'Work the money may not be spent outside of.', cells: { kind: 'Pick list', required: 'No' } },
+  { name: 'Restricted to', description: 'The only work the money can pay for.', cells: { kind: 'Choice', required: 'No' } },
 ];
 
 // ---------------------------------------------------------------------------
-// Roles and permissions
+// Security — Administration › Security
 // ---------------------------------------------------------------------------
 
-const ROLE_COPY: { name: UserRole; description: string; edit: string; approve: string; settings: string }[] = [
-  { name: 'Administrator', description: 'Configures the workspace and manages people.', edit: 'All projects', approve: 'Yes', settings: 'Yes' },
-  { name: 'Project steward', description: 'Reviews and approves updates for their organization.', edit: 'Their organization’s', approve: 'Yes', settings: 'No' },
-  { name: 'Contributor', description: 'Drafts updates on the projects they work on.', edit: 'Their own', approve: 'No', settings: 'No' },
-  { name: 'Viewer', description: 'Signed in, read-only.', edit: 'None', approve: 'No', settings: 'No' },
+export interface SecurityChoice {
+  value: string;
+  label: string;
+}
+
+export interface SecuritySwitch {
+  /** The switch's form name. */
+  key: string;
+  /** One or two words to scan down — also the switch's accessible name. */
+  label: string;
+  /** What turning it on does. */
+  hint: string;
+  on: boolean;
+}
+
+export interface SecurityPermission {
+  key: string;
+  label: string;
+  hint: string;
+  value: string;
+}
+
+export const workspaceSecurity = {
+  inviteLinkOn: true,
+  // Invented token; Reset swaps it client-side.
+  inviteLink: `${workspaceGeneral.address}/join/k7q2-m9xd-4tpw`,
+  idleTimeout: '7d',
+};
+
+export const SIGN_IN_METHODS: SecuritySwitch[] = [
+  { key: 'signin-microsoft', label: 'Microsoft', hint: 'Agency and work accounts through Microsoft.', on: true },
+  { key: 'signin-google', label: 'Google', hint: 'Google Workspace and personal Google accounts.', on: true },
+  { key: 'signin-email', label: 'Email and password', hint: 'An email address and a password set in this workspace.', on: true },
 ];
 
-export const roles: SettingsRow[] = ROLE_COPY.map(({ name, description, ...cells }) => ({
-  name,
-  description,
-  cells: { people: users.filter((u) => u.role === name).length, ...cells },
-}));
+export const SIGN_IN_RULES: SecuritySwitch[] = [
+  { key: 'two-step', label: 'Two-step verification', hint: 'Everyone enters a code from an authenticator app when they sign in.', on: false },
+];
+
+export const IDLE_TIMEOUTS: SecurityChoice[] = [
+  { value: '8h', label: '8 hours' },
+  { value: '1d', label: '1 day' },
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+];
+
+/** Who may take each workspace-wide action — the roles in rank order, widening. */
+export const PERMISSION_AUDIENCES: SecurityChoice[] = [
+  { value: 'admins', label: 'Only administrators' },
+  { value: 'stewards', label: 'Administrators and stewards' },
+  { value: 'editors', label: 'Everyone except viewers' },
+];
+
+// Workspace-wide acts only. What each role may edit and approve is fixed by the
+// role itself (docs/roles-and-permissions.md), so it has no setting here.
+export const SECURITY_PERMISSIONS: SecurityPermission[] = [
+  { key: 'perm-invite', label: 'Invite people', hint: 'Send invitations to join the workspace. Stewards can always invite people into their own organization.', value: 'admins' },
+  { key: 'perm-organizations', label: 'Add organizations', hint: 'Add organizations to the directory and the pickers.', value: 'stewards' },
+  { key: 'perm-projects', label: 'Create projects', hint: 'Start a new project record.', value: 'editors' },
+  // Goals are the initiative's to set, so administrators by default; a
+  // workspace that has its program staff set up goals opens it wider.
+  { key: 'perm-classifications', label: 'Manage classifications', hint: 'Set up classification groups and classifications, with their performance measures and goal targets.', value: 'admins' },
+  { key: 'perm-import', label: 'Import data', hint: 'Bring in projects and records from a spreadsheet or GIS file.', value: 'admins' },
+  { key: 'perm-export', label: 'Export data', hint: 'Download projects, funding and measures as a spreadsheet.', value: 'stewards' },
+  { key: 'perm-api', label: 'Create API tokens', hint: 'Let another system read and change workspace data.', value: 'admins' },
+];
+
+export const PUBLIC_SITE: SecuritySwitch[] = [
+  { key: 'public-pages', label: 'Public access', hint: 'Anyone can view published projects, public pages and the map without signing in.', on: true },
+  { key: 'public-contacts', label: 'Contact details', hint: 'Show email addresses and phone numbers on public pages. Names always show.', on: false },
+];
+
+// ---------------------------------------------------------------------------
+// Custom pages — Administration › Custom pages
+// ---------------------------------------------------------------------------
+
+// The workspace's own pages, the Pages group of the app rail (firma2-pages.ts).
+// One switch turns the feature on; the rest only means something once it is.
+export const customPagesSettings = {
+  on: true,
+  visibility: 'workspace',
+  history: '1y',
+  notifyWho: 'authors',
+  notifyHow: 'daily',
+};
+
+// Same audiences as Security's workspace permissions, so "who can" reads the
+// same ladder on both pages.
+export const CUSTOM_PAGE_PERMISSIONS: SecurityPermission[] = [
+  { key: 'pages-create', label: 'Create pages', hint: 'Add pages and folders to the rail.', value: 'editors' },
+  { key: 'pages-edit', label: 'Edit any page', hint: 'Change any page’s title, text and folder. Authors can always edit their own.', value: 'stewards' },
+  { key: 'pages-delete', label: 'Delete pages', hint: 'Remove pages and folders. Pages in a deleted folder move to the top of Pages.', value: 'admins' },
+];
+
+export const CUSTOM_PAGE_VISIBILITY: SecurityChoice[] = [
+  { value: 'workspace', label: 'Everyone in the workspace' },
+  { value: 'editors', label: 'Only people who can edit pages' },
+  { value: 'public', label: 'Everyone, including the public site' },
+];
+
+export const CUSTOM_PAGE_PUBLISHING: SecuritySwitch[] = [
+  { key: 'pages-review', label: 'Review before publishing', hint: 'New and changed pages stay drafts until someone who can edit any page approves them.', on: false },
+];
+
+export const CUSTOM_PAGE_HISTORY: SecurityChoice[] = [
+  { value: '30d', label: '30 days' },
+  { value: '1y', label: '1 year' },
+  { value: 'forever', label: 'Forever' },
+];
+
+export const CUSTOM_PAGE_EVENTS: SecuritySwitch[] = [
+  { key: 'notify-published', label: 'Page published', hint: 'A new page goes live, or a draft is approved.', on: true },
+  { key: 'notify-edited', label: 'Page edited', hint: 'Someone changes a page’s title or text.', on: true },
+  { key: 'notify-removed', label: 'Page moved or deleted', hint: 'A page changes folder or is removed.', on: false },
+];
+
+export const CUSTOM_PAGE_NOTIFY_WHO: SecurityChoice[] = [
+  { value: 'authors', label: 'The page’s author and past editors' },
+  { value: 'editors', label: 'Everyone who can edit any page' },
+  { value: 'admins', label: 'Only administrators' },
+];
+
+export const CUSTOM_PAGE_NOTIFY_HOW: SecurityChoice[] = [
+  { value: 'instant', label: 'As it happens' },
+  { value: 'daily', label: 'Daily digest' },
+  { value: 'weekly', label: 'Weekly digest' },
+];

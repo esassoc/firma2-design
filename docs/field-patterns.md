@@ -87,8 +87,8 @@ Reference: `src/components/settings/firma2-workspace-general.astro`.
 ```astro
 <dl class="stack" data-gap="md">
   <Firma2EditableField field="leadOrganization" label="Lead organization" value={…} />
-  <Firma2EditableField field="program" label="Program" value={…}
-    control="select" options={programs} />
+  <Firma2EditableField field="classifications" label="Classifications" value={…}
+    values={…} control="multi-select" format="list" options={…} />
 </dl>
 ```
 

@@ -1,0 +1,87 @@
+---
+// firma2-project-gis-fields — "From your GIS": the fields a subscribed layer
+// carries for this project, under the layer's own names. Ported from
+// ProjectFirma2 hackathon team 2, story A.
+//
+// IDENTITY MAPPING, ON PURPOSE. STATUS reads STATUS and UNIT_NAME reads
+// UNIT_NAME. Nobody is asked what UNIT_NAME "means" — that is what made the
+// feature cheap, and what made a field-mapping step unnecessary.
+//
+// ONLY WHERE A SYNC HAS BROUGHT SOMETHING. A "From your GIS" heading on every
+// hand-created record would be a permanent promise only a subscribed
+// workspace can keep, so the section renders nothing until a subscription has
+// synced at least one field.
+//
+// A FIELD NO LONGER NOMINATED KEEPS ITS VALUE, and says it is no longer
+// updated (decisions 9 and 10). Erasing it because somebody reconfigured the
+// subscription would be the most damaging failure in team 2's runbook — a
+// silent one.
+//
+// bcn-lego-checked: composes firma2-rail-section, the rail's own section
+// lego; the rows are the <dl> firma2-project-facts uses. Beacon not cloned.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import type { Project } from '../../data/firma2-projects';
+import { SHARED_LAYERS, layerValue } from '../../data/firma2-geography';
+
+interface Props {
+  project: Project;
+}
+
+const { project } = Astro.props;
+// Every non-plumbing field of every shared layer, with this project's value —
+// the client shows the ones a sync has actually brought across.
+const fields = [...new Set(SHARED_LAYERS.flatMap((l) => l.fields).filter((f) => f.type !== 'OID' && f.type !== 'GlobalID' && !f.name.startsWith('Shape__')).map((f) => f.name))]
+  .map((name) => ({ name, value: layerValue(project, name) }));
+---
+<div class="firma2-project-gis-fields" hidden>
+  <Firma2RailSection title="From your GIS">
+    <div class="stack" data-gap="md">
+      <p class="typography-body-sm firma2-project-gis-fields__muted">Fields your layer carries, under its own names. Each sync updates them, so they are changed in your GIS.</p>
+      <dl class="stack" data-gap="md">
+        {fields.map((f) => (
+          <div class="stack" data-gap="2xs" data-gis-field={f.name} hidden>
+            <dt class="typography-label-sm firma2-project-gis-fields__muted"><code>{f.name}</code></dt>
+            <dd class="typography-body-md">{f.value || '—'}</dd>
+            <dd class="typography-body-sm firma2-project-gis-fields__muted" data-gis-retired hidden>No longer brought across; kept as last synced.</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  </Firma2RailSection>
+</div>
+
+<style>
+  .firma2-project-gis-fields[hidden],
+  .firma2-project-gis-fields [hidden] {
+    display: none !important;
+  }
+
+  .firma2-project-gis-fields__muted {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-project-gis-fields code {
+    font-family: var(--font-family-mono, monospace);
+  }
+</style>
+
+<script>
+  import { onGeoChange, readProjectSource, readSubscriptions } from '../../lib/work-areas';
+
+  const paint = () => {
+    const subscribed = readProjectSource() === 'subscribed';
+    const sub = readSubscriptions()[0];
+    const synced = subscribed && sub?.lastSuccess ? (sub.syncedFields ?? []) : [];
+    document.querySelectorAll<HTMLElement>('.firma2-project-gis-fields').forEach((root) => {
+      root.hidden = synced.length === 0;
+      root.querySelectorAll<HTMLElement>('[data-gis-field]').forEach((row) => {
+        const name = row.dataset.gisField!;
+        row.hidden = !synced.includes(name);
+        row.querySelector<HTMLElement>('[data-gis-retired]')!.hidden = sub?.extraFields.includes(name) ?? true;
+      });
+    });
+  };
+
+  onGeoChange(paint);
+  paint();
+</script>

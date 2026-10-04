@@ -1,0 +1,99 @@
+---
+// firma2-custom-page-actions — what sits beside a custom page's title: Edit
+// (Update while editing) and the "…" holding Delete page.
+//
+// A MENU, NOT A BUTTON. Deleting is rare and irreversible, so it does not get a
+// red button standing next to the title every reader sees; it waits one click
+// down, in the same esa-dropdown-menu "…" the member rows in Organization
+// settings use, styled as the danger item.
+//
+// ASKS FIRST, in esa-confirm-dialog (the danger-zone precedent). Not an Undo
+// toast: esa-snackbar-container reserves its action for something the page
+// also offers elsewhere, and nothing else here brings a page back. After the
+// delete the reader lands on Projects — the page they were on is gone — and the
+// rail confirms it once (Firma2PagesNav reads the note removePage leaves).
+//
+// bcn-lego-checked: esa-dropdown-menu, esa-button and esa-confirm-dialog,
+// composed unchanged in a `.cluster`. No markup of its own beyond them and no
+// <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+---
+<div class="firma2-custom-page-actions cluster" data-gap="xs" data-page-actions>
+  {/* One place, two states: Edit (ghost) while reading, Update (primary)
+      while editing — the button that starts the edit is the one that ends it.
+      Both are rendered and the script shows one. Each sits in a span the
+      script toggles: EsaButton forwards data-* and style to its inner
+      <button>, so hiding that would leave the lego's wrapper holding a gap. */}
+  <span data-page-edit-wrap><EsaButton variant="ghost" size="md" data-page-edit>Edit</EsaButton></span>
+  <span style="display: none" data-page-update-wrap><EsaButton variant="primary" size="md" data-page-update>Update</EsaButton></span>
+  <esa-dropdown-menu position="below-end" data-page-menu data-after-delete={withBase('/prototypes/projects')}>
+    <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="Page actions" />
+  </esa-dropdown-menu>
+</div>
+<esa-confirm-dialog
+  class="firma2-custom-page-actions__confirm"
+  variant="danger"
+  confirm-label="Delete page"
+  data-page-delete-confirm
+></esa-confirm-dialog>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { findPage, removePage } from '../../lib/custom-pages';
+
+  type Menu = HTMLElement & { items: unknown };
+  type Confirm = HTMLElement & { heading: string; message: string; show?: () => void };
+
+  // ---- Edit / Update ----
+  // The page view owns the mode (firma2-custom-page); this asks for edit, asks
+  // for the commit, and shows whichever button fits the mode it reports.
+  document.querySelectorAll<HTMLElement>('[data-page-actions]').forEach((bar) => {
+    const edit = bar.querySelector<HTMLElement>('[data-page-edit]')!;
+    const update = bar.querySelector<HTMLElement>('[data-page-update]')!;
+    const editWrap = bar.querySelector<HTMLElement>('[data-page-edit-wrap]')!;
+    const updateWrap = bar.querySelector<HTMLElement>('[data-page-update-wrap]')!;
+    edit.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('firma2:page-mode-request', { detail: { mode: 'edit' } }));
+    });
+    update.addEventListener('click', () => document.dispatchEvent(new CustomEvent('firma2:page-commit')));
+    document.addEventListener('firma2:page-mode', (event) => {
+      const editing = (event as CustomEvent<{ mode: string }>).detail.mode === 'edit';
+      const wasFocused = bar.contains(document.activeElement);
+      editWrap.style.display = editing ? 'none' : '';
+      updateWrap.style.display = editing ? '' : 'none';
+      // Focus follows the swap, so a keyboard user who pressed Update is not
+      // left on a button that just disappeared.
+      if (wasFocused) (editing ? update : edit).focus();
+    });
+  });
+
+  document.querySelectorAll<Menu>('[data-page-menu]').forEach((menu) => {
+    const dialog = document.querySelector<Confirm>('[data-page-delete-confirm]');
+    const id = new URLSearchParams(location.search).get('id') ?? '';
+
+    // Assigned only after define, or the props shadow the lego's setters.
+    customElements.whenDefined('esa-dropdown-menu').then(() => {
+      menu.items = [{ label: 'Delete page', action: 'delete', variant: 'danger' }];
+    });
+
+    menu.addEventListener('menu-action', async (event) => {
+      if ((event as CustomEvent<string>).detail !== 'delete' || !dialog) return;
+      // Read now, not on load: the title may have been renamed since.
+      const page = findPage(id);
+      if (!page) return;
+      await customElements.whenDefined('esa-confirm-dialog');
+      dialog.heading = `Delete ${page.title}?`;
+      dialog.message = 'Its text goes with it, for everyone in the workspace. This can’t be undone.';
+      dialog.show?.();
+    });
+
+    dialog?.addEventListener('confirm', () => {
+      const page = findPage(id);
+      if (!page) return;
+      removePage(id, page.title);
+      window.location.assign(menu.dataset.afterDelete ?? '');
+    });
+  });
+</script>

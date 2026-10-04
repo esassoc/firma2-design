@@ -34,6 +34,23 @@ export const currencyFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 0,
 });
 
+/**
+ * How long ago a date was, in whole days — "today", "yesterday", "12 days
+ * ago" — or, past `maxDays`, the date itself as MM/DD/YY. `today` is a UTC
+ * midnight passed in by the caller (the fixture's fixed today, so a static
+ * build reads the same on every visit); `date` is compared by its calendar day.
+ */
+export function relativeDays(date: Date, today: number, maxDays = 90): string {
+  const day = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const days = Math.round((today - day) / 86_400_000);
+  if (days < 0 || days > maxDays) {
+    return new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', timeZone: 'UTC' }).format(day);
+  }
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
+}
+
 /** Parses a source M/D/YYYY string to a Date so date columns sort chronologically; blank/invalid -> null. */
 export function asDate(s?: string): Date | null {
   if (!s) return null;

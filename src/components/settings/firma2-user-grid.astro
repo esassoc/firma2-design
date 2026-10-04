@@ -1,14 +1,43 @@
 ---
 // firma2-user-grid — Workspace settings › Users: everyone with an account, the
 // organization they sign in for, and the role that decides what they can do,
-// searchable by name or email and filterable by role and organization.
+// searchable by name or email, and filtered by who (role or status) and by
+// organization.
 //
 // Same chrome as firma2-organization-grid and firma2-project-grid; see there.
 //
-// NO STATUS COLUMN. Nearly every row would say "Active", and a column of one
-// repeated word is the noise design-principles cuts. The exception is the row
-// an administrator most needs to find — an invitation nobody has accepted — and
-// it has no last-active date to show anyway, so the badge takes that cell.
+// STATUS GROUPS THE LIST, AS LINEAR'S (user call). One table, cut into bands —
+// Active, Invited, Suspended, each with its count — because they are three
+// different jobs: run the people who are here, chase the ones who haven't
+// come, review the ones who were cut off. Inside a band every row shares its
+// status, so no row repeats it as a badge. Sorting and filtering work inside
+// each band; a band with nothing left in it disappears.
+//
+// HOW, WITHOUT ENTERPRISE ROW GROUPING: each band is a full-width row (AG Grid
+// community) placed by postSortRows at the head of its status. Search runs in
+// the external filter rather than AG's quick filter, so a band header can
+// survive a search its own text would fail; the footer counts people, never
+// bands.
+//
+// NO RULES BETWEEN ROWS (user call). The rows are short and evenly spaced, and
+// the hover fill marks the row in hand, so a line under each is ink without
+// information.
+//
+// LINEAR'S MEMBERS PAGE. Each row's "…" holds what an administrator does to an
+// account: Change role…, Suspend… (or Restore access), Cancel invitation. A
+// suspended account stays listed, as Linear's does, so the projects and updates
+// it touched still resolve to a person. Your own row has no "…": demoting or
+// suspending yourself is how a workspace loses its last administrator.
+//
+// ORGANIZATIONS ARE A LIST, AND MAY BE EMPTY. A person belongs to any number
+// of organizations; a Viewer may belong to none. The column shows the first as
+// a link and counts the rest; an organizationless row says "None" so it reads
+// as a fact, and the Organization filter can find those rows. A Contributor
+// needs one, so making an organizationless Viewer a Contributor asks which.
+//
+// STEWARD RIDES ON THE ROLE. It is a per-organization flag, set on that
+// organization's Members page, not here — but the reader scanning roles needs
+// to see it, so a quiet badge follows the role it sits on.
 //
 // bcn-lego-checked: ecology has NO table/grid lego — esa-grid is a
 // documentation-only page with nothing to import; checked the full
@@ -16,7 +45,12 @@
 // this machine. Same AG Grid surface as firma2-project-grid (the precedent),
 // framed by shared/firma2-data-grid-chrome.css. Every control around it IS a
 // lego: esa-text-field, esa-filter-container + esa-filter-dropdown, esa-button,
-// esa-empty-state, and the Invited cell clones a server-rendered esa-badge.
+// esa-empty-state; the badges and the "…" button clone server-rendered
+// esa-badge / esa-button markup into an esa-dropdown-menu; esa-dialog +
+// bcn-radio-group (esa-radio-group plus a description per option — Linear's
+// role picker reads each role's reach before you pick it) change a role, esa-confirm-dialog asks before suspending or
+// canceling, esa-snackbar-container reports. The only CSS lets the open menu
+// out of AG Grid's clipped cells.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
@@ -25,22 +59,37 @@ import '../shared/firma2-data-grid-chrome.css';
 import { users, userRoles, organizations, CURRENT_USER } from '../../data/firma2-directory';
 import { withBase } from '../../lib/base';
 
-const roleOptions = userRoles.map((r) => ({ value: r, label: r }));
-const organizationOptions = organizations
-  .filter((o) => o.people > 0)
-  .map((o) => ({ value: o.name, label: o.name }));
+const roleOptions = [
+  { value: 'Administrator', label: 'Administrators' },
+  { value: 'Contributor', label: 'Contributors' },
+  { value: 'Viewer', label: 'Viewers' },
+];
 
-const slugOf = new Map(organizations.map((o) => [o.name, o.slug]));
+// The bands, in the order an administrator works them.
+const STATUSES = ['Active', 'Invited', 'Suspended'];
+
+// Each role's reach, read under it in the change-role dialog before picking.
+const ROLE_HINTS: Record<string, string> = {
+  Administrator: 'Full control of the workspace: every setting, every organization, and anyone’s role.',
+  Contributor: 'Drafts updates on the projects of their organizations. Belongs to at least one, and can steward it.',
+  Viewer: 'Signed in and read-only, with or without an organization. Can’t be a steward.',
+};
+// "No organization" first: it is the row type this filter alone can find.
+const NO_ORGANIZATION = '__none__';
+const organizationOptions = [
+  { value: NO_ORGANIZATION, label: 'No organization' },
+  ...organizations.filter((o) => o.people > 0).map((o) => ({ value: o.name, label: o.name })),
+];
+const allOrganizations = organizations.map((o) => ({ value: o.name, label: o.name }));
+
+const orgHrefs = Object.fromEntries(organizations.map((o) => [o.name, withBase(`/prototypes/workspace-settings/organizations/${o.slug}`)]));
 const rows = users.map((u) => ({
   ...u,
-  organizationHref: withBase(
-    u.organization === CURRENT_USER.organization
-      ? '/prototypes/workspace-settings/your-organization'
-      : `/prototypes/workspace-settings/organizations/${slugOf.get(u.organization)}`,
-  ),
+  you: u.email === CURRENT_USER.email,
+  organizationHrefs: u.organizations.map((o) => orgHrefs[o]),
 }));
 ---
-<section class="firma2-user-grid stack" data-gap="md" data-role-order={JSON.stringify(userRoles)}>
+<section class="firma2-user-grid stack" data-gap="md" data-statuses={JSON.stringify(STATUSES)} data-role-order={JSON.stringify(userRoles)} data-role-hints={JSON.stringify(ROLE_HINTS)} data-no-organization={NO_ORGANIZATION} data-org-hrefs={JSON.stringify(orgHrefs)}>
   <div class="firma2-data-grid__controls repel">
     <div class="firma2-data-grid__controls-filters cluster">
       <div class="firma2-data-grid__search">
@@ -57,7 +106,6 @@ const rows = users.map((u) => ({
           name="role"
           label="Role"
           size="md"
-          multiple
           placeholder="Search roles"
           options={JSON.stringify(roleOptions)}
         ></esa-filter-dropdown>
@@ -82,8 +130,12 @@ const rows = users.map((u) => ({
     <span class="typography-meta" data-users-count>{rows.length} users</span>
   </footer>
 
-  <div data-users-invited-template hidden aria-hidden="true">
-    <EsaBadge value="Invited" variant="info" size="sm" />
+  {/* Server-rendered legos the cell renderers clone. */}
+  <div data-users-steward-template hidden aria-hidden="true">
+    <EsaBadge value="Steward" variant="secondary" size="sm" />
+  </div>
+  <div data-users-actions-template hidden aria-hidden="true">
+    <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="Actions" />
   </div>
 
   <div data-users-empty hidden aria-hidden="true">
@@ -94,39 +146,142 @@ const rows = users.map((u) => ({
     />
   </div>
 
+  <esa-dialog class="firma2-user-grid__role" heading="Change role" size="md" show-close-button>
+    <div class="stack" data-gap="lg">
+      <bcn-radio-group label="Role" name="role" data-users-role></bcn-radio-group>
+      {/* A plain div, so `hidden` is not out-ranked by a lego's own display. */}
+      <div data-users-org-field hidden>
+        <esa-select
+          label="Organization"
+          help-text="A Contributor belongs to at least one organization."
+          placeholder="Choose an organization"
+          size="md"
+          name="organization"
+          options={JSON.stringify(allOrganizations)}
+          data-users-org
+        ></esa-select>
+      </div>
+    </div>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="ghost" size="md" data-users-role-cancel>Cancel</EsaButton>
+      <EsaButton variant="primary" size="md" data-users-role-submit>Save</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <esa-confirm-dialog class="firma2-user-grid__confirm" variant="danger"></esa-confirm-dialog>
+  <esa-snackbar-container class="firma2-user-grid__toasts"></esa-snackbar-container>
+
   <script type="application/json" data-users-data set:html={JSON.stringify(rows)}></script>
 </section>
 
 <script>
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-filter-dropdown';
+  import '@esa/ecology/esa-dialog';
+  import '../shared/bcn-radio-group';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-snackbar-container';
   import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
   import { label } from '../../lib/vocabulary';
   // Types only from the directory: a value import would ship the whole project
   // fixture to the browser. The role order rides in on the section instead.
-  import type { WorkspaceUser } from '../../data/firma2-directory';
-  import type { ColDef } from 'ag-grid-community';
+  import type { WorkspaceUser, UserRole } from '../../data/firma2-directory';
+  import type { ColDef, GridApi } from 'ag-grid-community';
 
-  type Row = WorkspaceUser & { organizationHref: string };
+  // A band header is a row too: `kind: 'group'`, carrying only its status.
+  type Row = WorkspaceUser & { organizationHrefs: string[]; you: boolean; kind?: 'group' };
+  type TextField = HTMLElement & { value?: string };
+  type OrgSelect = HTMLElement & { value: string; errorText: string };
+  type Dialog = HTMLElement & { show(): void; close(): void; heading: string };
+  type Radios = HTMLElement & { value: string; options: { value: string; label: string; description?: string }[] };
+  type Confirm = HTMLElement & {
+    heading: string; message: string; confirmLabel: string; cancelLabel: string; show(): void;
+  };
+  type Menu = HTMLElement & { items: { label: string; action: string; variant?: string }[]; position: string };
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
 
   // An invitation has never been active, so it sorts as the oldest.
   const activeTime = (row?: Row): number => (row?.lastActive ? Date.parse(row.lastActive) : -Infinity);
 
   function initUserGrid(root: HTMLElement) {
+    let gridApi: GridApi<Row> | undefined;
     const emptyState = root.querySelector<HTMLElement>('[data-users-empty] > *');
-    const invitedHTML = root.querySelector('[data-users-invited-template]')?.innerHTML ?? 'Invited';
+    const html = (attr: string, fallback: string) => root.querySelector(`[${attr}]`)?.innerHTML.trim() ?? fallback;
+    const stewardHTML = html('data-users-steward-template', 'Steward');
+    const actionsHTML = html('data-users-actions-template', '');
     const roleFilter = root.querySelector<HTMLElement>('[data-users-role-filter]');
+    const statuses: string[] = JSON.parse(root.dataset.statuses ?? '["Active"]');
+    const search = root.querySelector<TextField>('[data-users-search]');
+    const count = root.querySelector<HTMLElement>('[data-users-count]');
     const orgFilter = root.querySelector<HTMLElement>('[data-users-org-filter]');
-    let roleValues: string[] = [];
+    const roleDialog = root.querySelector<Dialog>('.firma2-user-grid__role');
+    const roleSelect = root.querySelector<Radios>('[data-users-role]');
+    const orgField = root.querySelector<HTMLElement>('[data-users-org-field]');
+    const orgSelect = root.querySelector<OrgSelect>('[data-users-org]');
+    const NONE = root.dataset.noOrganization ?? '__none__';
+    const hrefs: Record<string, string> = JSON.parse(root.dataset.orgHrefs ?? '{}');
+    const orgHref = (name: string) => hrefs[name] ?? '#';
+    const confirm = root.querySelector<Confirm>('.firma2-user-grid__confirm');
+    const toasts = root.querySelector<Toasts>('.firma2-user-grid__toasts');
+    let role = '';
+    let query = '';
     let orgValues: string[] = [];
     const roleOrder: string[] = JSON.parse(root.dataset.roleOrder ?? '[]');
+    const roleHints: Record<string, string> = JSON.parse(root.dataset.roleHints ?? '{}');
+
+    // What an administrator can do to this account, in Linear's order.
+    const menuItems = (row: Row) => [
+      { label: 'Change role…', action: 'role' },
+      row.status === 'Invited'
+        ? { label: 'Cancel invitation', action: 'cancel-invite', variant: 'danger' }
+        : row.status === 'Suspended'
+          ? { label: 'Restore access', action: 'restore' }
+          : { label: 'Suspend…', action: 'suspend', variant: 'danger' },
+    ];
+
+    // ---- Bands ----------------------------------------------------------------
+
+    const isGroup = (row?: Row) => row?.kind === 'group';
+    // How many of each status pass the filters now — a band's count, and
+    // whether it shows at all.
+    const shown: Record<string, number> = {};
+    const passes = (row: Row) =>
+      (query === '' || `${row.name} ${row.email}`.toLowerCase().includes(query)) &&
+      (role === '' || row.role === role) &&
+      (orgValues.length === 0 ||
+        orgValues.some((o) => (o === NONE ? row.organizations.length === 0 : row.organizations.includes(o))));
+
+    // The bands go into the row data before the grid reads it.
+    const dataEl = root.querySelector<HTMLScriptElement>('[data-users-data]');
+    if (dataEl) {
+      const people: Row[] = JSON.parse(dataEl.textContent ?? '[]');
+      const bands = statuses.map((status) => ({ kind: 'group', status, email: `group:${status}`, name: status }));
+      dataEl.textContent = JSON.stringify([...bands, ...people]);
+    }
+
+    const bandHTML = (status: string) =>
+      `<div class="firma2-user-grid__band"><span class="typography-label-md">${esc(status)}</span>` +
+      `<span class="typography-meta" data-band-count="${esc(status)}">${shown[status] ?? 0}</span></div>`;
+
+    const actionsCell = (p: { data?: Row }) => {
+      const row = p.data;
+      if (!row || row.you || isGroup(row)) return '';
+      const menu = document.createElement('esa-dropdown-menu') as Menu;
+      menu.className = 'firma2-user-grid__menu';
+      menu.setAttribute('position', 'below-end');
+      menu.innerHTML = actionsHTML;
+      menu.querySelector('button, [aria-label]')?.setAttribute('aria-label', `Actions for ${row.name || row.email}`);
+      menu.dataset.email = row.email;
+      void customElements.whenDefined('esa-dropdown-menu').then(() => { menu.items = menuItems(row); });
+      return menu;
+    };
 
     const handle = wireDataGrid<Row>({
       root,
       gridSelector: '[data-users-grid]',
       dataSelector: '[data-users-data]',
-      searchSelector: '[data-users-search]',
-      countSelector: '[data-users-count]',
       csvSelector: '[data-users-csv]',
       countNoun: 'users',
       csvFileName: 'projectfirma-users.csv',
@@ -142,42 +297,323 @@ const rows = users.map((u) => ({
           getQuickFilterText: (p) => p.data?.email ?? '',
         },
         {
-          headerName: label('Organization'), field: 'organization', colId: 'organization',
-          flex: 1.4, minWidth: 200, tooltipField: 'organization',
-          cellRenderer: (p: { data?: Row }) =>
-            p.data
-              ? `<a class="firma2-grid-link" href="${esc(p.data.organizationHref)}">${esc(p.data.organization)}</a>`
-              : '',
+          headerName: label('Organizations'), colId: 'organizations',
+          flex: 1.4, minWidth: 200,
+          valueGetter: (p) => p.data?.organizations.join('; ') ?? '',
+          tooltipValueGetter: (p) => p.data?.organizations.join(', ') || undefined,
+          cellRenderer: (p: { data?: Row }) => {
+            const row = p.data;
+            if (!row) return '';
+            if (row.organizations.length === 0) return '<span class="firma2-grid-readonly">None</span>';
+            const more = row.organizations.length - 1;
+            return `<a class="firma2-grid-link" href="${esc(row.organizationHrefs[0])}">${esc(row.organizations[0])}</a>` +
+              (more > 0 ? ` <span class="firma2-grid-readonly">+${more}</span>` : '');
+          },
         },
         {
-          headerName: 'Role', field: 'role', colId: 'role', width: 150,
-          headerTooltip: 'What each role can do is set in Roles and permissions.',
+          headerName: 'Role', field: 'role', colId: 'role', width: 200,
           comparator: (a: string, b: string) => roleOrder.indexOf(a) - roleOrder.indexOf(b),
+          cellRenderer: (p: { data?: Row }) =>
+            p.data?.role === 'Contributor' && p.data.stewardOf.length > 0
+              ? `<span class="firma2-grid-status cluster" data-gap="xs">${esc(p.data.role)}${stewardHTML}</span>`
+              : esc(p.data?.role ?? ''),
         },
         {
           headerName: 'Last active', field: 'lastActive', colId: 'lastActive', width: 170,
           comparator: (_a, _b, nodeA, nodeB) => activeTime(nodeA.data) - activeTime(nodeB.data),
-          cellRenderer: (p: { data?: Row }) =>
-            p.data?.status === 'Invited' ? `<span class="firma2-grid-status">${invitedHTML}</span>` : esc(p.data?.lastActive ?? ''),
+          cellRenderer: (p: { data?: Row }) => esc(p.data?.lastActive ?? ''),
+        },
+        {
+          headerName: 'Actions', headerClass: 'firma2-user-grid__act-header', colId: 'actions', width: 64,
+          sortable: false, resizable: false, suppressMovable: true, pinned: 'right',
+          cellClass: 'firma2-user-grid__act', cellRenderer: actionsCell,
         },
       ] satisfies ColDef<Row>[],
       gridOptions: {
+        getRowId: (p) => p.data.email,
         overlayNoRowsTemplate: emptyState?.outerHTML,
-        isExternalFilterPresent: () => roleValues.length > 0 || orgValues.length > 0,
+        isFullWidthRow: (p) => isGroup(p.rowNode.data),
+        fullWidthCellRenderer: (p: { data?: Row }) => bandHTML(p.data?.status ?? ''),
+        getRowHeight: (p) => (isGroup(p.data) ? 36 : undefined),
+        // Each band leads its own people, whatever the column sort did.
+        postSortRows: ({ nodes }) => {
+          const ordered = statuses.flatMap((status) => {
+            const mine = nodes.filter((n) => n.data?.status === status);
+            return [...mine.filter((n) => isGroup(n.data)), ...mine.filter((n) => !isGroup(n.data))];
+          });
+          nodes.splice(0, nodes.length, ...ordered);
+        },
+        // Always on: a band shows only while someone in it passes.
+        isExternalFilterPresent: () => true,
         doesExternalFilterPass: (node) =>
-          (roleValues.length === 0 || roleValues.includes(node.data?.role ?? '')) &&
-          (orgValues.length === 0 || orgValues.includes(node.data?.organization ?? '')),
+          isGroup(node.data) ? (shown[node.data!.status] ?? 0) > 0 : !!node.data && passes(node.data),
+        // The footer counts people, never bands.
+        onModelUpdated: () => {
+          if (!count) return;
+          let total = 0;
+          gridApi?.forEachNode((n) => { if (!isGroup(n.data)) total += 1; });
+          const visible = Object.values(shown).reduce((a, b) => a + b, 0);
+          count.textContent = visible === total ? `${total} users` : `${visible} of ${total} users`;
+        },
+        // The CSV is people only, without the "…" column.
+        defaultCsvExportParams: {
+          shouldRowBeSkipped: (p) => isGroup(p.node.data),
+          columnKeys: ['name', 'email', 'organizations', 'role', 'lastActive'],
+        },
       },
     });
     if (!handle) return;
+    // Hoisted for onModelUpdated, which can fire before createGrid returns.
+    gridApi = handle.gridApi;
 
-    const onSelection = (apply: (values: string[]) => void) => (event: Event) => {
-      apply((event as CustomEvent<{ value?: string[] }>).detail?.value ?? []);
-      handle.gridApi.onFilterChanged();
+    // Single-select hands back one value (or nothing), multi-select a list.
+    // Counts first, then the filter — a band's own pass reads them.
+    function applyFilters() {
+      for (const s of statuses) shown[s] = 0;
+      api.forEachNode((n) => { if (!isGroup(n.data) && n.data && passes(n.data)) shown[n.data.status] += 1; });
+      api.onFilterChanged();
+      api.onSortChanged();
+      root.querySelectorAll<HTMLElement>('[data-band-count]').forEach((el) => {
+        el.textContent = String(shown[el.dataset.bandCount ?? ''] ?? 0);
+      });
+    }
+    const api = handle.gridApi;
+    applyFilters();
+    search?.addEventListener('input', () => {
+      query = (search.value ?? '').trim().toLowerCase();
+      applyFilters();
+    });
+
+    // Single-select hands back one value (or nothing), multi-select a list.
+    const onSelection = (apply: (value: string | string[] | undefined) => void) => (event: Event) => {
+      apply((event as CustomEvent<{ value?: string | string[] }>).detail?.value);
+      applyFilters();
     };
-    roleFilter?.addEventListener('selection-change', onSelection((v) => { roleValues = v; }));
-    orgFilter?.addEventListener('selection-change', onSelection((v) => { orgValues = v; }));
+    roleFilter?.addEventListener('selection-change', onSelection((v) => { role = typeof v === 'string' ? v : ''; }));
+
+    orgFilter?.addEventListener('selection-change', onSelection((v) => { orgValues = Array.isArray(v) ? v : []; }));
+
+    // ---- Row changes ----------------------------------------------------------
+
+    const rowFor = (email: string) => api.getRowNode(email)?.data;
+    const update = (row: Row, patch: Partial<Row>) => {
+      api.applyTransaction({ update: [{ ...row, ...patch }] });
+      // The renderer only re-runs on a changed value; the menu's items depend
+      // on status too, so redraw the row outright.
+      const node = api.getRowNode(row.email);
+      if (node) api.redrawRows({ rowNodes: [node] });
+    };
+    const nameOf = (row: Row) => row.name || row.email;
+
+    // One dialog and one confirm, retargeted by the row whose menu was used.
+    let pending: Row | null = null;
+    let pendingAct = '';
+
+    root.addEventListener('menu-action', async (event) => {
+      const menu = (event.target as Element).closest<HTMLElement>('.firma2-user-grid__menu');
+      const row = menu?.dataset.email ? rowFor(menu.dataset.email) : undefined;
+      if (!row) return;
+      const act = (event as CustomEvent<string>).detail;
+      pending = row;
+      pendingAct = act;
+
+      if (act === 'role' && roleDialog && roleSelect) {
+        await customElements.whenDefined('bcn-radio-group');
+        roleDialog.heading = `Change ${nameOf(row)}’s role`;
+        roleSelect.options = roleOrder.map((r) => ({ value: r, label: r, description: hintFor(row, r) }));
+        roleSelect.value = row.role;
+        if (orgSelect) { orgSelect.value = ''; orgSelect.errorText = ''; }
+        syncOrgField();
+        roleDialog.show();
+      } else if (act === 'restore') {
+        update(row, { status: 'Active' });
+        applyFilters();
+        toasts?.show({ message: `Access restored for ${nameOf(row)}.`, variant: 'success' });
+        pending = null;
+      } else if (confirm) {
+        await customElements.whenDefined('esa-confirm-dialog');
+        Object.assign(
+          confirm,
+          act === 'suspend'
+            ? {
+                heading: `Suspend ${nameOf(row)}?`,
+                message: 'They lose access right away. Their name stays on everything they worked on, and you can restore access at any time.',
+                confirmLabel: 'Suspend user',
+                cancelLabel: 'Keep access',
+              }
+            : {
+                heading: `Cancel the invitation to ${nameOf(row)}?`,
+                message: 'The link in their email stops working. You can invite them again later.',
+                confirmLabel: 'Cancel invitation',
+                cancelLabel: 'Keep invitation',
+              },
+        );
+        confirm.show();
+      }
+    });
+
+    // Each role's reach — and, under Viewer for a steward, what moving there
+    // costs, because a Viewer can't be a steward.
+    const hintFor = (row: Row, role: string) =>
+      role === 'Viewer' && row.stewardOf.length > 0
+        ? `Signed in and read-only. They’ll stop being a steward of ${row.stewardOf.join(' and ')}.`
+        : (roleHints[role] ?? '');
+
+    // A Contributor needs an organization: picking it for someone who has none
+    // opens the field that supplies one.
+    const needsOrganization = () =>
+      roleSelect?.value === 'Contributor' && !!pending && pending.organizations.length === 0;
+    function syncOrgField() {
+      if (orgField) orgField.hidden = !needsOrganization();
+    }
+    roleSelect?.addEventListener('change', syncOrgField);
+    orgSelect?.addEventListener('change', () => { orgSelect.errorText = ''; });
+
+    root.querySelector('[data-users-role-cancel]')?.addEventListener('click', () => roleDialog?.close());
+    root.querySelector('[data-users-role-submit]')?.addEventListener('click', () => {
+      const row = pending;
+      const role = roleSelect?.value as UserRole | undefined;
+      if (!row || !role || role === row.role) {
+        roleDialog?.close();
+        pending = null;
+        return;
+      }
+      const joining = needsOrganization() ? orgSelect?.value ?? '' : '';
+      if (needsOrganization() && !joining) {
+        if (orgSelect) orgSelect.errorText = 'Choose the organization they’ll contribute to.';
+        return;
+      }
+      roleDialog?.close();
+      pending = null;
+      const lostSteward = role === 'Viewer' && row.stewardOf.length > 0;
+      const organizations = joining ? [joining] : row.organizations;
+      update(row, {
+        role,
+        organizations,
+        organizationHrefs: joining ? [orgHref(joining)] : row.organizationHrefs,
+        stewardOf: role === 'Viewer' ? [] : row.stewardOf,
+      });
+      toasts?.show({
+        message:
+          `${nameOf(row)} is now ${role === 'Administrator' ? 'an' : 'a'} ${role}` +
+          (joining ? ` at ${joining}` : '') +
+          (lostSteward ? ' and no longer a steward' : '') + '.',
+        variant: 'success',
+      });
+    });
+
+    confirm?.addEventListener('confirm', () => {
+      const row = pending;
+      pending = null;
+      if (!row) return;
+      if (pendingAct === 'suspend') {
+        update(row, { status: 'Suspended' });
+        applyFilters();
+        toasts?.show({ message: `${nameOf(row)} suspended.`, variant: 'success' });
+      } else if (pendingAct === 'cancel-invite') {
+        api.applyTransaction({ remove: [row] });
+        applyFilters();
+        toasts?.show({ message: `Invitation to ${nameOf(row)} canceled.`, variant: 'success' });
+      }
+    });
+    confirm?.addEventListener('cancel', () => { pending = null; });
   }
 
   document.querySelectorAll<HTMLElement>('.firma2-user-grid').forEach(initUserGrid);
 </script>
+
+<style>
+  /* No rule between rows — see the header. */
+  .firma2-user-grid :global(.ag-row) {
+    border-bottom: none;
+  }
+  /* Nor beside the pinned "…" column (user call). It is pinned only so it
+     stays in reach when a narrow window scrolls the grid sideways — a hover
+     affordance, not a column to fence off. AG draws that rule from its theme
+     variable, at a specificity no selector here should fight, so the
+     variable is what changes. */
+  .firma2-user-grid :global(.ag-root-wrapper) {
+    --ag-pinned-column-border: none;
+  }
+
+  /* A band: the grid header's sunken surface, its label aligned with the Name
+     column's text. Not a row you act on, so it takes no hover. */
+  .firma2-user-grid :global(.ag-full-width-row),
+  .firma2-user-grid :global(.ag-full-width-row.ag-row-hover) {
+    background-color: var(--color-background-elevation-sunken);
+  }
+  .firma2-user-grid :global(.ag-full-width-row.ag-row-hover::before) {
+    display: none;
+  }
+  .firma2-user-grid :global(.firma2-user-grid__band) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200, 8px);
+    height: 100%;
+    padding-inline: var(--ag-cell-horizontal-padding, 16px);
+  }
+
+  /* THE MENU HAS TO LEAVE THE CELL. AG Grid clips every cell, row and viewport,
+     and esa-dropdown-menu draws its panel absolutely inside its own host — so
+     an open menu would be cut to the 40px row. The "…" column is pinned right,
+     so only the pinned container and the vertical chain above it are opened
+     up; the centre viewport keeps its own horizontal scroll for a narrow
+     window. The open row is lifted so the rows painted after it don't cover
+     its panel. */
+  .firma2-user-grid :global(.firma2-data-grid__grid),
+  .firma2-user-grid :global(.ag-root-wrapper),
+  .firma2-user-grid :global(.ag-root),
+  .firma2-user-grid :global(.ag-body),
+  .firma2-user-grid :global(.ag-body-viewport),
+  .firma2-user-grid :global(.ag-pinned-right-cols-container),
+  .firma2-user-grid :global(.ag-pinned-right-cols-container .ag-row),
+  .firma2-user-grid :global(.firma2-user-grid__act) {
+    overflow: visible;
+  }
+  .firma2-user-grid :global(.ag-row:has(esa-dropdown-menu[open])) {
+    z-index: 2;
+  }
+  .firma2-user-grid :global(.firma2-user-grid__act) {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-inline: 0;
+  }
+
+  /* The column is named for assistive tech, not on screen — a header reading
+     "Actions" over a column of "…" says nothing the icons don't. */
+  .firma2-user-grid :global(.firma2-user-grid__act-header .ag-header-cell-text) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* THE "…" SHOWS ON THE ROW YOU'RE ON — Organization › Members' rule: a
+     column of identical icons is noise until a row is in hand. Opacity, so
+     each stays in the tab order; focus, an open menu and touch show it. */
+  .firma2-user-grid :global(.firma2-user-grid__menu) {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  /* ag-row-hover, not :hover — the "…" sits in the pinned container, a
+     different element from the part of the row under the pointer, and AG
+     marks every part of the hovered row with the class. */
+  .firma2-user-grid :global(.ag-row-hover .firma2-user-grid__menu),
+  .firma2-user-grid :global(.firma2-user-grid__menu:focus-within),
+  .firma2-user-grid :global(.firma2-user-grid__menu[open]) {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .firma2-user-grid :global(.firma2-user-grid__menu) {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-user-grid :global(.firma2-user-grid__menu) {
+      transition: none;
+    }
+  }
+</style>

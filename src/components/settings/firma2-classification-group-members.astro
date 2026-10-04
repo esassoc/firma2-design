@@ -1,0 +1,123 @@
+---
+// firma2-classification-group-members — the classifications in one group, on
+// the group's settings page: their order, a door to each, and the add that
+// starts a new one in this group.
+//
+// THE ORDER IS THE BOARD'S ORDER. Dragging a row (or its grip's Move menu)
+// sets the order this group's goals appear in on the Classifications board
+// and in the settings list — stored per group (src/lib/taxonomy-edits.ts,
+// `setOrder`). Moving a classification to ANOTHER group is its own page's
+// Group field; this list only arranges what is already here.
+//
+// RENDERED IN THE BROWSER, from the store: a group's members change there
+// (added, moved in or out, removed), and a group added in this browser has no
+// build-time page to render into. Same approach as firma2-stage-editor.
+//
+// bcn-lego-checked: bcn-sortable-list reorders (no esa- list reorders;
+// esassoc/ecology#39); esa-button the add; esa-empty-state the empty group;
+// firma2-rail-section the section. The only CSS rules the rows the way
+// firma2-stage-editor's are. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** The seeded group's slug. Omitted on a draft route, where `?slug=` names it. */
+  slug?: string;
+}
+
+const { slug } = Astro.props;
+---
+<Firma2RailSection title="Classifications">
+  <EsaButton slot="actions" variant="secondary" size="md" icon="plus" tag="a" href={withBase('/prototypes/workspace-settings/classifications/new')} data-members-add>
+    Add classification
+  </EsaButton>
+  <div class="firma2-classification-group-members" data-slug={slug}>
+    <bcn-sortable-list data-members-sort>
+      <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+      <ol class="firma2-classification-group-members__rows" data-members-rows></ol>
+    </bcn-sortable-list>
+    <div data-members-empty hidden>
+      <EsaEmptyState size="sm" title="No classifications in this group" />
+    </div>
+  </div>
+</Firma2RailSection>
+
+<style>
+  .firma2-classification-group-members__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-classification-group-members__rows :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+
+  .firma2-classification-group-members__rows :global(.firma2-classification-group-members__name) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-group-members__rows :global(.firma2-classification-group-members__desc) {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+</style>
+
+<script>
+  import '../shared/bcn-sortable-list';
+  import { classificationsIn, setOrder } from '../../lib/taxonomy-edits';
+  import { recordHref, recordSlug } from '../../lib/taxonomy-record';
+  import { withBase } from '../../lib/base';
+
+  document.querySelectorAll<HTMLElement>('.firma2-classification-group-members').forEach((root) => {
+    const slug = recordSlug(root);
+    const rows = root.querySelector<HTMLOListElement>('[data-members-rows]')!;
+    const empty = root.querySelector<HTMLElement>('[data-members-empty]')!;
+    const sorter = root.querySelector<HTMLElement>('[data-members-sort]')!;
+    const add = root.closest('section')?.querySelector<HTMLAnchorElement>('[data-members-add]');
+    if (add) add.href = withBase(`/prototypes/workspace-settings/classifications/new?group=${encodeURIComponent(slug)}`);
+
+    const paint = (): void => {
+      const members = classificationsIn(slug);
+      rows.replaceChildren(
+        ...members.map((e) => {
+          const li = document.createElement('li');
+          li.dataset.sortKey = e.slug;
+          li.dataset.sortLabel = e.name;
+          const text = document.createElement('div');
+          text.className = 'firma2-classification-group-members__name stack';
+          text.dataset.gap = '3xs';
+          const link = document.createElement('a');
+          link.className = 'typography-body-md';
+          link.href = recordHref('/prototypes/workspace-settings/classifications', e.slug);
+          link.textContent = e.name;
+          text.append(link);
+          if (e.description) {
+            const desc = document.createElement('p');
+            desc.className = 'firma2-classification-group-members__desc typography-body-sm';
+            desc.textContent = e.description;
+            text.append(desc);
+          }
+          li.append(text);
+          return li;
+        }),
+      );
+      // One classification has nothing to be ordered against: no grip.
+      if (members.length === 1) rows.firstElementChild?.setAttribute('data-sort-locked', '');
+      empty.hidden = members.length > 0;
+    };
+
+    paint();
+    sorter.addEventListener('sort-change', (e) => {
+      setOrder(`classification:${slug}`, (e as CustomEvent<{ order: string[] }>).detail.order);
+      paint();
+    });
+  });
+</script>

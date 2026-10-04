@@ -74,7 +74,7 @@ const config = {
   subwatersheds: SUBWATERSHEDS,
   places: PLACES,
 };
-const subscriptionsHref = withBase('/prototypes/gis-subscriptions');
+const subscriptionsHref = withBase('/prototypes/workspace-settings/gis-subscriptions');
 
 // Each tool's glyph by its Lucide name, through the icon registry — so the
 // spoke's icon set (Hugeicons) draws them — with the Lucide body as the
@@ -107,7 +107,7 @@ const TOOLS = [
     <!-- FINDING THE PLACE (team 2's story J). The tools make sure nobody has to
          draw a polygon; none of them get the map THERE. This searches the
          workspace's own areas first, then towns, and moves the map only. -->
-    <div class="firma2-work-areas__plate firma2-work-areas__plate--search" data-editor-only>
+    <div class="firma2-work-areas__plate firma2-work-areas__plate--search">
       <esa-text-field data-search type="search" size="sm" label="Find a place" placeholder="A town or a subwatershed" autocomplete="off"></esa-text-field>
       <ul class="firma2-work-areas__results" data-results hidden></ul>
     </div>
@@ -193,8 +193,8 @@ const TOOLS = [
     </p>
   </div>
 
-  <template data-tpl-edit><EsaButton variant="ghost" size="sm">Edit</EsaButton></template>
-  <template data-tpl-delete><EsaButton variant="danger" appearance="soft" size="sm">Delete</EsaButton></template>
+  <template data-tpl-edit><EsaButton variant="chrome" size="md" iconOnly icon="pencil" label="Edit work area" /></template>
+  <template data-tpl-delete><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Delete work area" /></template>
 
   <Firma2WorkAreaUpload center={center} />
 </section>
@@ -480,9 +480,11 @@ const TOOLS = [
 </style>
 
 <script>
+  import { isViewMode, onRecordMode } from '../../lib/record-mode';
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-select';
   import type { MapWorkArea, Place, Region, Subwatershed, WorkAreaKind } from '../../data/firma2-geography';
+  import { nameButton } from '../../lib/name-button';
   import { coordinateProblem, coordinateWarning, formatExtent, parsePair, pathMiles, ringAcres } from '../../lib/geo';
   import type { LatLng } from '../../lib/geo';
   import { addReferenceLayers, createMap, loadLeaflet, shapeStyle, token } from '../../lib/leaflet';
@@ -540,7 +542,10 @@ const TOOLS = [
     let editingId: string | null = null;
     let removed: { area: MapWorkArea; index: number } | null = null;
 
-    const editable = () => source === 'app';
+    // Editable when the app owns the areas (not a GIS subscription) AND the
+    // record is in edit mode (firma2-record-mode). Reading, the map pans and
+    // zooms and the table reads; nothing draws.
+    const editable = () => source === 'app' && !isViewMode();
     const save = () => writeWorkAreas(slug, areas);
 
     // ---- the map ------------------------------------------------------------------
@@ -648,14 +653,16 @@ const TOOLS = [
             const td = document.createElement('td');
             const wrap = document.createElement('div');
             wrap.className = 'firma2-work-areas__row-actions';
+            // The name goes on the inner <button>: the clone's root is EsaButton's
+            // wrapper <span>, where an aria-label names nothing.
             const edit = tpl('edit');
-            edit.setAttribute('aria-label', `Edit ${area.label}`);
+            nameButton(edit, `Edit ${area.label}`);
             edit.addEventListener('click', () => {
               startEdit(area.id);
               canvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
             });
             const del = tpl('delete');
-            del.setAttribute('aria-label', `Delete ${area.label}`);
+            nameButton(del, `Delete ${area.label}`);
             del.addEventListener('click', () => remove(area.id));
             wrap.append(edit, del);
             td.append(wrap);
@@ -1107,6 +1114,17 @@ const TOOLS = [
     });
     search.addEventListener('keydown', (e) => {
       if ((e as KeyboardEvent).key === 'Enter') results.querySelector<HTMLButtonElement>('button')?.click();
+    });
+
+    // ---- Edit / Update ---------------------------------------------------------------
+    // Update while an area is open finishes it first: an edit in progress is
+    // kept, a half-drawn shape or an open form is let go.
+    onRecordMode((next) => {
+      if (next === 'view' && mode !== 'idle') {
+        if (mode === 'edit') $('[data-done]').click();
+        else reset();
+      }
+      paintAll();
     });
 
     // ---- another window changed something ---------------------------------------

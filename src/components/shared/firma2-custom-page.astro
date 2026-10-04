@@ -1,0 +1,249 @@
+---
+// firma2-custom-page — the body of one custom page from the rail's Pages group:
+// the folder it sits in and its formatted text, both editable in place, under a
+// title that is editable in place too (the page header's editableTitle).
+//
+// A RECORD, NOT A FORM: a page is read far more often than it is changed, so
+// the folder is a firma2-editable-field — borderless at rest, the ring on
+// hover, commit on leaving — the same as a project's Key facts. The text is
+// firma2-rich-text: what you read is what you type into, formatted as you go,
+// and saved as typing settles. Add page is the form; this is the thing it made.
+//
+// READ ON THE CLIENT. Pages added in this browser exist only in its storage
+// (src/lib/custom-pages.ts), so the static build cannot render them; the page is
+// opened as /prototypes/pages/page?id=…, and this script seeds the fields from
+// that id — `firma2:field-set` for the title and folder, `firma2:rich-text-set`
+// for the text — and writes each save back. `data-custom-page` is also how
+// Firma2PagesNav knows to mark the page's row in the rail, and
+// `firma2:pages-changed` is how it hears about a rename or a move.
+//
+// bcn-lego-checked: firma2-editable-field (composing esa-select) and
+// firma2-rich-text are the fields; the layout is `.stack`. No bespoke flex and
+// no <style> block.
+import Firma2EditableField from './firma2-editable-field.astro';
+import Firma2RichText from './firma2-rich-text.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { seedEntries, NO_FOLDER_LABEL } from '../../data/firma2-pages';
+import type { CustomFolder } from '../../data/firma2-pages';
+
+// The seeds' folders, so the select has options before the script adds this
+// browser's. Folder names are unique (Add folder enforces it), so the name is
+// a safe value.
+const seedFolderNames = seedEntries.filter((e): e is CustomFolder => e.kind === 'folder').map((f) => f.name);
+---
+<div class="firma2-custom-page stack" data-gap="md" data-custom-page data-no-folder={NO_FOLDER_LABEL}>
+  <div class="stack" data-gap="md" data-page-fields>
+    <dl class="stack" data-gap="md">
+      <Firma2EditableField
+        field="pageFolder"
+        label="Folder"
+        control="select"
+        value={NO_FOLDER_LABEL}
+        options={[NO_FOLDER_LABEL, ...seedFolderNames]}
+      />
+    </dl>
+    <Firma2RichText label="Page content" placeholder="Start writing, or type ## for a heading" />
+    {/* Reading an empty page. style.display, set by the script — never shown
+        while editing, where the editor's own placeholder takes its place. */}
+    <div style="display: none" data-page-empty>
+      <EsaEmptyState title="This page is empty" description="Select Edit to add text and files." />
+    </div>
+  </div>
+  <p class="typography-body-md" hidden data-page-missing>Check the link, or pick a page from Pages in the sidebar.</p>
+</div>
+
+<script>
+  import { findPage, findFolder, readFolders, readPagesEnabled, updatePage, pageBodyHtml } from '../../lib/custom-pages';
+  import type { PageEdit } from '../../lib/custom-pages';
+  import { putFile, fileUrl, listFiles, resolveInlineImages, pruneInlineImages, adoptAttachments, fileEmbedHtml } from '../../lib/page-files';
+
+  type Select = HTMLElement & { options: { value: string; label: string }[] };
+
+  const setField = (field: string, raw: string): void => {
+    document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: { field, raw } }));
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-custom-page]').forEach((root) => {
+    const id = new URLSearchParams(location.search).get('id') ?? '';
+    const noFolder = root.dataset.noFolder ?? '';
+    const titleRow = document.querySelector<HTMLElement>('[data-editable-field][data-field="pageTitle"]');
+
+    // After every module has run, so the editable field is listening for
+    // field-set — and the save listener goes on AFTER the seeding, so filling
+    // the fields from storage is not mistaken for an edit.
+    requestAnimationFrame(() => {
+      const page = findPage(id);
+      if (!page) {
+        setField('pageTitle', 'Page not found');
+        // A title nobody can rename: there is no page behind it.
+        titleRow?.setAttribute('data-locked', '');
+        // display, not `hidden`: the fields are a `.stack` and the actions a
+        // `.cluster`, and a layout class's display out-ranks the UA [hidden] rule.
+        root.querySelector<HTMLElement>('[data-page-fields]')!.style.display = 'none';
+        const missing = root.querySelector<HTMLElement>('[data-page-missing]')!;
+        // No Pages in the sidebar to send them to while the feature is off.
+        if (!readPagesEnabled()) missing.textContent = 'Check the link, or ask whoever sent it.';
+        missing.hidden = false;
+        document.querySelectorAll<HTMLElement>('[data-page-actions]').forEach((el) => (el.style.display = 'none'));
+        return;
+      }
+
+      // This browser's folders join the seeds' in the select.
+      const select = root.querySelector<Select>('[data-field="pageFolder"] [data-field-input]');
+      const syncFolders = (): void => {
+        const options = [noFolder, ...readFolders().map((f) => f.name)].map((name) => ({ value: name, label: name }));
+        if (select) {
+          select.dataset.options = JSON.stringify(options);
+          customElements.whenDefined('esa-select').then(() => (select.options = options));
+        }
+        setField('pageFolder', findFolder(findPage(id)?.folderId)?.name ?? noFolder);
+      };
+      syncFolders();
+      // A folder renamed or deleted from the rail: the select's choices and
+      // this page's own Folder value follow.
+      document.addEventListener('firma2:folders-changed', syncFolders);
+
+      setField('pageTitle', page.title);
+      // Images placed in the text are kept as files with the page; the editor
+      // asks here where each one goes.
+      // Files placed in the text are kept the same way, and read back by id.
+      type Store = (file: File) => Promise<{ src: string; fileId: string } | undefined>;
+      type RichText = HTMLElement & {
+        firma2StoreImage?: Store;
+        firma2StoreFile?: Store;
+        firma2FileUrl?: (fileId: string) => Promise<string | undefined>;
+      };
+      const text = root.querySelector<RichText>('[data-rich-text]');
+      if (text) {
+        const store: Store = async (file) => {
+          const stored = await putFile(id, 'inline', file);
+          return stored && { src: fileUrl(stored), fileId: stored.id };
+        };
+        text.firma2StoreImage = store;
+        text.firma2StoreFile = store;
+        text.firma2FileUrl = async (fileId) => {
+          const stored = (await listFiles(id, 'inline')).find((f) => f.id === fileId);
+          return stored && fileUrl(stored);
+        };
+      }
+      const toast = (message: string, variant: string): void => {
+        customElements.whenDefined('esa-snackbar-container').then(() => {
+          document
+            .querySelector<HTMLElement & { show(o: { message: string; variant: string }): void }>('[data-pages-toasts]')
+            ?.show({ message, variant });
+        });
+      };
+      text?.addEventListener('firma2:rich-text-error', (event) => {
+        toast((event as CustomEvent<{ message: string }>).detail.message, 'error');
+      });
+
+      // ---- view and edit ----
+      // A page opens to READ: the title and folder are locked, the text is
+      // plain reading. Edit unlocks all of it, and what changes is HELD here
+      // until Update writes it — the page as others see it never shows half
+      // an edit. (An image or file placed in the text is stored as it is
+      // added; it joins the page only when Update saves the text that holds it.)
+      // firma2-custom-page-actions owns the Edit / Update button; this owns
+      // the mode and what it does. Both talk through `firma2:page-mode` (out)
+      // and `firma2:page-commit` (in), on document.
+      let mode: 'view' | 'edit' = 'view';
+      let staged: PageEdit = {};
+      let currentHtml = pageBodyHtml(page.body);
+      const isEmpty = (h: string): boolean => {
+        const tpl = document.createElement('template');
+        tpl.innerHTML = h;
+        return !tpl.content.textContent?.trim() && !tpl.content.querySelector('img, [data-file-embed]');
+      };
+      const fieldRows = ['pageTitle', 'pageFolder'].map((f) =>
+        document.querySelector<HTMLElement>(`[data-editable-field][data-field="${f}"]`),
+      );
+      const emptyNote = root.querySelector<HTMLElement>('[data-page-empty]');
+      // Reading an empty page, the empty state stands where the text would be
+      // — the blank editor steps aside rather than leave a gap above it.
+      const syncEmpty = (): void => {
+        const showNote = mode === 'view' && isEmpty(currentHtml);
+        if (emptyNote) emptyNote.style.display = showNote ? '' : 'none';
+        if (text) text.style.display = showNote ? 'none' : '';
+      };
+      const setMode = (next: 'view' | 'edit'): void => {
+        mode = next;
+        root.dataset.mode = next;
+        fieldRows.forEach((row) => row?.toggleAttribute('data-locked', next === 'view'));
+        text?.dispatchEvent(new CustomEvent('firma2:rich-text-editable', { detail: { editable: next === 'edit' } }));
+        syncEmpty();
+        document.dispatchEvent(new CustomEvent('firma2:page-mode', { detail: { mode: next } }));
+      };
+      setMode('view');
+
+      document.addEventListener('firma2:page-mode-request', (event) => {
+        if ((event as CustomEvent<{ mode: string }>).detail.mode !== 'edit' || mode === 'edit') return;
+        setMode('edit');
+        text?.dispatchEvent(new CustomEvent('firma2:rich-text-focus'));
+      });
+      // The rail's Edit page on the page already open: same as pressing Edit.
+      // Its focus has landed on a read-only editor, so it is asked again once
+      // the editor is writable — a second event this listener then ignores.
+      text?.addEventListener('firma2:rich-text-focus', () => {
+        if (mode === 'edit') return;
+        setMode('edit');
+        text.dispatchEvent(new CustomEvent('firma2:rich-text-focus'));
+      });
+      document.addEventListener('firma2:page-commit', () => {
+        const changed = Object.keys(staged).length > 0;
+        if (changed) {
+          updatePage(id, staged);
+          if (staged.title !== undefined || staged.folderId !== undefined) {
+            document.dispatchEvent(new CustomEvent('firma2:pages-changed'));
+          }
+          staged = {};
+          toast('Page updated.', 'success');
+        }
+        setMode('view');
+      });
+      // Leaving with held changes asks first — the browser's own prompt.
+      window.addEventListener('beforeunload', (event) => {
+        if (mode === 'edit' && Object.keys(staged).length) event.preventDefault();
+      });
+      // Saved images point at the last session's object URLs; resolve them to
+      // this one's before the editor sees the HTML, and drop stored images the
+      // text no longer uses.
+      // Files from the retired Files list join the end of the text, once.
+      void adoptAttachments(id).then(async (moved) => {
+        let html = pageBodyHtml(page.body);
+        if (moved.length) {
+          html += moved.map(fileEmbedHtml).join('');
+          updatePage(id, { body: html });
+          currentHtml = html;
+        }
+        const resolved = await resolveInlineImages(id, html);
+        text?.dispatchEvent(new CustomEvent('firma2:rich-text-set', { detail: { html: resolved } }));
+        void pruneInlineImages(id, html);
+        syncEmpty();
+        // Opened from the rail's Edit page: open in edit mode, the caret in the
+        // text — after the text is in, or setting it would put the caret back
+        // at the start.
+        if (new URLSearchParams(location.search).has('edit')) {
+          text?.dispatchEvent(new CustomEvent('firma2:rich-text-focus'));
+        }
+      });
+      text?.addEventListener('firma2:rich-text-change', (event) => {
+        currentHtml = (event as CustomEvent<{ html: string }>).detail.html;
+        staged.body = currentHtml;
+      });
+      document.title = `${page.title} — Pages — ProjectFirma 2.0`;
+
+      document.addEventListener('firma2:field-save', (event) => {
+        const { field, raw } = (event as CustomEvent<{ field: string; raw: string }>).detail;
+        if (field === 'pageTitle') {
+          staged.title = raw;
+          document.title = `${raw} — Pages — ProjectFirma 2.0`;
+        } else if (field === 'pageFolder') {
+          const folderId = readFolders().find((f) => f.name === raw)?.id ?? null;
+          // A repaint after a rename lands here with the folder unchanged.
+          if (folderId === (findPage(id)?.folderId ?? null)) return;
+          staged.folderId = folderId;
+        }
+      });
+    });
+  });
+</script>

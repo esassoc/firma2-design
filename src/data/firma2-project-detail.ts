@@ -33,7 +33,7 @@
 //     remainder, so the sources always sum to the cost exactly rather than
 //     to a number a reader can catch us on;
 //   - milestone DATES come from the project's implementation start and
-//     completion years against a per-program template, so no project has a
+//     completion years against a per-work-type template, so no project has a
 //     construction milestone before its own start year;
 //   - CONTACTS are seeded off the project's own name against a pool of invented
 //     people, and each one's organization is read from the record — the lead
@@ -110,6 +110,14 @@ export interface PerformanceMeasure {
   unit: string;
   /** The target the project committed to. */
   expected: number;
+  /**
+   * The catalog measure (src/data/firma2-performance-measures.ts) this row
+   * reports toward — how a project's own figure reaches a classification's
+   * KPI. Absent for a measure the project tracks for itself alone. Two rows
+   * may name the same KPI (acres thinned and acres burned both count as fuels
+   * treatment acres), the way subcategories divide one measure.
+   */
+  kpi?: string;
   /** What the project has reported to date — equals the sum of the NON-NULL
    *  values in `series`, which is what `reportedTotal()` computes. */
   reported: number;
@@ -390,10 +398,10 @@ interface MilestoneTemplate {
   anchor: MilestoneAnchor;
 }
 
-// Restoration programs genuinely share a shape — scope, permit, build, monitor
+// Restoration work types genuinely share a shape — scope, permit, build, monitor
 // — so the templates differ in the WORK each names rather than in structure.
 const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
-  'Riparian Revegetation': [
+  'Riparian revegetation': [
     { title: 'Site assessment and planting plan complete', anchor: 'start-2' },
     { title: 'Landowner access agreements signed', anchor: 'start-1' },
     { title: 'First planting season', anchor: 'start' },
@@ -401,7 +409,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Final planting and site closeout', anchor: 'end' },
     { title: 'Year-one survivorship survey', anchor: 'end+1' },
   ],
-  'Fish Passage': [
+  'Fish passage': [
     { title: 'Barrier inventory and passage assessment complete', anchor: 'start-2' },
     { title: 'Streambed simulation design at 90%', anchor: 'start-1' },
     { title: 'Permits issued and contractor mobilized', anchor: 'start' },
@@ -409,7 +417,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Structure removed and channel reconnected', anchor: 'end' },
     { title: 'Post-project passage monitoring', anchor: 'end+1' },
   ],
-  'Meadow & Wetland Restoration': [
+  'Meadow & wetland restoration': [
     { title: 'Hydrologic and vegetation baseline survey', anchor: 'start-2' },
     { title: 'Grading and hydrology design complete', anchor: 'start-1' },
     { title: 'Earthwork begins', anchor: 'start' },
@@ -417,7 +425,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Revegetation and site closeout', anchor: 'end' },
     { title: 'Groundwater monitoring, year one', anchor: 'end+1' },
   ],
-  'Aquatic Habitat Restoration': [
+  'Aquatic habitat restoration': [
     { title: 'Geomorphic assessment complete', anchor: 'start-2' },
     { title: 'Habitat design and permitting package submitted', anchor: 'start-1' },
     { title: 'Construction access and staging established', anchor: 'start' },
@@ -425,7 +433,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Channel shaping complete and site revegetated', anchor: 'end' },
     { title: 'Juvenile salmonid response survey', anchor: 'end+1' },
   ],
-  'Forest Health & Fuels': [
+  'Forest health & fuels': [
     { title: 'Stand exams and treatment prescription complete', anchor: 'start-2' },
     { title: 'Environmental review and burn plan approved', anchor: 'start-1' },
     { title: 'Mechanical thinning begins', anchor: 'start' },
@@ -433,7 +441,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Final unit treated', anchor: 'end' },
     { title: 'Post-treatment fuels monitoring', anchor: 'end+1' },
   ],
-  'Stormwater & Water Quality': [
+  'Stormwater & water quality': [
     { title: 'Source assessment and load reduction targets set', anchor: 'start-2' },
     { title: 'Treatment design at 90% and permits filed', anchor: 'start-1' },
     { title: 'Construction begins', anchor: 'start' },
@@ -476,9 +484,12 @@ const milestoneStatus = (year: number, stage: ProjectStage): 'complete' | 'curre
 };
 
 const buildMilestones = (project: Project): Milestone[] => {
-  const template = MILESTONE_TEMPLATES[project.program];
+  // Keyed by project type — the kind of work on the ground — not by plan-goal
+  // classifications. A Deer Creek planting carries "Salmon & steelhead recovery"
+  // as a goal; its milestones follow "Riparian revegetation".
+  const template = MILESTONE_TEMPLATES[project.projectType];
   if (!template) {
-    throw new Error(`No milestone template for program "${project.program}"`);
+    throw new Error(`No milestone template for project type "${project.projectType}" on "${project.projectName}"`);
   }
 
   // A DEFERRED PROJECT'S STATUSES ARE DECIDED HERE, NOT BY milestoneStatus().
@@ -691,7 +702,7 @@ const CONTINUOUS_UNITS = new Set(['acres', 'miles', 'acre-feet', 'cfs']);
 
 const buildMeasures = (
   project: Project,
-  authored: [name: string, unit: string, expected: number][],
+  authored: [name: string, unit: string, expected: number, kpi?: string][],
   progress: number,
 ): PerformanceMeasure[] => {
   const base = stageCompletion(project.stage, progress);
@@ -716,7 +727,7 @@ const buildMeasures = (
     .map((_, i) => i)
     .filter((i) => isClosedPeriod({ year: years[i], status: statuses[i] }));
 
-  return authored.map(([name, unit, expected], i) => {
+  return authored.map(([name, unit, expected, kpi], i) => {
     const fraction = Math.min(1, base * MEASURE_SKEW[i % MEASURE_SKEW.length]);
     // A decimal on a continuous unit, but only while the number is small enough
     // for the tenth to mean anything — "3,100 acre-feet" does not want ".4".
@@ -762,6 +773,7 @@ const buildMeasures = (
       expected,
       reported,
       series,
+      ...(kpi ? { kpi } : {}),
     };
   });
 };
@@ -884,8 +896,8 @@ interface AuthoredDetail {
     extent: number;
     nudge?: [number, number];
   }[];
-  /** [measure name, unit, expected value]. */
-  measures: [string, string, number][];
+  /** [measure name, unit, expected value, catalog KPI slug it reports toward]. */
+  measures: [string, string, number, string?][];
   /** [funder name, share of estimated total cost]. Shares should sum to ~1. */
   funders: [string, number][];
   /** How far along the work is, 0–1. Only read for Implementation and Deferred. */
@@ -903,12 +915,12 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Upland buffer unit', kind: 'area', shape: 1, extent: 62, nudge: [0.014, 0.022] },
     ],
     measures: [
-      ['Acres of riparian habitat restored', 'acres', 62],
+      ['Acres of riparian habitat restored', 'acres', 62, 'acres-riparian-habitat-restored'],
       ['Stream miles revegetated', 'miles', 4.1],
-      ['Native trees and shrubs planted', 'plants', 18400],
+      ['Native trees and shrubs planted', 'plants', 18400, 'native-plants-installed'],
       ['Acres of invasive vegetation removed', 'acres', 28],
       ['Miles of livestock exclusion fencing', 'miles', 5.8],
-      ['Volunteer hours contributed', 'hours', 2400],
+      ['Volunteer hours contributed', 'hours', 2400, 'volunteer-hours-contributed'],
       ['Native seed collected', 'pounds', 240],
     ],
     funders: [
@@ -928,8 +940,8 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Reconnected tributary reach', kind: 'reach', shape: 1, extent: 11.3, nudge: [-0.018, 0.016] },
     ],
     measures: [
-      ['Fish passage barriers removed', 'barriers', 3],
-      ['Stream miles reopened to anadromy', 'miles', 11.3],
+      ['Fish passage barriers removed', 'barriers', 3, 'fish-passage-barriers-removed'],
+      ['Stream miles reopened to anadromy', 'miles', 11.3, 'stream-miles-reopened'],
       ['Acres of channel habitat restored', 'acres', 14],
     ],
     funders: [
@@ -950,7 +962,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Levee breach and transition zone', kind: 'area', shape: 1, extent: 31, nudge: [-0.021, -0.014] },
     ],
     measures: [
-      ['Acres of tidal marsh restored', 'acres', 240],
+      ['Acres of tidal marsh restored', 'acres', 240, 'acres-wetland-meadow-restored'],
       ['Acres of upland transition zone graded', 'acres', 31],
       ['Cubic yards of sediment placed', 'cubic yards', 410000],
       ['Linear feet of levee breached', 'linear feet', 1850],
@@ -975,9 +987,9 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Filled gully alignment', kind: 'reach', shape: 2, extent: 2.2, nudge: [0.008, 0.004] },
     ],
     measures: [
-      ['Acres of montane meadow restored', 'acres', 380],
-      ['Stream miles reconnected to floodplain', 'miles', 2.2],
-      ['Acre-feet of additional summer storage', 'acre-feet', 640],
+      ['Acres of montane meadow restored', 'acres', 380, 'acres-wetland-meadow-restored'],
+      ['Stream miles reconnected to floodplain', 'miles', 2.2, 'stream-miles-floodplain-reconnected'],
+      ['Acre-feet of additional summer storage', 'acre-feet', 640, 'water-supply-gained'],
     ],
     funders: [
       ['Sierra Meadows Restoration Initiative', 0.7],
@@ -996,9 +1008,9 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Setback levee alignment', kind: 'reach', shape: 2, extent: 3.4, nudge: [0.012, -0.008] },
     ],
     measures: [
-      ['Acres of seasonal floodplain reconnected', 'acres', 1100],
-      ['Miles of levee set back', 'miles', 3.4],
-      ['Acres of riparian forest planted', 'acres', 145],
+      ['Acres of seasonal floodplain reconnected', 'acres', 1100, 'acres-floodplain-habitat'],
+      ['Miles of levee set back', 'miles', 3.4, 'miles-levee-setback'],
+      ['Acres of riparian forest planted', 'acres', 145, 'acres-riparian-habitat-restored'],
     ],
     funders: [
       ['Delta Ecosystem Restoration Fund', 0.5],
@@ -1017,7 +1029,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Gravel injection reach', kind: 'reach', shape: 0, extent: 2.1 },
     ],
     measures: [
-      ['Stream miles of spawning habitat improved', 'miles', 2.1],
+      ['Stream miles of spawning habitat improved', 'miles', 2.1, 'stream-miles-instream-habitat'],
       ['Tons of spawning gravel placed', 'tons', 9500],
       ['Redd count, post-placement survey', 'redds', 120],
     ],
@@ -1038,11 +1050,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Treatment unit — reservoir slope', kind: 'area', shape: 2, extent: 1800, nudge: [-0.026, 0.024] },
     ],
     measures: [
-      ['Acres mechanically thinned', 'acres', 2900],
-      ['Acres treated with prescribed fire', 'acres', 1300],
-      ['Miles of shaded fuel break completed', 'miles', 17],
+      ['Acres mechanically thinned', 'acres', 2900, 'acres-forest-fuels-reduction-treatment'],
+      ['Acres treated with prescribed fire', 'acres', 1300, 'acres-forest-fuels-reduction-treatment'],
+      ['Miles of shaded fuel break completed', 'miles', 17, 'miles-fuel-break'],
       ['Acres surveyed for cultural resources', 'acres', 4200],
-      ['Miles of road decommissioned', 'miles', 12],
+      ['Miles of road decommissioned', 'miles', 12, 'miles-road-decommissioned'],
       ['Landowner agreements signed', 'agreements', 34],
       ['Slash piles burned', 'piles', 1450],
       ['Defensible space assessments completed', 'assessments', 380],
@@ -1065,7 +1077,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Canyon rim treatment unit', kind: 'area', shape: 1, extent: 640, nudge: [0.016, 0.018] },
     ],
     measures: [
-      ['Miles of shaded fuel break completed', 'miles', 9.2],
+      ['Miles of shaded fuel break completed', 'miles', 9.2, 'miles-fuel-break'],
     ],
     funders: [
       ['Wildfire Resilience Block Grant', 0.72],
@@ -1084,7 +1096,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Tributary placement reach', kind: 'reach', shape: 0, extent: 1.9, nudge: [0.019, 0.012] },
     ],
     measures: [
-      ['Stream miles treated with large wood', 'miles', 5.3],
+      ['Stream miles treated with large wood', 'miles', 5.3, 'stream-miles-instream-habitat'],
       ['Log structures installed', 'structures', 140],
     ],
     funders: [
@@ -1107,8 +1119,8 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     measures: [
       ['Acres of arundo removed', 'acres', 1050],
       ['Stream miles treated', 'miles', 12.5],
-      ['Acres revegetated with natives', 'acres', 210],
-      ['Acre-feet of water use avoided annually', 'acre-feet', 3100],
+      ['Acres revegetated with natives', 'acres', 210, 'acres-riparian-habitat-restored'],
+      ['Acre-feet of water use avoided annually', 'acre-feet', 3100, 'water-supply-gained'],
     ],
     funders: [
       ['Regional Water Quality Improvement Fund', 0.55],
@@ -1128,8 +1140,8 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     ],
     measures: [
       ['Crossings replaced', 'crossings', 4],
-      ['Stream miles reopened', 'miles', 7.2],
-      ['Fish passage barriers removed', 'barriers', 4],
+      ['Stream miles reopened', 'miles', 7.2, 'stream-miles-reopened'],
+      ['Fish passage barriers removed', 'barriers', 4, 'fish-passage-barriers-removed'],
     ],
     funders: [
       ['Anadromous Fisheries Recovery Fund', 0.41],
@@ -1149,8 +1161,8 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     ],
     measures: [
       ['Stream miles of bank stabilized', 'miles', 1.6],
-      ['Tons of fine sediment avoided annually', 'tons', 480],
-      ['Acres of riparian vegetation established', 'acres', 18],
+      ['Tons of fine sediment avoided annually', 'tons', 480, 'tons-sediment-prevented'],
+      ['Acres of riparian vegetation established', 'acres', 18, 'acres-riparian-habitat-restored'],
     ],
     funders: [
       ['Regional Water Quality Improvement Fund', 0.66],
@@ -1169,7 +1181,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Crossing upgrade corridor', kind: 'reach', shape: 2, extent: 6.4, nudge: [0.017, -0.019] },
     ],
     measures: [
-      ['Miles of road decommissioned', 'miles', 22],
+      ['Miles of road decommissioned', 'miles', 22, 'miles-road-decommissioned'],
       ['Stream crossings upgraded', 'crossings', 19],
       ['Cubic yards of sediment delivery avoided', 'cubic yards', 74000],
     ],
@@ -1191,9 +1203,9 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Floodplain planting unit', kind: 'area', shape: 2, extent: 44, nudge: [-0.015, 0.017] },
     ],
     measures: [
-      ['Stream miles of habitat restored', 'miles', 4.0],
+      ['Stream miles of habitat restored', 'miles', 4.0, 'stream-miles-instream-habitat'],
       ['Pools created or deepened', 'pools', 52],
-      ['Acres of riparian floodplain planted', 'acres', 44],
+      ['Acres of riparian floodplain planted', 'acres', 44, 'acres-riparian-habitat-restored'],
     ],
     funders: [
       ['Anadromous Fisheries Recovery Fund', 0.57],
@@ -1214,7 +1226,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     ],
     measures: [
       ['Stream miles of spring channel restored', 'miles', 5.8],
-      ['Acres of wet meadow rewetted', 'acres', 190],
+      ['Acres of wet meadow rewetted', 'acres', 190, 'acres-wetland-meadow-restored'],
       ['Acres of saltcedar removed', 'acres', 76],
     ],
     funders: [
@@ -1234,8 +1246,8 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Planting parcels', kind: 'area', shape: 2, extent: 14 },
     ],
     measures: [
-      ['Acres of riparian forest planted', 'acres', 14],
-      ['Native trees planted', 'trees', 2600],
+      ['Acres of riparian forest planted', 'acres', 14, 'acres-riparian-habitat-restored'],
+      ['Native trees planted', 'trees', 2600, 'native-plants-installed'],
     ],
     funders: [
       ['Watershed Resilience Grant Program', 0.6],
@@ -1254,7 +1266,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Terrace tamarisk removal unit', kind: 'area', shape: 1, extent: 88, nudge: [0.014, -0.017] },
     ],
     measures: [
-      ['Stream miles of breeding habitat restored', 'miles', 3.1],
+      ['Stream miles of breeding habitat restored', 'miles', 3.1, 'stream-miles-instream-habitat'],
       ['Acres of tamarisk removed', 'acres', 88],
       ['Breeding pools documented, post-project', 'pools', 24],
     ],
@@ -1278,7 +1290,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     measures: [
       ['Cold-water refugia sites enhanced', 'sites', 8],
       ['Stream miles shaded', 'miles', 8.6],
-      ['Acres of riparian canopy established', 'acres', 130],
+      ['Acres of riparian canopy established', 'acres', 130, 'acres-riparian-habitat-restored'],
       ['Miles of stream fenced from grazing', 'miles', 6.4],
       ['Instream flow agreements signed', 'agreements', 4],
     ],
@@ -1299,9 +1311,9 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Meadow rewetting unit', kind: 'area', shape: 1, extent: 210 },
     ],
     measures: [
-      ['Acres of montane meadow rewetted', 'acres', 210],
-      ['Stream miles reconnected to floodplain', 'miles', 1.7],
-      ['Acre-feet of additional summer storage', 'acre-feet', 340],
+      ['Acres of montane meadow rewetted', 'acres', 210, 'acres-wetland-meadow-restored'],
+      ['Stream miles reconnected to floodplain', 'miles', 1.7, 'stream-miles-floodplain-reconnected'],
+      ['Acre-feet of additional summer storage', 'acre-feet', 340, 'water-supply-gained'],
     ],
     funders: [
       ['Sierra Meadows Restoration Initiative', 0.64],
@@ -1320,7 +1332,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Highway crossing replacement', kind: 'reach', shape: 2, extent: 0.4, nudge: [-0.012, -0.011] },
     ],
     measures: [
-      ['Acres of tidal marsh reconnected', 'acres', 265],
+      ['Acres of tidal marsh reconnected', 'acres', 265, 'acres-wetland-meadow-restored'],
       ['Miles of tidal channel regraded', 'miles', 3.2],
       ['Crossings replaced', 'crossings', 1],
     ],
@@ -1362,9 +1374,10 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Terrace grading reach', kind: 'reach', shape: 1, extent: 2.5 },
       { label: 'Riparian planting unit', kind: 'area', shape: 2, extent: 96, nudge: [0.016, 0.014] },
     ],
-    measures: [
-      ['Acres of inset floodplain created', 'acres', 96],
-    ],
+    // NOTHING ASKED YET (hackathon team 6): a proposal is not yet answering any
+    // performance measure — the program chooses which apply once it is funded.
+    // This is the record that shows the "Nothing is being asked" state.
+    measures: [],
     funders: [
       ['Watershed Resilience Grant Program', 0.58],
       ['Delta Ecosystem Restoration Fund', 0.26],
@@ -1383,8 +1396,8 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Floodplain lowering unit', kind: 'area', shape: 0, extent: 118, nudge: [-0.019, 0.018] },
     ],
     measures: [
-      ['Stream miles of side channel constructed', 'miles', 3.8],
-      ['Acres of rearing habitat created', 'acres', 118],
+      ['Stream miles of side channel constructed', 'miles', 3.8, 'stream-miles-instream-habitat'],
+      ['Acres of rearing habitat created', 'acres', 118, 'acres-floodplain-habitat'],
       ['Cubic yards excavated', 'cubic yards', 265000],
     ],
     funders: [
@@ -1405,8 +1418,8 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       { label: 'Infiltration basin cluster', kind: 'area', shape: 1, extent: 22, nudge: [-0.013, 0.012] },
     ],
     measures: [
-      ['Miles of urban greenway created', 'miles', 2.8],
-      ['Acre-feet of stormwater captured annually', 'acre-feet', 185],
+      ['Miles of urban greenway created', 'miles', 2.8, 'miles-trail-opened'],
+      ['Acre-feet of stormwater captured annually', 'acre-feet', 185, 'stormwater-captured'],
       ['Acres of native habitat established', 'acres', 22],
       ['Residents within a half-mile walk', 'residents', 41000],
     ],
@@ -1565,7 +1578,7 @@ const buildComments = (project: Project, contacts: ProjectContact[]): ProjectCom
 // finished work) unrepresentable, the same way deriving reported values from
 // stage does.
 const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: string[] }> = {
-  'Riparian Revegetation': {
+  'Riparian revegetation': {
     scene: 'stream',
     captions: [
       'Bare streambank on the lower corridor, before planting',
@@ -1576,7 +1589,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'Second-season growth along the planted reach',
     ],
   },
-  'Fish Passage': {
+  'Fish passage': {
     scene: 'stream',
     captions: [
       'The barrier before removal',
@@ -1587,7 +1600,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'Adult salmon holding above the former barrier site',
     ],
   },
-  'Meadow & Wetland Restoration': {
+  'Meadow & wetland restoration': {
     scene: 'meadow',
     captions: [
       'Incised channel before treatment',
@@ -1598,7 +1611,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'Meadow surface holding water into early summer',
     ],
   },
-  'Aquatic Habitat Restoration': {
+  'Aquatic habitat restoration': {
     scene: 'stream',
     captions: [
       'The reach before treatment, at summer base flow',
@@ -1609,7 +1622,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'Survey crew at the post-project cross-section',
     ],
   },
-  'Forest Health & Fuels': {
+  'Forest health & fuels': {
     scene: 'forest',
     captions: [
       'Pre-treatment stand density',
@@ -1620,7 +1633,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'The completed fuel break, looking down the alignment',
     ],
   },
-  'Stormwater & Water Quality': {
+  'Stormwater & water quality': {
     scene: 'channel',
     captions: [
       'The channel margin before conversion',
@@ -1660,9 +1673,10 @@ const photoCount = (stage: ProjectStage, seed: number): { count: number; limit: 
 };
 
 const buildPhotos = (project: Project): ProjectPhoto[] => {
-  const pool = PHOTO_POOLS[project.program];
+  // Keyed by project type, as the milestone templates are.
+  const pool = PHOTO_POOLS[project.projectType];
   if (!pool) {
-    throw new Error(`No photo pool for program "${project.program}"`);
+    throw new Error(`No photo pool for project type "${project.projectType}" on "${project.projectName}"`);
   }
 
   const seed = hashOf(project.projectName);
@@ -1709,6 +1723,7 @@ const AUDIT_CURRENCY = new Intl.NumberFormat('en-US', {
 // year boundaries dated November before March inside the same year. A seeded
 // offset per year keeps every run from opening on February.
 const AUDIT_MONTHS = ['January', 'March', 'May', 'July', 'September', 'November'];
+const LONG_RUN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September'];
 
 // When the record's CURRENT stage was set, per stage — the newest entry in the
 // log has to agree with the pill in the page header, and its date has to agree
@@ -1808,13 +1823,20 @@ const buildAudit = (
 
   // Months ascend WITHIN each year-run, so the rendered dates agree with the
   // order the list presents them in — the one thing a change log cannot get
-  // wrong. The per-year seeded offset varies which month a year opens on;
-  // runs are at most three entries, so the index never leaves the list.
+  // wrong. The per-year seeded offset varies which month a year opens on, and
+  // a long run (one project logs six entries in a year) spreads across
+  // January–September instead, so it never leaves the calendar or runs past
+  // the prototype's present.
+  const runLength = (year: number) => entries.filter((e) => e.year === year).length;
   let runStart = 0;
   return entries
     .map((entry, i) => {
       if (i > 0 && entries[i - 1].year !== entry.year) runStart = i;
-      const month = AUDIT_MONTHS[((seed + entry.year) % 3) + (i - runStart)];
+      const run = runLength(entry.year);
+      const month =
+        run > 3
+          ? LONG_RUN_MONTHS[Math.floor(((i - runStart) * LONG_RUN_MONTHS.length) / run)]
+          : AUDIT_MONTHS[((seed + entry.year) % 3) + (i - runStart)];
       return {
         date: `${1 + ((seed + i * 7) % 27)} ${month} ${entry.year}`,
         user: entry.user,

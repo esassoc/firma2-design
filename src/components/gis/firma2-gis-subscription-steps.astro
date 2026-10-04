@@ -1,0 +1,203 @@
+---
+// firma2-gis-subscription-steps — the five decisions that set up a GIS
+// subscription, as ONE component with two hosts: the side sheet that edits an
+// existing subscription (all five at once, saving as they change) and the
+// wizard that adds one (one step per screen). Neither host owns a field; both
+// mount src/lib/gis-subscription-editor.ts on this root, so the join warning,
+// the plumbing filter and the mapped-field rows cannot drift between them.
+//
+// Each step is a <section data-step="key"> keyed by SUBSCRIPTION_STEPS, which
+// is how the wizard shows one at a time without knowing what is inside it.
+//
+// Props: `headingLevel` (4 inside the sheet, 2 on the wizard page, under its
+// h1) and `numbered` (the sheet numbers its steps; the wizard's progress bar
+// already says which step this is, so a number beside the heading repeats it).
+//
+// bcn-lego-checked: legos throughout — esa-radio-group, esa-select,
+// esa-text-field, esa-switch-toggle, esa-button, esa-badge. The schema table
+// and the mapped-field rows are plain markup in the firma2-settings-table
+// style; no lego is a data table. Beacon's BCN-1599 (choose from what is
+// shared to your group) is the precedent for the layer step; Beacon is not
+// cloned here.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import { ARCGIS_GROUP, MAPPABLE_PROJECT_FIELDS, SHARED_LAYERS, SUBSCRIPTION_STEPS } from '../../data/firma2-geography';
+import { STAGE_ORDER } from '../../data/firma2-projects';
+import { PROJECT_TYPES } from '../../data/firma2-project-types';
+
+interface Props {
+  headingLevel?: 2 | 3 | 4;
+  numbered?: boolean;
+}
+const { headingLevel = 4, numbered = true } = Astro.props;
+const Heading = `h${headingLevel}`;
+const title = Object.fromEntries(SUBSCRIPTION_STEPS.map((s, i) => [s.key, { text: s.title, num: i + 1 }]));
+
+const config = {
+  layers: SHARED_LAYERS,
+  group: ARCGIS_GROUP,
+  mappable: MAPPABLE_PROJECT_FIELDS,
+  // Project types in vocabulary order; an unmapped feature takes one.
+  projectTypes: PROJECT_TYPES.map((t) => t.name),
+  stages: STAGE_ORDER,
+};
+---
+<div class="firma2-gis-steps stack" data-gap="2xl" data-config={JSON.stringify(config)}>
+  <section class="stack" data-gap="md" data-step="access">
+    <Heading class="typography-label-md-strong firma2-gis-steps__step">{numbered && <span class="firma2-gis-steps__num">{title.access.num}</span>} {title.access.text}</Heading>
+    <esa-radio-group data-access label="How ProjectFirma reaches this service"></esa-radio-group>
+    <p class="typography-body-sm" data-access-help></p>
+  </section>
+
+  <section class="stack" data-gap="md" data-step="layer">
+    <Heading class="typography-label-md-strong firma2-gis-steps__step">{numbered && <span class="firma2-gis-steps__num">{title.layer.num}</span>} {title.layer.text}</Heading>
+    <esa-select data-layer label="Shared layer" placeholder="Choose a layer shared to your group" size="md"></esa-select>
+    <esa-text-field data-url label="Feature service URL" size="md" placeholder="https://services.arcgis.com/…/FeatureServer/0"></esa-text-field>
+    <div class="cluster" data-gap="sm" data-read-wrap hidden>
+      <EsaButton variant="secondary" size="md" data-read>Read the layer</EsaButton>
+    </div>
+    <div class="stack" data-gap="sm" data-schema hidden>
+      <div class="cluster" data-gap="sm">
+        <span class="typography-title-strong" data-schema-name></span>
+        <span data-schema-geometry></span>
+        <span class="typography-body-sm firma2-gis-steps__muted" data-schema-count></span>
+      </div>
+      <div class="firma2-gis-steps__scroll">
+        <table class="firma2-gis-steps__table">
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th></tr></thead>
+          <tbody data-schema-rows></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="stack" data-gap="md" data-step="matching">
+    <Heading class="typography-label-md-strong firma2-gis-steps__step">{numbered && <span class="firma2-gis-steps__num">{title.matching.num}</span>} {title.matching.text}</Heading>
+    <p class="typography-body-sm firma2-gis-steps__muted" data-locked>Choose a layer to list its fields.</p>
+    <div class="stack" data-gap="md" data-unlocked>
+      <esa-select data-join label="Match projects on" size="md"></esa-select>
+      <esa-select data-feature-id label="Tell shapes apart by" size="md"></esa-select>
+      <esa-select data-label-field label="Name shapes by" size="md"></esa-select>
+      <esa-select data-extra label="Extra fields to bring across" multiple chip-mode placeholder="None. Syncs read only the fields above." size="md"></esa-select>
+    </div>
+  </section>
+
+  <section class="stack" data-gap="md" data-step="fields">
+    <Heading class="typography-label-md-strong firma2-gis-steps__step">{numbered && <span class="firma2-gis-steps__num">{title.fields.num}</span>} {title.fields.text}</Heading>
+    <p class="typography-body-md">Each sync <strong>creates the projects this layer describes</strong>. A mapped project field <strong>follows the layer</strong>: read-only here, edited in your GIS.</p>
+    <div class="stack" data-gap="md" data-unlocked>
+      <esa-select data-name-field label="Project name from" size="md"></esa-select>
+      <div class="firma2-gis-steps__pair">
+        <esa-select data-default-project-type label="Project type, when not mapped" size="md"></esa-select>
+        <esa-select data-default-stage label="Stage, when not mapped" size="md"></esa-select>
+      </div>
+      <esa-text-field data-default-lead label="Lead organization, when not mapped" size="md" placeholder="Leave blank to require one in the layer"></esa-text-field>
+      <div class="stack" data-gap="sm">
+        <span class="typography-label-md">Mapped project fields</span>
+        <ul class="firma2-gis-steps__mappings stack" data-gap="sm" data-mappings></ul>
+        <p class="typography-body-sm firma2-gis-steps__muted" data-no-mappings>None yet. Created projects start with county, years and cost empty; people fill them in on the project.</p>
+        <esa-select data-add-mapping label="Map another project field" placeholder="Choose a project field" size="md"></esa-select>
+        <p class="typography-body-sm firma2-gis-steps__muted">Project type and stage match yours by name. An unmatched value gets the default, and the sync result lists it.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="stack" data-gap="md" data-step="name">
+    <Heading class="typography-label-md-strong firma2-gis-steps__step">{numbered && <span class="firma2-gis-steps__num">{title.name.num}</span>} {title.name.text}</Heading>
+    <esa-text-field data-name label="Name" size="md" placeholder="Enterprise project boundaries"></esa-text-field>
+    <esa-switch-toggle data-active label="Active — included in syncs"></esa-switch-toggle>
+    <slot name="name-step" />
+  </section>
+
+  <!-- clone sources -->
+  <template data-tpl-badge-geometry><EsaBadge variant="info" size="sm" value="Polygon" /></template>
+  <template data-tpl-badge-role><EsaBadge variant="secondary" size="xs" value="role" /></template>
+  <template data-tpl-remove><EsaButton variant="ghost" size="md" iconOnly icon="x" aria-label="Remove">Remove</EsaButton></template>
+</div>
+
+<style>
+  .firma2-gis-steps :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-gis-steps__muted {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-gis-steps :global(code) {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 0.9em;
+  }
+
+  .firma2-gis-steps__step {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200);
+    margin: 0;
+  }
+
+  .firma2-gis-steps__num {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    border-radius: 50%;
+    background: var(--color-background-brand-subtle, #e9f6e9);
+    color: var(--color-content-brand, #2a7e3b);
+  }
+
+  .firma2-gis-steps__pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-400);
+  }
+
+  /* A layer with sixty fields would push the sheet's footer away. */
+  .firma2-gis-steps__scroll {
+    max-block-size: 16rem;
+    overflow-y: auto;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-sm, 0.25rem);
+  }
+
+  .firma2-gis-steps__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-gis-steps__table th,
+  .firma2-gis-steps__table :global(td) {
+    padding: var(--spacing-200) var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    font-weight: normal;
+    vertical-align: middle;
+  }
+
+  .firma2-gis-steps__table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--color-background-elevation-raised, #fcfcfc);
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-gis-steps :global(.firma2-gis-steps__field) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-200);
+  }
+
+  .firma2-gis-steps__mappings {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-gis-steps :global(.firma2-gis-steps__mapping) {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: var(--spacing-200);
+  }
+</style>

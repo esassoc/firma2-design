@@ -1,0 +1,701 @@
+---
+// firma2-rich-text — a block of formatted text you write in place: paragraphs,
+// two heading levels, bulleted and numbered lists, quotes, bold, italic, links.
+// What you see while typing is what everyone reads; there is no edit mode.
+//
+// THE FORMATTING COMES TO THE SELECTION. At rest the text carries no chrome — a
+// page is read far more often than it is written, and a toolbar over every read
+// is noise. Select some text and a toolbar appears above it (the Medium /
+// Notion bubble). Typing carries the rest without a mouse: "## " starts a
+// heading, "### " a subheading, "- " a list, "1. " a numbered list, "> " a
+// quote, and Mod+B / Mod+I / Mod+K work as everywhere else.
+//
+// AN EMPTY LINE OFFERS WHAT CAN START THERE: heading, list, image, file — a
+// small toolbar beside the caret on a blank line (the Medium "+"). Images and
+// files also arrive by pasting or dropping them into the text. Select an image
+// and its toolbar is Alt text and Remove image instead of the formatting; a
+// file, Remove file.
+//
+// A FILE SITS IN THE TEXT WHERE IT WAS PUT, as an image does. A PDF shows a
+// PREVIEW right there — the browser's own PDF reader, held to a part of the
+// window so the text around it still reads as text — with its name and a
+// download under it (esa-file-list), and beside them Full screen and Open in
+// new tab for reading the whole thing. Any other format is the
+// name-and-download row alone; so is a PDF in a browser set to download PDFs.
+//
+// CONTRACT:
+//   in   `firma2:rich-text-set` on the root, {html} — replaces the content
+//        without counting as an edit
+//   in   `firma2:rich-text-editable` on the root, {editable} — view or edit.
+//        Read-only, the text is plain reading: no caret, no toolbars, no
+//        placeholder, and a link opens on a plain click.
+//   in   `firma2:rich-text-focus` on the root — puts the caret at the end
+//        (the rail's Edit page)
+//   out  `firma2:rich-text-change` from the root, {html} — after typing settles
+//        (300ms), bubbling
+//   out  `firma2:rich-text-error` from the root, {message} — a file it refused
+//   hook `root.firma2StoreImage(file) → {src, fileId}` — where an image goes.
+//        Set by the page; without it an image lives only as long as the tab.
+//        `fileId` is written to the <img> as data-file-id, which is what lets
+//        the page find the image again after a reload.
+//   hook `root.firma2StoreFile(file) → {src, fileId}` — the same, for a file.
+//   hook `root.firma2FileUrl(fileId) → Promise<url | undefined>` — where a
+//        stored file is read from now. A file is saved as an empty
+//        <div data-file-embed data-file-id data-name data-type data-size>;
+//        its URL is never saved, because it dies with the tab.
+// The HTML goes through the editor's schema on the way in, so anything it does
+// not know — scripts, styles, unknown tags, javascript: links — is dropped
+// before it reaches the page. That is what makes stored HTML safe to render.
+//
+// bcn-lego-checked: no esa- rich text or contenteditable lego exists (walked
+// `ls node_modules/@esa/ecology/src/components/`: esa-textarea is plain text,
+// esa-popover anchors to a trigger element, not to a text selection). Beacon is
+// not cloned on this machine. The editor is Tiptap (ProseMirror); every button
+// is esa-button, the link field is esa-text-field in esa-dialog, and the layout
+// is `.cluster`. What is bespoke: the toolbar's floating surface — esa-popover's
+// own surface tokens (raised background, default border, radius-md,
+// elevation-4) on an element Tiptap positions — and the typeset of the content,
+// which is typography composites on every block plus list and quote spacing.
+// A file in the text is esa-file-list (its row) and esa-button (Full screen,
+// Open in new tab, cloned from a template); the PDF preview frame is the one
+// element drawn here, framed as firma2-document-viewer frames its own — no
+// esa- lego shows a document.
+// firma2-rich-text is the reusable home: any long-form field that needs
+// structure renders it.
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+interface Props {
+  /** Accessible name of the text area — "Page content". */
+  label: string;
+  /** Shown in an empty editor. */
+  placeholder?: string;
+}
+
+const { label, placeholder = '' } = Astro.props;
+
+// Order: inline marks, then block types, then the link. Labels are the names a
+// screen reader announces and the tooltip shows.
+const IMAGE_MAX_MB = 10;
+// The same cap as Add document.
+const FILE_MAX_MB = 25;
+const tools = [
+  { cmd: 'bold', icon: 'bold', label: 'Bold' },
+  { cmd: 'italic', icon: 'italic', label: 'Italic' },
+  { cmd: 'heading-2', icon: 'heading-2', label: 'Heading' },
+  { cmd: 'heading-3', icon: 'heading-3', label: 'Subheading' },
+  { cmd: 'bullet-list', icon: 'list', label: 'Bulleted list' },
+  { cmd: 'ordered-list', icon: 'list-ordered', label: 'Numbered list' },
+  { cmd: 'blockquote', icon: 'text-quote', label: 'Quote' },
+  { cmd: 'link', icon: 'link', label: 'Link' },
+];
+// What a blank line can become. Image opens the file picker.
+const inserts = [
+  { cmd: 'heading-2', icon: 'heading-2', label: 'Heading' },
+  { cmd: 'bullet-list', icon: 'list', label: 'Bulleted list' },
+  { cmd: 'ordered-list', icon: 'list-ordered', label: 'Numbered list' },
+  { cmd: 'image', icon: 'image', label: 'Image' },
+  { cmd: 'file', icon: 'paperclip', label: 'File' },
+];
+---
+<div class="firma2-rich-text" data-rich-text data-label={label} data-placeholder={placeholder} data-image-max-mb={IMAGE_MAX_MB} data-file-max-mb={FILE_MAX_MB}>
+  <div data-rich-text-editor></div>
+
+  {/* Taken out of the document by Tiptap on mount and put back, positioned,
+      whenever there is a selection. Hidden until then so it never flashes. */}
+  <div class="firma2-rich-text__toolbar cluster" data-gap="xs" role="toolbar" aria-label="Formatting" data-rich-text-toolbar>
+    {tools.map((t) => (
+      <EsaButton variant="chrome" size="sm" iconOnly icon={t.icon} label={t.label} data-cmd={t.cmd} data-for="text" aria-pressed="false" />
+    ))}
+    {/* A selected image swaps the formatting for what an image can take. */}
+    <EsaButton variant="chrome" size="md" data-cmd="alt" data-for="image">Alt text</EsaButton>
+    <EsaButton variant="chrome" size="md" data-cmd="remove-image" data-for="image">Remove image</EsaButton>
+    {/* A selected file: the one thing a file can take here. */}
+    <EsaButton variant="chrome" size="md" data-cmd="remove-file" data-for="file">Remove file</EsaButton>
+  </div>
+
+  {/* A PDF preview's two ways to read the whole thing, cloned into each one. */}
+  <template data-file-actions>
+    <div class="cluster" data-gap="xs">
+      <EsaButton variant="chrome" size="sm" iconOnly icon="maximize" label="Full screen" data-file-fullscreen />
+      <EsaButton variant="chrome" size="sm" iconOnly icon="external-link" label="Open in new tab" data-file-open />
+    </div>
+  </template>
+
+  {/* The blank-line toolbar. Same surface, same lifecycle (Tiptap's floating menu). */}
+  <div class="firma2-rich-text__toolbar firma2-rich-text__inserts cluster" data-gap="xs" role="toolbar" aria-label="Insert" data-rich-text-inserts>
+    {inserts.map((t) => (
+      <EsaButton variant="chrome" size="sm" iconOnly icon={t.icon} label={t.label} data-cmd={t.cmd} />
+    ))}
+  </div>
+
+  <esa-dialog class="firma2-rich-text__alt-dialog" heading="Alt text" size="sm" show-close-button>
+    <esa-textarea
+      label="Describe the image"
+      help-text="What someone who can’t see it needs to know. Leave it empty if the image is decoration."
+      size="md"
+      rows="3"
+      data-alt-text
+    ></esa-textarea>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="primary" size="md" data-alt-save>Save alt text</EsaButton>
+      <EsaButton variant="ghost" size="md" data-alt-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <esa-dialog class="firma2-rich-text__link-dialog" heading="Link" size="sm" show-close-button>
+    <esa-text-field label="Web address" size="md" type="url" inputmode="url" placeholder="https://" data-link-url></esa-text-field>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="primary" size="md" data-link-save>Save link</EsaButton>
+      <EsaButton variant="ghost" size="md" data-link-remove>Remove link</EsaButton>
+      <EsaButton variant="ghost" size="md" data-link-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+</div>
+
+<script>
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-file-list';
+  import { Editor, Node, mergeAttributes } from '@tiptap/core';
+  import Image from '@tiptap/extension-image';
+  import FloatingMenu from '@tiptap/extension-floating-menu';
+  import StarterKit from '@tiptap/starter-kit';
+  import Heading from '@tiptap/extension-heading';
+  import BubbleMenu from '@tiptap/extension-bubble-menu';
+  import { Placeholder } from '@tiptap/extensions';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+  type Dialog = HTMLElement & { show(): void; close(): void };
+  type StoreImage = (file: File) => Promise<{ src: string; fileId?: string } | undefined>;
+  type FileUrl = (fileId: string) => Promise<string | undefined>;
+  type Root = HTMLElement & { firma2StoreImage?: StoreImage; firma2StoreFile?: StoreImage; firma2FileUrl?: FileUrl };
+  type FileList = HTMLElement & { files: { name: string; href?: string }[] };
+
+  const isPdf = (name: string, type: string): boolean => type === 'application/pdf' || /\.pdf$/i.test(name);
+  // Only an explicit false means no reader (older browsers lack the property).
+  const canReadPdf = (): boolean => (navigator as Navigator & { pdfViewerEnabled?: boolean }).pdfViewerEnabled !== false;
+  const download = (href: string, name: string): void => {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = name;
+    a.click();
+  };
+
+  /**
+   * A file placed in the text. Saved as an empty, attribute-only <div>; drawn
+   * by a node view as the PDF (when it is one) over an esa-file-list row. The
+   * node view asks `resolveUrl` for the file's current URL — the editor
+   * remembers the ones it made this session, the page's hook finds the rest.
+   */
+  const FileEmbed = (
+    resolveUrl: (fileId: string) => Promise<string | undefined>,
+    onMissing: (name: string) => void,
+    actions: () => HTMLElement | null,
+  ) =>
+    Node.create({
+      name: 'fileEmbed',
+      group: 'block',
+      atom: true,
+      selectable: true,
+      draggable: true,
+      addAttributes() {
+        const data = (key: string) => ({
+          default: null,
+          parseHTML: (el: HTMLElement) => el.getAttribute(`data-${key}`),
+          renderHTML: (attrs: Record<string, unknown>) => {
+            const value = attrs[key === 'file-id' ? 'fileId' : key];
+            return value == null ? {} : { [`data-${key}`]: String(value) };
+          },
+        });
+        return { fileId: data('file-id'), name: data('name'), type: data('type'), size: data('size') };
+      },
+      parseHTML: () => [{ tag: 'div[data-file-embed]' }],
+      renderHTML: ({ HTMLAttributes }) => ['div', mergeAttributes(HTMLAttributes, { 'data-file-embed': '' })],
+      addNodeView: () => ({ node }) => {
+        const { fileId, name, type } = node.attrs as { fileId: string | null; name: string | null; type: string | null };
+        const label = name ?? 'File';
+        const dom = document.createElement('div');
+        dom.className = 'firma2-rich-text__file stack';
+        dom.dataset.gap = 'xs';
+        dom.contentEditable = 'false';
+        const row = document.createElement('esa-file-list') as FileList;
+        // The name row, and — on a PDF preview — Full screen and Open in new tab beside it.
+        const bar = document.createElement('div');
+        bar.className = 'firma2-rich-text__file-bar cluster';
+        bar.dataset.gap = 'xs';
+        bar.append(row);
+        let href: string | undefined;
+        void (fileId ? resolveUrl(fileId) : Promise.resolve(undefined)).then((url) => {
+          href = url;
+          customElements.whenDefined('esa-file-list').then(() => (row.files = [{ name: label, href: url }]));
+          if (!url || !isPdf(label, type ?? '') || !canReadPdf()) return;
+          const frame = document.createElement('iframe');
+          frame.className = 'firma2-rich-text__file-frame';
+          frame.title = label;
+          frame.src = url;
+          dom.prepend(frame);
+          const tools = actions();
+          if (!tools) return;
+          tools.querySelector('[data-file-fullscreen]')?.addEventListener('click', () => void frame.requestFullscreen?.());
+          tools.querySelector('[data-file-open]')?.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
+          bar.append(tools);
+        });
+        // The name opens the file in a new tab — never this one, which would
+        // strand the reader on a bare blob: URL — and the row's button downloads it.
+        row.addEventListener('click', (event) => {
+          const link = event.composedPath().find((el): el is HTMLAnchorElement => el instanceof HTMLAnchorElement);
+          if (!link?.href) return;
+          event.preventDefault();
+          window.open(link.href, '_blank', 'noopener');
+        });
+        row.addEventListener('download', () => (href ? download(href, label) : onMissing(label)));
+        dom.append(bar);
+        // The buttons are the file's own: a click on one must not move the
+        // editor's selection onto the file.
+        return { dom, stopEvent: (event: Event) => (event.target as HTMLElement).closest?.('[data-file-fullscreen], [data-file-open]') != null };
+      },
+    });
+
+  // The <img> keeps which stored file it is. src is this session's object URL
+  // and goes stale on reload; data-file-id is what the page resolves it from.
+  const PageImage = Image.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        fileId: {
+          default: null,
+          parseHTML: (el: HTMLElement) => el.getAttribute('data-file-id'),
+          renderHTML: (attrs: { fileId?: string | null }) => (attrs.fileId ? { 'data-file-id': attrs.fileId } : {}),
+        },
+      };
+    },
+  }).configure({ HTMLAttributes: { class: 'firma2-rich-text__image' } });
+
+  // Every block takes a typography composite — the rule for all text in this
+  // spoke — rather than a size set in this file.
+  const HEADING_CLASS: Record<number, string> = { 2: 'typography-heading-md', 3: 'typography-title-strong' };
+  const TypesetHeading = Heading.extend({
+    renderHTML({ node, HTMLAttributes }) {
+      const level = node.attrs.level as number;
+      return [`h${level}`, mergeAttributes(HTMLAttributes, { class: HEADING_CLASS[level] ?? '' }), 0];
+    },
+  }).configure({ levels: [2, 3] });
+
+  document.querySelectorAll<Root>('[data-rich-text]').forEach((root) => {
+    const mount = root.querySelector<HTMLElement>('[data-rich-text-editor]')!;
+    const toolbar = root.querySelector<HTMLElement>('[data-rich-text-toolbar]')!;
+    const insertBar = root.querySelector<HTMLElement>('[data-rich-text-inserts]')!;
+    const altDialog = root.querySelector<Dialog>('.firma2-rich-text__alt-dialog')!;
+    const altField = root.querySelector<Field>('[data-alt-text]')!;
+    const maxBytes = Number(root.dataset.imageMaxMb ?? 10) * 1_000_000;
+    const fileMaxBytes = Number(root.dataset.fileMaxMb ?? 25) * 1_000_000;
+    // URLs for files placed this session, so a new file draws at once.
+    const placed = new Map<string, string>();
+    const dialog = root.querySelector<Dialog>('.firma2-rich-text__link-dialog')!;
+    const urlField = root.querySelector<Field>('[data-link-url]')!;
+
+    let silent = false;
+    let timer: number | undefined;
+
+    const editor = new Editor({
+      element: mount,
+      extensions: [
+        StarterKit.configure({
+          heading: false,
+          code: false,
+          codeBlock: false,
+          strike: false,
+          underline: false,
+          horizontalRule: false,
+          paragraph: { HTMLAttributes: { class: 'typography-body-md' } },
+          // Links follow handleClick below: a plain click opens one while
+          // reading, and puts the caret in its text while writing.
+          link: {
+            openOnClick: false,
+            autolink: true,
+            defaultProtocol: 'https',
+            HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
+          },
+        }),
+        TypesetHeading,
+        PageImage,
+        FileEmbed(
+          async (fileId) => placed.get(fileId) ?? (await root.firma2FileUrl?.(fileId)),
+          (name) => fail(`${name} isn’t in this browser any more.`),
+          () => {
+            const tpl = root.querySelector<HTMLTemplateElement>('template[data-file-actions]');
+            return (tpl?.content.firstElementChild?.cloneNode(true) as HTMLElement | undefined) ?? null;
+          },
+        ),
+        Placeholder.configure({ placeholder: root.dataset.placeholder ?? '' }),
+        FloatingMenu.configure({
+          element: insertBar,
+          appendTo: () => document.body,
+          // Just under the caret's empty line, on the text's own left edge.
+          // Not in the margin: the margin is the sidebar's edge on a normal
+          // window (measured: it overlapped the rail), and beside the caret
+          // it would cover the placeholder. It covers the next block at most,
+          // and only until you type.
+          options: { strategy: 'fixed', placement: 'bottom-start', offset: 4, flip: true, shift: true },
+        }),
+        BubbleMenu.configure({
+          element: toolbar,
+          // On <body> and fixed: inside the page, a sticky or transformed
+          // ancestor becomes the fixed box's frame and the toolbar lands
+          // offset from the selection (measured: pushed off the left edge).
+          appendTo: () => document.body,
+          options: { strategy: 'fixed', placement: 'top', offset: 8 },
+        }),
+      ],
+      editorProps: {
+        attributes: {
+          role: 'textbox',
+          'aria-multiline': 'true',
+          'aria-label': root.dataset.label ?? '',
+          class: 'firma2-rich-text__content',
+        },
+        // An image or file pasted or dropped into the text is placed where it lands.
+        handlePaste(_view, event) {
+          const list = event.clipboardData?.files;
+          if (!list?.length) return false;
+          void insertDropped(list);
+          return true;
+        },
+        handleDrop(view, event) {
+          const list = (event as DragEvent).dataTransfer?.files;
+          if (!list?.length) return false;
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+          void insertDropped(list, at);
+          return true;
+        },
+        handleClick(_view, _pos, event) {
+          // Reading, a link is just a link. Writing, a plain click edits its
+          // text and Mod+click follows it.
+          const link = (event.target as HTMLElement).closest('a');
+          if (link && (!editor.isEditable || event.metaKey || event.ctrlKey)) {
+            window.open(link.href, '_blank', 'noopener');
+            return true;
+          }
+          return false;
+        },
+      },
+      onUpdate: () => {
+        if (silent) return;
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          root.dispatchEvent(new CustomEvent('firma2:rich-text-change', { bubbles: true, detail: { html: editor.getHTML() } }));
+        }, 300);
+      },
+      onTransaction: () => syncPressed(),
+    });
+
+    // ---- the toolbar ----
+    const isActive: Record<string, () => boolean> = {
+      bold: () => editor.isActive('bold'),
+      italic: () => editor.isActive('italic'),
+      'heading-2': () => editor.isActive('heading', { level: 2 }),
+      'heading-3': () => editor.isActive('heading', { level: 3 }),
+      'bullet-list': () => editor.isActive('bulletList'),
+      'ordered-list': () => editor.isActive('orderedList'),
+      blockquote: () => editor.isActive('blockquote'),
+      link: () => editor.isActive('link'),
+    };
+    const run: Record<string, () => void> = {
+      bold: () => editor.chain().focus().toggleBold().run(),
+      italic: () => editor.chain().focus().toggleItalic().run(),
+      'heading-2': () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+      'heading-3': () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+      'bullet-list': () => editor.chain().focus().toggleBulletList().run(),
+      'ordered-list': () => editor.chain().focus().toggleOrderedList().run(),
+      blockquote: () => editor.chain().focus().toggleBlockquote().run(),
+      link: () => openLink(),
+      image: () => pickImages(),
+      alt: () => openAlt(),
+      'remove-image': () => editor.chain().focus().deleteSelection().run(),
+      file: () => pickFiles(),
+      'remove-file': () => editor.chain().focus().deleteSelection().run(),
+    };
+    function syncPressed(): void {
+      // The lego's WRAPPER is hidden, not the <button> the data-* lands on —
+      // hiding only the button left empty wrappers holding gaps in the bar.
+      const on = editor.isActive('image') ? 'image' : editor.isActive('fileEmbed') ? 'file' : 'text';
+      toolbar.querySelectorAll<HTMLElement>('[data-for]').forEach((b) => {
+        (b.parentElement ?? b).style.display = b.dataset.for === on ? '' : 'none';
+      });
+      toolbar.querySelectorAll<HTMLElement>('[data-cmd][aria-pressed]').forEach((b) => {
+        b.setAttribute('aria-pressed', String(isActive[b.dataset.cmd ?? '']?.() ?? false));
+      });
+    }
+    for (const bar of [toolbar, insertBar]) {
+      bar.addEventListener('click', (event) => {
+        const cmd = (event.target as HTMLElement).closest<HTMLElement>('[data-cmd]')?.dataset.cmd;
+        if (cmd) run[cmd]?.();
+      });
+    }
+
+    // ---- images ----
+    const imagesIn = (list: FileList | null | undefined): File[] =>
+      Array.from(list ?? []).filter((f) => f.type.startsWith('image/'));
+    const fail = (message: string) =>
+      root.dispatchEvent(new CustomEvent('firma2:rich-text-error', { bubbles: true, detail: { message } }));
+
+    async function insertImages(files: File[], at?: number): Promise<void> {
+      let pos = at;
+      for (const file of files) {
+        if (file.size > maxBytes) {
+          fail(`${file.name} is over ${root.dataset.imageMaxMb} MB. Use a smaller image.`);
+          continue;
+        }
+        const stored = root.firma2StoreImage ? await root.firma2StoreImage(file) : { src: URL.createObjectURL(file) };
+        if (!stored) {
+          fail(`${file.name} couldn’t be saved in this browser.`);
+          continue;
+        }
+        // The file name, minus its extension, until someone writes better alt text.
+        const node = { type: 'image', attrs: { src: stored.src, fileId: stored.fileId ?? null, alt: file.name.replace(/\.[^.]+$/, '') } };
+        const chain = editor.chain().focus();
+        (pos === undefined ? chain.insertContent(node) : chain.insertContentAt(pos, node)).run();
+        pos = undefined;
+      }
+    }
+
+    // ---- files ----
+    async function insertFiles(files: File[], at?: number): Promise<void> {
+      let pos = at;
+      for (const file of files) {
+        if (file.size > fileMaxBytes) {
+          fail(`${file.name} is over ${root.dataset.fileMaxMb} MB. Use a smaller file.`);
+          continue;
+        }
+        const stored = root.firma2StoreFile
+          ? await root.firma2StoreFile(file)
+          : { src: URL.createObjectURL(file), fileId: crypto.randomUUID() };
+        if (!stored?.fileId) {
+          fail(`${file.name} couldn’t be saved in this browser.`);
+          continue;
+        }
+        placed.set(stored.fileId, stored.src);
+        const node = { type: 'fileEmbed', attrs: { fileId: stored.fileId, name: file.name, type: file.type, size: file.size } };
+        const chain = editor.chain().focus();
+        (pos === undefined ? chain.insertContent(node) : chain.insertContentAt(pos, node)).run();
+        pos = undefined;
+      }
+    }
+
+    /** Images go in as images, everything else as files, in the order given. */
+    async function insertDropped(list: FileList | globalThis.FileList, at?: number): Promise<void> {
+      const all = Array.from(list as globalThis.FileList);
+      const images = imagesIn(list as globalThis.FileList);
+      await insertImages(images, at);
+      await insertFiles(all.filter((f) => !images.includes(f)), images.length ? undefined : at);
+    }
+
+    // The OS file picker. A detached <input type="file"> is the only way to
+    // open it; it is never rendered, so it is not a control on the page.
+    function pick(accept: string, then: (files: globalThis.FileList | null) => void): void {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = accept;
+      input.multiple = true;
+      input.addEventListener('change', () => then(input.files));
+      input.click();
+    }
+    function pickImages(): void {
+      pick('image/*', (list) => void insertImages(imagesIn(list)));
+    }
+    function pickFiles(): void {
+      pick('', (list) => void insertFiles(Array.from(list ?? [])));
+    }
+
+    function openAlt(): void {
+      customElements.whenDefined('esa-dialog').then(() => {
+        altField.value = (editor.getAttributes('image').alt as string | undefined) ?? '';
+        altDialog.show();
+        requestAnimationFrame(() => altField.focus());
+      });
+    }
+    root.querySelector('[data-alt-save]')?.addEventListener('click', () => {
+      altDialog.close();
+      editor.chain().focus().updateAttributes('image', { alt: (altField.value ?? '').trim() }).run();
+    });
+    root.querySelector('[data-alt-cancel]')?.addEventListener('click', () => {
+      altDialog.close();
+      editor.commands.focus();
+    });
+
+    // ---- links ----
+    function openLink(): void {
+      customElements.whenDefined('esa-dialog').then(() => {
+        urlField.value = (editor.getAttributes('link').href as string | undefined) ?? '';
+        urlField.errorText = '';
+        // style.display, not `hidden`: the button's own display rule outranks
+        // the UA's [hidden], so the attribute alone leaves it on screen.
+        const remove = root.querySelector<HTMLElement>('[data-link-remove]')!;
+        (remove.parentElement ?? remove).style.display = editor.isActive('link') ? '' : 'none';
+        dialog.show();
+        requestAnimationFrame(() => urlField.focus());
+      });
+    }
+    const saveLink = (): void => {
+      const raw = (urlField.value ?? '').trim();
+      if (!raw) {
+        urlField.errorText = 'Enter a web address.';
+        urlField.focus();
+        return;
+      }
+      const href = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;
+      dialog.close();
+      editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
+    };
+    root.querySelector('[data-link-save]')?.addEventListener('click', saveLink);
+    urlField.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key === 'Enter') saveLink();
+    });
+    root.querySelector('[data-link-remove]')?.addEventListener('click', () => {
+      dialog.close();
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+    });
+    root.querySelector('[data-link-cancel]')?.addEventListener('click', () => {
+      dialog.close();
+      editor.commands.focus();
+    });
+    // Mod+K opens the same dialog, the shortcut every editor uses for links.
+    mount.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        openLink();
+      }
+    });
+
+    // ---- content in ----
+    root.addEventListener('firma2:rich-text-set', (event) => {
+      const html = (event as CustomEvent<{ html: string }>).detail?.html ?? '';
+      silent = true;
+      editor.commands.setContent(html, { emitUpdate: false });
+      silent = false;
+    });
+    root.addEventListener('firma2:rich-text-editable', (event) => {
+      const editable = Boolean((event as CustomEvent<{ editable: boolean }>).detail?.editable);
+      editor.setEditable(editable, false);
+      root.toggleAttribute('data-readonly', !editable);
+    });
+    root.addEventListener('firma2:rich-text-focus', () => {
+      editor.commands.focus('end');
+    });
+  });
+</script>
+
+<style>
+  /* Tiptap moves the toolbar to <body>, so its rules key on its own class
+     (which keeps Astro's scope attribute). esa-popover's surface, token for token. */
+  .firma2-rich-text__toolbar {
+    visibility: hidden;
+    /* Its own width before it is first measured. Tiptap sets max-content only
+       AFTER positioning, so the first placement measured a full-width flex row
+       and centred it off the left edge of the screen. */
+    width: max-content;
+    z-index: var(--z-popover, 1000);
+    padding: var(--spacing-100, 4px);
+    background: var(--color-background-elevation-raised, #fcfcfc);
+    border: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-md, 0.5rem);
+    box-shadow: var(--elevation-4, 0 6px 24px -6px rgba(0, 0, 0, 0.07));
+  }
+  /* The pressed tool reads as selected — the lego's own hover fill, held. */
+  .firma2-rich-text__toolbar :global([data-cmd][aria-pressed='true']) {
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+    color: var(--color-content-brand, #2a7e3b);
+  }
+
+  .firma2-rich-text :global(.firma2-rich-text__content) {
+    min-block-size: 6rem;
+    outline: none;
+    color: var(--color-content-default, #202020);
+  }
+  /* Reading, the text is as tall as the text — the writing room above is
+     for an empty editor you are about to type into. */
+  .firma2-rich-text[data-readonly] :global(.firma2-rich-text__content) {
+    min-block-size: 0;
+  }
+  /* Blocks space by role: a heading pulls away from what came before and sits
+     close on what it names; paragraphs and lists take one body step. */
+  .firma2-rich-text :global(.firma2-rich-text__content > * + *) {
+    margin-block-start: var(--spacing-300, 0.75rem);
+  }
+  .firma2-rich-text :global(.firma2-rich-text__content > :is(h2, h3)) {
+    margin-block-start: var(--spacing-600, 1.5rem);
+  }
+  .firma2-rich-text :global(.firma2-rich-text__content > :first-child) {
+    margin-block-start: 0;
+  }
+  .firma2-rich-text :global(.firma2-rich-text__content :is(h2, h3, p)) {
+    margin-block-end: 0;
+  }
+  .firma2-rich-text :global(.firma2-rich-text__content :is(ul, ol)) {
+    margin: 0;
+    padding-inline-start: var(--spacing-600, 1.5rem);
+  }
+  .firma2-rich-text :global(.firma2-rich-text__content li + li) {
+    margin-block-start: var(--spacing-100, 4px);
+  }
+  .firma2-rich-text :global(.firma2-rich-text__content li p) {
+    margin: 0;
+  }
+  /* A neutral rule, not a status colour: the quote is set apart, not flagged. */
+  .firma2-rich-text :global(.firma2-rich-text__content blockquote) {
+    margin-inline: 0;
+    padding-inline-start: var(--spacing-400, 1rem);
+    border-inline-start: 2px solid var(--color-border-default, #cecece);
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-rich-text :global(.firma2-rich-text__content a) {
+    color: var(--color-content-brand, #2a7e3b);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  /* Images take the column's width at most, and show their selection with
+     the focus ring's colour so a selected image reads as the thing the
+     toolbar above it acts on. */
+  .firma2-rich-text :global(.firma2-rich-text__image) {
+    display: block;
+    max-inline-size: 100%;
+    block-size: auto;
+    border-radius: var(--radius-md, 0.5rem);
+  }
+  /* A file in the text: the PDF preview (when it is one) over its
+     name-and-download row. The preview takes the column's width and about a
+     page's first half — enough to know the document, short enough that the
+     text keeps going; Full screen and Open in new tab are for the rest.
+     Framed like the document view's. */
+  .firma2-rich-text :global(.firma2-rich-text__file-frame) {
+    display: block;
+    inline-size: 100%;
+    block-size: min(60dvh, 30rem);
+    border: 1px solid var(--color-border-default-subtle);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken);
+  }
+  /* The name row takes what the two buttons leave. */
+  .firma2-rich-text :global(.firma2-rich-text__file-bar > esa-file-list) {
+    flex: 1;
+    min-inline-size: 0;
+  }
+  .firma2-rich-text :global(.firma2-rich-text__file.ProseMirror-selectednode) {
+    outline: 2px solid var(--color-border-focus, #2a7e3b);
+    outline-offset: 2px;
+    border-radius: var(--radius-md, 0.5rem);
+  }
+  .firma2-rich-text :global(.firma2-rich-text__image.ProseMirror-selectednode) {
+    outline: 2px solid var(--color-border-focus, #2a7e3b);
+    outline-offset: 2px;
+  }
+  /* The placeholder, in unset ink, on the empty first line only. */
+  .firma2-rich-text :global(.firma2-rich-text__content .is-editor-empty:first-child::before) {
+    content: attr(data-placeholder);
+    float: inline-start;
+    block-size: 0;
+    color: var(--color-content-default-secondary, #646464);
+    pointer-events: none;
+  }
+</style>

@@ -1,0 +1,223 @@
+---
+// firma2-gis-subscription-wizard — adding a GIS subscription, one decision per
+// screen: the five steps of firma2-gis-subscription-steps, with Back and
+// Continue between them and a review on the last.
+//
+// THE BRIEF SAYS SETUP IS NOT A WIZARD (§4), and its reason is the one this
+// component is built around: a wizard assumes one sitting. Marcus routinely
+// stops halfway — the layer he wants is not shared into the ArcGIS group yet,
+// and sharing it is a trip to ArcGIS Online. So every answer and the step it
+// stopped on are kept (src/lib/work-areas.ts, the draft), the list page shows
+// the unfinished setup with a way back in, and returning here resumes it.
+// Leaving costs nothing; only Cancel discards, and it asks first.
+//
+// A STEP GATES ONLY ON WHAT THE NEXT ONE NEEDS: a layer before its fields can
+// be matched, a join before projects can be created, a name before it is
+// saved. Everything else has a working default and is editable later in the
+// side sheet.
+//
+// bcn-lego-checked: esa-progress-bar (where you are), esa-alert-box (resumed),
+// esa-button, esa-confirm-dialog (discard); the form is
+// firma2-gis-subscription-steps. No esa- stepper or wizard exists in the
+// catalog; Beacon is not cloned here. The step switching follows the spoke's
+// own data-step precedent (firma2-work-area-upload).
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaProgressBar from '@esa/ecology/esa-progress-bar.astro';
+import Firma2GisSubscriptionSteps from './firma2-gis-subscription-steps.astro';
+import { SUBSCRIPTION_STEPS } from '../../data/firma2-geography';
+import { withBase } from '../../lib/base';
+
+const total = SUBSCRIPTION_STEPS.length;
+const config = { steps: SUBSCRIPTION_STEPS, listHref: withBase('/prototypes/workspace-settings/gis-subscriptions') };
+---
+<div class="firma2-gis-wizard stack" data-gap="xl" data-config={JSON.stringify(config)}>
+  <div data-resumed hidden>
+    <EsaAlertBox variant="info" title="Setup restored">
+      <div class="repel" data-gap="sm">
+        <p class="typography-body-md">Your answers are as you left them.</p>
+        <EsaButton variant="secondary" size="md" data-start-over>Start over</EsaButton>
+      </div>
+    </EsaAlertBox>
+  </div>
+
+  {SUBSCRIPTION_STEPS.map((_, i) => (
+    <div data-progress={i} hidden>
+      <EsaProgressBar value={Math.round(((i + 1) / total) * 100)} label={`Step ${i + 1} of ${total}`} showValue={false} size="sm" />
+    </div>
+  ))}
+
+  <Firma2GisSubscriptionSteps headingLevel={2} numbered={false}>
+    <div slot="name-step" class="stack" data-gap="sm">
+      <h3 class="typography-label-md-strong firma2-gis-wizard__summary-title">Your setup</h3>
+      <dl class="firma2-gis-wizard__summary" data-summary></dl>
+    </div>
+  </Firma2GisSubscriptionSteps>
+
+  <!-- Windows wizard order: Back, the step's primary, then Cancel. -->
+  <div class="cluster firma2-gis-wizard__footer" data-gap="xs">
+    <span data-back-wrap><EsaButton variant="secondary" size="md" data-back>Back</EsaButton></span>
+    <span data-next-wrap><EsaButton variant="primary" size="md" data-next>Continue</EsaButton></span>
+    <span data-finish-wrap hidden><EsaButton variant="primary" size="md" data-finish>Add subscription</EsaButton></span>
+    <EsaButton variant="ghost" size="md" data-cancel>Cancel</EsaButton>
+  </div>
+
+  <esa-confirm-dialog
+    class="firma2-gis-wizard__discard"
+    heading="Discard this setup?"
+    message="Your answers so far are deleted. To finish later instead, leave this page; your answers are saved."
+    confirm-label="Discard setup"
+    cancel-label="Keep setup"
+  ></esa-confirm-dialog>
+</div>
+
+<style>
+  .firma2-gis-wizard :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-gis-wizard__footer {
+    justify-content: flex-end;
+    padding-block-start: var(--spacing-600);
+    border-block-start: 1px solid var(--color-border-default);
+  }
+
+  .firma2-gis-wizard__summary-title {
+    margin: 0;
+  }
+
+  .firma2-gis-wizard__summary {
+    display: grid;
+    grid-template-columns: minmax(10rem, auto) 1fr;
+    gap: var(--spacing-300) var(--spacing-600);
+    margin: 0;
+  }
+
+  .firma2-gis-wizard :global(.firma2-gis-wizard__summary dt) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-gis-wizard :global(.firma2-gis-wizard__summary dd) {
+    margin: 0;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-confirm-dialog';
+  import type { SubscriptionStep } from '../../data/firma2-geography';
+  import { blankSubscription, mountSubscriptionEditor } from '../../lib/gis-subscription-editor';
+  import { clearSubscriptionDraft, readSubscriptionDraft, readSubscriptions, writeSubscriptionDraft, writeSubscriptions } from '../../lib/work-areas';
+
+  type Confirm = HTMLElement & { show: () => void };
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const code = (s: string) => `<code>${esc(s)}</code>`;
+
+  document.querySelectorAll<HTMLElement>('.firma2-gis-wizard').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const { steps, listHref }: { steps: { key: SubscriptionStep; title: string }[]; listHref: string } = JSON.parse(root.dataset.config ?? '{}');
+    const sections = steps.map((s) => $(`section[data-step="${s.key}"]`));
+    let step = 0;
+    let touched = false;
+
+    const keep = () => {
+      touched = true;
+      writeSubscriptionDraft({ step, subscription: editor.draft });
+    };
+    const editor = mountSubscriptionEditor($('.firma2-gis-steps'), () => {
+      keep();
+      if (steps[step].key === 'name') paintSummary();
+    });
+
+    // What the review step reads back: every choice made on an earlier screen,
+    // in the words the side sheet will use for it later.
+    const paintSummary = () => {
+      const d = editor.draft;
+      const { config } = editor;
+      const layer = config.layers.find((l) => l.id === d.layerId);
+      const mappable = (field: string) => config.mappable.find((m) => m.value === field)?.label ?? field;
+      const rows: [string, string][] = [
+        ['Access', d.access === 'arcgis' ? `Shared with the ProjectFirma account, through ${esc(config.group.title)}` : 'A public service'],
+        ['Layer', layer ? `${esc(layer.name)} (${layer.geometry.toLowerCase()}s)` : esc(d.url)],
+        ['Matched on', `${code(d.joinField)} in your layer → the external ID on a project`],
+        ['Brings across', d.extraFields.length ? d.extraFields.map(code).join(', ') : 'Shapes only'],
+        ['Project name from', d.nameField ? code(d.nameField) : 'The external ID'],
+        [
+          'Mapped project fields',
+          d.mappings.length ? d.mappings.map((m) => `${esc(mappable(m.projectField))} from ${m.layerField ? code(m.layerField) : 'no field yet'}`).join(', ') : 'None',
+        ],
+        ['When not mapped', `${esc(d.defaultProjectType)}, ${esc(d.defaultStage)}, ${d.defaultLead ? esc(d.defaultLead) : 'lead organization required in the layer'}`],
+      ];
+      $('[data-summary]').innerHTML = rows.map(([dt, dd]) => `<dt class="typography-body-md">${dt}</dt><dd class="typography-body-md">${dd}</dd>`).join('');
+    };
+
+    const show = (next: number, focus = true) => {
+      step = next;
+      sections.forEach((el, i) => (el.hidden = i !== step));
+      root.querySelectorAll<HTMLElement>('[data-progress]').forEach((el) => (el.hidden = Number(el.dataset.progress) !== step));
+      const last = step === steps.length - 1;
+      $('[data-back-wrap]').hidden = step === 0;
+      $('[data-next-wrap]').hidden = last;
+      $('[data-finish-wrap]').hidden = !last;
+      if (last) paintSummary();
+      if (!focus) return;
+      // A new screen, so focus moves to its heading — a reader on a keyboard
+      // or a screen reader starts the step at its top, not on the button.
+      const heading = sections[step].querySelector<HTMLElement>('h2');
+      if (heading) {
+        heading.tabIndex = -1;
+        heading.focus({ preventScroll: true });
+      }
+      window.scrollTo({ top: 0 });
+    };
+
+    $('[data-next]').addEventListener('click', () => {
+      if (!editor.check(steps[step].key)) return;
+      show(step + 1);
+      keep();
+    });
+    $('[data-back]').addEventListener('click', () => {
+      show(step - 1);
+      if (touched) keep();
+    });
+    $('[data-finish]').addEventListener('click', () => {
+      // Every gate again: a resumed draft may predate a change upstream.
+      const failed = steps.findIndex((s) => !editor.check(s.key));
+      if (failed !== -1) {
+        if (failed !== step) show(failed);
+        return;
+      }
+      writeSubscriptions([...readSubscriptions(), editor.draft]);
+      clearSubscriptionDraft();
+      window.location.assign(listHref);
+    });
+
+    // ---- discarding: the only way answers are lost, so it asks ---------------------
+    const discard = $<Confirm>('.firma2-gis-wizard__discard');
+    let afterDiscard: () => void = () => {};
+    const askDiscard = (then: () => void) => {
+      if (!touched) return then();
+      afterDiscard = then;
+      discard.show();
+    };
+    discard.addEventListener('resolved', (e) => {
+      if (!(e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) return;
+      clearSubscriptionDraft();
+      touched = false;
+      afterDiscard();
+    });
+    $('[data-cancel]').addEventListener('click', () => askDiscard(() => window.location.assign(listHref)));
+    $('[data-start-over]').addEventListener('click', () =>
+      askDiscard(() => {
+        $('[data-resumed]').hidden = true;
+        void editor.load(blankSubscription(editor.config)).then(() => show(0));
+      }),
+    );
+
+    // ---- resume, or begin -----------------------------------------------------------
+    const saved = readSubscriptionDraft();
+    touched = Boolean(saved);
+    $('[data-resumed]').hidden = !saved;
+    void editor.load(saved?.subscription ?? blankSubscription(editor.config)).then(() => show(Math.min(saved?.step ?? 0, steps.length - 1), false));
+  });
+</script>

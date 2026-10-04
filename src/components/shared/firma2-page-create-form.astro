@@ -1,0 +1,219 @@
+---
+// firma2-page-create-form — Pages › Add page, Add document and Add folder: the
+// form behind each of the three items on the Pages heading's + menu.
+//
+// A PAGE, LIKE EVERY OTHER ADD in this spoke (/organizations/new,
+// /performance-measures/new): the add has a URL of its own and keeps its place
+// in the browser. One component for all three kinds because they are one flow a
+// field or two apart — a folder is only a name; a page is a title and the
+// folder it sits in; a document is a file, a title and a folder. The text is
+// written on the page itself, in its rich text editor, so Add page asks only
+// what the page needs to exist.
+//
+// ADD DOCUMENT STARTS WITH THE FILE, because the file is the document: its
+// name fills Title (without the extension) unless a title is already typed.
+// PDF is the format the site reads in place, so it is the one the drop zone
+// names; any office format is taken and offered as a download instead.
+//
+// WHERE IT GOES AFTER. A new page opens: it is the thing you came to write, and
+// its row is already marked in the rail; a new document opens the same way, to
+// read. A new folder is empty, and the next
+// thing anyone does with an empty folder is put a page in it — so the add goes
+// on to Add page with the new folder chosen, the rail shows it opened and a
+// toast confirms it once. Cancel there still returns to the screen the folder
+// was started from (`?from=` is passed along).
+//
+// `?folder=` chooses the folder up front — set by the new-folder hand-off above
+// and by Add page in a folder's "…" in the rail.
+//
+// A FORM, NOT A RECORD: every field draws its border at rest with its label
+// above — the legos as they ship. NOTHING REACHES A SERVER: the entry is kept in
+// this viewer's browser (src/lib/custom-pages.ts).
+//
+// bcn-lego-checked: esa-file-upload, esa-text-field, esa-select and esa-button
+// are the controls — all existing, composed unchanged. `.stack` / `.cluster` space
+// them; no bespoke flex and no <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { seedEntries, NO_FOLDER_LABEL, DOCUMENT_ACCEPT } from '../../data/firma2-pages';
+import type { CustomFolder } from '../../data/firma2-pages';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  kind: 'page' | 'document' | 'folder';
+}
+
+const ADD_LABEL = { page: 'Add page', document: 'Add document', folder: 'Add folder' } as const;
+/** The largest file Add document takes — the same cap as a file in a page's text. */
+const MAX_MB = 25;
+
+const { kind } = Astro.props;
+// Where Cancel goes when the form was opened without a `from` (a typed URL).
+const fallbackHref = withBase('/prototypes/projects');
+
+// A real value, not '': esa-select reads an empty value as "nothing chosen"
+// and shows its placeholder instead of this option.
+const NO_FOLDER = { value: 'none', label: NO_FOLDER_LABEL };
+const seedFolders = seedEntries.filter((e): e is CustomFolder => e.kind === 'folder');
+const folderOptions = [NO_FOLDER, ...seedFolders.map((f) => ({ value: f.id, label: f.name }))];
+---
+<form
+  class="firma2-page-create-form stack"
+  data-gap="2xl"
+  novalidate
+  data-kind={kind}
+  data-fallback-href={fallbackHref}
+  data-no-folder={JSON.stringify(NO_FOLDER)}
+>
+  <div class="stack" data-gap="md">
+    {kind !== 'folder' ? (
+      <>
+        {kind === 'document' && (
+          <esa-file-upload
+            name="file"
+            label="PDF or other document"
+            accept={DOCUMENT_ACCEPT}
+            max-size-mb={MAX_MB}
+            data-entry-file
+          ></esa-file-upload>
+        )}
+        <esa-text-field name="title" label="Title" size="md" required data-entry-name></esa-text-field>
+        <esa-select
+          name="folder"
+          label="Folder"
+          size="md"
+          options={JSON.stringify(folderOptions)}
+          data-seed={NO_FOLDER.value}
+          data-entry-folder
+        ></esa-select>
+      </>
+    ) : (
+      <esa-text-field name="name" label="Name" size="md" required data-entry-name></esa-text-field>
+    )}
+  </div>
+
+  <!-- House order: the primary first, then Cancel — as Add organization. -->
+  <div class="cluster" data-gap="xs">
+    <EsaButton variant="primary" size="md" type="submit">{ADD_LABEL[kind]}</EsaButton>
+    <EsaButton variant="ghost" size="md" tag="a" href={fallbackHref} data-entry-cancel>Cancel</EsaButton>
+  </div>
+</form>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-file-upload';
+  import { pageRoute, documentRoute } from '../../data/firma2-pages';
+  import { addEntry, newEntryId, readFolders } from '../../lib/custom-pages';
+  import { putDocumentFile } from '../../lib/page-files';
+  import { withBase } from '../../lib/base';
+
+  type Field = HTMLElement & { value: string; errorText: string; options?: unknown };
+  // `_error` is the drop zone's own error line — the lego has no public way to
+  // say "nothing chosen", only "too large". Lego gap: an `errorText` on
+  // esa-file-upload, as esa-text-field has.
+  type Upload = HTMLElement & { _error?: string; requestUpdate?: () => void };
+
+  // Only a path on this site — `?from=` is part of a URL anyone can edit, and a
+  // protocol-relative "//elsewhere" would turn Cancel into an open redirect.
+  const fromParam = (): string | null => {
+    const from = new URLSearchParams(location.search).get('from');
+    return from && from.startsWith('/') && !from.startsWith('//') ? from : null;
+  };
+
+  document.querySelectorAll<HTMLFormElement>('.firma2-page-create-form').forEach((form) => {
+    const kind = form.dataset.kind as 'page' | 'document' | 'folder';
+    const name = form.querySelector<Field>('[data-entry-name]')!;
+    const folder = form.querySelector<Field>('[data-entry-folder]');
+    const upload = form.querySelector<Upload>('[data-entry-file]');
+    let file: File | undefined;
+    // The title follows the file until someone types one of their own.
+    let titleTyped = false;
+    const setUploadError = (message: string): void => {
+      if (!upload) return;
+      upload._error = message;
+      upload.requestUpdate?.();
+    };
+    const focusUpload = (): void => upload?.shadowRoot?.querySelector<HTMLElement>('.zone')?.focus();
+    upload?.addEventListener('change', (event) => {
+      file = (event as CustomEvent<{ files: File[] }>).detail?.files?.[0];
+      if (file) setUploadError('');
+      if (file && (!titleTyped || !name.value.trim())) {
+        titleTyped = false;
+        name.value = file.name.replace(/\.[^.]+$/, '');
+        if (name.errorText) name.errorText = '';
+      }
+    });
+    const back = fromParam() ?? form.dataset.fallbackHref ?? '';
+    form.querySelector<HTMLAnchorElement>('[data-entry-cancel]')?.setAttribute('href', back);
+
+    // Folders added in this browser join the seeds. Assigned only after define —
+    // a property set on a not-yet-upgraded element shadows the lego's setter.
+    if (folder) {
+      customElements.whenDefined('esa-select').then(() => {
+        const none = JSON.parse(form.dataset.noFolder ?? '{}');
+        const folders = readFolders();
+        folder.options = [none, ...folders.map((f) => ({ value: f.id, label: f.name }))];
+        const asked = new URLSearchParams(location.search).get('folder');
+        folder.value = folders.some((f) => f.id === asked) ? asked! : folder.dataset.seed ?? none.value;
+      });
+    }
+
+    // Enter in the name field submits, as it would in a native input — the
+    // lego's input sits in a shadow root, so implicit submission never fires.
+    name.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key === 'Enter') form.requestSubmit();
+    });
+    name.addEventListener('input', () => {
+      titleTyped = true;
+      if (name.errorText) name.errorText = '';
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (upload && !file) {
+        setUploadError('Choose the file to add.');
+        focusUpload();
+        return;
+      }
+      const value = (name.value ?? '').trim();
+      // Folder names are unique: the rail opens and closes a folder by its name.
+      const takenFolder = kind === 'folder' && readFolders().some((f) => f.name.trim().toLowerCase() === value.toLowerCase());
+      const error = !value
+        ? kind === 'folder' ? 'Enter the folder’s name.' : `Enter the ${kind}’s title.`
+        : takenFolder
+          ? 'A folder with this name is already in Pages.'
+          : '';
+      if (error) {
+        name.errorText = error;
+        name.focus();
+        return;
+      }
+
+      const id = newEntryId(value);
+      if (kind === 'folder') {
+        addEntry({ id, kind: 'folder', name: value }, { kind: 'folder', label: value });
+        const next = new URLSearchParams({ folder: id, from: back });
+        window.location.assign(`${withBase('/prototypes/pages/new')}?${next}`);
+        return;
+      }
+      const folderId = folder && folder.value !== 'none' ? folder.value : undefined;
+      if (kind === 'document' && file) {
+        // The file first: a document whose file failed to keep would open to nothing.
+        if (!(await putDocumentFile(id, file))) {
+          setUploadError('This browser couldn’t keep the file. Check that site data is allowed, then try again.');
+          return;
+        }
+        addEntry({ id, kind: 'document', title: value, folderId, file: { name: file.name, type: file.type, size: file.size } });
+        window.location.assign(withBase(documentRoute(id)));
+        return;
+      }
+      addEntry({ id, kind: 'page', title: value, folderId });
+      // In edit mode: a page made a moment ago is made to be written.
+      window.location.assign(`${withBase(pageRoute(id))}&edit`);
+    });
+
+    // Focus the first field, where the add starts — the drop zone, for a document.
+    if (upload) customElements.whenDefined('esa-file-upload').then(() => requestAnimationFrame(focusUpload));
+    else customElements.whenDefined('esa-text-field').then(() => name.focus());
+  });
+</script>

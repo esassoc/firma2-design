@@ -1,0 +1,146 @@
+---
+// firma2-organization-access — who can see an organization, how people get into
+// it, and which of its members may change it.
+//
+// TWO SECTIONS, TWO QUESTIONS. Organization access is about everyone OUTSIDE the
+// organization: who can see it and its projects, and how one of them becomes a
+// member. Organization permissions is about everyone INSIDE it: which of the
+// members may change what. Separate headings, because an administrator answers
+// them at different times — the first once, at setup; the second whenever a
+// steward leaves.
+//
+// LINEAR'S TEAM PERMISSIONS. Each act is "all members" or "only stewards" (its
+// team owners), and nothing is inherited from the workspace's own settings.
+// Two acts are not on the list because they never widen: making the
+// organization private, and naming another steward. The note under the
+// permissions says so, since a reader looking for them would otherwise assume
+// they were simply forgotten.
+//
+// SELECTS THROUGHOUT. Radios were tried for the two choices of three and cut
+// (user call): one control type down the page reads as one form, matches
+// Organization settings › General, and halves the access section's height.
+//
+// THE HELP LINE FOLLOWS THE ANSWER. The option labels alone leave the
+// consequence unsaid ("Public" — to whom? signed out too?), and a closed select
+// shows only the one it holds. So each access select's help-text states what
+// the SELECTED option means, and the script below swaps it on change.
+//
+// DEFAULTS: Public; invitation required; every permission stewards-only — the
+// safe end of each permission, since widening is one edit and narrowing after
+// the fact cannot take back what was already changed.
+//
+// APPROVED EMAIL DOMAINS sit between the two, as their own section
+// (firma2-organization-domains): a way in, so they follow access, and steward-
+// only, so the permissions note names them.
+//
+// No Save: each control commits on change, the spoke's one model.
+//
+// bcn-lego-checked: firma2-rail-section is each section, esa-select every
+// control — all existing, composed unchanged. `.stack` spaces
+// the fields; no bespoke flex and no <style> block.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import Firma2OrganizationDomains from './firma2-organization-domains.astro';
+import { visibilityChoices, joiningChoices, currentOrganization } from '../../data/firma2-directory';
+import type { AccessChoice } from '../../data/firma2-directory';
+
+interface ChoiceGroup {
+  name: string;
+  label: string;
+  value: string;
+  choices: AccessChoice[];
+}
+
+// The choices live in the directory so the create dialog offers the same ones.
+const visibility: ChoiceGroup = {
+  name: 'visibility',
+  label: 'Who can see this organization and its projects',
+  value: 'public',
+  choices: visibilityChoices,
+};
+
+const joining: ChoiceGroup = {
+  name: 'joining',
+  label: 'How people join',
+  value: 'invite',
+  choices: joiningChoices,
+};
+
+const audience = JSON.stringify([
+  { value: 'members', label: 'All organization members' },
+  { value: 'stewards', label: 'Only stewards' },
+]);
+
+// The actions, in the order an organization grows into them: its settings, then
+// what its page shows, then who is in it.
+const permissions = [
+  { name: 'perm-settings', label: 'Manage settings', hint: 'Every page in Organization settings, this one included.' },
+  { name: 'perm-pinned', label: 'Manage pinned projects', hint: 'The projects held at the top of the organization’s page.' },
+  { name: 'perm-landing', label: 'Manage the landing view', hint: 'What members see first when they open the organization.' },
+  { name: 'perm-members', label: 'Manage members', hint: 'Add and remove members, and approve requests to join. Only stewards can invite people new to the workspace.' },
+];
+
+const org = currentOrganization();
+const hintFor = (g: ChoiceGroup) => g.choices.find((c) => c.value === g.value)?.hint ?? '';
+const optionsFor = (g: ChoiceGroup) => JSON.stringify(g.choices.map(({ value, label }) => ({ value, label })));
+const hintsFor = (g: ChoiceGroup) => JSON.stringify(Object.fromEntries(g.choices.map((c) => [c.value, c.hint])));
+---
+<div class="stack" data-gap="2xl">
+  <Firma2RailSection title="Organization access">
+    <div class="stack" data-gap="md">
+      {[visibility, joining].map((g) => (
+        <esa-select
+          name={g.name}
+          label={g.label}
+          size="md"
+          options={optionsFor(g)}
+          help-text={hintFor(g)}
+          data-seed={g.value}
+          data-hints={hintsFor(g)}
+        ></esa-select>
+      ))}
+    </div>
+  </Firma2RailSection>
+
+  <Firma2OrganizationDomains organization={org} />
+
+  <Firma2RailSection title="Organization permissions">
+    <div class="stack" data-gap="md">
+      {permissions.map((p) => (
+        <esa-select
+          name={p.name}
+          label={p.label}
+          help-text={p.hint}
+          size="md"
+          options={audience}
+          data-seed="stewards"
+        ></esa-select>
+      ))}
+    </div>
+    <p class="typography-body-sm">Stewards can always do all four. Only stewards can make the organization private, name another steward or approve email domains.</p>
+  </Firma2RailSection>
+</div>
+
+<script>
+  import '@esa/ecology/esa-select';
+
+  // Assigned only after define — a `.value` set on a not-yet-upgraded element
+  // becomes an own property that shadows the lego's setter for good.
+  customElements.whenDefined('esa-select').then(() => {
+    document
+      .querySelectorAll<HTMLElement & { value: string }>('esa-select[data-seed]')
+      .forEach((el) => {
+        el.value = el.dataset.seed ?? '';
+      });
+  });
+
+  // The help line follows the answer — see the header.
+  type SelectEl = HTMLElement & { value: string; helpText: string };
+  customElements.whenDefined('esa-select').then(() => {
+    document.querySelectorAll<SelectEl>('esa-select[data-hints]').forEach((el) => {
+      const hints: Record<string, string> = JSON.parse(el.dataset.hints ?? '{}');
+      el.addEventListener('change', () => {
+        el.helpText = hints[el.value] ?? '';
+      });
+    });
+  });
+</script>

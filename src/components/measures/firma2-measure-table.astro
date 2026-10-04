@@ -5,12 +5,12 @@
 // record-count footer and CSV export this spoke's data grids share.
 //
 // THE COLUMNS ARE THE MEASURE'S ATTRIBUTE LIST — name, status, type,
-// classifications, unit, counting rule, subcategory schemas — and THE GRID IS
+// classifications, unit, counting rule — and THE GRID IS
 // AN EDITOR: name edits as text, status/type/unit/counting-rule edit as
 // selects, on DOUBLE-CLICK, committed straight to the same draft store the
 // sheet writes. The sidesheet remains the full record — opened by the peek button
 // that surfaces on the Measure cell when its row is hovered — for the fields
-// a cell cannot hold (definition, guidance, classifications, schemas). Status
+// a cell cannot hold (definition, guidance, classifications). Status
 // sits beside the name rather than at the far edge; it is the first fact a
 // reader wants about a row ("is this collecting values?") and the sheet lists
 // it in the same position.
@@ -43,7 +43,7 @@ import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaFilterClearButton from '@esa/ecology/esa-filter-clear-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
-import { measuresByName, MEASURE_KINDS, MEASURE_STATUS_TONE, CLASSIFICATIONS } from '../../data/firma2-performance-measures';
+import { measuresByName, MEASURE_KINDS, MEASURE_STATUS_TONE, CLASSIFICATION_NAMES } from '../../data/firma2-performance-measures';
 import type { MeasureStatus, PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
 
 interface Props {
@@ -82,11 +82,11 @@ const statusOptions = STATUS_ORDER.filter((s) => measures.some((m) => m.status =
   color: TONE_DOT[MEASURE_STATUS_TONE[s]],
 }));
 
-// Classification options come from the portfolio's vocabulary (CLASSIFICATIONS),
+// Classification options come from the portfolio's vocabulary (CLASSIFICATION_NAMES),
 // narrowed to the branches this catalog actually uses — same "never offer an
 // empty filter" convention as the status list. No dots: a classification is a
 // goal, not a status, and nothing else on the screen colours it.
-const classificationOptions = CLASSIFICATIONS.filter((c) =>
+const classificationOptions = CLASSIFICATION_NAMES.filter((c) =>
   measures.some((m) => m.classifications.includes(c)),
 ).map((p) => ({
   value: p,
@@ -299,13 +299,11 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     MEASURE_STATUS_TONE,
     UNITS,
     countingRulesFor,
-    getSchema,
     measureDisplayName,
     outstandingFields,
     unitFromLabel,
   } from '../../data/firma2-performance-measures';
-  import { readLocalSchemas, SCHEMA_CHANGE_EVENT } from '../../lib/schema-draft';
-  import type { PerformanceMeasureDefinition, SubcategorySchema } from '../../data/firma2-performance-measures';
+  import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
   import type { ColDef } from 'ag-grid-community';
 
   /** What an unanswered optional field shows. An em dash, not a blank cell. */
@@ -368,25 +366,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     // emitMeasureChange, so the repaint listener can tell its own writes from
     // the sheet's.
     let selfEdit = false;
-
-    // Browser-local schemas, refreshed whenever a measure changes (the sheet
-    // may have minted one in the same gesture). Cached per repaint rather than
-    // read per cell — readLocalSchemas parses localStorage.
-    let localSchemas: SubcategorySchema[] = [];
-    const refreshLocalSchemas = () => {
-      try {
-        localSchemas = readLocalSchemas();
-      } catch {
-        localSchemas = [];
-      }
-    };
-    refreshLocalSchemas();
-
-    const schemaNames = (m: PerformanceMeasureDefinition): string =>
-      (m.subcategorySchemaIds ?? [])
-        .map((id) => getSchema(id, localSchemas)?.name)
-        .filter(Boolean)
-        .join(', ');
 
     // THE ROWS ARE SEEDS + DRAFTS, recomputed as one list: every seed with its
     // local draft laid over it, then every measure minted in this browser.
@@ -557,21 +536,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
           comparator: rankBy(COUNTING_RULE_ORDER),
           valueFormatter: (p) => (p.value ? COUNTING_RULE_NAME.get(p.value) ?? p.value : UNSET),
         },
-        // The schemas by NAME, not by count: which lists divide a measure is
-        // the fact a reader compares ("do these two split by the same thing?"),
-        // and a count cannot answer it. System schemas are listed with the
-        // rest — attached is attached, whoever fills the value in. The full
-        // set rides in the tooltip for the rows that overflow.
-        {
-          headerName: 'Subcategory schemas', colId: 'subcategorySchemas',
-          // Read-only in the grid (attached in the sheet, authored in their
-          // own view) — secondary ink, same rule as Classifications.
-          cellClass: 'firma2-grid-readonly',
-          flex: 1, minWidth: 200,
-          valueGetter: (p) => (p.data ? schemaNames(p.data) : ''),
-          tooltipValueGetter: (p) => p.value || undefined,
-          valueFormatter: (p) => p.value || UNSET,
-        },
       ] satisfies ColDef[],
       gridOptions: {
         overlayNoRowsTemplate: emptyState?.outerHTML,
@@ -590,7 +554,7 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
           }
           persistMeasure(record);
           // The grid's own row already holds the new value, so its repaint
-          // listener skips this event; the schemas view still hears it.
+          // listener skips this event.
           selfEdit = true;
           emitMeasureChange(record);
           selfEdit = false;
@@ -614,22 +578,18 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     const { gridApi, countState } = handle;
 
     // A SHEET SAVED (or deleted). Rebuild the whole row list from seeds +
-    // drafts rather than patching one row: a save can also have minted a local
-    // schema (the Subcategory schemas cells read those) or removed a local
-    // measure, and one recompute handles every case the same way. The SCHEMA
-    // event matters too — renaming a schema in ITS sheet changes what these
-    // cells say without any measure changing. Inline edits set selfEdit while
+    // drafts rather than patching one row: a save can also have removed a
+    // local measure, and one recompute handles every case the same way. Inline
+    // edits set selfEdit while
     // they emit: their row already holds the new value, and resetting rowData
     // under the editor would throw the keyboard user's focus away.
     const repaint = () => {
       if (selfEdit) return;
-      refreshLocalSchemas();
       const rows = currentRows();
       countState.total = rows.length;
       gridApi.setGridOption('rowData', rows);
     };
     document.addEventListener(MEASURE_CHANGE_EVENT, repaint);
-    document.addEventListener(SCHEMA_CHANGE_EVENT, repaint);
 
     // Clear all is only in the row when there is something to clear.
     const syncClearVisibility = () => {

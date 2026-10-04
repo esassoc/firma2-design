@@ -1,0 +1,256 @@
+---
+// firma2-classification-roster — every goal the workspace tracks, one table
+// per classification group, with what each is tracked by: how many projects
+// work toward it, how many KPIs measure it, and how many of those have a goal
+// target. Each name opens the classification's settings page, where its KPIs
+// and targets are set.
+//
+// THE KPI AND TARGET COUNTS ARE THE ADMINISTRATOR'S FINDING. A goal with no
+// KPIs cannot report progress; a KPI with no target has nothing to be
+// measured against. Both are setup gaps, and this is the screen that shows
+// them. Built on firma2-settings-table; a script keeps rows and counts in step
+// with this browser's edits.
+//
+// GROUPS ARE SET UP HERE TOO. Each group's name opens its own page (rename,
+// re-describe, reorder its classifications, remove it); each group carries
+// its own "Add classification", which opens the add page with that group
+// chosen, so a classification starts where it belongs. Groups reorder by the
+// grip beside their heading — bcn-sortable-list, the settings rule for
+// reordering — and that order is the order of the Classifications board.
+//
+// A GROUP ADDED IN THIS BROWSER gets its section by cloning the first one,
+// emptied; its table clones its first row from any table on the page, since
+// an empty group has none of its own.
+//
+// bcn-lego-checked: bcn-sortable-list reorders the groups (no esa- list
+// reorders; esassoc/ecology#39); esa-button the adds; esa-empty-state the
+// empty group; firma2-settings-table each list. The only CSS lays the grip
+// beside each group's section. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SettingsTable from './firma2-settings-table.astro';
+import { CLASSIFICATIONS, CLASSIFICATION_GROUPS, classificationsInGroup } from '../../data/firma2-classifications';
+import { kpisFor } from '../../data/firma2-classification-rollup';
+import { projects } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+const LIST = '/prototypes/workspace-settings/classifications';
+const GROUPS = `${LIST}/groups`;
+
+const targetCell = (kpis: string[], targets: { measure: string }[]) =>
+  kpis.length ? `${kpis.filter((k) => targets.some((t) => t.measure === k)).length} of ${kpis.length}` : '—';
+
+const groups = CLASSIFICATION_GROUPS.map((group) => ({
+  group,
+  rows: classificationsInGroup(group.slug).map((c) => {
+    const kpis = kpisFor(c.name).map((m) => m.slug);
+    return {
+      slug: c.slug,
+      name: c.name,
+      href: withBase(`${LIST}/${c.slug}`),
+      description: c.description,
+      cells: {
+        projects: projects.filter((p) => p.classifications.includes(c.name)).length,
+        kpis: kpis.length,
+        targets: targetCell(kpis, c.targets ?? []),
+      },
+    };
+  }),
+}));
+// What the build knows, so the script can apply this browser's edits over it.
+const seeded = Object.fromEntries(
+  CLASSIFICATIONS.map((c) => [c.slug, { kpis: kpisFor(c.name).map((m) => m.slug), targets: c.targets ?? [] }]),
+);
+---
+<div class="firma2-classification-roster" data-classification-roster data-seeded={JSON.stringify(seeded)} data-new-href={withBase(`${LIST}/new`)}>
+  <bcn-sortable-list data-group-sort>
+    <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+    <ol class="firma2-classification-roster__groups stack" data-gap="2xl">
+      {groups.map(({ group, rows }) => (
+        <li data-sort-key={group.slug} data-sort-label={group.name}>
+          <section class="stack" data-gap="md" aria-labelledby={`group-${group.slug}`} data-group={group.slug}>
+            <div class="repel" data-gap="sm">
+              <div class="stack" data-gap="3xs">
+                <h2 class="typography-title-sm-strong" id={`group-${group.slug}`}>
+                  <a class="firma2-classification-roster__name" href={withBase(`${GROUPS}/${group.slug}`)} data-group-name>{group.name}</a>
+                </h2>
+                <p class="firma2-classification-roster__description typography-body-sm" data-group-desc>{group.description}</p>
+              </div>
+              <EsaButton variant="secondary" size="md" icon="plus" tag="a" href={withBase(`${LIST}/new?group=${group.slug}`)} data-group-add>
+                Add classification
+              </EsaButton>
+            </div>
+            <div data-group-table hidden={rows.length === 0}>
+              <Firma2SettingsTable
+                label={group.name}
+                nameLabel="Classification"
+                columns={[
+                  { key: 'projects', label: 'Projects', numeric: true },
+                  { key: 'kpis', label: 'Performance measures', numeric: true },
+                  { key: 'targets', label: 'With a goal target', numeric: true },
+                ]}
+                rows={rows}
+              />
+            </div>
+            <!-- A plain div carries `hidden`, so no lego's display rule outranks it. -->
+            <div data-group-empty hidden={rows.length > 0}>
+              <EsaEmptyState size="sm" title="No classifications in this group" />
+            </div>
+          </section>
+        </li>
+      ))}
+    </ol>
+  </bcn-sortable-list>
+</div>
+
+<style>
+  .firma2-classification-roster__groups {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* The grip sits beside its group's heading; the section takes the rest. */
+  .firma2-classification-roster__groups > :global(li) {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-200, 0.5rem);
+  }
+
+  .firma2-classification-roster__groups > :global(li) > section {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  /* ONE COLUMN GRID ACROSS GROUPS. Each group is its own table, and auto
+     layout sized each to its own contents, so the figure columns drifted from
+     group to group. Fixed widths for the figures; the name takes the rest. */
+  /* Wide screens only: on a phone the fixed figures would squeeze the name
+     column to nothing, and the tables size to content as everywhere else. */
+  @media (min-width: 48rem) {
+    .firma2-classification-roster :global(table) {
+      table-layout: fixed;
+    }
+
+    .firma2-classification-roster :global(thead th:nth-child(2)),
+    .firma2-classification-roster :global(thead th:nth-child(3)) {
+      inline-size: 6.5rem;
+    }
+
+    .firma2-classification-roster :global(thead th:nth-child(4)) {
+      inline-size: 10rem;
+    }
+  }
+
+  .firma2-classification-roster__name {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .firma2-classification-roster__name:hover {
+    text-decoration: underline;
+  }
+
+  .firma2-classification-roster__description {
+    margin: 0;
+    max-inline-size: 60ch;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-classification-roster__description:empty {
+    display: none;
+  }
+</style>
+
+<script>
+  import '../shared/bcn-sortable-list';
+  import { syncTaxonomyList } from '../../lib/taxonomy-list';
+  import { entries, kpiSlugs, setOrder, targetsFor } from '../../lib/taxonomy-edits';
+  import { recordHref } from '../../lib/taxonomy-record';
+  import { withBase } from '../../lib/base';
+  import type { GoalTarget } from '../../data/firma2-classifications';
+
+  const LIST = '/prototypes/workspace-settings/classifications';
+  const GROUPS = `${LIST}/groups`;
+
+  document.querySelectorAll<HTMLElement>('[data-classification-roster]').forEach((root) => {
+    const seeded: Record<string, { kpis: string[]; targets: GoalTarget[] }> = JSON.parse(root.dataset.seeded ?? '{}');
+    const ol = root.querySelector<HTMLOListElement>('ol')!;
+    const sorter = root.querySelector<HTMLElement>('[data-group-sort]')!;
+    // Captured before any repaint can remove them: a section and a row to
+    // clone for groups and classifications this page was not built with.
+    const sectionTemplate = ol.querySelector<HTMLLIElement>(':scope > li')?.cloneNode(true) as HTMLLIElement | undefined;
+    sectionTemplate?.querySelectorAll('[data-sort-grip], [data-sort-spacer], tr[data-slug]').forEach((n) => n.remove());
+    const rowTemplate = root.querySelector<HTMLElement>('tr[data-slug]')?.cloneNode(true) as HTMLElement | undefined;
+
+    const counts = (slug: string) => {
+      const kpis = kpiSlugs(slug, seeded[slug]?.kpis ?? []);
+      const targets = targetsFor(slug, seeded[slug]?.targets ?? []);
+      return {
+        kpis: String(kpis.length),
+        targets: kpis.length ? `${kpis.filter((k) => targets.some((t) => t.measure === k)).length} of ${kpis.length}` : '—',
+      };
+    };
+
+    const sectionFor = (slug: string): HTMLLIElement | null => {
+      if (!sectionTemplate) return null;
+      const li = sectionTemplate.cloneNode(true) as HTMLLIElement;
+      li.dataset.sortKey = slug;
+      const section = li.querySelector<HTMLElement>('section')!;
+      section.dataset.group = slug;
+      section.setAttribute('aria-labelledby', `group-${slug}`);
+      section.querySelector('h2')?.setAttribute('id', `group-${slug}`);
+      return li;
+    };
+
+    const paint = (): void => {
+      const groups = entries('classificationGroup');
+      const lis = new Map([...ol.querySelectorAll<HTMLLIElement>(':scope > li')].map((li) => [li.dataset.sortKey ?? '', li]));
+      for (const [slug, li] of lis) if (!groups.some((g) => g.slug === slug)) li.remove();
+
+      for (const g of groups) {
+        let li = lis.get(g.slug) ?? null;
+        if (!li) li = sectionFor(g.slug);
+        if (!li) continue;
+        li.dataset.sortLabel = g.name;
+        const name = li.querySelector<HTMLAnchorElement>('[data-group-name]');
+        if (name) {
+          name.textContent = g.name;
+          name.href = recordHref(GROUPS, g.slug);
+        }
+        const desc = li.querySelector('[data-group-desc]');
+        if (desc) desc.textContent = g.description;
+        const add = li.querySelector<HTMLAnchorElement>('[data-group-add]');
+        if (add) add.href = withBase(`${LIST}/new?group=${encodeURIComponent(g.slug)}`);
+        li.querySelector('table')?.setAttribute('aria-label', g.name);
+
+        const tbody = li.querySelector<HTMLElement>('tbody');
+        if (tbody) {
+          syncTaxonomyList(tbody, 'classification', {
+            listPath: LIST,
+            template: rowTemplate,
+            include: (e) => e.group === g.slug,
+            cells: (e) => ({ projects: '0', ...counts(e.slug) }),
+            paint: (row, e) => {
+              for (const [key, value] of Object.entries(counts(e.slug))) {
+                const cell = row.querySelector(`[data-cell="${key}"]`);
+                if (cell) cell.textContent = value;
+              }
+            },
+          });
+          const has = tbody.querySelector('tr[data-slug]') !== null;
+          li.querySelector<HTMLElement>('[data-group-table]')!.hidden = !has;
+          li.querySelector<HTMLElement>('[data-group-empty]')!.hidden = has;
+        }
+        ol.append(li); // in stored order
+      }
+    };
+
+    paint();
+
+    sorter.addEventListener('sort-change', (e) => {
+      setOrder('classificationGroup', (e as CustomEvent<{ order: string[] }>).detail.order);
+      paint();
+    });
+  });
+</script>

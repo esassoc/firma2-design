@@ -1,0 +1,77 @@
+---
+// firma2-tag-projects — which projects carry a tag, assigned from the tag's
+// side. The other door to the same assignments as a project's own Tags row
+// (src/lib/project-tags.ts): tag one project from its page, or twenty from
+// here.
+//
+// A searchable multi-select of every project, because a tag is a yes/no
+// question asked of the whole portfolio and the reader is picking names they
+// already know. Saved on each pick — no Save button, as every settings screen.
+//
+// bcn-lego-checked: esa-combobox (multiple, autocomplete) is the control and
+// firma2-rail-section the section; nothing here is hand-built. Beacon is not
+// cloned on this machine.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { projects, projectSlug } from '../../data/firma2-projects';
+
+interface Props {
+  /** The seeded tag's slug; omitted on a draft route, where `?slug=` names it. */
+  slug?: string;
+}
+
+const { slug } = Astro.props;
+const options = projects.map((p) => ({ value: projectSlug(p), label: p.projectName }));
+---
+<Firma2RailSection title="Projects">
+  <div class="firma2-tag-projects stack" data-gap="sm" data-slug={slug} data-options={JSON.stringify(options)}>
+    <esa-combobox
+      mode="autocomplete"
+      multiple
+      label="Projects with this tag"
+      placeholder="Search projects"
+      size="md"
+      data-picker
+    ></esa-combobox>
+    <p class="typography-body-sm firma2-tag-projects__count" data-count></p>
+  </div>
+</Firma2RailSection>
+
+<script>
+  import '@esa/ecology/esa-combobox';
+  import { projectsWithTag, toggleProjectTag } from '../../lib/project-tags';
+  import { recordSlug } from '../../lib/taxonomy-record';
+
+  type Picker = HTMLElement & { value: string[]; options: unknown };
+
+  document.querySelectorAll<HTMLElement>('.firma2-tag-projects').forEach((root) => {
+    const slug = recordSlug(root);
+    if (!slug) return;
+    const picker = root.querySelector<Picker>('[data-picker]')!;
+    const count = root.querySelector<HTMLElement>('[data-count]')!;
+    const say = (n: number) => (count.textContent = n === 0 ? 'No project has this tag yet.' : `${n} ${n === 1 ? 'project has' : 'projects have'} this tag.`);
+
+    let held = projectsWithTag(slug);
+    say(held.length);
+    // Assigned only after define, or the props shadow the lego's setters.
+    customElements.whenDefined('esa-combobox').then(() => {
+      picker.options = JSON.parse(root.dataset.options ?? '[]');
+      picker.value = held;
+    });
+
+    picker.addEventListener('change', () => {
+      const next = Array.isArray(picker.value) ? picker.value.map(String) : [];
+      for (const p of next.filter((s) => !held.includes(s))) toggleProjectTag(p, slug, true);
+      for (const p of held.filter((s) => !next.includes(s))) toggleProjectTag(p, slug, false);
+      held = next;
+      say(held.length);
+      document.dispatchEvent(new CustomEvent('firma2:tag-assignments', { detail: { tag: slug } }));
+    });
+  });
+</script>
+
+<style>
+  .firma2-tag-projects__count {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+</style>

@@ -2,7 +2,7 @@
 // server every other prototype in this spoke uses. Versioned keys, so a shape
 // change later discards stale state instead of misreading it.
 //
-// FOUR THINGS, each keyed on its own so one screen's reset never takes
+// FIVE THINGS, each keyed on its own so one screen's reset never takes
 // another's with it:
 //
 //   work areas      per project, written whole: the record's shapes as edited.
@@ -13,6 +13,9 @@
 //                   decides whether the drawing tools exist at all.
 //   layers          the workspace's reference layers, as edited in settings.
 //   subscriptions   the GIS subscriptions, as edited and synced.
+//   draft           the one subscription being set up in the wizard, and the
+//                   step it stopped on — so leaving to share a layer into the
+//                   ArcGIS group never costs the answers already given.
 //
 // Every write dispatches one document event and the browser's own `storage`
 // event carries it to other windows, so a map in one tab follows a setting
@@ -27,7 +30,8 @@ const WORK_AREAS_KEY = 'firma2:work-areas:v1';
 const SOURCE_KEY = 'firma2:project-source:v1';
 const LAYERS_KEY = 'firma2:reference-layers:v1';
 const SUBSCRIPTIONS_KEY = 'firma2:subscriptions:v1';
-export const GEO_KEYS = [WORK_AREAS_KEY, SOURCE_KEY, LAYERS_KEY, SUBSCRIPTIONS_KEY];
+const DRAFT_KEY = 'firma2:subscription-draft:v1';
+export const GEO_KEYS = [WORK_AREAS_KEY, SOURCE_KEY, LAYERS_KEY, SUBSCRIPTIONS_KEY, DRAFT_KEY];
 
 const read = <T>(key: string, fallback: T): T => {
   try {
@@ -92,3 +96,22 @@ export const writeLayers = (layers: ReferenceLayer[]): void => write(LAYERS_KEY,
 
 export const readSubscriptions = (): Subscription[] => read<Subscription[]>(SUBSCRIPTIONS_KEY, [SEED_SUBSCRIPTION]);
 export const writeSubscriptions = (subscriptions: Subscription[]): void => write(SUBSCRIPTIONS_KEY, subscriptions);
+
+// ---- the subscription being set up ---------------------------------------------------
+
+export interface SubscriptionDraft {
+  /** Index into SUBSCRIPTION_STEPS of the step it stopped on. */
+  step: number;
+  subscription: Subscription;
+}
+
+export const readSubscriptionDraft = (): SubscriptionDraft | null => read<SubscriptionDraft | null>(DRAFT_KEY, null);
+export const writeSubscriptionDraft = (draft: SubscriptionDraft): void => write(DRAFT_KEY, draft);
+export const clearSubscriptionDraft = (): void => {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // Blocked storage: there was nothing persisted to clear.
+  }
+  document.dispatchEvent(new CustomEvent(GEO_CHANGE_EVENT, { detail: { key: DRAFT_KEY } }));
+};

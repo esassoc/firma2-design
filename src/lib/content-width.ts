@@ -17,7 +17,7 @@ export const CONTENT_MAX = '1280px';
  * sections, forms, short definition lists. AppLayout's `width="reading"`.
  *
  * 48rem (768px): a line of body text stops around 90 characters, short enough
- * to read across, and a five-column settings table (Roles and permissions)
+ * to read across, and a five-column settings table
  * still fits without wrapping its headers into three lines. Pages whose job is
  * surface — the projects grid, the record, an editor with a live preview beside
  * it — keep CONTENT_MAX.

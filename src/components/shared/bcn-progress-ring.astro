@@ -37,6 +37,15 @@
 // canon and a component does not get to quietly diverge from its sibling's
 // established colours just because its own shape changed.
 //
+// AN OPTIONAL SECOND ARC — `secondary` — for a figure promised but not yet
+// done: a classification KPI's planned total (user, 2026-10-03). It runs
+// under the fill in the muted brand step bcn-goal-meter's committed segment
+// used, so the ring reads done / promised / grey-for-what-nobody-has-
+// promised, against the whole circle as the target. Omitted, nothing draws
+// and the ring is the single-value meter every project row uses. The figures
+// are always in the adjacent text too: the muted step against the track is
+// too low a contrast to be the only channel.
+//
 // NO SEVERITY GRADING. Same call firma2-project-measures already makes for
 // the bar it replaces: under-delivery on a measure is not an alarm, so there
 // is no variant prop that turns the ring amber or red at some threshold — one
@@ -69,11 +78,15 @@ interface Props {
    *  single-line list row, where the ring is a glance-able marker beside text
    *  rather than a figure in its own right. */
   size?: 'xs' | 'sm' | 'md';
+  /** 0-100, optional: a second, lighter arc under the fill — what is promised
+   *  but not yet done. Omit for a single-value ring. */
+  secondary?: number;
 }
 
-const { value, label = '', decorative = true, size = 'md' } = Astro.props;
+const { value, label = '', decorative = true, size = 'md', secondary } = Astro.props;
 
 const clamped = Math.max(0, Math.min(100, value));
+const clampedSecondary = secondary == null ? null : Math.max(0, Math.min(100, secondary));
 
 // A fixed 0-100 viewBox regardless of rendered size — `size` scales the
 // element in CSS, not the geometry, so the stroke stays crisp at either rung
@@ -87,6 +100,7 @@ const cls = ['bcn-progress-ring', `bcn-progress-ring--${size}`].join(' ');
 
 <svg
   class={cls}
+  style={`--_ring-circumference: ${CIRCUMFERENCE}`}
   viewBox="0 0 100 100"
   role={decorative ? undefined : 'img'}
   aria-hidden={decorative ? 'true' : undefined}
@@ -99,6 +113,18 @@ const cls = ['bcn-progress-ring', `bcn-progress-ring--${size}`].join(' ');
     r={RADIUS}
     fill="none"
   ></circle>
+  {clampedSecondary != null && (
+    <circle
+      class="bcn-progress-ring__secondary"
+      cx="50"
+      cy="50"
+      r={RADIUS}
+      fill="none"
+      stroke-dasharray={CIRCUMFERENCE}
+      stroke-dashoffset={CIRCUMFERENCE * (1 - clampedSecondary / 100)}
+      transform="rotate(-90 50 50)"
+    ></circle>
+  )}
   <!-- Rotated -90deg so the arc starts at 12 o'clock rather than 3 o'clock —
        the reading direction a clock-face meter is expected to start from.
        stroke-dasharray/dashoffset is the standard SVG technique for a partial
@@ -122,6 +148,9 @@ const cls = ['bcn-progress-ring', `bcn-progress-ring--${size}`].join(' ');
   .bcn-progress-ring {
     --_ring-track: var(--color-background-elevation-sunken, #f0f0f0);
     --_ring-fill: var(--color-background-brand, #46a758);
+    /* bcn-goal-meter's committed step: the brand fill a third of the way onto
+       the track. */
+    --_ring-secondary: color-mix(in srgb, var(--_ring-fill) 38%, var(--_ring-track));
     --_ring-stroke-width: 12;
 
     display: block;
@@ -161,13 +190,57 @@ const cls = ['bcn-progress-ring', `bcn-progress-ring--${size}`].join(' ');
     --_ring-stroke-width: 10;
   }
 
-  .bcn-progress-ring--xs .bcn-progress-ring__fill {
+  .bcn-progress-ring--xs .bcn-progress-ring__fill,
+  .bcn-progress-ring--xs .bcn-progress-ring__secondary {
     stroke-linecap: butt;
   }
 
   .bcn-progress-ring__track,
+  .bcn-progress-ring__secondary,
   .bcn-progress-ring__fill {
     stroke-width: var(--_ring-stroke-width);
+  }
+
+  .bcn-progress-ring__secondary {
+    stroke: var(--_ring-secondary);
+    stroke-linecap: round;
+  }
+
+  /* THE RING DRAWS IN (user, 2026-10-03). Each arc runs from empty to its
+     value when it first renders — a keyframe with only a `from` animates to
+     the arc's own stroke-dashoffset, so the value stays in the markup and
+     nothing here knows it. The planned arc leads and the reported arc follows
+     it, so the two read as layers. Runs whenever a ring is first shown —
+     on load, on a cloned row, on a panel opening — and never again for the
+     same element: a repaint that only moves the offset snaps. Off under
+     reduced motion. */
+  .bcn-progress-ring__secondary,
+  .bcn-progress-ring__fill {
+    animation: bcn-progress-ring-draw 1100ms cubic-bezier(0.33, 1, 0.68, 1) both;
+  }
+
+  /* STAGGERED (user: "nothing too delayed"): src/lib/ring-stagger.ts gives each ring
+     its place in its group as --_ring-stagger; the reported arc trails its
+     own planned arc by 150ms on top of that. */
+  .bcn-progress-ring__secondary {
+    animation-delay: var(--_ring-stagger, 0ms);
+  }
+
+  .bcn-progress-ring__fill {
+    animation-delay: calc(var(--_ring-stagger, 0ms) + 150ms);
+  }
+
+  @keyframes bcn-progress-ring-draw {
+    from {
+      stroke-dashoffset: var(--_ring-circumference);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bcn-progress-ring__secondary,
+    .bcn-progress-ring__fill {
+      animation: none;
+    }
   }
 
   .bcn-progress-ring__track {
@@ -192,5 +265,12 @@ const cls = ['bcn-progress-ring', `bcn-progress-ring--${size}`].join(' ');
     .bcn-progress-ring__fill {
       stroke: Highlight;
     }
+    /* Forced colors has one highlight; the planned arc keeps a visible but
+       weaker mark. The text beside the ring carries the figure. */
+    .bcn-progress-ring__secondary {
+      stroke: Highlight;
+      opacity: 0.4;
+    }
   }
 </style>
+

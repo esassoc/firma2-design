@@ -41,6 +41,10 @@
 //                                      this and it is rewritten on commit
 //         [data-editing]               present while THIS row is open; the
 //                                      display↔edit swap is pure CSS off it
+//         [data-locked]                set by a caller (firma2-project-gis-status)
+//                                      when something else keeps the value — a
+//                                      GIS layer. The row never opens and loses
+//                                      its hover ring; the caller says why.
 //   read  [data-field-display]         the display BUTTON — the click/keyboard
 //                                      target that opens the editor
 //         [data-field-value]           the formatted value inside it — the node
@@ -98,12 +102,16 @@ interface Props {
   /**
    * Where each MEMBER of a set leads. The chip ITSELF is the link — clicking
    * a member navigates, unlike the scalar rows where clicking edits — so this
-   * is the `href` of every member's <a>. One URL for all members because this
-   * is a prototype: the mock points every chip at the page where that
-   * member's projects are visible; a real app resolves each member's own
-   * detail route here.
+   * is the `href` of every member's <a>: the fallback for a member with no
+   * entry in `memberHrefs`.
    */
   memberHref?: string;
+  /**
+   * Each member's own page, keyed by member name — the whole vocabulary, for
+   * the same reason as `memberCards`: a member added in the editor needs its
+   * door the moment it lands. Falls back to `memberHref`.
+   */
+  memberHrefs?: Record<string, string>;
   /**
    * Hover-card context per member, keyed by member name — shown in an
    * esa-popover raised on hover/focus of the member's chip. Key the WHOLE
@@ -172,6 +180,7 @@ const {
   options = [],
   values = [],
   memberHref,
+  memberHrefs = {},
   memberCards = {},
   editValue,
   format = 'text',
@@ -251,6 +260,7 @@ const hintId = `f2-edit-hint-${field}`;
   data-required={required ? '' : undefined}
   data-link={href ? '' : undefined}
   data-member-cards={Object.keys(memberCards).length ? JSON.stringify(memberCards) : undefined}
+  data-member-hrefs={Object.keys(memberHrefs).length ? JSON.stringify(memberHrefs) : undefined}
   data-placeholder={placeholder || undefined}
   data-label-hidden={labelHidden ? '' : undefined}
   data-adopt-display={adopts ? '' : undefined}
@@ -321,12 +331,12 @@ const hintId = `f2-edit-hint-${field}`;
                   lines={memberCards[member].lines}
                   span="20rem"
                 >
-                  <a class="firma2-editable-field__member-link" href={memberHref}>
+                  <a class="firma2-editable-field__member-link" href={memberHrefs[member] ?? memberHref}>
                     <EsaPill label={member} size="md" removable={false} />
                   </a>
                 </Firma2HoverCard>
-              ) : memberHref ? (
-                <a class="firma2-editable-field__member-link" href={memberHref}>
+              ) : (memberHrefs[member] ?? memberHref) ? (
+                <a class="firma2-editable-field__member-link" href={memberHrefs[member] ?? memberHref}>
                   <EsaPill label={member} size="md" removable={false} />
                 </a>
               ) : (
@@ -393,7 +403,7 @@ const hintId = `f2-edit-hint-${field}`;
                 <EsaPill label="" size="md" removable={false} />
               </a>
             </Firma2HoverCard>
-          ) : memberHref ? (
+          ) : (memberHref || Object.keys(memberHrefs).length) ? (
             <a class="firma2-editable-field__member-link" href={memberHref}>
               <EsaPill label="" size="md" removable={false} />
             </a>
@@ -647,6 +657,12 @@ const hintId = `f2-edit-hint-${field}`;
      the same specificity — without it, it re-displays the hidden button and
      the open editor renders BELOW the paragraph it replaces (measured: the
      description row doubled). */
+  /* A typed line break is part of the text. Without this a textarea row
+     collapses two paragraphs into one run on commit, though the editor showed
+     them apart — a custom page's body is the first row to hold several. */
+  .firma2-editable-field[data-control='textarea'] [data-field-value] {
+    white-space: pre-line;
+  }
   .firma2-editable-field[data-control='textarea'] .firma2-editable-field__display:not([hidden]) {
     display: block;
     /* The border supplies its own 1px of the inset now, same as inline. */
@@ -666,6 +682,21 @@ const hintId = `f2-edit-hint-${field}`;
   .firma2-editable-field__display:hover,
   .firma2-editable-field__body:hover .firma2-editable-field__display {
     border-color: var(--form-border-color, #cecece);
+  }
+  /* LOCKED: the value is kept elsewhere, so the row is read, not edited — no
+     ring on hover and no text cursor inviting a click. Focus still shows: the
+     button stays in the tab order, announcing the value and why it is fixed. */
+  .firma2-editable-field[data-locked] .firma2-editable-field__display,
+  .firma2-editable-field[data-locked] .firma2-editable-field__body:hover .firma2-editable-field__display,
+  :global(html[data-record-mode='view']) .firma2-editable-field .firma2-editable-field__display,
+  :global(html[data-record-mode='view']) .firma2-editable-field .firma2-editable-field__body:hover .firma2-editable-field__display {
+    border-color: transparent;
+    cursor: default;
+  }
+  :global(.firma2-editable-field__locked-note) {
+    margin: var(--spacing-100) 0 0;
+    padding-inline: var(--spacing-300, 0.75rem);
+    color: var(--color-content-default-secondary, #646464);
   }
   .firma2-editable-field__display:focus-visible {
     border-color: var(--form-border-color, #cecece);
@@ -1107,10 +1138,18 @@ const hintId = `f2-edit-hint-${field}`;
     } catch {
       cards = null;
     }
+    let hrefs: Record<string, string> = {};
+    try {
+      hrefs = JSON.parse(row.dataset.memberHrefs ?? '{}');
+    } catch {
+      hrefs = {};
+    }
     const units = members.map((member) => {
       const unit = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
       const label = unit.querySelector('.esa-pill__label');
       if (label) label.textContent = member;
+      const link = unit.querySelector<HTMLAnchorElement>('.firma2-editable-field__member-link');
+      if (link && hrefs[member]) link.href = hrefs[member];
       const card = cards?.[member];
       const kind = unit.querySelector('[data-card-kind]');
       const title = unit.querySelector('[data-card-title]');
@@ -1134,6 +1173,11 @@ const hintId = `f2-edit-hint-${field}`;
 
   const openEdit = (row: HTMLElement): void => {
     if (isEditing(row)) return;
+    if (row.dataset.locked !== undefined) return;
+    // A record page reading, not editing (src/lib/record-mode.ts): every row
+    // is read-only until Edit. Not data-locked — the GIS script owns that
+    // attribute and clears it from every row it does not keep.
+    if (document.documentElement.dataset.recordMode === 'view') return;
     // At most one row open: commit-on-blur means opening B IS leaving A, so
     // leaving A commits it. Usually the capture-phase click commit has already
     // done this by the time a click reaches here; this covers every other way

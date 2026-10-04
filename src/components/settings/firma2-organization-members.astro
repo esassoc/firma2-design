@@ -1,0 +1,535 @@
+---
+// firma2-organization-members — who belongs to one organization, the role each
+// of them holds, and the two acts that change the list: add people, remove one.
+//
+// THE SETTINGS TABLE, NOT THE DATA GRID. One organization holds a handful of
+// people, read down one column — the shape firma2-settings-table already draws
+// for every other settings list. It shares that table's stylesheet rather than
+// the component, because these rows come and go at runtime: the server renders
+// the first set, and added people are cloned from a <template> row rendered by
+// the same markup, so a new row cannot drift from the old ones.
+//
+// ONE FIELD FOR BOTH WAYS IN. "Someone already in the workspace" and "someone
+// new, by email" are one question — who? — answered two ways, so they are one
+// esa-input-tag: its suggestions are the workspace's other people, and anything
+// typed that is not one of them is an email to invite. The help text says so,
+// because the second half is the part a reader would not guess.
+//
+// STEWARDS ARE MARKED HERE, AND MADE HERE. Steward is Linear's team owner: a
+// flag on one membership, not a workspace role, so the page that lists the
+// membership is where it is given — "Make steward" in a Contributor's "…", and
+// a quiet badge beside the role once they are one. Administrators steward every
+// organization already, so their row carries no badge and no item; a Viewer
+// cannot be one, as a Linear guest cannot own a team.
+//
+// THE ADD DIALOG OFFERS ONLY CONTRIBUTOR AND VIEWER. Administrator is granted on
+// Users, by an administrator — otherwise anyone who manages one organization's
+// members could make themselves an administrator of the whole workspace.
+//
+// WHO MAY TYPE AN EMAIL. Adding someone already in the workspace is managing
+// this organization's members — whoever Access › Manage members allows. Typing
+// a new address also brings a stranger into the WORKSPACE, which Security ›
+// Invite people governs. The two settings meet here, and Linear's rule settles
+// it: stewards (administrators included) can always invite into their own
+// organization; anyone else can add only people already in the workspace.
+//
+// REMOVING NEVER ORPHANS A CONTRIBUTOR. A Contributor needs an organization;
+// a Viewer doesn't. So removing a Contributor from their LAST organization
+// makes them an organizationless Viewer — where a Viewer lands when removed
+// from theirs — and the confirm says so before it happens. Removing someone
+// who belongs elsewhere too ends only this membership.
+//
+// ROLES ARE NOT CHANGED HERE. A role is workspace-wide and a person may belong
+// to several organizations, so one organization's steward does not set it; an
+// administrator does, on Users. Adding someone already in the workspace keeps
+// their role — the Role field applies to the people you invite.
+//
+// ADMINISTRATORS ARE OUT OF A STEWARD'S REACH. Their rows carry a "…" only for
+// a reader who is an administrator too.
+//
+// YOUR OWN ROW HAS NO REMOVE. Taking yourself out is the danger zone's Leave,
+// on Settings, which says what it costs; a second, quieter way out here would
+// skip that.
+//
+// NOTHING PERSISTS. Adding and removing change this page until it reloads —
+// enough to judge the flow, and no fake save layer pretending to be more.
+//
+// bcn-lego-checked: every control is a lego — esa-dialog + esa-input-tag +
+// esa-select for adding, esa-confirm-dialog for removing, esa-dropdown-menu
+// around an icon esa-button for each row's "…", esa-badge in the rows,
+// esa-snackbar-container for the result. The table is firma2-settings-table's
+// (no esa- table lego exists; esa-grid is documentation-only). Beacon is not
+// cloned on this machine. The "…" column and its hover reveal are the settings
+// table's (firma2-settings-table.css); the only CSS here folds the email under
+// the name when narrow.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import './firma2-settings-table.css';
+import { membersOf, users, grantableRoles, isSteward, CURRENT_USER } from '../../data/firma2-directory';
+import type { Organization } from '../../data/firma2-directory';
+
+interface Props {
+  organization: Organization;
+}
+
+const { organization: org } = Astro.props;
+
+// The reader stewards this organization — flagged on it, or an administrator —
+// so they can invite people who aren't in the workspace yet.
+const me = users.find((u) => u.email === CURRENT_USER.email);
+const canInvite = !!me && isSteward(me, org.name);
+const readerIsAdmin = me?.role === 'Administrator';
+
+const members = membersOf(org.name).map((m) => ({
+  name: m.name,
+  email: m.email,
+  role: m.role,
+  // Administrators steward every organization; only the flag is shown.
+  steward: m.role === 'Contributor' && m.stewardOf.includes(org.name),
+  invited: m.status === 'Invited',
+  you: m.email === CURRENT_USER.email,
+  // How many organizations they keep if removed from this one.
+  elsewhere: m.organizations.length - 1,
+  actionable: m.email !== CURRENT_USER.email && (m.role !== 'Administrator' || readerIsAdmin),
+}));
+
+// Everyone in the workspace who is not already here. The label carries the
+// email because the lego filters suggestions by label — so typing either the
+// name or the address finds the person.
+const memberEmails = new Set(members.map((m) => m.email));
+const candidates = users
+  .filter((u) => !memberEmails.has(u.email) && u.status !== 'Suspended')
+  .map((u) => ({ value: u.email, label: `${u.name} — ${u.email}`, name: u.name, role: u.role, elsewhere: u.organizations.length }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+// Least privilege by default: Viewer reads everything and changes nothing, so a
+// slip of the Add button grants nothing anyone has to take back.
+const DEFAULT_ROLE = 'Viewer';
+---
+<section
+  class="firma2-organization-members"
+  data-organization={org.name}
+  data-default-role={DEFAULT_ROLE}
+  data-roles={JSON.stringify(grantableRoles)}
+  data-candidates={JSON.stringify(candidates)}
+  data-can-invite={canInvite ? '' : undefined}
+>
+  <table class="firma2-settings-table firma2-settings-table--actions firma2-organization-members__table" aria-label={`Members of ${org.name}`}>
+    <thead>
+      <tr>
+        <th scope="col">Name</th>
+        <th scope="col" class="firma2-organization-members__email">Email</th>
+        <th scope="col">Role</th>
+        <th scope="col" class="firma2-settings-table__act"><span class="visually-hidden">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody data-members-body>
+      {members.map((m) => (
+        <tr data-member={m.email} data-name={m.name} data-role={m.role} data-elsewhere={m.elsewhere} data-steward={m.steward ? '' : undefined} data-invited={m.invited ? '' : undefined}>
+          <th scope="row">
+            <span class="cluster" data-gap="xs">
+              <span>{m.name}{m.you && <span class="firma2-organization-members__you"> (you)</span>}</span>
+              {m.invited && <EsaBadge value="Invited" variant="info" size="sm" />}
+            </span>
+            <span class="firma2-settings-table__meta typography-body-sm firma2-organization-members__email-under">{m.email}</span>
+          </th>
+          <td class="firma2-organization-members__email">{m.email}</td>
+          <td>
+            <span class="cluster" data-gap="xs" data-slot="role-cell">
+              <span data-slot="role">{m.role}</span>
+              {m.steward && <span data-slot="steward"><EsaBadge value="Steward" variant="secondary" size="sm" /></span>}
+            </span>
+          </td>
+          <td class="firma2-settings-table__act">
+            {m.actionable && (
+              <esa-dropdown-menu class="firma2-settings-table__menu" position="below-end">
+                <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label={`Actions for ${m.name}`} data-member-actions />
+              </esa-dropdown-menu>
+            )}
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  {/* The row every added person is cloned from: the same markup as above, with
+      empty slots the script fills. */}
+  <template data-member-template>
+    <tr>
+      <th scope="row">
+        <span class="cluster" data-gap="xs">
+          <span data-slot="name"></span>
+          <span data-slot="badge"><EsaBadge value="Invited" variant="info" size="sm" /></span>
+        </span>
+        <span class="firma2-settings-table__meta typography-body-sm firma2-organization-members__email-under" data-slot="email-under"></span>
+      </th>
+      <td class="firma2-organization-members__email" data-slot="email"></td>
+      <td>
+        <span class="cluster" data-gap="xs" data-slot="role-cell">
+          <span data-slot="role"></span>
+        </span>
+      </td>
+      <td class="firma2-settings-table__act">
+        <esa-dropdown-menu class="firma2-settings-table__menu" position="below-end">
+          <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="Actions" data-member-actions />
+        </esa-dropdown-menu>
+      </td>
+    </tr>
+  </template>
+
+  {/* The badge "Make steward" adds to a row, from the same lego the server rows use. */}
+  <template data-steward-template>
+    <span data-slot="steward"><EsaBadge value="Steward" variant="secondary" size="sm" /></span>
+  </template>
+
+  <esa-dialog class="firma2-organization-members__add" heading="Add members" size="md" show-close-button>
+    <div class="stack" data-gap="lg">
+      <esa-input-tag
+        label="People"
+        help-text={canInvite
+          ? 'Pick someone already in the workspace, or type an email address to invite them.'
+          : 'Pick someone already in the workspace. Only stewards can invite people who aren’t in it yet.'}
+        placeholder="Name or email"
+        size="md"
+        name="people"
+        data-members-people
+      ></esa-input-tag>
+      <esa-select
+        label="Role"
+        help-text="For the people you invite. Anyone already in the workspace keeps their role."
+        size="md"
+        name="role"
+        data-members-role
+      ></esa-select>
+    </div>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="primary" size="md" data-members-submit>Add members</EsaButton>
+      <EsaButton variant="ghost" size="md" data-members-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <esa-confirm-dialog class="firma2-organization-members__confirm" variant="danger"></esa-confirm-dialog>
+  <esa-snackbar-container class="firma2-organization-members__toasts"></esa-snackbar-container>
+</section>
+
+<script>
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-input-tag';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-snackbar-container';
+
+  type Option = { value: string; label: string; name: string; role: string; elsewhere: number };
+  type Dialog = HTMLElement & { show(): void; close(): void; updateComplete: Promise<unknown> };
+  type InputTag = HTMLElement & { options: Option[]; value: string[]; errorText: string };
+  type Select = HTMLElement & { options: { value: string; label: string }[]; value: string };
+  type Confirm = HTMLElement & {
+    heading: string; message: string; confirmLabel: string; cancelLabel: string; show(): void;
+  };
+  type Menu = HTMLElement & { items: { label: string; action: string; variant?: string }[] };
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
+
+  const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function initMembers(root: HTMLElement) {
+    const org = root.dataset.organization ?? '';
+    const defaultRole = root.dataset.defaultRole ?? 'Viewer';
+    const roles: string[] = JSON.parse(root.dataset.roles ?? '[]');
+    let candidates: Option[] = JSON.parse(root.dataset.candidates ?? '[]');
+    const canInvite = root.hasAttribute('data-can-invite');
+
+    const body = root.querySelector<HTMLElement>('[data-members-body]');
+    const template = root.querySelector<HTMLTemplateElement>('[data-member-template]');
+    const stewardTemplate = root.querySelector<HTMLTemplateElement>('[data-steward-template]');
+    const dialog = root.querySelector<Dialog>('.firma2-organization-members__add');
+    const people = root.querySelector<InputTag>('[data-members-people]');
+    const role = root.querySelector<Select>('[data-members-role]');
+    const confirm = root.querySelector<Confirm>('.firma2-organization-members__confirm');
+    const toasts = root.querySelector<Toasts>('.firma2-organization-members__toasts');
+    if (!body || !template || !dialog || !people || !role || !confirm) return;
+
+    // Properties only after define, or they shadow the legos' own accessors.
+    const ready = Promise.all([
+      customElements.whenDefined('esa-input-tag'),
+      customElements.whenDefined('esa-select'),
+    ]).then(() => {
+      role.options = roles.map((r) => ({ value: r, label: r }));
+    });
+
+    const memberEmails = () =>
+      new Set(Array.from(body.querySelectorAll<HTMLElement>('[data-member]')).map((r) => r.dataset.member ?? ''));
+
+    // ---- Add ----------------------------------------------------------------
+
+    // A fresh dialog every time: the last batch is already in the table.
+    async function open() {
+      await ready;
+      people.options = candidates;
+      people.value = [];
+      people.errorText = '';
+      role.value = defaultRole;
+      dialog.show();
+      await dialog.updateComplete;
+      people.focus();
+    }
+
+    document.querySelectorAll('[data-members-add]').forEach((button) => button.addEventListener('click', open));
+    root.querySelector('[data-members-cancel]')?.addEventListener('click', () => dialog.close());
+
+    // Typing fixes the error, so the error goes as soon as the list changes.
+    people.addEventListener('change', () => { people.errorText = ''; });
+
+    root.querySelector('[data-members-submit]')?.addEventListener('click', () => {
+      const picked = people.value ?? [];
+      const known = new Map(candidates.map((c) => [c.value.toLowerCase(), c]));
+      const present = memberEmails();
+
+      if (picked.length === 0) {
+        people.errorText = 'Add at least one person, or cancel.';
+        return;
+      }
+      const notEmail = picked.find((v) => !known.has(v.toLowerCase()) && !EMAIL.test(v));
+      if (notEmail) {
+        people.errorText = `“${notEmail}” isn’t anyone in the workspace or an email address.`;
+        return;
+      }
+      const newcomer = canInvite ? undefined : picked.find((v) => !known.has(v.toLowerCase()));
+      if (newcomer) {
+        people.errorText = `${newcomer} isn’t in the workspace yet. Ask a steward to invite them.`;
+        return;
+      }
+      const already = picked.find((v) => present.has(v.toLowerCase()));
+      if (already) {
+        people.errorText = `${already} is already a member.`;
+        return;
+      }
+
+      const chosenRole = role.value || defaultRole;
+      const added: string[] = [];
+      const invited: string[] = [];
+      for (const value of picked) {
+        const person = known.get(value.toLowerCase());
+        if (person) {
+          // Already in the workspace: they keep their own role.
+          addRow({ name: person.name, email: person.value, role: person.role, invited: false, elsewhere: person.elsewhere });
+          added.push(person.name);
+        } else {
+          addRow({ name: '', email: value.toLowerCase(), role: chosenRole, invited: true, elsewhere: 0 });
+          invited.push(value.toLowerCase());
+        }
+      }
+      const taken = new Set(picked.map((v) => v.toLowerCase()));
+      candidates = candidates.filter((c) => !taken.has(c.value.toLowerCase()));
+
+      dialog.close();
+      toasts?.show({ message: addedMessage(added, invited, chosenRole), variant: 'success' });
+    });
+
+    function addRow(m: { name: string; email: string; role: string; invited: boolean; elsewhere: number }) {
+      const row = (template.content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+      row.dataset.member = m.email;
+      row.dataset.name = m.name || m.email;
+      row.dataset.role = m.role;
+      row.dataset.elsewhere = String(m.elsewhere);
+      if (m.invited) row.dataset.invited = '';
+      // An invitation by email has no name yet — the badge stands in the name
+      // cell rather than repeating the address the next column already shows.
+      row.querySelector('[data-slot="name"]')!.textContent = m.name;
+      if (!m.invited) row.querySelector('[data-slot="badge"]')?.remove();
+      row.querySelector('[data-slot="email"]')!.textContent = m.email;
+      row.querySelector('[data-slot="email-under"]')!.textContent = m.email;
+      row.querySelector('[data-slot="role"]')!.textContent = m.role;
+      row.querySelector('[data-member-actions]')?.setAttribute('aria-label', `Actions for ${m.name || m.email}`);
+      body.append(row);
+      fillMenu(row);
+    }
+
+    // ---- The row menu -------------------------------------------------------
+
+    // Each row's "…" names what it changes. A Contributor who has accepted can
+    // be made a steward, or stop being one; an invitation can be sent again;
+    // then the act that ends the membership, or the invitation. Items are a property,
+    // so they land after define — for the server rows now, and for each added
+    // row as it is cloned — and again whenever stewardship changes.
+    function fillMenu(row: HTMLElement) {
+      const menu = row.querySelector<Menu>('esa-dropdown-menu');
+      if (!menu) return;
+      const invited = row.hasAttribute('data-invited');
+      const canSteward = !invited && row.dataset.role === 'Contributor';
+      void customElements.whenDefined('esa-dropdown-menu').then(() => {
+        menu.items = [
+          ...(canSteward
+            ? [row.hasAttribute('data-steward')
+                ? { label: 'Remove as steward', action: 'steward-off' }
+                : { label: 'Make steward', action: 'steward-on' }]
+            : []),
+          ...(invited ? [{ label: 'Resend invitation', action: 'resend' }] : []),
+          invited
+            ? { label: 'Cancel invitation', action: 'remove', variant: 'danger' }
+            : { label: 'Remove from organization', action: 'remove', variant: 'danger' },
+        ];
+      });
+    }
+    body.querySelectorAll<HTMLElement>('tr[data-member]').forEach(fillMenu);
+
+    // ---- Resend -------------------------------------------------------------
+
+    body.addEventListener('menu-action', (event) => {
+      if ((event as CustomEvent<string>).detail !== 'resend') return;
+      const row = (event.target as Element).closest<HTMLElement>('tr[data-member]');
+      if (row) toasts?.show({ message: `Invitation sent again to ${row.dataset.name ?? ''}.`, variant: 'success' });
+    });
+
+    // ---- Steward ------------------------------------------------------------
+
+    // No confirmation either way: both are one click back, and nothing the
+    // steward did while one is undone by taking it away.
+    body.addEventListener('menu-action', (event) => {
+      const action = (event as CustomEvent<string>).detail;
+      if (action !== 'steward-on' && action !== 'steward-off') return;
+      const row = (event.target as Element).closest<HTMLElement>('tr[data-member]');
+      const cell = row?.querySelector('[data-slot="role-cell"]');
+      if (!row || !cell) return;
+      const name = row.dataset.name ?? '';
+      if (action === 'steward-on') {
+        row.dataset.steward = '';
+        if (stewardTemplate) cell.append(stewardTemplate.content.cloneNode(true));
+        toasts?.show({ message: `${name} is now a steward.`, variant: 'success' });
+      } else {
+        delete row.dataset.steward;
+        cell.querySelector('[data-slot="steward"]')?.remove();
+        toasts?.show({ message: `${name} is no longer a steward.`, variant: 'success' });
+      }
+      fillMenu(row);
+    });
+
+    // ---- Remove -------------------------------------------------------------
+
+    // One confirm dialog, retargeted by the row whose menu was used — the
+    // danger zone's precedent. Delegated, so added rows are covered too.
+    let pending: HTMLElement | null = null;
+
+    // Where removing leaves them — see the header. A Contributor's last
+    // organization is the one case that changes their role.
+    const lastContributor = (row: HTMLElement) =>
+      row.dataset.role === 'Contributor' && Number(row.dataset.elsewhere ?? 0) === 0;
+    function removeMessage(row: HTMLElement): string {
+      const elsewhere = Number(row.dataset.elsewhere ?? 0) > 0;
+      if (row.dataset.role === 'Administrator')
+        return 'They stay an administrator of the workspace. Only their membership here ends.';
+      if (lastContributor(row))
+        return `${org} is their last organization, so they become a Viewer with no organization. Their past work stays in the workspace.`;
+      if (row.dataset.role === 'Contributor')
+        return `They stop drafting on ${org}’s projects. Their other organizations aren’t affected.`;
+      return elsewhere
+        ? `They lose ${org}’s member-only views. Their other organizations aren’t affected.`
+        : `They stay in the workspace as a Viewer, without ${org}’s member-only views.`;
+    }
+
+    body.addEventListener('menu-action', async (event) => {
+      if ((event as CustomEvent<string>).detail !== 'remove') return;
+      const row = (event.target as Element).closest<HTMLElement>('tr[data-member]');
+      if (!row) return;
+      pending = row;
+      const name = row.dataset.name ?? '';
+      await customElements.whenDefined('esa-confirm-dialog');
+      Object.assign(
+        confirm,
+        row.hasAttribute('data-invited')
+          ? {
+              heading: `Cancel the invitation to ${name}?`,
+              message: 'The link in their email stops working. You can invite them again later.',
+              confirmLabel: 'Cancel invitation',
+              cancelLabel: 'Keep invitation',
+            }
+          : {
+              heading: `Remove ${name}?`,
+              message: removeMessage(row),
+              confirmLabel: 'Remove member',
+              cancelLabel: 'Keep member',
+            },
+      );
+      confirm.show();
+    });
+
+    confirm.addEventListener('confirm', () => {
+      if (!pending) return;
+      const row = pending;
+      pending = null;
+      const name = row.dataset.name ?? '';
+      const wasInvite = row.hasAttribute('data-invited');
+      // Whoever leaves can be added back, so they return to the suggestions.
+      const email = row.dataset.member ?? '';
+      const becameViewer = !wasInvite && lastContributor(row);
+      const elsewhere = Number(row.dataset.elsewhere ?? 0);
+      if (!wasInvite || name !== email) candidates = [...candidates, {
+        value: email, label: `${name} — ${email}`, name,
+        role: becameViewer ? 'Viewer' : row.dataset.role ?? 'Viewer', elsewhere,
+      }].sort((a, b) => a.name.localeCompare(b.name));
+      // Focus would fall to <body> with the row gone; the next row's "…" (or
+      // the page's Add members) keeps the reader where they were.
+      const rows = Array.from(body.querySelectorAll<HTMLElement>('tr[data-member]'));
+      const at = rows.indexOf(row);
+      const removable = (r: HTMLElement) => r.querySelector<HTMLElement>('[data-member-actions]');
+      const next =
+        rows.slice(at + 1).map(removable).find(Boolean) ??
+        rows.slice(0, at).reverse().map(removable).find(Boolean) ??
+        document.querySelector<HTMLElement>('[data-members-add]');
+      row.remove();
+      // After the dialog's own close has run, which hands focus back to the
+      // button that opened it — the one that just left the page.
+      requestAnimationFrame(() => requestAnimationFrame(() => next?.focus()));
+      toasts?.show({
+        message: wasInvite
+          ? `Invitation to ${name} canceled.`
+          : becameViewer ? `${name} removed. They’re now a Viewer.` : `${name} removed.`,
+        variant: 'success',
+      });
+    });
+    confirm.addEventListener('cancel', () => { pending = null; });
+  }
+
+  // One person is named; a batch is counted, with how many came by invitation.
+  // The role is named only for invitations — anyone already in the workspace
+  // keeps theirs. "Avery Castillo added." · "Invitation sent to r.lee@example.org
+  // as Viewer." · "3 people added, 1 by invitation." · "3 invitations sent."
+  function addedMessage(added: string[], invited: string[], role: string): string {
+    const total = added.length + invited.length;
+    if (total === 1) return added.length ? `${added[0]} added.` : `Invitation sent to ${invited[0]} as ${role}.`;
+    if (added.length === 0) return `${total} invitations sent.`;
+    return `${total} people added${invited.length ? `, ${invited.length} by invitation` : ''}.`;
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-organization-members').forEach(initMembers);
+</script>
+
+<style>
+  /* The "…" column and its hover reveal are the settings table's own
+     (firma2-settings-table.css), shared with the approved-domains list. */
+
+  /* NARROW, THE EMAIL MOVES UNDER THE NAME. An address is one unbroken word,
+     and squeezed into its own column it breaks every few letters. Below the
+     width four columns need, the Email column goes and the same address shows
+     as the name's second line. Only one of the two is ever displayed, so a
+     screen reader hears the address once at any width. */
+  .firma2-organization-members {
+    container-type: inline-size;
+  }
+  .firma2-organization-members__email-under {
+    display: none;
+  }
+  @container (max-width: 34rem) {
+    .firma2-organization-members__table .firma2-organization-members__email {
+      display: none;
+    }
+    .firma2-organization-members__email-under {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .firma2-organization-members__you {
+    color: var(--color-text-secondary);
+  }
+</style>

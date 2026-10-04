@@ -52,12 +52,28 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaPill from '@esa/ecology/esa-pill.astro';
 import Firma2EditableField from '../shared/firma2-editable-field.astro';
 import BcnTagEditor from '../shared/bcn-tag-editor.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import { projectDetails } from '../../data/firma2-project-detail';
+
+// REPORTING HISTORY per measure name, off the portfolio fixture: how many
+// period figures have been filed, by how many projects. The browser's own
+// entries are added on the client. This is what makes a measure with history
+// something to retire rather than delete (team 6).
+const history: Record<string, { entries: number; projects: number }> = {};
+for (const detail of projectDetails.values()) {
+  for (const m of detail.measures) {
+    const filed = m.series.filter((p) => p.value !== null).length;
+    if (!filed) continue;
+    const key = m.name.toLowerCase();
+    history[key] = { entries: (history[key]?.entries ?? 0) + filed, projects: (history[key]?.projects ?? 0) + 1 };
+  }
+}
 
 // The sheet is queried by class inside this component's root, so a page can
 // only carry one — which is the design: every row and the header button open
 // the same instance.
 ---
-<div class="firma2-measure-sidesheet">
+<div class="firma2-measure-sidesheet" data-history={JSON.stringify(history)}>
   <esa-side-dialog class="firma2-measure-sidesheet__sheet" heading="New measure" size="lg" position="right">
     <div class="firma2-measure-sidesheet__layout">
       <!-- THE REPORTER'S SIDE, derived live from the definition being edited.
@@ -72,13 +88,33 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
       <aside class="firma2-measure-sidesheet__preview">
         <h3 class="firma2-measure-sidesheet__group typography-label-md">What reporters see</h3>
         <p class="firma2-measure-sidesheet__lede typography-meta">
-          One entry, as reporters will file it. A live example — it updates as you edit.
+          One entry, as reporters will file it. Try it — nothing here is saved, and it follows every edit.
         </p>
-        <div class="firma2-measure-sidesheet__preview-card" data-preview-card inert></div>
+        <div class="firma2-measure-sidesheet__preview-card" data-preview-card></div>
         <p class="firma2-measure-sidesheet__preview-cost typography-meta" data-preview-cost></p>
+        <!-- WHAT THE COST BUYS, beside the cost (team 6): the reporter's burden
+             and the program's payoff, priced on the same screen. -->
+        <p class="firma2-measure-sidesheet__preview-cost typography-meta" data-preview-payoff></p>
       </aside>
 
       <div class="firma2-measure-sidesheet__form stack" data-gap="lg" data-sheet-form>
+      <!-- The drafting call's warnings, carried here from the drafting page. -->
+      <div data-sheet-warnings hidden>
+        <EsaAlertBox variant="warning" title="Worth a look before you publish">
+          <ul class="firma2-measure-sidesheet__warnings stack" data-gap="xs" data-sheet-warning-list></ul>
+        </EsaAlertBox>
+      </div>
+      <p class="firma2-measure-sidesheet__history typography-body-sm" data-sheet-history hidden></p>
+      <!-- REDRAFT FROM A CLAIM (team 6): the same drafting call as the new-
+           measure page, on a measure that already exists. On a published one it
+           rewrites only the words; the counted structure is fixed. -->
+      <section class="firma2-measure-sidesheet__claim stack" data-gap="sm">
+        <esa-textarea data-claim-text label="What do you need to tell your funder?" size="md" rows="2" placeholder="I need to tell my funder how many acres we plant each year, and by what method."></esa-textarea>
+        <div class="cluster" data-gap="sm">
+          <EsaButton variant="secondary" size="sm" data-claim-draft>Draft it</EsaButton>
+          <span class="typography-meta" data-claim-result></span>
+        </div>
+      </section>
       <esa-text-field data-field="name" label="Name" size="md" placeholder="e.g. Acres of riparian habitat restored"></esa-text-field>
 
       <esa-select
@@ -119,6 +155,7 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
            three facts, so the vocabulary survives the surface change. -->
       <section class="stack" data-gap="md">
         <h3 class="firma2-measure-sidesheet__group typography-label-md">What is counted</h3>
+        <p class="firma2-measure-sidesheet__lede typography-meta" data-structure-note>The choices that are hard to undo. They are fixed once the measure is published.</p>
         <esa-select data-field="unit" label="Unit" size="md" placeholder="Pick a unit"></esa-select>
         <esa-select data-field="countingRule" label="Counting rule" size="md" placeholder="Pick a counting rule"></esa-select>
         <esa-select data-field="decimalPlaces" label="Decimal places" size="md"></esa-select>
@@ -131,6 +168,9 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
              failure is the thing the model exists to avoid. -->
         <p class="firma2-measure-sidesheet__lede typography-meta">
           Option lists this measure's entries are divided by. None are required.
+        </p>
+        <p class="firma2-measure-sidesheet__frozen typography-body-sm" data-structure-lock hidden>
+          Published, so these are fixed. A question added now could not be backfilled: earlier entries would have no answer for it, and every past total would quietly change meaning.
         </p>
 
         <ul class="firma2-measure-sidesheet__schemas stack" data-gap="sm" data-schema-list></ul>
@@ -148,10 +188,15 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
     </div>
 
     <div slot="footer" class="firma2-measure-sidesheet__footer repel">
-      <EsaButton variant="danger" appearance="outline" size="md" data-sheet-delete hidden>Delete draft</EsaButton>
       <div class="cluster" data-gap="xs">
-        <EsaButton variant="ghost" size="md" data-sheet-cancel>Cancel</EsaButton>
+        <EsaButton variant="danger" appearance="outline" size="md" data-sheet-delete hidden>Delete draft</EsaButton>
+        <span data-retire-wrap hidden><EsaButton variant="secondary" appearance="outline" size="md" data-sheet-retire>Retire</EsaButton></span>
+      </div>
+      <div class="cluster" data-gap="xs">
+        <span class="typography-meta" data-publish-missing hidden></span>
+        <span data-publish-wrap hidden><EsaButton variant="secondary" size="md" data-sheet-publish>Publish</EsaButton></span>
         <EsaButton variant="primary" size="md" data-sheet-save>Save</EsaButton>
+        <EsaButton variant="ghost" size="md" data-sheet-cancel>Cancel</EsaButton>
       </div>
     </div>
   </esa-side-dialog>
@@ -162,6 +207,7 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
        an edit here costs, an error line only a failed save uses, and the tag
        editor — set read-only for the origins nobody edits here, and dropped
        entirely when a system list has no closed set of options to show. -->
+  <esa-confirm-dialog class="firma2-measure-sidesheet__publish" heading="Publish this measure?" confirm-label="Publish" cancel-label="Not yet"></esa-confirm-dialog>
   <template data-schema-row>
     <li class="firma2-measure-sidesheet__schema" data-schema-id="" data-origin="">
       <div class="firma2-measure-sidesheet__schema-head">
@@ -375,7 +421,7 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
 
   /* Keep Cancel/Save anchored right even when Delete draft is hidden and the
      repel is down to one child. */
-  .firma2-measure-sidesheet__footer > :global(.cluster) {
+  .firma2-measure-sidesheet__footer > :global(.cluster:last-child) {
     margin-inline-start: auto;
   }
 
@@ -388,6 +434,29 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
   .firma2-measure-sidesheet :global([hidden]) {
     display: none !important;
   }
+
+  /* ---- team 6 additions -------------------------------------------------- */
+  .firma2-measure-sidesheet [hidden] {
+    display: none !important;
+  }
+  .firma2-measure-sidesheet__warnings {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+  }
+  .firma2-measure-sidesheet__history,
+  .firma2-measure-sidesheet__frozen {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-measure-sidesheet__claim {
+    padding-block-end: var(--spacing-500);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  /* Published: the structure is fixed, so its add and remove controls go. */
+  .firma2-measure-sidesheet[data-structure-locked] .firma2-measure-sidesheet__add,
+  .firma2-measure-sidesheet[data-structure-locked] :global(.firma2-measure-sidesheet__schema-remove) {
+    display: none !important;
+  }
 </style>
 
 <script>
@@ -395,9 +464,12 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-textarea';
   import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { draftFromClaim } from '../../data/firma2-measure-drafting';
+  import { clearMeasureWarnings, readMeasureWarnings } from '../../lib/measure-notes';
 
   import {
-    CLASSIFICATIONS,
+    CLASSIFICATION_NAMES,
     DECIMALS_LABELS,
     MEASURE_KINDS,
     UNITS,
@@ -406,6 +478,7 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
     measureKind,
     measures,
     measuresUsingSchema,
+    outstandingFields,
   } from '../../data/firma2-performance-measures';
   import type {
     CountingRule,
@@ -507,7 +580,7 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
     const kindField = field('kind');
     if (kindField) kindField.options = MEASURE_KINDS.map((k) => ({ label: k.name, value: k.id }));
     const classField = field('classifications');
-    if (classField) classField.options = CLASSIFICATIONS.map((c) => ({ label: c, value: c }));
+    if (classField) classField.options = CLASSIFICATION_NAMES.map((c) => ({ label: c, value: c }));
     const unitField = field('unit');
     if (unitField) unitField.options = UNITS.map((u) => ({ label: u, value: u }));
     const decimalsField = field('decimalPlaces');
@@ -654,10 +727,11 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
       // The period — the entry sheet's first question. Which years exist is
       // the project's business, not this definition's, so the picker shows
       // its invitation rather than an invented list.
-      const period = document.createElement('esa-select');
+      const period = document.createElement('esa-select') as Control;
       period.setAttribute('label', 'Reporting year');
       period.setAttribute('size', 'md');
       period.setAttribute('placeholder', 'Pick a year');
+      period.options = ['2025', '2024', '2023'].map((y) => ({ label: y, value: y }));
       card.append(period);
 
       // The figure — the one REQUIRED answer. Guidance rides as the field's
@@ -674,14 +748,41 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
 
       // One dropdown per subcategory the reporter answers by hand. All
       // optional — the placeholder says so, in the place the answer goes.
-      for (const q of asked) {
-        const select = document.createElement('esa-select') as Control;
+      // THE FIRST TAKES SEVERAL, as the real entry sheet's does: two or more
+      // picks swap the one Amount for an amount per pick, so trying it here
+      // shows exactly what a reporter will meet.
+      const split = document.createElement('div');
+      split.className = 'stack';
+      split.dataset.gap = 'md';
+      asked.forEach((q, i) => {
+        const select = document.createElement('esa-select') as Control & { multiple?: boolean };
         select.setAttribute('label', q.name);
         select.setAttribute('size', 'md');
         select.setAttribute('placeholder', 'Optional');
         select.options = q.options.map((o) => ({ label: o, value: o }));
-        card.append(select);
-      }
+        if (i === 0) {
+          select.multiple = true;
+          select.setAttribute('help-text', 'Pick several to enter an amount for each.');
+          select.addEventListener('change', () => {
+            const picked = Array.isArray(select.value) ? (select.value as string[]) : [];
+            amount.hidden = picked.length >= 2;
+            split.replaceChildren(
+              ...(picked.length >= 2
+                ? picked.map((option) => {
+                    const f = document.createElement('esa-text-field');
+                    f.setAttribute('label', option);
+                    f.setAttribute('size', 'md');
+                    f.setAttribute('inputmode', 'decimal');
+                    if (record.unit) f.setAttribute('suffix', record.unit);
+                    return f;
+                  })
+                : []),
+            );
+          });
+        }
+        card.insertBefore(select, amount);
+      });
+      card.append(split);
 
       // What the reporter is NOT asked — the leverage, named.
       if (free.length > 0) {
@@ -689,6 +790,19 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
         autos.className = 'firma2-measure-sidesheet__preview-meta typography-meta';
         autos.textContent = `Added automatically: ${free.map((f) => f.name).join(', ')}.`;
         card.append(autos);
+      }
+
+      // THE PAYOFF, in the same breath as the cost: what the program gets back
+      // for the reporter's minutes. The rule decides whether there is a total.
+      const payoff = root.querySelector<HTMLElement>('[data-preview-payoff]');
+      if (payoff) {
+        const by = asked.length ? `, split by ${asked.map((q) => q.name.toLowerCase()).join(' and ')}` : '';
+        const sums = !record.countingRule || ['sum', 'spatial-union', 'distinct-places'].includes(record.countingRule);
+        payoff.textContent = record.countingRule
+          ? sums
+            ? `In return: a program total${by}, for any year and any project.`
+            : `In return: the latest reading at every place${by}. No program total, because readings do not add up.`
+          : 'In return: pick a counting rule to see what this measure gives back.';
       }
 
       const n = asked.length;
@@ -833,7 +947,66 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
       // Deleting is offered only for measures minted in this browser: seeds
       // ship with the build and a static site cannot truly remove one.
       const del = root.querySelector<HTMLElement>('[data-sheet-delete]');
-      if (del) del.hidden = !isLocalMeasureSlug(record.slug);
+      if (del) del.hidden = !isLocalMeasureSlug(record.slug) || filedCount(record).entries > 0;
+
+      // ---- team 6: lifecycle, lock, history, warnings, claim ---------------
+      const locked = status !== 'Draft';
+      root.toggleAttribute('data-structure-locked', locked);
+      [unitField, field('countingRule'), kindField].forEach((f) => f && ((f as Control & { disabled?: boolean }).disabled = locked));
+      root.querySelector<HTMLElement>('[data-structure-lock]')!.hidden = !locked;
+      rows().forEach((row) => row.querySelectorAll<HTMLElement & { disabled?: boolean }>('.firma2-measure-sidesheet__schema-options').forEach((t) => (t.disabled = locked)));
+
+      const filed = filedCount(record);
+      const historyLine = root.querySelector<HTMLElement>('[data-sheet-history]')!;
+      historyLine.hidden = filed.entries === 0;
+      historyLine.textContent = `${filed.entries.toLocaleString('en-US')} figures filed by ${filed.projects} ${filed.projects === 1 ? 'project' : 'projects'}. That history is why a measure like this is retired rather than deleted.`;
+
+      const warnings = readMeasureWarnings(record.slug);
+      root.querySelector<HTMLElement>('[data-sheet-warnings]')!.hidden = warnings.length === 0;
+      root.querySelector<HTMLElement>('[data-sheet-warning-list]')!.innerHTML = warnings
+        .map((w) => `<li class="typography-body-sm">${w.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)}</li>`)
+        .join('');
+
+      const claim = root.querySelector<Control>('[data-claim-text]');
+      if (claim) claim.value = '';
+      root.querySelector<HTMLElement>('[data-claim-result]')!.textContent = '';
+      paintLifecycle();
+    };
+
+    /** Figures filed against this measure: the portfolio's plus this browser's. */
+    const filedHistory = JSON.parse(root.dataset.history ?? '{}') as Record<string, { entries: number; projects: number }>;
+    const filedCount = (record: PerformanceMeasureDefinition) => {
+      const seeded = filedHistory[measureDisplayName(record).toLowerCase()] ?? { entries: 0, projects: 0 };
+      let entries = seeded.entries;
+      let projects = seeded.projects;
+      try {
+        for (let i = 0; i < localStorage.length; i += 1) {
+          const key = localStorage.key(i) ?? '';
+          if (!key.startsWith('firma2:entries:v1:')) continue;
+          const mine = (JSON.parse(localStorage.getItem(key) ?? '[]') as { measureKey: string }[]).filter(
+            (e) => e.measureKey === record.slug || e.measureKey.toLowerCase() === `name:${measureDisplayName(record).toLowerCase()}`,
+          );
+          if (mine.length) {
+            entries += mine.length;
+            if (!seeded.entries) projects += 1;
+          }
+        }
+      } catch {
+        // Blocked storage: the portfolio's figures are the whole history.
+      }
+      return { entries, projects };
+    };
+
+    /** The footer's lifecycle controls, re-read on every edit. */
+    const paintLifecycle = () => {
+      const record = readForm();
+      const missing = outstandingFields(record).map((f) => f.label.toLowerCase());
+      const isDraft = status === 'Draft';
+      root.querySelector<HTMLElement>('[data-publish-wrap]')!.hidden = !isDraft || missing.length > 0;
+      const missingLine = root.querySelector<HTMLElement>('[data-publish-missing]')!;
+      missingLine.hidden = !isDraft || missing.length === 0;
+      missingLine.textContent = `Before publishing, this still needs ${missing.join(', ')}.`;
+      root.querySelector<HTMLElement>('[data-retire-wrap]')!.hidden = status !== 'Active';
     };
 
     // ---- open ------------------------------------------------------------
@@ -877,7 +1050,9 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
     form.addEventListener('change', (event) => {
       // The add picker is handled below; its change is an action, not a field.
       if ((event.target as HTMLElement).closest('[data-add-schema]')) return;
+      if ((event.target as HTMLElement).closest('[data-preview-card], [data-claim-text]')) return;
       syncDependentOptions();
+      paintLifecycle();
     });
 
     // Schema NAME edits commit through the editable-field's own event, not
@@ -980,6 +1155,68 @@ import BcnTagEditor from '../shared/bcn-tag-editor.astro';
       if (schemasChanged) emitSchemaChange();
       emitMeasureChange(record);
       sheet.close();
+    });
+
+    // ---- publish and retire (team 6) ----------------------------------------
+    // Publishing names its consequence before it happens: the counted
+    // structure freezes, the words stay editable.
+    const publishDialog = root.querySelector<Control & { show: () => void; message?: string }>('.firma2-measure-sidesheet__publish');
+    const saveAs = (next: MeasureStatus) => {
+      status = next;
+      root.querySelector<HTMLElement>('[data-sheet-save]')?.click();
+    };
+    root.querySelector('[data-sheet-publish]')?.addEventListener('click', () => {
+      if (!publishDialog) return saveAs('Active');
+      publishDialog.message =
+        'Reporters start answering it. Its unit, counting rule and subcategory questions become fixed: a question added later could not be backfilled, so earlier entries would have no answer for it. Its name, definition and guidance stay editable.';
+      publishDialog.show();
+    });
+    publishDialog?.addEventListener('resolved', (e) => {
+      if (!(e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) return;
+      clearMeasureWarnings(slug);
+      saveAs('Active');
+    });
+    root.querySelector('[data-sheet-retire]')?.addEventListener('click', () => saveAs('Retired'));
+
+    // ---- redraft from a claim (team 6) -------------------------------------
+    root.querySelector('[data-claim-draft]')?.addEventListener('click', () => {
+      const claim = String(root.querySelector<Control>('[data-claim-text]')?.value ?? '').trim();
+      const result = root.querySelector<HTMLElement>('[data-claim-result]')!;
+      const outcome = claim ? draftFromClaim(claim) : { ok: false as const };
+      if (!outcome.ok) {
+        result.textContent = 'Name the work it is about — planting, fencing, pile burning, a barrier — and try again.';
+        return;
+      }
+      const a = outcome.draft.activity;
+      field('name')!.value = a.name;
+      field('definition')!.value = a.definition;
+      field('reporterGuidance')!.value = a.reporterGuidance;
+      if (status === 'Draft') {
+        field('kind')!.value = a.kind;
+        syncDependentOptions();
+        field('unit')!.value = a.unit;
+        field('countingRule')!.value = a.countingRule;
+        field('decimalPlaces')!.value = String(a.decimalPlaces);
+        if (outcome.draft.split && a.split && !attachedIds().includes(a.split.source === 'new' ? '' : a.split.schemaId)) {
+          if (a.split.source === 'new') {
+            const id = nextLocalSchemaId(a.split.name);
+            writeLocalSchema({ id, name: a.split.name, origin: 'user', options: a.split.options });
+            emitSchemaChange();
+            appendRow(schemaById(id) ?? null);
+          } else {
+            const schema = schemaById(a.split.schemaId);
+            if (schema) appendRow(schema);
+          }
+          refreshPicker();
+        }
+      }
+      const w = outcome.draft.warnings;
+      root.querySelector<HTMLElement>('[data-sheet-warnings]')!.hidden = w.length === 0;
+      root.querySelector<HTMLElement>('[data-sheet-warning-list]')!.innerHTML = w.map((x) => `<li class="typography-body-sm">${x}</li>`).join('');
+      result.textContent =
+        status === 'Draft' ? 'Drafted. Check it, then save.' : 'The words were redrafted. The unit, rule and questions are fixed while it is published.';
+      paintPreview();
+      paintLifecycle();
     });
 
     root.querySelector('[data-sheet-delete]')?.addEventListener('click', () => {

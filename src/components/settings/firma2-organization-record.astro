@@ -2,11 +2,10 @@
 // firma2-organization-record — one organization's record in Workspace
 // settings: who it is, who signs in for it, and what it does here.
 //
-// Rendered for "Your organization" (the signed-in reader's own) and for every
-// row of Organizations, so the record an administrator opens from the list and
-// the one its members open from the rail are the same page, not two that drift.
+// Rendered for every row of Organizations, the signed-in reader's own
+// included — one route per organization, so there is no second copy to drift.
 //
-// FOUR CARDS, IN THE ORDER THE RECORD IS QUESTIONED. Profile first: the facts
+// FOUR SECTIONS, IN THE ORDER THE RECORD IS QUESTIONED. Profile first: the facts
 // other people meet when they pick this organization from a dropdown or read
 // its name on a public project page. Then People, the members whose access
 // this organization answers for. Then what it does — the grant programs it
@@ -18,20 +17,23 @@
 // because only People is added to here — programs come from Funding sources
 // and projects from their own records.
 //
-// bcn-lego-checked: esa-card is each section and firma2-editable-field each
+// NO CARDS. Settings sections are unboxed (the spoke's settings-surface rule):
+// each is a heading and its content, spaced by the stack — the same shape as
+// Organization settings › General, so the two pages of one organization agree.
+//
+// bcn-lego-checked: firma2-rail-section is each section and firma2-editable-field each
 // profile row — both existing, composed unchanged. The lists are
 // firma2-settings-table, the spoke's home for small settings lists (too few
 // rows for AG Grid's search/count chrome). Invite is an esa-button. The <dl>
 // is the grouping the rows are built for and `.stack` spaces everything; no
 // bespoke flex and no <style> block.
-import '../shared/firma2-card-section.css';
-import EsaCard from '@esa/ecology/esa-card.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import Firma2EditableField from '../shared/firma2-editable-field.astro';
 import Firma2SettingsTable from './firma2-settings-table.astro';
 import { membersOf, organizationTypes, projectsOf } from '../../data/firma2-directory';
 import type { Organization } from '../../data/firma2-directory';
-import { projects, projectHref } from '../../data/firma2-projects';
+import { projects, projectHref, projectSlug } from '../../data/firma2-projects';
 import { getProjectDetail } from '../../data/firma2-project-detail';
 import { currencyFormatter as money } from '../../lib/format';
 import { withBase } from '../../lib/base';
@@ -45,7 +47,12 @@ const members = membersOf(org.name);
 
 const peopleRows = members.map((u) => ({
   name: u.name,
-  cells: { role: u.role, email: u.email, lastActive: u.status === 'Invited' ? 'Invited' : u.lastActive },
+  // A steward reads as Steward: it ranks above the Contributor role it sits on.
+  cells: {
+    role: u.role === 'Contributor' && u.stewardOf.includes(org.name) ? 'Steward' : u.role,
+    email: u.email,
+    lastActive: u.status === 'Invited' ? 'Invited' : u.lastActive,
+  },
 }));
 
 const programRows = org.programs.map((program) => ({
@@ -58,6 +65,7 @@ const programRows = org.programs.map((program) => ({
 const projectRows = projectsOf(org.name).map(({ project, leads, amount }) => ({
   name: project.projectName,
   href: withBase(projectHref(project)),
+  peek: projectSlug(project),
   cells: {
     part: leads ? 'Leads' : 'Funds',
     stage: project.stage,
@@ -65,8 +73,8 @@ const projectRows = projectsOf(org.name).map(({ project, leads, amount }) => ({
   },
 }));
 ---
-<div class="stack" data-gap="xl">
-  <EsaCard title="Profile">
+<div class="stack" data-gap="2xl">
+  <Firma2RailSection title="Profile">
     <dl class="stack" data-gap="md">
       <Firma2EditableField field="type" label="Type" value={org.type} control="select" options={organizationTypes} />
       <Firma2EditableField field="website" label="Website" value={org.website} />
@@ -85,10 +93,10 @@ const projectRows = projectsOf(org.name).map(({ project, leads, amount }) => ({
         placeholder="Add a description"
       />
     </dl>
-    <Fragment slot="footer">Its type decides whether it can lead or fund projects.</Fragment>
-  </EsaCard>
+    <p class="typography-body-sm">Its type decides whether it can lead or fund projects.</p>
+  </Firma2RailSection>
 
-  <EsaCard title="People">
+  <Firma2RailSection title="People">
     <EsaButton slot="actions" variant="chrome" size="sm" icon="plus">Invite</EsaButton>
     <Firma2SettingsTable
       label={`People at ${org.name}`}
@@ -96,27 +104,27 @@ const projectRows = projectsOf(org.name).map(({ project, leads, amount }) => ({
       columns={[{ key: 'role', label: 'Role' }, { key: 'email', label: 'Email' }, { key: 'lastActive', label: 'Last active' }]}
       rows={peopleRows}
     />
-  </EsaCard>
+  </Firma2RailSection>
 
   {programRows.length > 0 && (
-    <EsaCard title="Grant programs">
+    <Firma2RailSection title="Grant programs">
       <Firma2SettingsTable
         label={`Grant programs ${org.name} administers`}
         nameLabel="Program"
         columns={[{ key: 'projects', label: 'Projects', numeric: true }]}
         rows={programRows}
       />
-    </EsaCard>
+    </Firma2RailSection>
   )}
 
   {projectRows.length > 0 && (
-    <EsaCard title="Projects">
+    <Firma2RailSection title="Projects">
       <Firma2SettingsTable
         label={`Projects ${org.name} leads or funds`}
         nameLabel="Project"
         columns={[{ key: 'part', label: 'Role' }, { key: 'stage', label: 'Stage' }, { key: 'amount', label: 'Funding', numeric: true }]}
         rows={projectRows}
       />
-    </EsaCard>
+    </Firma2RailSection>
   )}
 </div>

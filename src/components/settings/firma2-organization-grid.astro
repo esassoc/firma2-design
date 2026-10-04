@@ -1,18 +1,26 @@
 ---
 // firma2-organization-grid — Workspace settings › Organizations: every
-// organization with an account in this workspace, what kind it is, and what it
-// does here (leads projects, funds them, or neither), searchable by name or
-// contact and filterable by type.
+// organization with an account in this workspace — who can see it, how many
+// members and projects it has, who answers for it, and when it was added —
+// searchable by name or contact and filterable by type.
+//
+// PROJECTS IS ONE COUNT, led or funded: the reader asks "how much does this
+// organization do here", and two columns of mostly blanks answered it worse.
+// The split stays on the organization's record.
 //
 // The SAME chrome as firma2-project-grid — search + filter row, CSV at the
 // right, record count under the grid — because an administrator moves between
 // the two and the second table should not have to be learned. Only the
 // columns and the one filter differ.
 //
-// THE NAME IS A DOOR. Each row links to that organization's record; the
-// reader's own organization links to "Your organization", the one record a
-// signed-in reader reaches from the rail as well, so the two routes land on
-// one page rather than two copies of it.
+// THE NAME IS A DOOR. Each row links to that organization's record, the
+// reader's own included.
+//
+// ADDED ROWS come from Add organization (/organizations/new), which keeps them
+// in this viewer's browser (src/lib/added-organizations.ts). They go in at the
+// top, where the reader who just added one is looking, and the arrival is
+// confirmed once. They have no record page yet, so their name is plain text,
+// not a link.
 //
 // bcn-lego-checked: ecology has NO table/grid lego — esa-grid is a
 // documentation-only page with nothing to import; checked the full
@@ -20,12 +28,13 @@
 // this machine. This is the spoke's established AG Grid surface
 // (firma2-project-grid is the precedent) and shared/firma2-data-grid-chrome.css
 // owns the frame. Every control around it IS a lego: esa-text-field,
-// esa-filter-container + esa-filter-dropdown, esa-button, esa-empty-state.
+// esa-filter-container + esa-filter-dropdown, esa-button, esa-empty-state,
+// esa-snackbar-container.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
-import { organizations, organizationTypes, CURRENT_USER } from '../../data/firma2-directory';
+import { organizations, organizationTypes } from '../../data/firma2-directory';
 import { withBase } from '../../lib/base';
 
 // Only types that have members are offered, so the filter never returns nothing.
@@ -36,11 +45,7 @@ const typeOptions = organizationTypes
 // Resolved here rather than in the client: the base path is a build-time fact.
 const rows = organizations.map((o) => ({
   ...o,
-  href: withBase(
-    o.name === CURRENT_USER.organization
-      ? '/prototypes/workspace-settings/your-organization'
-      : `/prototypes/workspace-settings/organizations/${o.slug}`,
-  ),
+  href: withBase(`/prototypes/workspace-settings/organizations/${o.slug}`),
 }));
 ---
 <section class="firma2-organization-grid stack" data-gap="md">
@@ -83,15 +88,21 @@ const rows = organizations.map((o) => ({
     />
   </div>
 
+  <esa-snackbar-container data-orgs-toasts></esa-snackbar-container>
+
   <script type="application/json" data-orgs-data set:html={JSON.stringify(rows)}></script>
 </section>
 
 <script>
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-filter-dropdown';
+  import '@esa/ecology/esa-snackbar-container';
+  import { readAddedOrganizations, takeJustAdded } from '../../lib/added-organizations';
   import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
   import { label } from '../../lib/vocabulary';
+  import { visibilityLabel } from '../../data/firma2-directory';
   import type { Organization } from '../../data/firma2-directory';
+  import { dateFormatter } from '../../lib/format';
   import type { ColDef } from 'ag-grid-community';
 
   type Row = Organization & { href: string };
@@ -122,22 +133,30 @@ const rows = organizations.map((o) => ({
           flex: 2, minWidth: 220, cellClass: 'firma2-grid-name', tooltipField: 'name',
           getQuickFilterText: (p) => p.data?.name ?? '',
           cellRenderer: (p: { data?: Row }) =>
-            p.data ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>` : '',
-        },
-        { headerName: 'Type', field: 'type', colId: 'type', flex: 1, minWidth: 170, tooltipField: 'type' },
-        {
-          headerName: 'Projects led', field: 'projectsLed', colId: 'projectsLed', width: 130,
-          cellClass: 'firma2-grid-num', valueFormatter: count,
+            !p.data ? '' : p.data.href
+              ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>`
+              : esc(p.data.name),
         },
         {
-          headerName: 'Projects funded', field: 'projectsFunded', colId: 'projectsFunded', width: 150,
+          headerName: 'Visibility', field: 'visibility', colId: 'visibility', width: 140,
+          valueFormatter: (p: { value?: Organization['visibility'] }) => (p.value ? visibilityLabel[p.value] : ''),
+        },
+        { headerName: 'Members', field: 'people', colId: 'people', width: 120, cellClass: 'firma2-grid-num' },
+        {
+          headerName: label('Projects'), field: 'projects', colId: 'projects', width: 120,
           cellClass: 'firma2-grid-num', valueFormatter: count,
         },
-        { headerName: 'People', field: 'people', colId: 'people', width: 100, cellClass: 'firma2-grid-num' },
         {
           headerName: 'Primary contact', field: 'primaryContact', colId: 'primaryContact',
           flex: 1, minWidth: 160, tooltipField: 'primaryContact',
           getQuickFilterText: (p) => p.data?.primaryContact ?? '',
+        },
+        {
+          headerName: 'Created', field: 'created', colId: 'created', width: 140,
+          // Parsed as a local date: a bare ISO date reads as UTC midnight and shows
+          // the day before anywhere west of Greenwich.
+          valueGetter: (p) => (p.data?.created ? new Date(`${p.data.created}T00:00:00`) : null),
+          valueFormatter: (p: { value?: Date | null }) => (p.value ? dateFormatter.format(p.value) : ''),
         },
       ] satisfies ColDef[],
       gridOptions: {
@@ -147,6 +166,24 @@ const rows = organizations.map((o) => ({
       },
     });
     if (!handle) return;
+
+    const added: Row[] = readAddedOrganizations().map((o) => ({ ...o, href: '' }));
+    if (added.length) {
+      handle.data.unshift(...added);
+      handle.countState.total += added.length;
+      handle.gridApi.applyTransaction({ add: added, addIndex: 0 });
+    }
+    const justAdded = takeJustAdded();
+    if (justAdded) {
+      customElements.whenDefined('esa-snackbar-container').then(() => {
+        root.querySelector<HTMLElement & { show(o: { message: string; variant: string }): void }>('[data-orgs-toasts]')?.show({
+          message: justAdded.copiedFrom
+            ? `${justAdded.name} added, with settings from ${justAdded.copiedFrom}.`
+            : `${justAdded.name} added.`,
+          variant: 'success',
+        });
+      });
+    }
 
     typeFilter?.addEventListener('selection-change', (event) => {
       typeValues = (event as CustomEvent<{ value?: string[] }>).detail?.value ?? [];

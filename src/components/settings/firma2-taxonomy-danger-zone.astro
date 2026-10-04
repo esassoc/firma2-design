@@ -1,0 +1,128 @@
+---
+// firma2-taxonomy-danger-zone — removing a project type, classification or
+// tag. One act, its cost stated beside it, then a confirm.
+//
+// WHAT REMOVING COSTS DECIDES WHETHER IT IS OFFERED. A project must have a
+// type, and a project working toward a goal is the goal's whole record of
+// progress — so a type or classification still in use cannot be removed, and
+// the button says why (brief §4, "Inert, not disabled": disabled must be
+// telling the truth, with the reason in view). A tag costs nothing but the
+// label, so it can always go; the confirm says how many projects lose it.
+// A classification group can go once it holds no classifications and is not
+// the last group — decided in the browser, because classifications move
+// between groups there (groupRemovalBlock in src/lib/taxonomy-edits.ts).
+//
+// bcn-lego-checked: esa-danger-zone is the box, esa-button the act,
+// esa-confirm-dialog the confirm — firma2-organization-danger-zone's
+// construction. Beacon is not cloned on this machine.
+import EsaDangerZone from '@esa/ecology/esa-danger-zone.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import type { TaxonomyKind } from '../../lib/taxonomy-edits';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  kind: TaxonomyKind;
+  /** The seeded record's slug; omitted on a draft route. */
+  slug?: string;
+  /** Projects using it now. A record added in this browser has none. */
+  inUse: number;
+  listPath: string;
+}
+
+const { kind, slug, inUse, listPath } = Astro.props;
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const blocked = inUse > 0 && kind !== 'tag';
+const body = {
+  projectType: blocked
+    ? `${plural(inUse, 'project is', 'projects are')} this type. Give ${inUse === 1 ? 'it' : 'them'} another type first.`
+    : 'No project is this type. The fields it asked stay defined for the workspace.',
+  classification: blocked
+    ? `${plural(inUse, 'project works', 'projects work')} toward this goal. Take it off ${inUse === 1 ? 'that project' : 'them'} first.`
+    : 'No project works toward it. Its performance measures stay in the catalog.',
+  tag: inUse > 0 ? `${plural(inUse, 'project loses', 'projects lose')} this tag.` : 'No project has this tag.',
+  classificationGroup: 'No classification is in this group.',
+}[kind];
+---
+<EsaDangerZone heading="Danger zone">
+  <div class="firma2-taxonomy-danger-zone repel" data-gap="md" data-kind={kind} data-slug={slug} data-list-href={withBase(listPath)} data-body={body}>
+    <div class="stack" data-gap="3xs" id={`danger-remove-${kind}`}>
+      <span class="typography-label-md-strong">Remove</span>
+      <span class="typography-body-sm">{body}</span>
+    </div>
+    <EsaButton variant="danger" appearance="soft" size="md" disabled={blocked} aria-describedby={`danger-remove-${kind}`} data-remove>Remove</EsaButton>
+  </div>
+</EsaDangerZone>
+
+<esa-confirm-dialog class="firma2-taxonomy-danger-zone__confirm" variant="danger"></esa-confirm-dialog>
+
+<script>
+  import '@esa/ecology/esa-confirm-dialog';
+  import { getEntry, groupRemovalBlock, removeEntry } from '../../lib/taxonomy-edits';
+  import { projectsWithTag } from '../../lib/project-tags';
+  import type { TaxonomyKind } from '../../lib/taxonomy-edits';
+  import { recordSlug } from '../../lib/taxonomy-record';
+
+  type Confirm = HTMLElement & { heading: string; message: string; confirmLabel: string; show?: () => void };
+
+  document.querySelectorAll<HTMLElement>('.firma2-taxonomy-danger-zone').forEach((root) => {
+    const kind = root.dataset.kind as TaxonomyKind;
+    const slug = recordSlug(root);
+    const dialog = document.querySelector<Confirm>('.firma2-taxonomy-danger-zone__confirm');
+    const button = root.querySelector<HTMLElement>('[data-remove]');
+    if (!dialog || !button) return;
+    // Tags are assigned in the browser (src/lib/project-tags.ts), so the
+    // build's count can be stale: count now, for the row and the confirm.
+    // Re-counted whenever the tag's Projects section changes an assignment
+    // on this same page (firma2-tag-projects announces it).
+    if (kind === 'tag') {
+      const recount = () => {
+        const n = projectsWithTag(slug).length;
+        const text = n > 0 ? `${n} ${n === 1 ? 'project loses' : 'projects lose'} this tag.` : 'No project has this tag.';
+        root.dataset.body = text;
+        const reason = root.querySelector<HTMLElement>(`#danger-remove-${kind} .typography-body-sm`);
+        if (reason) reason.textContent = text;
+      };
+      recount();
+      document.addEventListener('firma2:tag-assignments', recount);
+    }
+    if (kind === 'classificationGroup') {
+      const block = groupRemovalBlock(slug);
+      const reason = root.querySelector<HTMLElement>(`#danger-remove-${kind} .typography-body-sm`);
+      if (block) {
+        if (reason) reason.textContent = block;
+        // Disabled with the reason beside it, the same as a type still in use —
+        // and the same markup EsaButton renders for `disabled`.
+        button.setAttribute('disabled', '');
+        button.classList.add('esa-button--disabled');
+        return;
+      }
+    }
+    button.addEventListener('click', async () => {
+      await customElements.whenDefined('esa-confirm-dialog');
+      // Assigned only after define, or the props shadow the lego's setters.
+      Object.assign(dialog, {
+        heading: `Remove ${getEntry(kind, slug)?.name ?? 'this'}?`,
+        message: root.dataset.body ?? '',
+        confirmLabel: 'Remove',
+      });
+      dialog.show?.();
+    });
+    dialog.addEventListener('confirm', () => {
+      removeEntry(kind, slug);
+      window.location.assign(root.dataset.listHref ?? '');
+    });
+  });
+</script>
+
+<style>
+  /* The lego's slot is a wrapping flex row; this row takes all of it. */
+  .firma2-taxonomy-danger-zone {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+  }
+
+  .firma2-taxonomy-danger-zone .stack {
+    flex: 1 1 14rem;
+    min-inline-size: 0;
+  }
+</style>

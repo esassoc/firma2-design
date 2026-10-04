@@ -1,0 +1,455 @@
+---
+// firma2-classification-measures — a classification's KPIs on its own page:
+// each catalog measure that tracks the goal, its progress against the goal
+// target, and the projects whose reports make up the figure.
+//
+// ONE TABLE, THE PROJECT PAGE'S GRAMMAR (user, 2026-10-03). A project's own
+// measures are a table — ring and name, the bold "reported of target", one
+// column per year — whose child rows are how a measure divides. Here the
+// child rows are the PROJECTS the figure is made of: each a link (and a
+// side-panel button) with "done of planned" and its own reports by year. One
+// table instead of a table per measure, so the years line up by construction.
+//
+// THE PARENT ROW is the goal: the ring's solid arc is what was reported, its
+// lighter arc what projects planned, the grey what nobody has planned yet;
+// the bold figure names its denominator ("goal" or "planned"). Its year cells
+// are the measure's own figure that year — the projects summed (averaged, for
+// a measure that does not add).
+//
+// THE LAST CHILD ROW IS THE GAP: "Not yet planned", the part of the goal no
+// project has taken on — the line a program manager takes to a funder. It is
+// a row rather than a sentence so it reads as one more line of the account.
+//
+// TWO VIEWS (user, 2026-10-03), switched by a segmented esa-button-toggle as
+// on a project's own measures. SIMPLE, the default, is a HIGHLIGHT, not a
+// table: one tile per measure beside the two-green ring at its stand-alone
+// size — the share of the goal as the big figure, the measure's NAME under it
+// as the tile's heading, then "14.5 of 30 miles goal" and "14.8 not yet
+// planned" (user: the name more prominent, and under the number).
+//
+// NOT esa-stat, though the summary figures above use it: esa-stat fixes its
+// order as value, label, sub and draws the label small in secondary ink, so
+// the name could neither sit under the number nor read as the heading. The
+// tile composes the same type roles esa-stat names — typography-display-sm
+// for the figure — plus a title-strong heading for the name. Borderless, on a grid, like the
+// figures above: no cards. DETAILED is the table: each measure's project rows
+// and the gap row, and the year columns. In Detailed each measure still folds with its chevron (the project
+// table's divide control); switching to Detailed opens them all again. The
+// views are one attribute on the root; everything else is CSS.
+// A goal-tagged project that reports nothing toward a KPI is not listed under
+// it — it is in the projects grid below, and its absence here is the finding.
+//
+// SETTINGS EDITS SHOW HERE: KPIs linked or unlinked and targets changed in
+// Workspace settings repaint the table in the browser (renderKpiTable in
+// src/lib/goal-kpis.ts), over figures the build computed for every catalog
+// measure. The build renders the same rows first, from the same view
+// (src/lib/kpi-row.ts), and the repaint clones these rows' templates.
+//
+// bcn-lego-checked: esa-empty-state is the no-KPI state, esa-button the
+// chevron, bcn-progress-ring the ring, firma2-project-peek-button the
+// side-panel door; the table is a plain <table> — no esa- table lego exists
+// (firma2-project-measure-row's finding), and its rules follow
+// firma2-project-measures' year table. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import BcnProgressRing from '../shared/bcn-progress-ring.astro';
+import Firma2ProjectPeekButton from '../projects/firma2-project-peek-button.astro';
+import type { KpiProgress } from '../../data/firma2-classification-rollup';
+import { kpiFigureTable } from '../../data/firma2-classification-rollup';
+import { measures } from '../../data/firma2-performance-measures';
+import { withBase } from '../../lib/base';
+import { projectHref } from '../../data/firma2-projects';
+import { kpiRowView, yearAxis } from '../../lib/kpi-row';
+
+interface Props {
+  slug: string;
+  kpis: KpiProgress[];
+}
+
+const { slug, kpis } = Astro.props;
+const all = kpiFigureTable((p) => withBase(projectHref(p)));
+const seeded = all[slug];
+const data = {
+  seeded: { [slug]: seeded },
+  catalog: Object.fromEntries(measures.map((m) => [m.slug, { name: m.name, unit: m.unit ?? '', decimals: m.decimalPlaces }])),
+};
+
+// The build's first paint, from the same figures and view the repaint uses.
+const figures = kpis.map((k) => ({ f: seeded.figures[k.measure.slug], t: k.goal }));
+// ONE YEAR AXIS, newest first: a year any project reported in.
+const years = yearAxis(figures.map(({ f }) => f.from));
+const rows = figures.map(({ f, t }) => ({
+  f,
+  v: kpiRowView({ ...f, goal: t?.value, goalYear: t?.year, years }),
+}));
+---
+<section class="stack" data-gap="md" aria-labelledby="firma2-classification-measures-title">
+  <div class="repel" data-gap="sm">
+    <h2 id="firma2-classification-measures-title" class="typography-title-sm-strong">Performance measures</h2>
+    <!-- Hidden on a plain wrapper: [hidden] on the lego itself loses to its
+         own display rule. -->
+    <span data-kpi-view-host hidden={kpis.length === 0}><esa-button-toggle size="md" data-kpi-view></esa-button-toggle></span>
+  </div>
+  <div class="firma2-classification-measures" data-view="simple" data-slug={slug} data-goals={JSON.stringify(data)}>
+    <div data-kpi-empty hidden={kpis.length > 0}>
+      <EsaEmptyState size="sm" title="No performance measures yet" description="Link one to this classification to track progress." />
+    </div>
+    <ul class="firma2-classification-measures__highlights grid" data-gap="lg" data-kpi-highlights hidden={kpis.length === 0}>
+      {rows.map(({ f, v }) => (
+        <li class="firma2-classification-measures__highlight">
+          <BcnProgressRing value={v.percent} secondary={v.plannedPercent} size="md" />
+          <div class="firma2-classification-measures__highlight-text">
+            <span class="firma2-classification-measures__highlight-value typography-display-sm" data-highlight-value>{v.highlight.value}</span>
+            <h3 class="firma2-classification-measures__highlight-name typography-title-sm-strong" data-highlight-name>{f.name}</h3>
+            <p class="firma2-classification-measures__highlight-meta typography-body-md" data-highlight-label hidden={!v.highlight.label}>{v.highlight.label}</p>
+            <p class="firma2-classification-measures__highlight-meta typography-body-sm" data-highlight-sub hidden={!v.highlight.sub}>{v.highlight.sub}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+    <div class="firma2-classification-measures__scroller" data-kpi-scroller hidden={kpis.length === 0}>
+      <table class="firma2-classification-measures__table">
+        <caption class="visually-hidden">Performance measures, by project and year</caption>
+        <thead>
+          <tr data-kpi-head>
+            <th scope="col">Measure</th>
+            <th scope="col" class="firma2-classification-measures__num firma2-classification-measures__pin">Progress</th>
+            {years.map((y) => <th scope="col" class="firma2-classification-measures__num">{y}</th>)}
+            <td class="firma2-classification-measures__spacer"></td>
+          </tr>
+        </thead>
+        <tbody data-kpi-body>
+          {rows.map(({ f, v }, i) => (
+            <Fragment>
+              <tr class="firma2-classification-measures__measure" data-measure={i}>
+                <th scope="row">
+                  <span class="firma2-classification-measures__head">
+                    <BcnProgressRing value={v.percent} secondary={v.plannedPercent} size="xs" />
+                    <span class="firma2-classification-measures__name" title={f.name} data-name>{f.name}</span>
+                    <span class="firma2-classification-measures__toggle" data-toggle>
+                      <EsaButton variant="chrome" iconOnly icon="chevron-down" size="sm" aria-label={`Hide projects for ${f.name}`} aria-expanded="true">Hide projects</EsaButton>
+                    </span>
+                  </span>
+                </th>
+                <td class="firma2-classification-measures__num firma2-classification-measures__pin firma2-classification-measures__total" data-total>{v.totalText}</td>
+                {v.table.totals.map((c) => <td class="firma2-classification-measures__num">{c}</td>)}
+                <td class="firma2-classification-measures__spacer"></td>
+              </tr>
+              {v.table.rows.map((r) => (
+                <tr class="firma2-classification-measures__child" data-child-of={i} data-peek-row>
+                  <th scope="row">
+                    <span class="firma2-peek-pair">
+                      <a class="firma2-classification-measures__project" href={r.href} title={r.name}>{r.name}</a>
+                      {r.slug && <Firma2ProjectPeekButton slug={r.slug} name={r.name} />}
+                    </span>
+                  </th>
+                  <td class="firma2-classification-measures__num firma2-classification-measures__pin">{r.share}</td>
+                  {r.cells.map((c) => <td class="firma2-classification-measures__num">{c}</td>)}
+                  <td class="firma2-classification-measures__spacer"></td>
+                </tr>
+              ))}
+              {v.table.gap && (
+                <tr class="firma2-classification-measures__child firma2-classification-measures__gap" data-child-of={i}>
+                  <th scope="row">Not yet planned</th>
+                  <td class="firma2-classification-measures__num firma2-classification-measures__pin">{v.table.gap}</td>
+                  {years.map(() => <td class="firma2-classification-measures__num"></td>)}
+                  <td class="firma2-classification-measures__spacer"></td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <!-- Clone sources for the repaint: one measure row's head (ring, name,
+         chevron) and one project's name cell (link + side-panel button). -->
+    <template data-kpi-head-template>
+      <span class="firma2-classification-measures__head">
+        <BcnProgressRing value={0} secondary={0} size="xs" />
+        <span class="firma2-classification-measures__name" data-name></span>
+        <span class="firma2-classification-measures__toggle" data-toggle>
+          <EsaButton variant="chrome" iconOnly icon="chevron-down" size="sm" aria-label="Hide projects" aria-expanded="true">Hide projects</EsaButton>
+        </span>
+      </span>
+    </template>
+    <template data-kpi-highlight-template>
+      <li class="firma2-classification-measures__highlight">
+        <BcnProgressRing value={0} secondary={0} size="md" />
+        <div class="firma2-classification-measures__highlight-text">
+          <span class="firma2-classification-measures__highlight-value typography-display-sm" data-highlight-value></span>
+          <h3 class="firma2-classification-measures__highlight-name typography-title-sm-strong" data-highlight-name></h3>
+          <p class="firma2-classification-measures__highlight-meta typography-body-md" data-highlight-label></p>
+          <p class="firma2-classification-measures__highlight-meta typography-body-sm" data-highlight-sub></p>
+        </div>
+      </li>
+    </template>
+    <template data-kpi-project-template>
+      <span class="firma2-peek-pair">
+        <a class="firma2-classification-measures__project"></a>
+      </span>
+    </template>
+  </div>
+</section>
+
+<style>
+  .firma2-classification-measures [hidden] {
+    display: none !important;
+  }
+
+  /* The only thing that scrolls: a ten-year axis plus the pinned columns do
+     not fit a 1280px page, let alone one with the side panel open. */
+  .firma2-classification-measures__scroller {
+    overflow-x: auto;
+    /* FIXED COLUMN WIDTHS: the progress column's sticky offset has to be a
+       number, and year columns read as one axis only at one width. */
+    --firma2-cm-name-width: 20rem;
+    --firma2-cm-progress-width: 18rem;
+    --firma2-cm-year-width: 5rem;
+  }
+
+  @media (max-width: 40rem) {
+    .firma2-classification-measures__scroller {
+      --firma2-cm-name-width: 11rem;
+      --firma2-cm-progress-width: 10rem;
+    }
+  }
+
+  /* firma2-project-measures' table chrome: separate borders (a collapsed
+     border belongs to the table and scrolls away from a sticky cell), flush
+     outer padding, secondary column heads, end-aligned tabular figures. */
+  .firma2-classification-measures__table {
+    inline-size: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .firma2-classification-measures__table :global(th),
+  .firma2-classification-measures__table :global(td) {
+    box-sizing: border-box;
+    padding-block: var(--spacing-200, 0.5rem);
+    padding-inline: var(--spacing-300, 0.75rem);
+    text-align: start;
+    vertical-align: middle;
+    font-weight: inherit;
+  }
+
+  .firma2-classification-measures__table :global(tr > :first-child) {
+    padding-inline-start: 0;
+  }
+
+  .firma2-classification-measures__table thead :global(th) {
+    color: var(--color-content-default-secondary, #646464);
+    font-weight: var(--font-weight-semibold, 600);
+    white-space: nowrap;
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  .firma2-classification-measures__table :global(tbody tr + tr > *) {
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  .firma2-classification-measures__table :global(.firma2-classification-measures__num) {
+    inline-size: var(--firma2-cm-year-width);
+    min-inline-size: var(--firma2-cm-year-width);
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* NAME AND PROGRESS STAY PUT WHILE THE YEARS SCROLL. */
+  .firma2-classification-measures__table :global(tr > :first-child) {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    inline-size: var(--firma2-cm-name-width);
+    min-inline-size: var(--firma2-cm-name-width);
+    max-inline-size: var(--firma2-cm-name-width);
+    background: var(--color-background-default, #fcfcfc);
+  }
+
+  .firma2-classification-measures__table :global(.firma2-classification-measures__pin) {
+    position: sticky;
+    inset-inline-start: var(--firma2-cm-name-width);
+    z-index: 1;
+    inline-size: var(--firma2-cm-progress-width);
+    min-inline-size: var(--firma2-cm-progress-width);
+    max-inline-size: var(--firma2-cm-progress-width);
+    white-space: normal;
+    background: var(--color-background-default, #fcfcfc);
+    border-inline-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  /* The measure row: ring, name (one line, the title carries the rest), and
+     its chevron; the figure — the one bold thing — in the progress column. */
+  .firma2-classification-measures__head {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200, 0.5rem);
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-measures__name {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .firma2-classification-measures__toggle {
+    flex: none;
+    line-height: 0;
+  }
+
+  .firma2-classification-measures__toggle :global(.esa-button__native) {
+    block-size: 28px;
+    inline-size: 28px;
+    padding: 0;
+  }
+
+  .firma2-classification-measures__toggle :global([aria-expanded='true'] svg) {
+    transform: rotate(180deg);
+  }
+
+  /* Written at the table cells' own weight so it outranks their
+     `font-weight: inherit`. */
+  .firma2-classification-measures__table :global(td.firma2-classification-measures__total) {
+    font-weight: var(--font-weight-semibold, 600);
+  }
+
+  /* A child row reads as part of its measure: indented past the ring,
+     secondary ink — the project table's breakdown rows. */
+  .firma2-classification-measures__table :global(.firma2-classification-measures__child > th) {
+    padding-inline-start: 2rem;
+  }
+
+  .firma2-classification-measures__table :global(.firma2-classification-measures__child > *) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-classification-measures__project {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-content-link, var(--color-content-brand, #2a7e3b));
+  }
+
+  /* ONE VIEW AT A TIME: the highlight tiles in Simple, the table in
+     Detailed. */
+  [data-view='simple'] .firma2-classification-measures__scroller,
+  [data-view='detailed'] .firma2-classification-measures__highlights {
+    display: none;
+  }
+
+  /* The highlight tiles: the grid primitive lays them out; this strips the
+     list chrome and sets the ring beside its figure. Two to a row at the
+     content cap (one below it): three across stranded the fourth measure on
+     a row of its own, and two leave a long name room for one line. */
+  .firma2-classification-measures__highlights {
+    --grid-min: 26rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-classification-measures__highlight {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-400, 1rem);
+  }
+
+  /* Figure, then the name it counts, then what the figure is of. The name
+     sits tight under the figure so the two read as one unit; the meta lines
+     follow in secondary ink. */
+  .firma2-classification-measures__highlight-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-050, 0.125rem);
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-measures__highlight-value {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-content-default, #202020);
+  }
+
+  .firma2-classification-measures__highlight-name {
+    margin: 0 0 var(--spacing-100, 0.25rem);
+    color: var(--color-content-default, #202020);
+  }
+
+  .firma2-classification-measures__highlight-meta {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* Takes the leftover width so the seam sits right after the figures. */
+  .firma2-classification-measures__table :global(.firma2-classification-measures__spacer) {
+    inline-size: 100%;
+    padding: 0;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import { renderKpiTable } from '../../lib/goal-kpis';
+  import type { GoalData } from '../../lib/goal-kpis';
+
+  document.querySelectorAll<HTMLElement>('.firma2-classification-measures').forEach((root) => {
+    const data: GoalData = JSON.parse(root.dataset.goals ?? '{}');
+    const n = renderKpiTable(root, root.dataset.slug ?? '', data);
+    const empty = root.querySelector<HTMLElement>('[data-kpi-empty]');
+    if (empty) empty.hidden = n > 0;
+    const scroller = root.querySelector<HTMLElement>('[data-kpi-scroller]');
+    if (scroller) scroller.hidden = n === 0;
+    const viewHost = root.closest('section')?.querySelector<HTMLElement>('[data-kpi-view-host]');
+    if (viewHost) viewHost.hidden = n === 0;
+
+    // SIMPLE / DETAILED. Options are a property, safe to assign before the
+    // element upgrades (Lit reclaims it). Detailed opens every measure.
+    type Toggle = HTMLElement & { options?: unknown; value?: string };
+    const view = root.closest('section')?.querySelector<Toggle>('[data-kpi-view]');
+    if (view) {
+      view.options = [
+        { label: 'Simple', value: 'simple' },
+        { label: 'Detailed', value: 'detailed' },
+      ];
+      view.value = 'simple';
+      // The lego names its radiogroup only from a visible label, and a visible
+      // label here would be an ornamental micro-label — firma2-project-measures'
+      // same seam.
+      customElements.whenDefined('esa-button-toggle').then(() =>
+        requestAnimationFrame(() =>
+          view.shadowRoot?.querySelector('[role="radiogroup"]')?.setAttribute('aria-label', 'Performance measures view'),
+        ),
+      );
+      view.addEventListener('change', () => {
+        const detailed = view.value === 'detailed';
+        root.dataset.view = detailed ? 'detailed' : 'simple';
+        if (!detailed) return;
+        root.querySelectorAll<HTMLElement>('tr[data-child-of]').forEach((c) => (c.hidden = false));
+        root.querySelectorAll<HTMLElement>('tr[data-measure]').forEach((tr) => {
+          const button = tr.querySelector('[data-toggle] button');
+          const name = tr.querySelector('[data-name]')?.textContent ?? '';
+          button?.setAttribute('aria-expanded', 'true');
+          button?.setAttribute('aria-label', `Hide projects for ${name}`);
+          button?.setAttribute('title', `Hide projects for ${name}`);
+        });
+      });
+    }
+
+    // The chevron folds a measure's project rows.
+    root.addEventListener('click', (event) => {
+      const toggle = (event.target as Element).closest<HTMLElement>('[data-toggle]');
+      const tr = toggle?.closest<HTMLElement>('tr[data-measure]');
+      if (!toggle || !tr) return;
+      const button = toggle.querySelector('button');
+      const open = button?.getAttribute('aria-expanded') !== 'true';
+      const name = tr.querySelector('[data-name]')?.textContent ?? '';
+      button?.setAttribute('aria-expanded', String(open));
+      button?.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} projects for ${name}`);
+      button?.setAttribute('title', `${open ? 'Hide' : 'Show'} projects for ${name}`);
+      root.querySelectorAll<HTMLElement>(`tr[data-child-of="${tr.dataset.measure}"]`).forEach((c) => (c.hidden = !open));
+    });
+  });
+</script>

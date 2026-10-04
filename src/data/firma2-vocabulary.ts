@@ -30,7 +30,6 @@ export interface Noun {
 export const NOUNS: Noun[] = [
   { key: 'project', singular: 'Project', plural: 'Projects' },
   { key: 'organization', singular: 'Organization', plural: 'Organizations' },
-  { key: 'program', singular: 'Program', plural: 'Programs' },
   { key: 'classification', singular: 'Classification', plural: 'Classifications' },
   { key: 'performance-measure', singular: 'Performance measure', plural: 'Performance measures' },
   { key: 'funding-source', singular: 'Funding source', plural: 'Funding sources' },

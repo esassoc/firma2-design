@@ -1,0 +1,844 @@
+---
+// firma2-pages-nav — the Pages group of the app rail: the workspace's own pages
+// and folders, and the + on the group's heading that adds one.
+//
+// THE ROWS ARE THE RAIL'S OWN. Pages and folders are esa-sidebar-nav items like
+// every other row — a page is a link, a folder is a parent row with its pages
+// as children — so they collapse to the icon strip, take the active state and
+// indent exactly as the rest of the rail does. AppLayout renders the seeds on
+// the server; this component's script swaps in the full list (seeds plus what
+// this browser added, src/lib/custom-pages.ts) once the rail is defined.
+//
+// THE + IS esa-dropdown-menu around an icon-only esa-button — the same pair as
+// the member rows' "…" in Organization settings — offering Add page, Add
+// document and Add folder. All three are PAGES, not dialogs, like every other
+// add in this spoke.
+//
+// EACH FOLDER ROW CARRIES A "…" the same way, revealed on hover or focus:
+// Add page and Add document (each with this folder already chosen), Rename
+// folder and Delete folder. Deleting a folder never deletes its pages:
+// they move to the top of Pages, and the confirmation says how many.
+//
+// EACH PAGE ROW CARRIES ONE TOO: Edit page (opens it with the caret in the
+// text), Rename page, Copy link, Move page and Delete page. Delete shares the
+// folder's confirmation; Move opens a dialog — pick the folder, then drag the
+// page (or use its grip's menu) to where it sits in that folder.
+//
+// A DOCUMENT ROW (one file — a PDF by default, read on the site) carries the
+// page's menu with Download in place of Edit page: Download, Rename document,
+// Copy link, Move document and Delete document. Documents drag and move exactly
+// as pages do.
+//
+// RENAME HAPPENS IN THE ROW, not in a dialog: an esa-text-field takes the
+// label's place, its text on the label's own line, with the name selected.
+// Enter or leaving the field keeps it; Escape, or an empty name, puts the old
+// one back. A name that another folder has is refused with a toast and the
+// field stays open — an error line under a field in a 40px row would sit on
+// top of the next row.
+//
+// PAGES DRAG, in the rail itself: a page row is a link, and a link is already
+// draggable, so the drag is the browser's own (its ghost, its Escape). Drop on
+// the top or bottom half of a page to land before or after it; on a folder row
+// to file it at the end of that folder (the top sliver of a folder row drops
+// beside the folder instead). One line or outline shows where it will land.
+// Dragging needs a steady pointer, so Move page does the same job without one
+// (WCAG 2.5.7). Order and filing persist through src/lib/custom-pages.ts.
+//
+// bcn-lego-checked: esa-sidebar-nav renders group headings itself and has no
+// slot or field for a heading action; walked the catalog (esa-sidebar-nav,
+// esa-app-shell, esa-nav-dropdown, esa-dropdown-menu) and nothing carries one.
+// Beacon is not cloned in this checkout. So the menu stays a LIGHT-DOM child of
+// the rail and only a <slot> is placed in the Pages heading's shadow markup —
+// the lego's own pattern for projecting content, with the same adopted-sheet
+// move AppLayout uses on the rail head. The rows' "…" are slotted the same
+// way, one named slot per folder or page row. Worth a /request-lego for an
+// `actions` field on EsaSidebarNavItem (groups and rows) and for drag-to-
+// reorder on its rows, and then the slot injection and the drop marker go
+// away. The rename field is esa-text-field, slotted into the row beside its
+// "…"; the dialogs are esa-dialog + esa-radio-group and esa-confirm-dialog,
+// composed unchanged; the Move dialog's order is the
+// spoke's bcn-sortable-list (stand-in for esa-sortable-list, ecology#39).
+import EsaButton from '@esa/ecology/esa-button.astro';
+---
+{/* Templates, so the menus are not painted in the page before the script moves
+    them into the rail. The + is cloned once; the row "…" once per folder or page. */}
+<template data-pages-add>
+  <esa-dropdown-menu class="firma2-pages-nav__add" slot="pages-action" position="below-end">
+    <EsaButton variant="chrome" size="xs" iconOnly icon="plus" label="Add to Pages" />
+  </esa-dropdown-menu>
+</template>
+<template data-row-rename>
+  <esa-text-field class="firma2-pages-nav__rename" size="md"></esa-text-field>
+</template>
+<template data-row-actions>
+  <esa-dropdown-menu class="firma2-pages-nav__row" position="below-end">
+    <EsaButton variant="chrome" size="xs" iconOnly icon="ellipsis" label="Actions" />
+  </esa-dropdown-menu>
+</template>
+
+<esa-confirm-dialog class="firma2-pages-nav__delete" variant="danger" confirm-label="Delete folder"></esa-confirm-dialog>
+
+<esa-dialog class="firma2-pages-nav__move" heading="Move page" size="md" show-close-button>
+  <div class="stack" data-gap="lg">
+    <esa-radio-group label="Folder" size="md" data-move-folder></esa-radio-group>
+    <div class="stack" data-gap="xs">
+      <p class="typography-label-md" id="firma2-pages-move-order" data-move-order-label>Order</p>
+      <bcn-sortable-list data-move-sort>
+        <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+        <ol class="firma2-pages-nav__order" aria-labelledby="firma2-pages-move-order" data-move-rows></ol>
+      </bcn-sortable-list>
+    </div>
+  </div>
+  <div class="cluster" data-gap="xs" slot="footer">
+    <EsaButton variant="primary" size="md" data-move-save>Move</EsaButton>
+    <EsaButton variant="ghost" size="md" data-move-cancel>Cancel</EsaButton>
+  </div>
+</esa-dialog>
+
+{/* Where a dragged page will land: a line between rows, or an outline round
+    the folder it will be filed in. Fixed to the viewport, over the rail. */}
+<div class="firma2-pages-nav__drop" aria-hidden="true" data-pages-drop></div>
+<esa-snackbar-container data-pages-toasts></esa-snackbar-container>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-snackbar-container';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-radio-group';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { iconSvg } from '@esa/ecology/icon-registry';
+  import './bcn-sortable-list';
+  import { PAGES_GROUP, NO_FOLDER_LABEL, pageRoute, itemRoute } from '../../data/firma2-pages';
+  import type { CustomEntry } from '../../data/firma2-pages';
+  import {
+    arrange, findItem, findDocument, movePage, pageIdFromHref, pagesNavItems, readEntries, readFolders, readPagesEnabled, readTree,
+    removeFolder, removePage, renameFolder, takeJustAdded, updatePage,
+  } from '../../lib/custom-pages';
+  import type { PagesNavItem } from '../../lib/custom-pages';
+  import { withBase } from '../../lib/base';
+  import { drawMenuIcons } from '../../lib/menu-icons';
+  import { documentFileUrl } from '../../lib/page-files';
+
+  type Rail = HTMLElement & { items: PagesNavItem[]; _expanded: Set<string>; updateComplete?: Promise<unknown> };
+  type Menu = HTMLElement & { items: unknown };
+  type Field = HTMLElement & { value: string; updateComplete: Promise<unknown> };
+  type Dialog = HTMLElement & { show(): void; close(): void; heading: string };
+  type Confirm = Dialog & { message: string; confirmLabel: string };
+  type Radio = HTMLElement & { options: { value: string; label: string }[]; value: string | null };
+  type Toasts = HTMLElement & { show(o: { message: string; variant: string }): void };
+  type Kind = 'folder' | 'page' | 'document';
+
+  // Icons are registry names (Lucide's), drawn by drawMenuIcons.
+  const ROW_MENUS: Record<Kind, { label: string; action: string; icon: string; variant?: string }[]> = {
+    folder: [
+      { label: 'Add page', action: 'add-page', icon: 'file-plus' },
+      { label: 'Add document', action: 'add-document', icon: 'upload' },
+      { label: 'Rename folder', action: 'rename', icon: 'text-cursor-input' },
+      { label: 'Delete folder', action: 'delete', icon: 'trash-2', variant: 'danger' },
+    ],
+    page: [
+      { label: 'Edit page', action: 'edit', icon: 'pencil' },
+      { label: 'Rename page', action: 'rename', icon: 'text-cursor-input' },
+      { label: 'Copy link', action: 'copy', icon: 'link' },
+      { label: 'Move page', action: 'move', icon: 'folder-input' },
+      { label: 'Delete page', action: 'delete', icon: 'trash-2', variant: 'danger' },
+    ],
+    document: [
+      { label: 'Download', action: 'download', icon: 'download' },
+      { label: 'Rename document', action: 'rename', icon: 'text-cursor-input' },
+      { label: 'Copy link', action: 'copy', icon: 'link' },
+      { label: 'Move document', action: 'move', icon: 'folder-input' },
+      { label: 'Delete document', action: 'delete', icon: 'trash-2', variant: 'danger' },
+    ],
+  };
+  const NOUN: Record<Kind, string> = { folder: 'folder', page: 'page', document: 'document' };
+
+  // The Move dialog's value for "no folder" — esa-radio-group needs a string.
+  const TOP = 'top';
+
+  const toast = (message: string, variant = 'success'): void => {
+    customElements.whenDefined('esa-snackbar-container').then(() => {
+      document.querySelector<Toasts>('[data-pages-toasts]')?.show({ message, variant });
+    });
+  };
+
+  const counted = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
+  const movedCopy = (pages: number, docs: number): string => {
+    if (!pages && !docs) return 'It’s empty, so nothing moves.';
+    if (pages + docs === 1) return `Its ${pages ? 'page' : 'document'} moves to the top of Pages.`;
+    const what = [pages && counted(pages, 'page'), docs && counted(docs, 'document')].filter(Boolean).join(' and ');
+    return `Its ${what} move to the top of Pages.`;
+  };
+
+  const itemUrl = (id: string): string => {
+    const item = findItem(id);
+    return new URL(withBase(item ? itemRoute(item) : pageRoute(id)), location.href).href;
+  };
+
+  const ADD_ROUTES: Record<string, string> = {
+    'add-page': '/prototypes/pages/new',
+    'add-document': '/prototypes/pages/new-document',
+    'add-folder': '/prototypes/pages/new-folder',
+  };
+  // Each add returns to the page it was started from (`from`). A folder's
+  // Add page and Add document also name the folder, so the form opens with it chosen.
+  const addRoute = (action: string, params: Record<string, string> = {}): string => {
+    const query = new URLSearchParams({ ...params, from: location.pathname + location.search });
+    return `${withBase(ADD_ROUTES[action])}?${query}`;
+  };
+  // Which group headings carry a +, and the slot each one projects.
+  const HEADING_ACTIONS = [
+    { group: PAGES_GROUP, slot: 'pages-action' },
+  ];
+  const ADD_MENU = [
+    { label: 'Add page', action: 'add-page' },
+    { label: 'Add document', action: 'add-document' },
+    { label: 'Add folder', action: 'add-folder' },
+  ];
+
+  // The heading gets a flex row so the + sits on its trailing edge, level with
+  // the label. The negative block margin keeps the xs icon-only button from
+  // growing a heading whose own line is the eyebrow's ~19px — every group
+  // heading in the rail stays the same height. Collapsed, the label is gone and
+  // so is the +: a bare + in the icon strip would not say what it adds to — and
+  // the flex row is dropped too, or it displaces the rule the lego draws between
+  // groups there.
+  const HEADING_CSS = `
+    :host(:not([collapsed])) .group-heading[data-firma2-action] {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--spacing-200, 8px);
+    }
+    .group-heading[data-firma2-action] .group-label { min-width: 0; }
+    ::slotted([slot$='-action']) {
+      flex: none;
+      margin-block: calc(-1 * var(--spacing-200, 8px));
+      margin-inline-end: calc(-1 * var(--spacing-200, 8px));
+    }
+    :host([collapsed]) slot[name$='-action'] { display: none; }
+
+    /* THE ROW "…" sits over the row's trailing edge — on a folder just inside
+       the chevron, on a page in the same column, so the "…" line up down the
+       rail. It shows only while its own row is hovered or focused, or its menu
+       is open (a folder's "…" stays hidden while you hover one of its pages),
+       and never mid-drag. The label gives up the button's width permanently
+       rather than on hover, so a long name never shifts when the "…" appears.
+
+       The abs box is ONE ROW TALL from the top of the li (not the full li —
+       an open folder's li also wraps its children). Flex centres the trigger
+       inside that band, so any button size stays mid-row. Child rows are the
+       lego's hard-coded 36px (.link--child). No translateY: that would make
+       esa-dropdown-menu a containing block and pin its panel to the trigger. */
+    li:has(> slot[data-firma2-row]) { position: relative; }
+    li:has(> slot[data-firma2-row]) > .link .label { margin-inline-end: var(--spacing-800, 2rem); }
+    li:has(> slot[data-firma2-row]:not([data-firma2-row='folder'])) > .link .label { margin-inline-end: calc(var(--spacing-800, 2rem) + 16px); }
+    slot[data-firma2-row]::slotted(.firma2-pages-nav__row) {
+      position: absolute;
+      inset-block-start: 0;
+      inset-inline-end: calc(var(--_sidenav-item-padding) + 16px);
+      height: var(--_sidenav-item-height);
+      display: inline-flex;
+      align-items: center;
+    }
+    li.child > slot[data-firma2-row]::slotted(.firma2-pages-nav__row) { height: 36px; }
+    li:not(:has(> .link:hover, > .link:focus-visible, > slot:hover)) > slot[data-firma2-row]::slotted(:not([open]):not(:focus-within)),
+    :host([data-firma2-dragging]) slot[data-firma2-row]::slotted(*) { opacity: 0; }
+    :host([collapsed]) slot[data-firma2-row] { display: none; }
+    /* The rename field, slotted beside the "…": placed by the script so its
+       text starts where the label's glyphs do. The "…" steps aside meanwhile. */
+    slot[data-firma2-row]::slotted(.firma2-pages-nav__rename) {
+      position: absolute;
+      opacity: 1;
+      z-index: 1;
+    }
+    slot[data-firma2-row]::slotted([data-renaming]) { visibility: hidden; }
+  `;
+
+  // Lit owns the heading and may re-render it (a new row, a collapse), so the
+  // slot is placed again whenever the shadow tree changes and it is missing.
+  function placeSlot(root: ShadowRoot): void {
+    const headings = Array.from(root.querySelectorAll<HTMLElement>('.group-heading'));
+    HEADING_ACTIONS.forEach(({ group, slot: name }) => {
+      const heading = headings.find((h) => h.querySelector('.group-label')?.textContent?.trim() === group);
+      if (!heading || heading.querySelector(`slot[name="${name}"]`)) return;
+      heading.dataset.firma2Action = '';
+      const slot = document.createElement('slot');
+      slot.name = name;
+      heading.appendChild(slot);
+    });
+  }
+
+  // Which kind each page-or-document id is — a row's href names the id but not
+  // the kind. Refreshed with the rows (syncRowMenus).
+  const kindsById = new Map<string, Kind>();
+
+  /** Which entry a rail row shows: a folder by its label (names are unique), a page or document by its href. */
+  function rowEntry(li: Element, idsByName: Map<string, string>): { kind: Kind; id: string } | undefined {
+    const link = li.querySelector<HTMLElement>(':scope > .link');
+    if (!link) return undefined;
+    if (link.classList.contains('link--parent')) {
+      const id = idsByName.get(link.querySelector('.label')?.textContent?.trim() ?? '');
+      return id ? { kind: 'folder', id } : undefined;
+    }
+    const id = pageIdFromHref(link.getAttribute('href'));
+    return id ? { kind: kindsById.get(id) ?? 'page', id } : undefined;
+  }
+
+  // One named slot per folder or page row. Re-checked on every shadow
+  // mutation: Lit reuses row elements by position, so after a delete or a move
+  // the li that held one entry's slot can be showing the next — a slot whose
+  // name no longer matches is removed.
+  function placeRowSlots(root: ShadowRoot, idsByName: Map<string, string>): void {
+    root.querySelectorAll<HTMLElement>('li.item, li.child').forEach((li) => {
+      const entry = rowEntry(li, idsByName);
+      const name = entry ? `${entry.kind}-${entry.id}` : '';
+      li.querySelectorAll<HTMLSlotElement>(':scope > slot[data-firma2-row]').forEach((slot) => {
+        if (slot.name !== name) slot.remove();
+      });
+      if (!entry || li.querySelector(`:scope > slot[name="${CSS.escape(name)}"]`)) return;
+      const slot = document.createElement('slot');
+      slot.name = name;
+      slot.dataset.firma2Row = entry.kind;
+      li.appendChild(slot);
+    });
+  }
+
+  function mount(): void {
+    const rail = document.querySelector<Rail>('.firma2-app-frame[data-nav="app"] esa-sidebar-nav');
+    const root = rail?.shadowRoot;
+    if (!rail || !root) return;
+
+    // ---- rows: seeds plus this browser's adds, edits, deletes and order ----
+    // The page being read is marked by the page view's own element, so this
+    // never has to know that page's route.
+    const reading = document.querySelector<HTMLElement>('[data-custom-page], [data-custom-document]');
+    const activeId = reading ? new URLSearchParams(location.search).get('id') ?? undefined : undefined;
+
+    // A folder opens on its own when you are reading one of its pages, or when
+    // you have just made it or filed a page in it. `_expanded` is the rail's
+    // private open-set, keyed by label; there is no public way to open a parent
+    // row. Lego gap.
+    let idsByName = new Map<string, string>();
+    const paint = (openLabel?: string): void => {
+      const entries = readEntries();
+      // Custom pages switched off in settings: no group, so no heading and no +.
+      const rows = readPagesEnabled() ? pagesNavItems(entries, activeId) : [];
+      rail.items = [...rail.items.filter((i) => i.group !== PAGES_GROUP), ...rows];
+      const open = rows
+        .filter((r) => r.children?.some((c) => c.active) || r.label === openLabel)
+        .map((r) => r.label);
+      if (open.length) rail._expanded = new Set([...rail._expanded, ...open]);
+      syncRowMenus(entries);
+    };
+    // The page view keeps its Folder field and title in step with the rail.
+    const pagesChanged = (): void => {
+      document.dispatchEvent(new CustomEvent('firma2:folders-changed'));
+    };
+
+    // ---- the "…" on each row ----
+    const rowTemplate = document.querySelector<HTMLTemplateElement>('template[data-row-actions]');
+    const menuFor = (kind: Kind, id: string) =>
+      rail.querySelector<Menu>(`:scope > .firma2-pages-nav__row[data-kind="${kind}"][data-entry-id="${CSS.escape(id)}"]`);
+    const syncRowMenus = (entries: CustomEntry[]): void => {
+      idsByName = new Map(entries.filter((e) => e.kind === 'folder').map((f) => [f.name, f.id]));
+      kindsById.clear();
+      for (const e of entries) if (e.kind !== 'folder') kindsById.set(e.id, e.kind);
+      const live = new Set(entries.map((e) => `${e.kind}:${e.id}`));
+      rail.querySelectorAll<HTMLElement>(':scope > .firma2-pages-nav__row').forEach((m) => {
+        if (!live.has(`${m.dataset.kind}:${m.dataset.entryId}`)) m.remove();
+      });
+      for (const entry of entries) {
+        let menu = menuFor(entry.kind, entry.id);
+        if (!menu) {
+          menu = rowTemplate?.content.firstElementChild?.cloneNode(true) as Menu | undefined ?? null;
+          if (!menu) return;
+          menu.dataset.kind = entry.kind;
+          menu.dataset.entryId = entry.id;
+          menu.slot = `${entry.kind}-${entry.id}`;
+          rail.appendChild(menu);
+          const m = menu;
+          // Assigned only after define, or it shadows the lego's reactive accessor.
+          customElements.whenDefined('esa-dropdown-menu').then(() => {
+            m.items = ROW_MENUS[entry.kind];
+            drawMenuIcons(m);
+          });
+        }
+        // The trigger is named for its row, and renamed with it.
+        const name = entry.kind === 'folder' ? entry.name : entry.title;
+        const trigger = menu.querySelector('button');
+        trigger?.setAttribute('aria-label', `Actions for ${name}`);
+        trigger?.setAttribute('title', `Actions for ${name}`);
+      }
+      placeRowSlots(root, idsByName);
+    };
+
+    const confirmDelete = document.querySelector<Confirm>('.firma2-pages-nav__delete');
+    let target: { kind: Kind; id: string; name: string } | undefined;
+    // Focus goes back to the row's "…" — the menu item that opened the rename
+    // or a dialog is gone by the time it closes.
+    const refocus = (kind: Kind, id: string) => menuFor(kind, id)?.querySelector<HTMLElement>('button')?.focus();
+    const nameOf = (kind: Kind, id: string): string | undefined =>
+      kind === 'folder' ? readFolders().find((f) => f.id === id)?.name : findItem(id)?.title;
+    const focusText = () =>
+      document.querySelector('[data-custom-page] [data-rich-text]')?.dispatchEvent(new CustomEvent('firma2:rich-text-focus'));
+
+    rail.addEventListener('menu-action', async (event) => {
+      const menu = (event.target as HTMLElement).closest<HTMLElement>('.firma2-pages-nav__row');
+      const kind = menu?.dataset.kind as Kind | undefined;
+      const id = menu?.dataset.entryId ?? '';
+      const name = kind && nameOf(kind, id);
+      if (!kind || !name) return;
+      target = { kind, id, name };
+      const action = (event as CustomEvent<string>).detail;
+
+      if (action === 'add-page' || action === 'add-document') {
+        location.assign(addRoute(action, { folder: id }));
+      } else if (action === 'download') {
+        const doc = findDocument(id);
+        const href = doc && (await documentFileUrl(doc));
+        if (!doc || !href) {
+          toast('This document’s file isn’t in this browser.', 'error');
+          return;
+        }
+        const a = document.createElement('a');
+        a.href = href;
+        a.download = doc.file.name;
+        a.click();
+      } else if (action === 'edit') {
+        if (id === activeId) focusText();
+        else location.assign(`${withBase(pageRoute(id))}&edit`);
+      } else if (action === 'copy') {
+        try {
+          await navigator.clipboard.writeText(itemUrl(id));
+          toast('Link copied.');
+        } catch {
+          toast(`Couldn’t copy the link. Open the ${NOUN[kind]} and copy it from the address bar.`, 'error');
+        }
+      } else if (action === 'move') {
+        openMove(id);
+      } else if (action === 'rename') {
+        renameInRow(kind, id, name);
+      } else if (action === 'delete' && confirmDelete) {
+        await customElements.whenDefined('esa-confirm-dialog');
+        confirmDelete.heading = `Delete ${name}?`;
+        if (kind === 'folder') {
+          const inside = readEntries().filter((e) => e.kind !== 'folder' && e.folderId === id);
+          confirmDelete.message = movedCopy(
+            inside.filter((e) => e.kind === 'page').length,
+            inside.filter((e) => e.kind === 'document').length,
+          );
+          confirmDelete.confirmLabel = 'Delete folder';
+        } else if (kind === 'document') {
+          confirmDelete.message = 'Its file goes with it, for everyone in the workspace. This can’t be undone.';
+          confirmDelete.confirmLabel = 'Delete document';
+        } else {
+          confirmDelete.message = 'Its text goes with it, for everyone in the workspace. This can’t be undone.';
+          confirmDelete.confirmLabel = 'Delete page';
+        }
+        confirmDelete.show();
+      }
+    });
+
+    // ---- rename, in the row ----
+    const renameTemplate = document.querySelector<HTMLTemplateElement>('template[data-row-rename]');
+    const rowLi = (kind: Kind, id: string) =>
+      root.querySelector<HTMLElement>(`slot[name="${CSS.escape(`${kind}-${id}`)}"]`)?.parentElement ?? null;
+
+    async function renameInRow(kind: Kind, id: string, before: string): Promise<void> {
+      const li = rowLi(kind, id);
+      const label = li?.querySelector<HTMLElement>(':scope > .link .label');
+      const menu = menuFor(kind, id);
+      const field = renameTemplate?.content.firstElementChild?.cloneNode(true) as Field | undefined;
+      if (!li || !label || !menu || !field) return;
+      rail.querySelectorAll(':scope > .firma2-pages-nav__rename').forEach((f) => f.remove());
+      field.slot = `${kind}-${id}`;
+      menu.dataset.renaming = '';
+      rail.appendChild(field);
+      await customElements.whenDefined('esa-text-field');
+      field.value = before;
+      await field.updateComplete;
+      const input = field.shadowRoot?.querySelector<HTMLInputElement>('input');
+      if (!input) return;
+      input.setAttribute('aria-label', kind === 'folder' ? 'Folder name' : kind === 'document' ? 'Document title' : 'Page title');
+
+      // The field wears the label's type, so the name does not change size
+      // as it becomes editable, and an opaque fill over the rail's tint.
+      const type = getComputedStyle(label);
+      field.style.setProperty('--color-background-field', 'var(--color-background-elevation-floating)');
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(`:host .control { font: ${type.font}; letter-spacing: ${type.letterSpacing}; }`);
+      field.shadowRoot!.adoptedStyleSheets = [...field.shadowRoot!.adoptedStyleSheets, sheet];
+
+      // The box starts just past the row's icon (or where the label would sit
+      // without one) and runs to the row's trailing edge, over the chevron; the
+      // input's own start padding is then trimmed so the typed text starts on
+      // the label's glyphs — the name does not move as it becomes editable.
+      const place = () => {
+        const liBox = li.getBoundingClientRect();
+        const linkEl = label.closest<HTMLElement>('.link')!;
+        const link = linkEl.getBoundingClientRect();
+        const glyphs = label.getBoundingClientRect().left;
+        const icon = linkEl.querySelector<HTMLElement>(':scope > .icon')?.getBoundingClientRect();
+        const start = icon ? icon.right + 2 : Math.max(link.left + 2, glyphs - 12);
+        field.style.insetInlineStart = `${start - liBox.left}px`;
+        field.style.insetInlineEnd = `${liBox.right - link.right}px`;
+        field.style.insetBlockStart = `${link.top - liBox.top + (link.height - field.offsetHeight) / 2}px`;
+        const pad = parseFloat(getComputedStyle(input).paddingInlineStart);
+        const text = input.getBoundingClientRect().left + pad;
+        input.style.paddingInlineStart = `${Math.max(2, pad + glyphs - text)}px`;
+      };
+      place();
+      // Two frames on: esa-dropdown-menu hands focus back to its trigger in its
+      // own next render, which would otherwise pull it out of the field at once.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      input.focus();
+      input.select();
+
+      let done = false;
+      const finish = (keep: boolean): void => {
+        if (done) return;
+        const value = (field.value ?? '').trim();
+        const taken = keep && kind === 'folder'
+          && readFolders().some((f) => f.id !== id && f.name.trim().toLowerCase() === value.toLowerCase());
+        if (taken) {
+          toast('A folder with this name is already in Pages.', 'error');
+          // Leaving the field gives up the clash and keeps the old name.
+          if (field.matches(':focus-within')) return;
+          keep = false;
+        }
+        done = true;
+        const hadFocus = field.matches(':focus-within');
+        field.remove();
+        delete menu.dataset.renaming;
+        if (keep && value && value !== before) {
+          if (kind === 'folder') {
+            // The rail keeps a folder open by its label, so an open folder
+            // stays open under its new name.
+            const wasOpen = rail._expanded.has(before);
+            renameFolder(id, value);
+            paint(wasOpen ? value : undefined);
+            pagesChanged();
+          } else {
+            updatePage(id, { title: value });
+            paint();
+            // The page or document being read takes the new title in its header and tab.
+            if (id === activeId) {
+              document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: { field: 'pageTitle', raw: value } }));
+            }
+          }
+        }
+        if (hadFocus) requestAnimationFrame(() => refocus(kind, id));
+      };
+      field.addEventListener('keydown', (event) => {
+        const key = (event as KeyboardEvent).key;
+        if (key === 'Enter') {
+          event.preventDefault();
+          finish(true);
+        } else if (key === 'Escape') {
+          // The rail's own Escape (close the drawer) must not fire too.
+          event.preventDefault();
+          event.stopPropagation();
+          finish(false);
+        }
+      });
+      field.addEventListener('focusout', () => {
+        // After the focus has landed, so a click elsewhere is seen as leaving.
+        requestAnimationFrame(() => {
+          if (!field.matches(':focus-within')) finish(true);
+        });
+      });
+    }
+
+    confirmDelete?.addEventListener('confirm', () => {
+      if (!target) return;
+      const { kind, id, name } = target;
+      if (kind !== 'folder' && id === activeId) {
+        // The page or document being read is gone: leave it, and Projects confirms the delete.
+        removePage(id, name);
+        location.assign(withBase('/prototypes/projects'));
+        return;
+      }
+      if (kind === 'folder') removeFolder(id);
+      else removePage(id, name, false);
+      paint();
+      pagesChanged();
+      toast(`${name} deleted.`);
+    });
+
+    // ---- Move page: pick the folder, then set the page's place in it ----
+    const move = document.querySelector<Dialog>('.firma2-pages-nav__move');
+    const moveFolder = move?.querySelector<Radio>('[data-move-folder]');
+    const moveRows = move?.querySelector<HTMLElement>('[data-move-rows]');
+    const moveLabel = move?.querySelector<HTMLElement>('[data-move-order-label]');
+    let draft: { id: string; from: string | null; folderId: string | null; order: string[] } | undefined;
+
+    const placeOf = (folderId: string | null): string[] => {
+      const tree = readTree();
+      return folderId ? tree.folders[folderId] ?? [] : tree.top;
+    };
+    const folderName = (folderId: string | null): string =>
+      readFolders().find((f) => f.id === folderId)?.name ?? PAGES_GROUP;
+
+    const paintMove = (): void => {
+      if (!draft || !moveRows || !moveLabel) return;
+      const byId = new Map(readEntries().map((e) => [e.id, e]));
+      moveLabel.textContent = `Order in ${folderName(draft.folderId)}`;
+      moveRows.replaceChildren(
+        ...draft.order.map((id) => {
+          const entry = byId.get(id);
+          const name = entry ? (entry.kind === 'folder' ? entry.name : entry.title) : id;
+          const li = document.createElement('li');
+          li.dataset.sortKey = id;
+          li.dataset.sortLabel = name;
+          const icon = document.createElement('span');
+          icon.className = 'firma2-pages-nav__order-icon';
+          icon.setAttribute('aria-hidden', 'true');
+          icon.innerHTML = iconSvg(entry?.kind === 'folder' ? 'folder' : entry?.kind === 'document' ? 'file-text' : 'file', 18) ?? '';
+          const label = document.createElement('span');
+          // The page being moved is the one row set in bold.
+          label.className = id === draft!.id ? 'typography-label-md-strong' : 'typography-body-md';
+          label.textContent = name;
+          li.append(icon, label);
+          return li;
+        }),
+      );
+    };
+
+    function openMove(id: string): void {
+      const page = findItem(id);
+      if (!move || !moveFolder || !page) return;
+      const folders = readFolders();
+      const from = folders.some((f) => f.id === page.folderId) ? page.folderId! : null;
+      draft = { id, from, folderId: from, order: placeOf(from) };
+      Promise.all(['esa-dialog', 'esa-radio-group'].map((t) => customElements.whenDefined(t))).then(() => {
+        move.heading = `Move ${page.title}`;
+        moveFolder.options = [
+          { value: TOP, label: NO_FOLDER_LABEL },
+          ...folders.map((f) => ({ value: f.id, label: f.name })),
+        ];
+        moveFolder.value = from ?? TOP;
+        paintMove();
+        move.show();
+      });
+    }
+
+    // A new folder puts the page last in it; going back to where it started
+    // puts it back where it was.
+    moveFolder?.addEventListener('change', () => {
+      if (!draft) return;
+      const folderId = moveFolder.value === TOP ? null : moveFolder.value;
+      const others = placeOf(folderId).filter((e) => e !== draft!.id);
+      draft.folderId = folderId;
+      draft.order = folderId === draft.from ? placeOf(folderId) : [...others, draft.id];
+      paintMove();
+    });
+    move?.querySelector('[data-move-sort]')?.addEventListener('sort-change', (event) => {
+      if (draft) draft.order = (event as CustomEvent<{ order: string[] }>).detail.order;
+    });
+    move?.querySelector('[data-move-save]')?.addEventListener('click', () => {
+      if (!draft) return;
+      const { id, folderId, order, from } = draft;
+      move.close();
+      const unchanged = folderId === from && order.join() === placeOf(from).join();
+      if (!unchanged) {
+        arrange(folderId, order);
+        paint(folderId ? folderName(folderId) : undefined);
+        pagesChanged();
+        toast(`${findItem(id)?.title ?? 'Page'} moved to ${folderName(folderId)}.`);
+      }
+      requestAnimationFrame(() => refocus(kindsById.get(id) ?? 'page', id));
+    });
+    move?.querySelector('[data-move-cancel]')?.addEventListener('click', () => {
+      move.close();
+      if (draft) refocus(kindsById.get(draft.id) ?? 'page', draft.id);
+    });
+
+    // ---- dragging a page in the rail ----
+    const marker = document.querySelector<HTMLElement>('[data-pages-drop]');
+    let dragId: string | undefined;
+    let landing: { folderId: string | null; beforeId: string | null } | undefined;
+
+    const hideMarker = () => {
+      landing = undefined;
+      if (marker) delete marker.dataset.show;
+    };
+    const showMarker = (rect: DOMRect, mode: 'into' | 'before' | 'after') => {
+      if (!marker) return;
+      marker.dataset.show = mode === 'into' ? 'into' : 'line';
+      const top = mode === 'into' ? rect.top : mode === 'before' ? rect.top : rect.bottom;
+      marker.style.top = `${top}px`;
+      marker.style.left = `${rect.left}px`;
+      marker.style.width = `${rect.width}px`;
+      marker.style.height = mode === 'into' ? `${rect.height}px` : '';
+    };
+    // The entry after `id` in a list, skipping the page being dragged.
+    const nextAfter = (list: string[], id: string): string | null => {
+      const rest = list.filter((e) => e !== dragId);
+      return rest[rest.indexOf(id) + 1] ?? null;
+    };
+
+    rail.addEventListener('dragstart', (event) => {
+      const link = event.composedPath().find(
+        (n): n is HTMLAnchorElement => n instanceof HTMLAnchorElement && root.contains(n),
+      );
+      const id = pageIdFromHref(link?.getAttribute('href'));
+      if (!link || !id || !event.dataTransfer) return;
+      dragId = id;
+      event.dataTransfer.effectAllowed = 'move';
+      // Dropped outside the rail it is still a link, as any link would be.
+      event.dataTransfer.setData('text/uri-list', link.href);
+      event.dataTransfer.setData('text/plain', link.href);
+      rail.dataset.firma2Dragging = '';
+    });
+
+    rail.addEventListener('dragover', (event) => {
+      if (!dragId) return;
+      const li = event.composedPath().find(
+        (n): n is HTMLLIElement => n instanceof HTMLLIElement && root.contains(n),
+      );
+      const entry = li && rowEntry(li, idsByName);
+      const link = li?.querySelector<HTMLElement>(':scope > .link');
+      const tree = readTree();
+      let into: string | undefined;
+      let rect = link?.getBoundingClientRect();
+
+      if (li && link && !entry && li.classList.contains('child')) {
+        // "No pages yet" in an empty folder: file it in that folder.
+        const parent = li.parentElement?.closest('li.item');
+        const folder = parent && rowEntry(parent, idsByName);
+        if (folder?.kind === 'folder') {
+          into = folder.id;
+          rect = parent.querySelector<HTMLElement>(':scope > .link')?.getBoundingClientRect();
+        }
+      }
+      if (!rect || (!entry && !into)) return hideMarker();
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+
+      const lower = event.clientY > rect.top + rect.height / 2;
+      if (entry?.kind === 'folder') {
+        // The top sliver of a folder row drops beside it; the rest files in it.
+        if (event.clientY < rect.top + rect.height * 0.3) {
+          landing = { folderId: null, beforeId: entry.id };
+          return showMarker(rect, 'before');
+        }
+        into = entry.id;
+      }
+      if (into) {
+        landing = { folderId: into, beforeId: null };
+        return showMarker(rect, 'into');
+      }
+      // A page row: before or after it, in the same place it sits.
+      const pageId = entry!.id;
+      const folderId = li!.classList.contains('child')
+        ? Object.keys(tree.folders).find((f) => tree.folders[f].includes(pageId)) ?? null
+        : null;
+      const list = folderId ? tree.folders[folderId] : tree.top;
+      landing = { folderId, beforeId: lower ? nextAfter(list, pageId) : pageId };
+      showMarker(rect, lower ? 'after' : 'before');
+    });
+
+    rail.addEventListener('dragleave', (event) => {
+      const to = (event as DragEvent).relatedTarget as Node | null;
+      if (!to || !rail.contains(to)) hideMarker();
+    });
+
+    rail.addEventListener('drop', (event) => {
+      if (!dragId) return;
+      event.preventDefault();
+      const id = dragId;
+      const where = landing;
+      hideMarker();
+      if (!where || where.beforeId === id) return;
+      movePage(id, where.folderId, where.beforeId);
+      paint(where.folderId ? folderName(where.folderId) : undefined);
+      pagesChanged();
+    });
+
+    rail.addEventListener('dragend', () => {
+      dragId = undefined;
+      hideMarker();
+      delete rail.dataset.firma2Dragging;
+    });
+
+    const justAdded = takeJustAdded();
+    paint(justAdded?.kind === 'folder' ? justAdded.label : undefined);
+    // The page view renames and moves its page in place; the rail follows.
+    document.addEventListener('firma2:pages-changed', () => paint());
+
+    if (justAdded) toast(`${justAdded.label} ${justAdded.kind === 'deleted' ? 'deleted' : 'added'}.`);
+
+    // ---- the + on the Pages heading ----
+    const template = document.querySelector<HTMLTemplateElement>('template[data-pages-add]');
+    const menu = template?.content.firstElementChild?.cloneNode(true) as (HTMLElement & { items: unknown }) | undefined;
+    if (!menu) return;
+    rail.appendChild(menu);
+    // Assigned only after define, or it shadows the lego's reactive accessor.
+    customElements.whenDefined('esa-dropdown-menu').then(() => {
+      menu.items = ADD_MENU;
+    });
+    menu.addEventListener('menu-action', (event) => {
+      const action = (event as CustomEvent<string>).detail;
+      if (ADD_ROUTES[action]) location.assign(addRoute(action));
+    });
+
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(HEADING_CSS);
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+    const place = () => {
+      placeSlot(root);
+      placeRowSlots(root, idsByName);
+    };
+    rail.updateComplete?.then(place);
+    new MutationObserver(place).observe(root, { childList: true, subtree: true, characterData: true });
+  }
+
+  customElements.whenDefined('esa-sidebar-nav').then(() => requestAnimationFrame(mount));
+</script>
+
+<style>
+  /* bcn-lego-checked: no esa- lego draws a drop position (esa-file-upload's
+     drop zone is a whole-surface target, not a line between rows), and
+     esa-sidebar-nav has no drag support; Beacon is not cloned here. The
+     marker is the one piece drawn here — tokens only — and goes when the rail
+     reorders natively (same /request-lego as the row actions). */
+  .firma2-pages-nav__drop {
+    display: none;
+    position: fixed;
+    z-index: var(--z-dropdown, 50);
+    pointer-events: none;
+    height: 2px;
+    margin-block-start: -1px;
+    border-radius: var(--radius-full, 999px);
+    background: var(--color-content-brand);
+  }
+  .firma2-pages-nav__drop[data-show='line'] { display: block; }
+  .firma2-pages-nav__drop[data-show='into'] {
+    display: block;
+    margin-block-start: 0;
+    background: transparent;
+    border: 2px solid var(--color-content-brand);
+    border-radius: var(--radius-md, 0.5rem);
+  }
+
+  .firma2-pages-nav__order {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-pages-nav__order :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-100);
+    border-block-end: 1px solid var(--color-border-default-subtle);
+  }
+  .firma2-pages-nav__order :global(li:last-child) { border-block-end: 0; }
+  .firma2-pages-nav__order :global(.firma2-pages-nav__order-icon) {
+    display: inline-flex;
+    flex: none;
+    color: var(--color-content-default-secondary);
+  }
+</style>

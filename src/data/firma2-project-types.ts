@@ -1,42 +1,35 @@
-// Project types — a tenant's difference, expressed as data.
+// Project types — what kind of work a project is, and so how its page is
+// built. ONE per project (settled 2026-10-03: option 2 of "where does the
+// page layout live once work types become tags" — a single field, because a
+// project can carry many tags and "which tag builds the page?" has no good
+// answer).
 //
-// WHERE THIS CAME FROM. ProjectFirma2's hackathon team 3 (Mission 3,
-// "Customizations") answered "how does 2.0 flex without forking?" with one
-// primitive: a PROJECT TYPE. A type says what its projects track (the
-// tenant's own fields, and where on the page each one sits) and how their
-// page is built (which sections, in what order). Their closing sentence:
-// "a tenant's project pages are a data shape, not a fork."
+// These were the Work type classifications. They moved out because
+// classifications are goals with KPIs, and a kind of work is not a goal.
 //
-// TWO TIERS, settled by the team and kept here:
+// WHERE THE PAGE GRAMMAR CAME FROM. ProjectFirma2's hackathon team 3 (Mission
+// 3, "Customizations") answered "how does 2.0 flex without forking?" with one
+// primitive: a type says what its projects track (the tenant's own fields, and
+// where on the page each one sits) and how their page is built (which
+// sections, in what order). "A tenant's project pages are a data shape, not a
+// fork." Two tiers:
 //
-//   tenant brand    one colour, every page               (firma2-tenant-brand)
-//     └ project type  fields + section layout             (this module)
-//
-// No per-project tier: a project inherits its type's page entirely. One rule,
-// one screen, one mental model.
+//   tenant brand    one colour, every page             (firma2-tenant-brand)
+//     └ project type  fields + section layout          (this module)
 //
 // THE SECTION GRAMMAR IS A DELTA, as on the team's branch: a registry in code
 // says what sections exist and their default order; a type records only what
 // it changed — `{ order, hidden }`. A section added to the registry next
-// release reaches every type somebody already configured, and a type that
-// never opened the studio needs no row at all.
+// release reaches every type somebody already configured.
 //
-// REFINED FROM THE HACKATHON: field DEFINITIONS are tenant-wide and
-// REFERENCED by types, never copied — the same rule this spoke's measures
-// apply to subcategory schemas (docs/measure-model.md). The hackathon split
-// defining a field (one screen) from placing it (another); here both happen
-// on the type, with "add an existing field" and "define a new one" as two
-// different acts, exactly as the measure sheet separates reusing a list from
-// inventing one.
-//
-// IN THE MOCK, A PROJECT'S TYPE FOLLOWS ITS PROGRAM — this portfolio's
-// programs happen to name kinds of work. That is a convenience of the
-// fixture, not a claim that types and programs are the same thing.
+// Field DEFINITIONS are tenant-wide and REFERENCED by types, never copied —
+// the same rule this spoke's measures apply to subcategory schemas
+// (docs/measure-model.md).
 //
 // INVENTED CONTENT, deterministic: values come from a hash of the project
 // name, never from randomness.
 
-import type { Project } from './firma2-projects';
+import type { Project, ProjectTypeName } from './firma2-projects';
 
 // ---------------------------------------------------------------------------
 // Sections — the registry
@@ -59,15 +52,15 @@ export const PAGE_SECTIONS: PageSection[] = [
   { key: 'map', label: 'Work areas map', pinnedLast: true },
 ];
 
-/** What a type changed about the registry. Absent keys mean "no opinion". */
+/** What a classification changed about the registry. Absent keys mean "no opinion". */
 export interface SectionsDelta {
   order?: string[];
   hidden?: string[];
 }
 
 /**
- * Fold a delta over the registry: the type's order first (unknown keys
- * dropped, so a retired section self-heals), then anything the type never
+ * Fold a delta over the registry: the classification's order first (unknown keys
+ * dropped, so a retired section self-heals), then anything it never
  * placed in registry order, then the pinned section last.
  */
 export const resolveSections = (delta: SectionsDelta = {}): { section: PageSection; visible: boolean }[] => {
@@ -95,7 +88,7 @@ export const FIELD_KINDS: { id: FieldKind; name: string; note: string }[] = [
   {
     id: 'text',
     name: 'Text',
-    note: 'Free text. Nothing can be totalled or filtered by it — use it for references, never for categories.',
+    note: 'Free text. You can’t total or filter by it — use it for references, never for categories.',
   },
 ];
 
@@ -155,30 +148,32 @@ export const FIELD_DEFINITIONS: FieldDefinition[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Types
+// Project types
 // ---------------------------------------------------------------------------
 
 export type FieldPlacement = 'rail' | 'details';
 
-export interface TypeField {
+export interface ProjectTypeField {
   fieldId: string;
   placement: FieldPlacement;
 }
 
 export interface ProjectType {
   slug: string;
-  name: string;
-  /** The swatch that tells two types apart at a glance. */
+  name: ProjectTypeName;
+  /** The swatch that tells two types apart at a glance — map colours among them. */
   color: string;
   description: string;
-  fields: TypeField[];
+  /** Asked of every project of this type. */
+  fields: ProjectTypeField[];
+  /** The page of every project of this type. */
   sections: SectionsDelta;
 }
 
 export const PROJECT_TYPES: ProjectType[] = [
   {
     slug: 'riparian-revegetation',
-    name: 'Riparian Revegetation',
+    name: 'Riparian revegetation',
     color: '#3f9142',
     description: 'Streamside planting and the fencing that keeps it alive.',
     fields: [
@@ -190,7 +185,7 @@ export const PROJECT_TYPES: ProjectType[] = [
   },
   {
     slug: 'fish-passage',
-    name: 'Fish Passage',
+    name: 'Fish passage',
     color: '#2d6fb0',
     description: 'Removing or fixing the barriers between fish and their habitat.',
     fields: [
@@ -204,7 +199,7 @@ export const PROJECT_TYPES: ProjectType[] = [
   },
   {
     slug: 'forest-health-and-fuels',
-    name: 'Forest Health & Fuels',
+    name: 'Forest health & fuels',
     color: '#b5621f',
     description: 'Thinning, burning and grazing to make forests less flammable.',
     fields: [
@@ -212,12 +207,12 @@ export const PROJECT_TYPES: ProjectType[] = [
       { fieldId: 'near-homes', placement: 'rail' },
       { fieldId: 'burn-window', placement: 'details' },
     ],
-    // This program does not publish spend.
+    // This work type does not publish spend.
     sections: { hidden: ['expenditures'] },
   },
   {
     slug: 'meadow-and-wetland-restoration',
-    name: 'Meadow & Wetland Restoration',
+    name: 'Meadow & wetland restoration',
     color: '#5b7f2a',
     description: 'Raising water tables and rewetting meadows and marshes.',
     fields: [
@@ -229,7 +224,7 @@ export const PROJECT_TYPES: ProjectType[] = [
   },
   {
     slug: 'aquatic-habitat-restoration',
-    name: 'Aquatic Habitat Restoration',
+    name: 'Aquatic habitat restoration',
     color: '#167a7a',
     description: 'Wood, gravel and side channels that give fish somewhere to live.',
     fields: [
@@ -241,7 +236,7 @@ export const PROJECT_TYPES: ProjectType[] = [
   },
   {
     slug: 'stormwater-and-water-quality',
-    name: 'Stormwater & Water Quality',
+    name: 'Stormwater & water quality',
     color: '#6a5aa8',
     description: 'Catching and cleaning runoff before it reaches a stream.',
     fields: [
@@ -254,9 +249,14 @@ export const PROJECT_TYPES: ProjectType[] = [
 
 export const getProjectType = (slug: string): ProjectType | undefined => PROJECT_TYPES.find((t) => t.slug === slug);
 
-/** The fixture's rule: a project's type is the one named for its program. */
-export const typeForProject = (project: Pick<Project, 'program'>): ProjectType | undefined =>
-  PROJECT_TYPES.find((t) => t.name === project.program);
+export const projectTypeNamed = (name: string): ProjectType | undefined => PROJECT_TYPES.find((t) => t.name === name);
+
+/** The type that builds this project's page. */
+export const projectTypeFor = (project: Pick<Project, 'projectType'>): ProjectType => {
+  const type = projectTypeNamed(project.projectType);
+  if (!type) throw new Error(`Unknown project type "${project.projectType}"`);
+  return type;
+};
 
 // ---------------------------------------------------------------------------
 // Values
@@ -305,22 +305,21 @@ export interface FieldRow {
 }
 
 /**
- * The rows a type puts in one place on a project's page, in the type's order.
+ * The rows a project type puts in one place on a project's page, in its order.
  * Definitions are passed in so the build (seeds) and the browser (seeds plus
  * fields defined locally) resolve through the same function.
  */
 export const fieldRows = (
-  type: ProjectType,
+  projectType: ProjectType,
   project: Pick<Project, 'projectName' | 'implementationStartYear'>,
   definitions: FieldDefinition[],
   placement: FieldPlacement,
 ): FieldRow[] =>
-  type.fields
+  projectType.fields
     .filter((f) => f.placement === placement)
     .map((f) => definitions.find((d) => d.id === f.fieldId))
     .filter((d): d is FieldDefinition => !!d)
     .map((d) => ({ label: d.label, value: fieldValue(project, d), helpText: d.helpText }));
-
 // ---------------------------------------------------------------------------
 // The tenant
 // ---------------------------------------------------------------------------

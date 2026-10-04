@@ -1,0 +1,184 @@
+---
+// firma2-classification-kpi-editor — which performance measures track a
+// classification, and the goal target for each. A classification is a goal;
+// these are its KPIs (user, 2026-10-03), and the Classifications board reads
+// progress against exactly what is set here.
+//
+// LINKING IS FROM THE CATALOG, NEVER A NEW MEASURE. A KPI is a measure every
+// project reports the same way; defining one is Performance measures' job, so
+// "Add a KPI" offers the catalog and nothing else.
+//
+// A TARGET IS TWO FACTS, a value in the measure's own unit and the year it is
+// due, saved together when the reader leaves either. Clearing the value clears
+// the target — the KPI then tracks without a goal line, which the board says.
+// Unlinking a KPI takes its target with it.
+//
+// Rows are built in the browser from the record as this browser sees it (a
+// classification added here has no build-time KPIs), cloned from a template
+// so every row is the same legos the server would have rendered.
+//
+// bcn-lego-checked: esa-text-field for the two numbers, esa-select to add,
+// esa-button to unlink, esa-empty-state for none; firma2-rail-section is the
+// section. The list is stack/repel/cluster primitives. Beacon is not cloned on
+// this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { measures } from '../../data/firma2-performance-measures';
+import type { Classification } from '../../data/firma2-classifications';
+
+interface Props {
+  /** The seeded classification; omitted on a draft route. */
+  classification?: Classification;
+}
+
+const { classification } = Astro.props;
+const catalog = measures
+  .filter((m) => m.status !== 'Retired' && m.name.trim())
+  .map((m) => ({ slug: m.slug, name: m.name, unit: m.unit ?? '', classifications: m.classifications }));
+const seededKpis = classification ? catalog.filter((m) => m.classifications.includes(classification.name)).map((m) => m.slug) : [];
+---
+<Firma2RailSection title="Performance measures">
+  <div
+    class="firma2-kpi-editor stack"
+    data-gap="lg"
+    data-slug={classification?.slug}
+    data-catalog={JSON.stringify(catalog.map(({ classifications: _c, ...m }) => m))}
+    data-seeded-kpis={JSON.stringify(seededKpis)}
+    data-seeded-targets={JSON.stringify(classification?.targets ?? [])}
+  >
+    <ul class="firma2-kpi-editor__rows stack" data-gap="lg" data-rows></ul>
+    <div data-empty hidden>
+      <EsaEmptyState size="sm" title="No performance measures yet" description="Add one below to track progress here." />
+    </div>
+    <esa-select label="Add a performance measure" size="md" placeholder="Choose a measure" data-add></esa-select>
+    <template data-row>
+      <li class="firma2-kpi-editor__row stack" data-gap="sm">
+        <div class="repel" data-gap="sm">
+          <div class="stack" data-gap="3xs">
+            <span class="typography-label-md-strong" data-name></span>
+            <span class="typography-body-sm firma2-kpi-editor__meta" data-unit></span>
+          </div>
+          <EsaButton variant="chrome" size="sm" data-unlink>Stop tracking</EsaButton>
+        </div>
+        <div class="cluster" data-gap="md">
+          <esa-text-field class="firma2-kpi-editor__value" label="Goal target" size="md" inputmode="decimal" data-value></esa-text-field>
+          <esa-text-field class="firma2-kpi-editor__year" label="Due by" size="md" inputmode="numeric" placeholder="2030" data-year></esa-text-field>
+        </div>
+      </li>
+    </template>
+  </div>
+
+</Firma2RailSection>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import { kpiSlugs, linkKpi, setTarget, targetsFor, unlinkKpi } from '../../lib/taxonomy-edits';
+  import { recordSlug } from '../../lib/taxonomy-record';
+  import type { GoalTarget } from '../../data/firma2-classifications';
+
+  type Field = HTMLElement & { value: string; errorText: string; options?: unknown; helpText?: string };
+  interface Measure { slug: string; name: string; unit: string }
+
+  document.querySelectorAll<HTMLElement>('.firma2-kpi-editor').forEach((root) => {
+    const slug = recordSlug(root);
+    if (!slug) return;
+    const catalog: Measure[] = JSON.parse(root.dataset.catalog ?? '[]');
+    const seededKpis: string[] = JSON.parse(root.dataset.seededKpis ?? '[]');
+    const seededTargets: GoalTarget[] = JSON.parse(root.dataset.seededTargets ?? '[]');
+    const rows = root.querySelector<HTMLElement>('[data-rows]')!;
+    const empty = root.querySelector<HTMLElement>('[data-empty]')!;
+    const add = root.querySelector<Field>('[data-add]')!;
+    const template = root.querySelector<HTMLTemplateElement>('template[data-row]')!;
+    const thisYear = new Date().getFullYear();
+
+    const unitLabel = (unit: string) => (unit === 'each' ? 'Counted each' : unit === 'percent' ? 'Percent' : `In ${unit}`);
+
+    const paint = () => {
+      const linked = kpiSlugs(slug, seededKpis);
+      const targets = targetsFor(slug, seededTargets);
+      rows.replaceChildren(
+        ...linked.map((ms) => {
+          const m = catalog.find((x) => x.slug === ms);
+          const li = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+          li.querySelector('[data-name]')!.textContent = m?.name ?? ms;
+          li.querySelector('[data-unit]')!.textContent = m ? unitLabel(m.unit) : '';
+          const value = li.querySelector<Field>('[data-value]')!;
+          const year = li.querySelector<Field>('[data-year]')!;
+          const t = targets.find((x) => x.measure === ms);
+          customElements.whenDefined('esa-text-field').then(() => {
+            value.value = t ? String(t.value) : '';
+            year.value = t ? String(t.year) : '';
+          });
+          const save = () => {
+            value.errorText = '';
+            year.errorText = '';
+            const raw = (value.value ?? '').replace(/,/g, '').trim();
+            if (!raw) {
+              setTarget(slug, seededTargets, ms, null);
+              year.value = '';
+              return;
+            }
+            const v = Number(raw);
+            if (!Number.isFinite(v) || v <= 0) {
+              value.errorText = 'Enter a number above zero.';
+              return;
+            }
+            const y = Number((year.value ?? '').trim() || thisYear + 5);
+            if (!Number.isInteger(y) || y < thisYear || y > thisYear + 50) {
+              year.errorText = `Enter a year from ${thisYear}.`;
+              return;
+            }
+            if (!(year.value ?? '').trim()) year.value = String(y);
+            setTarget(slug, seededTargets, ms, { value: v, year: y });
+          };
+          value.addEventListener('change', save);
+          year.addEventListener('change', save);
+          li.querySelector('[data-unlink]')?.addEventListener('click', () => {
+            unlinkKpi(slug, ms);
+            paint();
+          });
+          return li;
+        }),
+      );
+      empty.hidden = linked.length > 0;
+      customElements.whenDefined('esa-select').then(() => {
+        add.options = catalog.filter((m) => !linked.includes(m.slug)).map((m) => ({ value: m.slug, label: m.name }));
+        add.value = '';
+      });
+    };
+
+    add.addEventListener('change', () => {
+      if (!add.value) return;
+      linkKpi(slug, add.value);
+      paint();
+    });
+    paint();
+  });
+</script>
+
+<style>
+  .firma2-kpi-editor__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-kpi-editor__row + .firma2-kpi-editor__row {
+    padding-block-start: var(--spacing-400, 1rem);
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #e8e8e8);
+  }
+
+  .firma2-kpi-editor__meta {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-kpi-editor__value {
+    flex: 1 1 12rem;
+  }
+
+  .firma2-kpi-editor__year {
+    flex: 0 1 8rem;
+  }
+</style>

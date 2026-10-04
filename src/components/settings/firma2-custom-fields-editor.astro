@@ -1,0 +1,313 @@
+---
+// firma2-custom-fields-editor — Workspace settings › Custom fields: every
+// extra fact this workspace records about a project, defined once and placed
+// by each project type. Hackathon team 3's field registry, given the editor
+// it lacked — the studio could only ADD a field, never change one.
+//
+// ONE REGISTRY. This screen, the project type studio and the public pages
+// all read allFields() (src/lib/project-type-draft.ts), so renaming "Barrier type" here
+// renames it in the studio's list and on every public page that shows it.
+//
+// WHAT A CHANGE COSTS IS SAID WHERE IT IS MADE (product brief §2):
+//   Used by — the project types that place it and the projects that answer
+//   it, on the row, because that is what decides whether a change is safe.
+//   Kind is fixed once a project type uses the field: turning a choice into
+//   a number would orphan every answer already given.
+//   Delete exists only for a field nothing uses. One in use is taken off its
+//   project types first, in the studio — the place that shows what each loses.
+//
+// SAVED AS YOU GO. Editing a field saves on every change and the sheet's
+// footer says Done; defining a new one is an act, so it has Add field.
+//
+// bcn-lego-checked: esa-side-dialog, esa-text-field, esa-select,
+// esa-input-tag, esa-textarea, esa-button, esa-confirm-dialog; the table is
+// the firma2-settings-table style (no table lego). Beacon is not cloned here.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { PROJECT_TYPES, FIELD_KINDS } from '../../data/firma2-project-types';
+import { UNITS } from '../../data/firma2-performance-measures';
+import { projects } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+const config = {
+  kinds: FIELD_KINDS.map((k) => ({ value: k.id, label: k.name, note: k.note })),
+  units: UNITS,
+  // Fields are asked of every project of the types that place them.
+  types: PROJECT_TYPES.map((t) => ({
+    slug: t.slug,
+    name: t.name,
+    href: withBase(`/prototypes/workspace-settings/project-types/${t.slug}`),
+    projects: projects.filter((p) => p.projectType === t.name).length,
+  })),
+};
+---
+<div class="firma2-custom-fields stack" data-gap="lg" data-config={JSON.stringify(config)}>
+  <table class="firma2-custom-fields__table" aria-label="Custom fields">
+    <thead>
+      <tr>
+        <th scope="col">Field</th>
+        <th scope="col">Kind</th>
+        <th scope="col">Used by</th>
+        <th scope="col"><span class="visually-hidden">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody data-rows></tbody>
+  </table>
+
+  <template data-tpl-edit><EsaButton variant="ghost" size="sm">Edit</EsaButton></template>
+
+  <esa-side-dialog class="firma2-custom-fields__sheet" heading="Edit field" size="md" position="right">
+    <div class="stack" data-gap="lg">
+      <p class="typography-body-md" data-usage></p>
+      <esa-text-field data-label label="Name" size="md" placeholder="e.g. Barrier type" required></esa-text-field>
+      <esa-select data-kind label="Kind" size="md"></esa-select>
+      <esa-input-tag data-options label="Choices" hint="Press Enter after each choice." hidden></esa-input-tag>
+      <esa-select data-unit label="Unit" size="md" hidden></esa-select>
+      <esa-textarea data-help label="Help text" rows="2" placeholder="Shown to whoever fills this in."></esa-textarea>
+    </div>
+    <div slot="footer" class="firma2-custom-fields__footer repel">
+      <span>
+        <span data-delete-wrap><EsaButton variant="danger" appearance="soft" size="md" data-delete>Delete field</EsaButton></span>
+      </span>
+      <span class="cluster" data-gap="xs">
+        <span data-add-wrap><EsaButton variant="primary" size="md" data-add>Add field</EsaButton></span>
+        <span data-done-wrap><EsaButton variant="secondary" size="md" data-done>Done</EsaButton></span>
+        <span data-cancel-wrap><EsaButton variant="ghost" size="md" data-cancel>Cancel</EsaButton></span>
+      </span>
+    </div>
+  </esa-side-dialog>
+
+  <esa-confirm-dialog class="firma2-custom-fields__confirm" variant="danger" heading="Delete this field?" confirm-label="Delete field"></esa-confirm-dialog>
+</div>
+
+<style>
+  .firma2-custom-fields [hidden] {
+    display: none !important;
+  }
+
+  .firma2-custom-fields__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-custom-fields__table th,
+  .firma2-custom-fields__table :global(td) {
+    padding: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    vertical-align: top;
+    font-weight: normal;
+  }
+
+  .firma2-custom-fields__table :global(tr > :first-child) {
+    padding-inline-start: 0;
+  }
+
+  .firma2-custom-fields__table :global(tr > :last-child) {
+    padding-inline-end: 0;
+    text-align: end;
+  }
+
+  .firma2-custom-fields__table thead th {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-custom-fields :global(.firma2-custom-fields__meta) {
+    display: block;
+    margin-block-start: var(--spacing-100);
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-custom-fields :global(.firma2-custom-fields__types) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-100) var(--spacing-300);
+  }
+
+  .firma2-custom-fields__footer {
+    inline-size: 100%;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-side-dialog';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-input-tag';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-confirm-dialog';
+  import type { FieldDefinition, FieldKind } from '../../data/firma2-project-types';
+  import { allFields, deleteField, isProjectTypeKey, nextLocalFieldId, updateField, withProjectTypeDraft } from '../../lib/project-type-draft';
+  import { fixSideDialog } from '../../lib/side-dialog-fix';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string; helpText?: string; disabled?: boolean; heading?: string; message?: string; show?: () => void; close?: () => void };
+  interface Config {
+    kinds: { value: FieldKind; label: string; note: string }[];
+    units: string[];
+    types: { slug: string; name: string; href: string; projects: number }[];
+  }
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-custom-fields').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const kindName = (k: FieldKind) => config.kinds.find((x) => x.value === k)?.label ?? k;
+
+    /** The project types that place a field, read through each draft so studio edits count. */
+    const usersOf = (id: string) => config.types.filter((t) => withProjectTypeDraft(t.slug)?.fields.some((f) => f.fieldId === id));
+    const answeredBy = (id: string) => usersOf(id).reduce((n, t) => n + t.projects, 0);
+
+    const describe = (f: FieldDefinition) =>
+      f.kind === 'choice' ? `${kindName(f.kind)} · ${(f.options ?? []).filter((o) => o !== 'Unspecified').length} choices` : f.kind === 'number' && f.unit ? `${kindName(f.kind)} · ${f.unit}` : kindName(f.kind);
+
+    // ---- the table ------------------------------------------------------------------
+    const paint = () => {
+      $('[data-rows]').replaceChildren(
+        ...allFields().map((f) => {
+          const users = usersOf(f.id);
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><span class="typography-body-md">${esc(f.label)}</span>${f.helpText ? `<span class="firma2-custom-fields__meta typography-body-sm">${esc(f.helpText)}</span>` : ''}</td>
+            <td class="typography-body-md">${esc(describe(f))}</td>
+            <td>${
+              users.length
+                ? `<span class="firma2-custom-fields__types typography-body-md">${users.map((t) => `<a href="${t.href}">${esc(t.name)}</a>`).join('')}</span><span class="firma2-custom-fields__meta typography-body-sm">${answeredBy(f.id)} projects answer it</span>`
+                : '<span class="typography-body-md firma2-custom-fields__meta">Not used yet</span>'
+            }</td>`;
+          const td = document.createElement('td');
+          const edit = ($<HTMLTemplateElement>('[data-tpl-edit]').content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+          edit.querySelector('button')?.setAttribute('aria-label', `Edit ${f.label}`);
+          edit.addEventListener('click', () => open(f.id));
+          td.append(edit);
+          tr.append(td);
+          return tr;
+        }),
+      );
+    };
+
+    // ---- the sheet ------------------------------------------------------------------
+    const sheet = $<Control>('.firma2-custom-fields__sheet');
+    void fixSideDialog(sheet as HTMLElement & { show: () => void; close: () => void });
+    const label = $<Control>('[data-label]');
+    const kind = $<Control>('[data-kind]');
+    const options = $<Control>('[data-options]');
+    const unit = $<Control>('[data-unit]');
+    const help = $<Control>('[data-help]');
+
+    let draft: FieldDefinition;
+    let editingId: string | null = null;
+
+    const commit = () => {
+      if (editingId) {
+        updateField(draft);
+        paint();
+      }
+    };
+
+    const syncKind = () => {
+      const k = String(kind.value ?? 'choice') as FieldKind;
+      options.hidden = k !== 'choice';
+      unit.hidden = k !== 'number';
+      const used = editingId ? usersOf(editingId).length > 0 : false;
+      kind.disabled = used;
+      kind.helpText = used
+        ? `Fixed while a project type uses it: changing a ${kindName(k).toLowerCase()} field into another kind would orphan the answers projects have given.`
+        : config.kinds.find((x) => x.value === k)?.note ?? '';
+    };
+
+    const open = (id: string | null) => {
+      editingId = id;
+      draft = id ? { ...allFields().find((f) => f.id === id)! } : { id: '', label: '', kind: 'choice', options: [] };
+      sheet.heading = id ? 'Edit field' : 'New field';
+      const users = id ? usersOf(id) : [];
+      $('[data-usage]').textContent = id
+        ? users.length
+          ? `On ${users.map((t) => t.name).join(', ')}: ${answeredBy(id)} projects answer it, plus any added under them later.`
+          : 'No project type uses this field yet. Add it from a project type’s page.'
+        : 'Defined once for the workspace. Each project type then chooses whether to ask it.';
+      $('[data-add-wrap]').hidden = Boolean(id);
+      $('[data-cancel-wrap]').hidden = Boolean(id);
+      $('[data-done-wrap]').hidden = !id;
+      // Delete only for a field nothing uses; the studio is where a project type gives one up.
+      $('[data-delete-wrap]').hidden = !id || users.length > 0;
+      void Promise.all(['esa-select', 'esa-text-field', 'esa-input-tag', 'esa-textarea'].map((t) => customElements.whenDefined(t))).then(() => {
+        kind.options = config.kinds.map(({ value, label: l }) => ({ value, label: l }));
+        unit.options = config.units.map((u) => ({ value: u, label: u }));
+        label.value = draft.label;
+        label.errorText = '';
+        kind.value = draft.kind;
+        options.value = (draft.options ?? []).filter((o) => o !== 'Unspecified');
+        options.errorText = '';
+        unit.value = draft.unit ?? '';
+        help.value = draft.helpText ?? '';
+        syncKind();
+        sheet.show?.();
+      });
+    };
+
+    label.addEventListener('change', () => {
+      const v = String(label.value ?? '').trim();
+      label.errorText = v ? '' : 'Name the field.';
+      if (!v) return;
+      draft = { ...draft, label: v };
+      commit();
+    });
+    kind.addEventListener('change', () => {
+      draft = { ...draft, kind: String(kind.value ?? 'choice') as FieldKind };
+      syncKind();
+      commit();
+    });
+    options.addEventListener('change', () => {
+      const list = (Array.isArray(options.value) ? options.value : []).map(String).filter(Boolean);
+      options.errorText = list.length < 2 ? 'A choice field needs at least two choices.' : '';
+      if (options.errorText && editingId) return;
+      draft = { ...draft, options: list };
+      commit();
+    });
+    unit.addEventListener('change', () => {
+      draft = { ...draft, unit: String(unit.value ?? '') || undefined };
+      commit();
+    });
+    help.addEventListener('change', () => {
+      draft = { ...draft, helpText: String(help.value ?? '').trim() || undefined };
+      commit();
+    });
+
+    $('[data-add]').addEventListener('click', () => {
+      const name = String(label.value ?? '').trim();
+      const list = (Array.isArray(options.value) ? options.value : []).map(String).filter(Boolean);
+      label.errorText = name ? '' : 'Name the field.';
+      options.errorText = draft.kind === 'choice' && list.length < 2 ? 'A choice field needs at least two choices.' : '';
+      if (!name || options.errorText) return;
+      updateField({
+        ...draft,
+        id: nextLocalFieldId(name),
+        label: name,
+        options: draft.kind === 'choice' ? list : undefined,
+        unit: draft.kind === 'number' ? draft.unit : undefined,
+      });
+      paint();
+      sheet.close?.();
+    });
+    $('[data-done]').addEventListener('click', () => sheet.close?.());
+    $('[data-cancel]').addEventListener('click', () => sheet.close?.());
+
+    const confirm = $<Control>('.firma2-custom-fields__confirm');
+    $('[data-delete]').addEventListener('click', () => {
+      confirm.message = `“${draft.label}” leaves the workspace. No project type uses it, so no project loses an answer.`;
+      confirm.show?.();
+    });
+    confirm.addEventListener('resolved', (e) => {
+      if (!(e as CustomEvent<{ confirmed: boolean }>).detail.confirmed || !editingId) return;
+      deleteField(editingId);
+      paint();
+      sheet.close?.();
+    });
+
+    document.querySelectorAll('[data-new-field]').forEach((b) => b.addEventListener('click', () => open(null)));
+    window.addEventListener('storage', (event) => {
+      if (isProjectTypeKey(event.key)) paint();
+    });
+    paint();
+  });
+</script>

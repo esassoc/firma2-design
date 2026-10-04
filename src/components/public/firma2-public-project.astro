@@ -1,6 +1,6 @@
 ---
-// firma2-public-project — a project's public page, built by its project type
-// and worn in the tenant's brand. Ported from ProjectFirma2 hackathon team 3.
+// firma2-public-project — a project's public page, built by its project
+// type and worn in the tenant's brand. Ported from ProjectFirma2 hackathon team 3.
 //
 // WHO READS THIS: the brief's hardest reader — the public or a funder,
 // arrived from a link with no account, no task and no vocabulary. Their first
@@ -8,10 +8,11 @@
 // name sits above the project's, and the page states facts rather than
 // offering edits.
 //
-// THE TYPE BUILDS THE PAGE. Which sections appear, in what order, and which
-// of the tenant's own fields sit in the rail or under Project details all
-// come from the project's type (src/data/firma2-project-types.ts). The
-// sections render once at build; the script folds the type's current delta
+// THE PROJECT TYPE BUILDS THE PAGE. Which sections appear, in what
+// order, and which of the tenant's own fields sit in the rail or under Project
+// details all come from the project's type
+// (src/data/firma2-project-types.ts). The sections render once at build;
+// the script folds its current delta
 // over them — the same resolver the studio's preview runs, because the
 // preview IS this page, in a frame.
 //
@@ -36,7 +37,7 @@ import {
   TENANT_NAME,
   fieldRows,
   resolveSections,
-  typeForProject,
+  projectTypeFor,
 } from '../../data/firma2-project-types';
 import type { FieldRow } from '../../data/firma2-project-types';
 import { currencyFormatter } from '../../lib/format';
@@ -47,12 +48,12 @@ interface Props {
 
 const { detail } = Astro.props;
 const { project } = detail;
-const type = typeForProject(project);
+const projectType = projectTypeFor(project);
 const years = `${project.implementationStartYear}–${project.completionYear}`;
 const fmt = (n: number) => n.toLocaleString('en-US');
 
 const rows = (placement: 'rail' | 'details'): FieldRow[] =>
-  type ? fieldRows(type, project, FIELD_DEFINITIONS, placement) : [];
+  fieldRows(projectType, project, FIELD_DEFINITIONS, placement);
 
 /** One <div><dt><dd></div> per row — the markup the script rebuilds, identically. */
 const rowsHtml = (list: FieldRow[]) =>
@@ -64,7 +65,7 @@ const rowsHtml = (list: FieldRow[]) =>
     .join('');
 
 // Build-time resolution, so the page is right before the script runs.
-const resolved = resolveSections(type?.sections);
+const resolved = resolveSections(projectType.sections);
 const orderIndex = new Map(resolved.map((r, i) => [r.section.key, i]));
 const hiddenAtBuild = new Set(resolved.filter((r) => !r.visible).map((r) => r.section.key));
 const label = (key: string) => PAGE_SECTIONS.find((s) => s.key === key)?.label ?? key;
@@ -76,16 +77,16 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
      this machine. -->
 <article
   class="firma2-public-project"
-  data-type-slug={type?.slug ?? ''}
+  data-project-type-slug={projectType.slug}
   data-project={JSON.stringify({ projectName: project.projectName, implementationStartYear: project.implementationStartYear })}
 >
   <header class="firma2-public-project__hero">
     <div class="firma2-public-project__hero-inner stack" data-gap="sm">
       <p class="firma2-public-project__tenant typography-label-md-strong">{TENANT_NAME}</p>
-      {type && (
-        <p class="firma2-public-project__type cluster typography-label-md" data-gap="xs">
-          <span class="firma2-public-project__swatch" style={`background:${type.color}`} aria-hidden="true"></span>
-          {type.name}
+      {projectType && (
+        <p class="firma2-public-project__classification cluster typography-label-md" data-gap="xs">
+          <span class="firma2-public-project__swatch" style={`background:${projectType.color}`} aria-hidden="true"></span>
+          {projectType.name}
         </p>
       )}
       <h1 class="typography-display-sm">{project.projectName}</h1>
@@ -102,7 +103,7 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
           <div><dt>Timeline</dt><dd>{years}</dd></div>
           <div><dt>Estimated cost</dt><dd>{currencyFormatter.format(project.estimatedTotalCost)}</dd></div>
         </dl>
-        <!-- The tenant's own questions, placed in the rail by the type. -->
+        <!-- The tenant's own questions, placed in the rail by the project type. -->
         <dl class="firma2-public-project__facts firma2-public-project__facts--custom" data-fields="rail" set:html={rowsHtml(rows('rail'))}></dl>
       </EsaCard>
     </aside>
@@ -289,21 +290,21 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
 
 <script>
   import { fieldRows, resolveSections } from '../../data/firma2-project-types';
-  import { allFields, isProjectTypeKey, withTypeDraft } from '../../lib/project-type-draft';
+  import { allFields, isProjectTypeKey, withProjectTypeDraft } from '../../lib/project-type-draft';
   import { applyBrand, readBrand, TENANT_BRAND_KEY } from '../../lib/tenant-brand';
 
   const esc = (s: string): string =>
     s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
   document.querySelectorAll<HTMLElement>('.firma2-public-project').forEach((root) => {
-    const slug = root.dataset.typeSlug ?? '';
+    const slug = root.dataset.projectTypeSlug ?? '';
     const project = JSON.parse(root.dataset.project ?? '{}');
 
-    /** Fold the type's current state over the page — the studio's preview runs this too. */
+    /** Fold the project type's current state over the page — the studio's preview runs this too. */
     const resolve = () => {
-      const type = withTypeDraft(slug);
-      if (!type) return;
-      resolveSections(type.sections).forEach(({ section, visible }, index) => {
+      const projectType = withProjectTypeDraft(slug);
+      if (!projectType) return;
+      resolveSections(projectType.sections).forEach(({ section, visible }, index) => {
         const el = root.querySelector<HTMLElement>(`[data-section="${section.key}"]`);
         if (!el) return;
         el.style.order = String(index);
@@ -313,7 +314,7 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
       (['rail', 'details'] as const).forEach((placement) => {
         const dl = root.querySelector<HTMLElement>(`[data-fields="${placement}"]`);
         if (!dl) return;
-        dl.innerHTML = fieldRows(type, project, defs, placement)
+        dl.innerHTML = fieldRows(projectType, project, defs, placement)
           .map(
             (r) =>
               `<div><dt>${esc(r.label)}</dt><dd>${r.value ? esc(r.value) : '<span class="firma2-public-project__none">Not answered</span>'}</dd></div>`,

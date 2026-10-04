@@ -1,0 +1,61 @@
+---
+// firma2-project-peek-layout — the page spine that lets any project link on
+// the page open the project in a docked side panel: a `.sidebar` track with
+// firma2-project-peek at its end and the page's content beside it. The
+// Projects index's construction, lifted so every page that lists projects
+// gets the same panel (user, 2026-10-03).
+//
+// Use on an AppLayout with width="full": the panel docks against the window's
+// edge, and this caps the content column itself (CONTENT_MAX unless `max`
+// says otherwise; `max={false}` for a page that runs edge to edge, like the
+// map-based My Projects).
+//
+// It also renders the one template src/lib/project-peek.ts clones for rows
+// built at runtime (map popups, repainted tables), so a runtime button is the
+// same server-rendered firma2-project-peek-button as a static one.
+//
+// SCRIPTS TRAPPED IN TEMPLATES. Astro writes a component's <script> where the
+// component first renders. Here that is often inside the panel's per-project
+// <template>s — the panel renders before the page's content — and a script in
+// a template never runs: on every page with the panel, editable fields and
+// hover cards were dead, on the page and in the panel alike. The script below
+// moves any module script out of the page's templates and runs it once, and
+// takes it out of the template so a cloned record never carries a copy.
+//
+// --sidebar-content-min is small on purpose: content scrolls inside its own
+// frame when the panel takes the room, which beats wrapping a 100dvh panel
+// below it (projects.astro's note).
+import EsaContainer from '@esa/ecology/esa-container.astro';
+import Firma2ProjectPeek from './firma2-project-peek.astro';
+import Firma2ProjectPeekButton from './firma2-project-peek-button.astro';
+import { CONTENT_MAX } from '../../lib/content-width';
+
+interface Props {
+  /** The content column's cap; false for none. */
+  max?: string | false;
+  /** The panel's opening width; the reader can drag it from there. A page
+   *  whose content needs the room (the Map) opens it narrower. */
+  panelWidth?: string;
+}
+
+const { max = CONTENT_MAX, panelWidth = '46rem' } = Astro.props;
+---
+<div class="sidebar" data-side="end" style={`--sidebar-width: ${panelWidth}; --sidebar-content-min: 20rem`}>
+  <Firma2ProjectPeek />
+  {max === false ? <div><slot /></div> : <EsaContainer maxWidth={max}><slot /></EsaContainer>}
+</div>
+<template data-project-peek-button>
+  <Firma2ProjectPeekButton slug="" name="" />
+</template>
+
+<script>
+  document.querySelectorAll('template').forEach((template) => {
+    template.content.querySelectorAll('script[type="module"]').forEach((trapped) => {
+      const script = document.createElement('script');
+      for (const { name, value } of trapped.attributes) script.setAttribute(name, value);
+      script.textContent = trapped.textContent;
+      trapped.remove();
+      document.body.append(script);
+    });
+  });
+</script>

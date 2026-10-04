@@ -4,14 +4,13 @@
 //
 // ONE TABLE, NOT A CARD PER NOUN. The hackathon gave each noun its own card
 // with its own Save; ten cards of two fields is a long page that hides the
-// fact it is one list. Here it is one table — the application's word, your
-// singular, your plural — and a field saves when you leave it, like every
+// fact it is one list. Here it is one table — the application's word and
+// yours — and a field saves when you leave it, like every
 // other record in this spoke. The menu beside you renames as you do: the
 // whole application is the preview.
 //
-// THE PLURAL IS SUGGESTED, NOT DEMANDED. Typing "Grant" is enough; the plural
-// field shows "Grants" as its placeholder and that is what gets used until
-// someone types otherwise.
+// NO PLURAL FIELD. Typing "Grant" is enough: the plural is derived
+// (suggestPlural), so the table asks for one word per noun, not two.
 //
 // THE LIMIT IS STATED: renamings reach labels — menus, titles, headings,
 // field labels, columns — never data. A funding source named "…Program"
@@ -30,14 +29,14 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import { NOUNS } from '../../data/firma2-vocabulary';
 ---
 <!-- bcn-lego-checked: esa-switch-toggle, esa-text-field and esa-button
-     legos; the classes lay out a three-column table of fields, which no esa-
+     legos; the classes lay out a two-column table of fields, which no esa-
      component does. Beacon is not cloned on this machine. -->
 <div class="firma2-vocabulary-editor">
     <div class="stack" data-gap="lg">
       <div class="stack" data-gap="xs">
         <esa-switch-toggle data-aliasing label="Use your own words" label-position="before" size="md"></esa-switch-toggle>
         <p class="firma2-vocabulary-editor__help typography-body-sm">
-          Your words replace the application’s in menus, titles, headings, field labels and columns. Records keep their names. Off keeps your words for later.
+          Your words replace the application’s in menus, titles, headings, field labels and columns. Records keep their names. Switching off keeps your words for later.
         </p>
       </div>
       <table class="firma2-vocabulary-editor__table">
@@ -45,16 +44,14 @@ import { NOUNS } from '../../data/firma2-vocabulary';
           <tr>
             <th scope="col">The application says</th>
             <th scope="col">Your word</th>
-            <th scope="col">Your plural</th>
             <th scope="col"><span class="visually-hidden">Reset</span></th>
           </tr>
         </thead>
         <tbody>
           {NOUNS.map((noun) => (
-            <tr data-noun={noun.key} data-singular={noun.singular} data-plural={noun.plural}>
-              <th scope="row">{noun.singular} <span class="firma2-vocabulary-editor__plural">· {noun.plural}</span></th>
+            <tr data-noun={noun.key}>
+              <th scope="row">{noun.singular}</th>
               <td><esa-text-field data-field="singular" size="md" aria-label={`Your word for ${noun.singular.toLowerCase()}`} placeholder={noun.singular}></esa-text-field></td>
-              <td><esa-text-field data-field="plural" size="md" aria-label={`Your plural for ${noun.plural.toLowerCase()}`} placeholder={noun.plural}></esa-text-field></td>
               <td>
                 <span data-reset-wrap hidden>
                   <EsaButton variant="ghost" size="sm" iconOnly icon="rotate-ccw" aria-label={`Use the application’s word for ${noun.singular.toLowerCase()}`} data-reset>Reset</EsaButton>
@@ -108,16 +105,11 @@ import { NOUNS } from '../../data/firma2-vocabulary';
   .firma2-vocabulary-editor[data-off] .firma2-vocabulary-editor__table td {
     opacity: 0.6;
   }
-
-  .firma2-vocabulary-editor__plural {
-    color: var(--color-text-secondary);
-  }
 </style>
 
 <script>
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-switch-toggle';
-  import { suggestPlural } from '../../data/firma2-vocabulary';
   import type { Vocabulary } from '../../data/firma2-vocabulary';
   import { isAliasingEnabled, readStoredVocabulary, setAliasingEnabled, writeVocabulary } from '../../lib/vocabulary';
 
@@ -131,21 +123,16 @@ import { NOUNS } from '../../data/firma2-vocabulary';
     const paintRow = (tr: HTMLTableRowElement, vocabulary: Vocabulary) => {
       const alias = vocabulary[tr.dataset.noun!] ?? {};
       const singular = tr.querySelector<Field>('[data-field="singular"]')!;
-      const plural = tr.querySelector<Field>('[data-field="plural"]')!;
       singular.value = alias.singular ?? '';
-      plural.value = alias.plural ?? '';
-      // The plural the application WILL use, shown before anyone types it.
-      plural.placeholder = alias.singular?.trim() ? suggestPlural(alias.singular) : tr.dataset.plural!;
       const on = isAliasingEnabled();
       singular.disabled = !on;
-      plural.disabled = !on;
       // visibility, not `hidden`: the column keeps its width whether or not any
       // row has something to reset, so the fields never shift sideways when
       // the switch flips or the first word is typed. A visibility-hidden
       // button is also out of the tab order.
       const wrap = tr.querySelector<HTMLElement>('[data-reset-wrap]')!;
       wrap.hidden = false;
-      wrap.style.visibility = !on || (!alias.singular?.trim() && !alias.plural?.trim()) ? 'hidden' : '';
+      wrap.style.visibility = !on || !alias.singular?.trim() ? 'hidden' : '';
     };
 
     const paintAll = () => {
@@ -167,9 +154,10 @@ import { NOUNS } from '../../data/firma2-vocabulary';
 
     const commit = (tr: HTMLTableRowElement) => {
       const singular = String(tr.querySelector<Field>('[data-field="singular"]')!.value ?? '').trim();
-      const plural = String(tr.querySelector<Field>('[data-field="plural"]')!.value ?? '').trim();
       const vocabulary = readStoredVocabulary();
-      if (singular || plural) vocabulary[tr.dataset.noun!] = { singular: singular || undefined, plural: plural || undefined };
+      // Saved without a plural, so one typed before the field was removed
+      // stops overriding the derived form the moment the row is touched.
+      if (singular) vocabulary[tr.dataset.noun!] = { singular };
       else delete vocabulary[tr.dataset.noun!];
       writeVocabulary(vocabulary);
       paintRow(tr, vocabulary);

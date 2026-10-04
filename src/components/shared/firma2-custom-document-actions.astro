@@ -1,0 +1,151 @@
+---
+// firma2-custom-document-actions — what sits beside a document's title:
+// Download, and the "…" holding Replace file and Delete document.
+//
+// DOWNLOAD STANDS OUT because it is what a reader of a document most often
+// wants next — to keep it, print it or send it. Replace and Delete are rare,
+// and Delete is irreversible, so both wait one click down in the same
+// esa-dropdown-menu "…" a custom page uses.
+//
+// REPLACE FILE keeps the document — its title, folder, link and place in the
+// rail — and swaps only the file under it: a new edition of a guide should not
+// break every link to the old one. It opens esa-dialog around esa-file-upload;
+// the file is kept the moment Replace is pressed, and the viewer re-reads it
+// (`firma2:document-file-changed`).
+//
+// DELETE ASKS FIRST in esa-confirm-dialog, as Delete page does, and lands the
+// reader on Projects, where the rail confirms it once.
+//
+// bcn-lego-checked: esa-button, esa-dropdown-menu, esa-dialog,
+// esa-file-upload and esa-confirm-dialog, composed unchanged in `.cluster` /
+// `.stack`. No markup of its own beyond them and no <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { DOCUMENT_ACCEPT } from '../../data/firma2-pages';
+import { withBase } from '../../lib/base';
+
+const MAX_MB = 25;
+---
+<div class="firma2-custom-document-actions cluster" data-gap="xs" data-document-actions>
+  <EsaButton variant="ghost" size="md" icon="download" data-document-download>Download</EsaButton>
+  <esa-dropdown-menu position="below-end" data-document-menu data-after-delete={withBase('/prototypes/projects')}>
+    <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="Document actions" />
+  </esa-dropdown-menu>
+</div>
+
+<esa-dialog heading="Replace file" size="md" show-close-button data-document-replace>
+  <esa-file-upload label="PDF or other document" accept={DOCUMENT_ACCEPT} max-size-mb={MAX_MB} data-replace-upload></esa-file-upload>
+  <div class="cluster" data-gap="xs" slot="footer">
+    <EsaButton variant="primary" size="md" data-replace-save>Replace</EsaButton>
+    <EsaButton variant="ghost" size="md" data-replace-cancel>Cancel</EsaButton>
+  </div>
+</esa-dialog>
+
+<esa-confirm-dialog variant="danger" confirm-label="Delete document" data-document-delete-confirm></esa-confirm-dialog>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-file-upload';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-snackbar-container';
+  import { findDocument, removePage, updatePage } from '../../lib/custom-pages';
+  import { documentFileUrl, putDocumentFile } from '../../lib/page-files';
+  import { drawMenuIcons } from '../../lib/menu-icons';
+
+  type Menu = HTMLElement & { items: unknown };
+  type Dialog = HTMLElement & { show(): void; close(): void };
+  type Confirm = Dialog & { heading: string; message: string };
+  // `_files` / `_error` are the drop zone's private selection and error line:
+  // it has no public reset and no way to say "nothing chosen". Lego gap: a
+  // `clear()` and an `errorText` on esa-file-upload.
+  type Upload = HTMLElement & { _files?: File[]; _error?: string; requestUpdate?: () => void };
+  type Toasts = HTMLElement & { show(o: { message: string; variant: string }): void };
+
+  const toast = (message: string, variant = 'success'): void => {
+    customElements.whenDefined('esa-snackbar-container').then(() => {
+      document.querySelector<Toasts>('[data-pages-toasts]')?.show({ message, variant });
+    });
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-document-actions]').forEach((bar) => {
+    const id = new URLSearchParams(location.search).get('id') ?? '';
+    const menu = bar.querySelector<Menu>('[data-document-menu]')!;
+    const replace = document.querySelector<Dialog>('[data-document-replace]');
+    const upload = replace?.querySelector<Upload>('[data-replace-upload]');
+    const confirm = document.querySelector<Confirm>('[data-document-delete-confirm]');
+    let chosen: File | undefined;
+
+    bar.querySelector('[data-document-download]')?.addEventListener('click', async () => {
+      const doc = findDocument(id);
+      const href = doc && (await documentFileUrl(doc));
+      if (!doc || !href) {
+        toast('This document’s file isn’t in this browser.', 'error');
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = doc.file.name;
+      a.click();
+    });
+
+    // Assigned only after define, or the props shadow the lego's setters.
+    customElements.whenDefined('esa-dropdown-menu').then(() => {
+      menu.items = [
+        { label: 'Replace file', action: 'replace', icon: 'upload' },
+        { label: 'Delete document', action: 'delete', icon: 'trash-2', variant: 'danger' },
+      ];
+      drawMenuIcons(menu);
+    });
+
+    const setUpload = (error = ''): void => {
+      if (!upload) return;
+      upload._error = error;
+      upload.requestUpdate?.();
+    };
+
+    menu.addEventListener('menu-action', async (event) => {
+      const action = (event as CustomEvent<string>).detail;
+      const doc = findDocument(id);
+      if (!doc) return;
+      if (action === 'replace' && replace && upload) {
+        await customElements.whenDefined('esa-dialog');
+        chosen = undefined;
+        upload._files = [];
+        setUpload();
+        replace.show();
+      } else if (action === 'delete' && confirm) {
+        await customElements.whenDefined('esa-confirm-dialog');
+        confirm.heading = `Delete ${doc.title}?`;
+        confirm.message = 'Its file goes with it, for everyone in the workspace. This can’t be undone.';
+        confirm.show();
+      }
+    });
+
+    upload?.addEventListener('change', (event) => {
+      chosen = (event as CustomEvent<{ files: File[] }>).detail?.files?.[0];
+      if (chosen) setUpload();
+    });
+    replace?.querySelector('[data-replace-cancel]')?.addEventListener('click', () => replace.close());
+    replace?.querySelector('[data-replace-save]')?.addEventListener('click', async () => {
+      if (!chosen) {
+        setUpload('Choose the file to put in its place.');
+        return;
+      }
+      if (!(await putDocumentFile(id, chosen))) {
+        setUpload('This browser couldn’t keep the file. Check that site data is allowed, then try again.');
+        return;
+      }
+      updatePage(id, { file: { name: chosen.name, type: chosen.type, size: chosen.size } });
+      replace.close();
+      document.dispatchEvent(new CustomEvent('firma2:document-file-changed'));
+      toast('File replaced.');
+    });
+
+    confirm?.addEventListener('confirm', () => {
+      const doc = findDocument(id);
+      if (!doc) return;
+      removePage(id, doc.title);
+      window.location.assign(menu.dataset.afterDelete ?? '');
+    });
+  });
+</script>

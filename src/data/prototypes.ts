@@ -24,14 +24,15 @@ export interface Prototype {
 
 export const prototypes: Prototype[] = [
   // Ported from ProjectFirma2's hackathon team 3 (customizations): a tenant's
-  // difference expressed as data — project types build pages, one colour
-  // brands everything. Edits are browser-local.
+  // difference expressed as data — classifications build pages, one colour
+  // brands everything. Project types and classifications merged 2026-10-02.
+  // Edits are browser-local.
   {
-    slug: 'project-types',
-    title: 'Project types',
+    slug: 'classifications',
+    title: 'Classifications',
     description:
-      'Each kind of project gets its own fields and its own public page layout, with the page live beside the editor.',
-    route: '/prototypes/workspace-settings/project-types',
+      'One grouped list of work types and plan goals. A project’s primary classification sets its fields and page layout.',
+    route: '/prototypes/workspace-settings/classifications',
     createdAt: '2026-10-01',
     status: 'in-progress',
   },
@@ -39,7 +40,7 @@ export const prototypes: Prototype[] = [
     slug: 'public-project-page',
     title: 'Public project page',
     description:
-      'One project as the public sees it — no account, the tenant’s brand, and only the sections its type publishes.',
+      'One project as the public sees it — no account, the tenant’s brand, and only the sections its primary classification publishes.',
     route: '/prototypes/public/scott-river-fish-passage-barrier-removal',
     createdAt: '2026-10-01',
     status: 'in-progress',
@@ -50,6 +51,15 @@ export const prototypes: Prototype[] = [
     description: 'Pick one colour and every screen and public page follows, with its contrast graded as you choose.',
     route: '/prototypes/workspace-settings/branding',
     createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  // Ported from ProjectFirma2's hackathon team 5 (project updates).
+  {
+    slug: 'my-projects',
+    title: 'My Projects',
+    description: 'The projects you can update, as cards with a map of where each one is — search, filter by stage, then Update or Open.',
+    route: '/prototypes/my-projects',
+    createdAt: '2026-10-03',
     status: 'in-progress',
   },
   // Ported from ProjectFirma2's hackathon team 2 (geospatial). The ArcGIS
@@ -75,7 +85,15 @@ export const prototypes: Prototype[] = [
     slug: 'gis-subscriptions',
     title: 'GIS subscriptions',
     description: 'Keep project footprints current from your own ArcGIS layer: sync, see what was refused and why, and leave without losing a shape.',
-    route: '/prototypes/gis-subscriptions',
+    route: '/prototypes/workspace-settings/gis-subscriptions',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'gis-sync',
+    title: 'GIS sync (two-way)',
+    description: 'Connect ArcGIS once, link a layer, and choose per field which side wins. Edit in either place and the latest change follows.',
+    route: '/prototypes/workspace-settings/gis-sync',
     createdAt: '2026-10-02',
     status: 'in-progress',
   },

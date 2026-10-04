@@ -552,7 +552,7 @@ export const SHARED_LAYERS: SharedLayer[] = [
 /** The project columns a layer may maintain — decision 26's list. */
 export const MAPPABLE_PROJECT_FIELDS = [
   { value: 'stage', label: 'Stage' },
-  { value: 'program', label: 'Program' },
+  { value: 'projectType', label: 'Project type' },
   { value: 'leadOrganization', label: 'Lead organization' },
   { value: 'county', label: 'County' },
   { value: 'implementationStartYear', label: 'Implementation start year' },
@@ -572,7 +572,7 @@ export interface Subscription {
   extraFields: string[];
   nameField: string;
   defaultLead: string;
-  defaultProgram: string;
+  defaultProjectType: string;
   defaultStage: string;
   mappings: { projectField: string; layerField: string }[];
   active: boolean;
@@ -583,6 +583,12 @@ export interface Subscription {
   lastMessage: string | null;
   /** Work areas the last sync no longer found upstream — kept, never deleted. */
   staleLabels?: string[];
+  /**
+   * Every extra field a sync has EVER brought across. Un-nominating one stops
+   * it being updated and keeps what is stored (decisions 9 and 10): a
+   * subscription that cannot supply a value must not erase one.
+   */
+  syncedFields?: string[];
 }
 
 const mappedCount = projects.filter((p) => !UNMAPPED_PROJECTS.has(p.projectName)).length;
@@ -602,15 +608,31 @@ export const SEED_SUBSCRIPTION: Subscription = {
   extraFields: ['STATUS'],
   nameField: 'PROJ_NAME',
   defaultLead: '',
-  defaultProgram: 'Aquatic Habitat Restoration',
+  defaultProjectType: 'Aquatic habitat restoration',
   defaultStage: 'Planning & Design',
-  mappings: [{ projectField: 'stage', layerField: 'STATUS' }],
+  mappings: [
+    { projectField: 'stage', layerField: 'STATUS' },
+    { projectField: 'leadOrganization', layerField: 'LEAD_ORG' },
+  ],
+  syncedFields: ['STATUS'],
   active: true,
   projectCount: mappedCount,
   workAreaCount: mappedShapes,
   lastSuccess: '2026-09-30T06:00:00',
   lastMessage: `Matched ${mappedCount} of ${mappedCount + 1} features on PROJ_ID. 1 matched no project: PROJ-0193.`,
 };
+
+/** A subscription's setup, in the order the decisions fall: access decides
+    what the rest of the form even is. The side sheet shows all five at once;
+    the wizard shows one per screen. */
+export const SUBSCRIPTION_STEPS = [
+  { key: 'access', title: 'Access' },
+  { key: 'layer', title: 'Layer' },
+  { key: 'matching', title: 'Matching' },
+  { key: 'fields', title: 'Project fields from this layer' },
+  { key: 'name', title: 'This subscription' },
+] as const;
+export type SubscriptionStep = (typeof SUBSCRIPTION_STEPS)[number]['key'];
 
 /** What pressing Sync now finds upstream this time. Scripted, and stable. */
 export const SYNC_RESULT = {
@@ -620,4 +642,110 @@ export const SYNC_RESULT = {
   projectsUpdated: 2,
   unmatched: ['PROJ-0193'],
   skippedWithoutJoin: 1,
+};
+
+// ---------------------------------------------------------------------------
+// The layer's own view of a project — project numbers and field values
+// ---------------------------------------------------------------------------
+
+/**
+ * Each project's number in the partner's GIS — the external ID a subscription
+ * joins on and a bulk import matches against. Invented, and stable: the
+ * portfolio's order, from PROJ-0101.
+ */
+export const projectNumber = (project: Project): string =>
+  `PROJ-0${101 + projects.findIndex((p) => p.projectName === project.projectName)}`;
+
+const STATUS_BY_STAGE: Record<string, string> = {
+  Proposal: 'Proposed',
+  'Planning & Design': 'Design',
+  Implementation: 'Active',
+  'Post-Implementation': 'Monitoring',
+  Completed: 'Completed',
+  Deferred: 'On hold',
+};
+
+/** What the subscribed layer holds in one of its fields for a project. */
+export const layerValue = (project: Project, field: string): string => {
+  switch (field) {
+    case 'PROJ_ID':
+      return projectNumber(project);
+    case 'PROJ_NAME':
+      return project.projectName;
+    case 'STATUS':
+      return STATUS_BY_STAGE[project.stage] ?? '';
+    case 'UNIT_NAME':
+      return projectDetails.get(project.projectName)?.workAreas[0]?.label ?? '';
+    case 'LEAD_ORG':
+      return project.leadOrganization;
+    case 'TREAT_YR':
+      return String(project.implementationStartYear);
+    default:
+      return '';
+  }
+};
+
+/** Which key-facts row a mapped project field locks. Stage has no row: it is the header pill. */
+export const FACT_ROW_FOR_FIELD: Record<string, string> = {
+  projectType: 'projectType',
+  leadOrganization: 'leadOrganization',
+  county: 'county',
+  implementationStartYear: 'timeline',
+  completionYear: 'timeline',
+  estimatedTotalCost: 'estimatedTotalCost',
+};
+
+// ---------------------------------------------------------------------------
+// Bulk import — one partner file, shapes for many projects
+// ---------------------------------------------------------------------------
+
+export interface BulkFeature {
+  kind: WorkAreaKind;
+  /** Offsets from the matched project's center, so a hand match lands sensibly. */
+  offsets: LatLng[];
+  fields: Record<string, string>;
+}
+
+const numberOf = (name: string) => projectNumber(projects.find((p) => p.projectName === name)!);
+
+export const BULK_IMPORT_SAMPLE = {
+  fileName: 'partner-boundaries.zip',
+  layer: 'Boundaries',
+  features: [
+    {
+      kind: 'area',
+      offsets: [[0.012, -0.018], [0.016, 0.004], [0.004, 0.012], [-0.008, 0.006], [-0.006, -0.014]],
+      fields: { PROJ_NO: numberOf('Cosumnes Floodplain Reconnection'), PROJECT: 'Cosumnes Floodplain Reconnection', UNIT: 'Lower floodplain unit' },
+    },
+    {
+      kind: 'area',
+      offsets: [[0.008, -0.01], [0.01, 0.006], [-0.002, 0.01], [-0.009, -0.002]],
+      fields: { PROJ_NO: numberOf('San Luis Rey Arroyo Toad Habitat'), PROJECT: 'San Luis Rey Arroyo Toad Habitat', UNIT: 'Breeding pool complex' },
+    },
+    {
+      kind: 'area',
+      offsets: [[0.014, -0.012], [0.012, 0.01], [-0.004, 0.014], [-0.01, -0.004], [0.002, -0.016]],
+      fields: { PROJ_NO: numberOf('Cache Creek Floodplain Terracing'), PROJECT: 'Cache Creek Floodplain Terracing', UNIT: 'Terrace grading unit' },
+    },
+    {
+      kind: 'reach',
+      offsets: [[0.02, -0.02], [0.01, -0.008], [0.002, -0.01], [-0.008, 0.004], [-0.018, 0.012]],
+      fields: { PROJ_NO: numberOf('Cache Creek Floodplain Terracing'), PROJECT: 'Cache Creek Floodplain Terracing', UNIT: 'Setback channel' },
+    },
+    {
+      kind: 'reach',
+      offsets: [[0.024, 0.01], [0.018, 0.018], [0.01, 0.02], [0.002, 0.028]],
+      fields: { PROJ_NO: numberOf('Deer Creek Riparian Corridor Enhancement'), PROJECT: 'Deer Creek Riparian Corridor Enhancement', UNIT: 'Upper fence line' },
+    },
+    {
+      kind: 'area',
+      offsets: [[-0.012, 0.014], [-0.008, 0.026], [-0.018, 0.028], [-0.022, 0.016]],
+      fields: { PROJ_NO: 'PROJ-0230', PROJECT: 'Cosumnes Floodplain Reconection', UNIT: 'Oak woodland buffer' },
+    },
+    {
+      kind: 'point',
+      offsets: [[0.001, 0.002]],
+      fields: { PROJ_NO: '', PROJECT: '', UNIT: 'Survey benchmark' },
+    },
+  ] as BulkFeature[],
 };

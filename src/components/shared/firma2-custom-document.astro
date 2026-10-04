@@ -1,0 +1,126 @@
+---
+// firma2-custom-document — the body of one document from the rail's Pages
+// group: the folder it sits in, and the file itself, read in place when it is
+// a PDF (firma2-document-viewer). The title above it is the page header's
+// editableTitle.
+//
+// A RECORD, NOT A FORM, and with no Edit mode: a document's text is its file,
+// so the only things that change here are the title and the folder — each a
+// firma2-editable-field that commits as it is left, like a project's Key facts.
+// (A page holds its edits for Update because its text is long and written in
+// place; nothing here is.) Replacing the file is in the header's "…"
+// (firma2-custom-document-actions).
+//
+// READ ON THE CLIENT, as firma2-custom-page is: documents added in this browser
+// exist only in its storage, so the page is opened as
+// /prototypes/pages/document?id=…, and this script seeds the fields from that
+// id with `firma2:field-set` and the viewer with `firma2:document-show`.
+// `data-custom-document` is how Firma2PagesNav marks the document's row, and
+// `firma2:pages-changed` is how it hears about a rename or a move.
+// `firma2:document-file-changed` (from the actions) re-reads the file.
+//
+// bcn-lego-checked: firma2-editable-field (composing esa-select) and
+// firma2-document-viewer are the parts; the layout is `.stack`. No bespoke
+// flex and no <style> block.
+import Firma2EditableField from './firma2-editable-field.astro';
+import Firma2DocumentViewer from './firma2-document-viewer.astro';
+import { seedEntries, NO_FOLDER_LABEL } from '../../data/firma2-pages';
+import type { CustomFolder } from '../../data/firma2-pages';
+
+const seedFolderNames = seedEntries.filter((e): e is CustomFolder => e.kind === 'folder').map((f) => f.name);
+---
+<div class="firma2-custom-document stack" data-gap="lg" data-custom-document data-no-folder={NO_FOLDER_LABEL}>
+  <div class="stack" data-gap="lg" data-document-fields>
+    <dl class="stack" data-gap="md">
+      <Firma2EditableField
+        field="pageFolder"
+        label="Folder"
+        control="select"
+        value={NO_FOLDER_LABEL}
+        options={[NO_FOLDER_LABEL, ...seedFolderNames]}
+      />
+    </dl>
+    <Firma2DocumentViewer />
+  </div>
+  <p class="typography-body-md" hidden data-document-missing>Check the link, or pick a document from Pages in the sidebar.</p>
+</div>
+
+<script>
+  import { findDocument, findFolder, readFolders, readPagesEnabled, updatePage } from '../../lib/custom-pages';
+  import { documentFileUrl } from '../../lib/page-files';
+
+  type Select = HTMLElement & { options: { value: string; label: string }[] };
+
+  const setField = (field: string, raw: string): void => {
+    document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: { field, raw } }));
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-custom-document]').forEach((root) => {
+    const id = new URLSearchParams(location.search).get('id') ?? '';
+    const noFolder = root.dataset.noFolder ?? '';
+    const titleRow = document.querySelector<HTMLElement>('[data-editable-field][data-field="pageTitle"]');
+    const viewer = root.querySelector<HTMLElement>('[data-document-viewer]');
+
+    // After every module has run, so the editable fields and the viewer are
+    // listening — and the save listener goes on AFTER the seeding.
+    requestAnimationFrame(() => {
+      const doc = findDocument(id);
+      if (!doc) {
+        setField('pageTitle', 'Document not found');
+        titleRow?.setAttribute('data-locked', '');
+        root.querySelector<HTMLElement>('[data-document-fields]')!.style.display = 'none';
+        const missing = root.querySelector<HTMLElement>('[data-document-missing]')!;
+        if (!readPagesEnabled()) missing.textContent = 'Check the link, or ask whoever sent it.';
+        missing.hidden = false;
+        document.querySelectorAll<HTMLElement>('[data-document-actions]').forEach((el) => (el.style.display = 'none'));
+        return;
+      }
+
+      const select = root.querySelector<Select>('[data-field="pageFolder"] [data-field-input]');
+      const syncFolders = (): void => {
+        const options = [noFolder, ...readFolders().map((f) => f.name)].map((name) => ({ value: name, label: name }));
+        if (select) {
+          select.dataset.options = JSON.stringify(options);
+          customElements.whenDefined('esa-select').then(() => (select.options = options));
+        }
+        setField('pageFolder', findFolder(findDocument(id)?.folderId)?.name ?? noFolder);
+      };
+      syncFolders();
+      document.addEventListener('firma2:folders-changed', syncFolders);
+
+      setField('pageTitle', doc.title);
+      document.title = `${doc.title} — Pages — ProjectFirma 2.0`;
+
+      const showFile = async (): Promise<void> => {
+        const current = findDocument(id);
+        const url = current && (await documentFileUrl(current));
+        viewer?.dispatchEvent(new CustomEvent('firma2:document-show', {
+          detail: url ? { url, name: current!.file.name, type: current!.file.type } : { missing: true },
+        }));
+      };
+      void showFile();
+      document.addEventListener('firma2:document-file-changed', () => void showFile());
+
+      // Each field commits as it is left — there is no Update here.
+      document.addEventListener('firma2:field-save', (event) => {
+        const { field, raw } = (event as CustomEvent<{ field: string; raw: string }>).detail;
+        const current = findDocument(id);
+        if (!current) return;
+        if (field === 'pageTitle') {
+          const title = raw.trim();
+          if (!title || title === current.title) return;
+          updatePage(id, { title });
+          document.title = `${title} — Pages — ProjectFirma 2.0`;
+        } else if (field === 'pageFolder') {
+          const folderId = readFolders().find((f) => f.name === raw)?.id ?? null;
+          // A repaint after a rename lands here with the folder unchanged.
+          if (folderId === (current.folderId ?? null)) return;
+          updatePage(id, { folderId });
+        } else {
+          return;
+        }
+        document.dispatchEvent(new CustomEvent('firma2:pages-changed'));
+      });
+    });
+  });
+</script>

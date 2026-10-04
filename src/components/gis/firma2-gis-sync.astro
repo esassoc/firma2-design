@@ -1,0 +1,561 @@
+---
+// firma2-gis-sync — the ALTERNATIVE to firma2-gis-subscriptions: one ArcGIS
+// connection where either side can be edited and the latest change wins.
+//
+// WHAT IT CHANGES, AND WHAT IT DELIBERATELY KEEPS. The subscription flow asks
+// a workspace to pick a mode (Project source), then five decisions, and then
+// locks every mapped field. This flow has no mode and no lock:
+//
+//   CONNECT ONCE. One button, then layers you can reach. Access is not a
+//   question the form asks.
+//
+//   THE MATCH IS SUGGESTED, AND PRICED. The join field is still the one
+//   decision only the workspace can make, so it stays a choice, but every
+//   option says how many projects it would match and the best one is
+//   preselected. "What linking does" counts the result before anything is
+//   written. Shape IDs show "0 of N" for the same reason.
+//
+//   DIRECTION IS PER FIELD. Shapes follow the layer, a field can follow
+//   ProjectFirma, and "Either way, newest wins" is a thing you opt a field
+//   into. Only those fields can conflict.
+//
+//   A CONFLICT IS NEVER GUESSED. When both sides changed a field since the
+//   last sync, both values are kept and shown with their times. Silent
+//   overwrite is the one outcome this page refuses.
+//
+//   KEPT FROM THE SUBSCRIPTION FLOW: a sync never deletes (a feature gone
+//   upstream leaves its shape kept and marked stale, by name), and leaving
+//   costs nothing (Disconnect keeps every project as it is).
+//
+// IT SAVES AS IT GOES (product brief §3.4) — no wizard, no Save. The state is
+// this prototype's own localStorage key, so neither flow touches the other.
+//
+// bcn-lego-checked: esa-select (layer, match, direction, layer field),
+// esa-switch-toggle, esa-button, esa-alert-box, esa-empty-state,
+// esa-confirm-dialog, and the spoke's firma2-rail-section. The per-field row is
+// two esa-selects on a .grid primitive; no editable-table lego exists, and the
+// firma2-settings-table component is read-only text. Beacon is not cloned here.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { ARCGIS_GROUP, SHARED_LAYERS } from '../../data/firma2-geography';
+import {
+  ARCGIS_ACCOUNT,
+  CONFLICTS,
+  DIRECTION_OPTIONS,
+  FEATURE_COUNTS,
+  FIELD_ROWS,
+  SYNC_COUNTS,
+  TOTAL_PROJECTS,
+  UNMATCHED_FEATURES,
+  matchCount,
+  suggestJoin,
+} from '../../data/firma2-gis-sync';
+
+const config = {
+  account: ARCGIS_ACCOUNT,
+  group: ARCGIS_GROUP,
+  layers: SHARED_LAYERS,
+  total: TOTAL_PROJECTS,
+  featureCounts: FEATURE_COUNTS,
+  unmatched: UNMATCHED_FEATURES,
+  matches: Object.fromEntries(
+    SHARED_LAYERS.map((l) => [l.id, Object.fromEntries(l.fields.map((f) => [f.name, matchCount(l.id, f.name)]))]),
+  ),
+  suggested: Object.fromEntries(SHARED_LAYERS.map((l) => [l.id, suggestJoin(l.id)])),
+  rows: FIELD_ROWS,
+  directions: DIRECTION_OPTIONS,
+  conflicts: CONFLICTS,
+  sync: SYNC_COUNTS,
+};
+---
+<div class="firma2-gis-sync stack" data-gap="2xl" data-config={JSON.stringify(config)}>
+  <!-- ---- 1. not connected ------------------------------------------------- -->
+  <div class="stack" data-gap="lg" data-view="disconnected">
+    <EsaEmptyState
+      title="Connect your ArcGIS account"
+      description="Sign in once, link a layer, and keep projects current from either side."
+    />
+    <div class="firma2-gis-sync__center">
+      <EsaButton variant="primary" size="md" data-connect>Connect ArcGIS</EsaButton>
+    </div>
+  </div>
+
+  <!-- ---- 2. connected, no layer linked yet ---------------------------------- -->
+  <div class="stack" data-gap="2xl" data-view="choose" hidden>
+    <div class="repel">
+      <p class="typography-body-md">Connected to <strong>{ARCGIS_ACCOUNT.org}</strong> as {ARCGIS_ACCOUNT.email}</p>
+      <EsaButton variant="ghost" size="sm" data-disconnect>Disconnect</EsaButton>
+    </div>
+
+    <Firma2RailSection title="Layer">
+      <esa-select data-layer label="Layer" placeholder="Choose a layer" size="md" help-text={`Layers shared into ${ARCGIS_GROUP.title}.`}></esa-select>
+    </Firma2RailSection>
+
+    <div class="stack" data-gap="2xl" data-match hidden>
+      <Firma2RailSection title="Matching">
+        <div class="stack" data-gap="lg">
+          <esa-select data-join label="Match projects on" size="md"></esa-select>
+          <EsaAlertBox variant="info" title="What linking does">
+            <div class="stack" data-gap="2xs" data-preview></div>
+          </EsaAlertBox>
+          <esa-switch-toggle data-create label="Create a project for each unmatched feature"></esa-switch-toggle>
+        </div>
+      </Firma2RailSection>
+      <div class="cluster">
+        <EsaButton variant="primary" size="md" data-link>Link layer</EsaButton>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---- 3. linked --------------------------------------------------------- -->
+  <div class="stack" data-gap="2xl" data-view="linked" hidden>
+    <Firma2RailSection title="Connection">
+      <div class="stack" data-gap="lg">
+        <div class="repel" data-gap="sm">
+          <EsaButton variant="primary" size="sm" icon="rotate-ccw" data-sync>Sync now</EsaButton>
+          <EsaButton variant="ghost" size="sm" data-disconnect>Disconnect</EsaButton>
+        </div>
+        <dl class="firma2-gis-sync__meta" data-meta></dl>
+        <div data-result></div>
+      </div>
+    </Firma2RailSection>
+
+    <Firma2RailSection title="Who wins, field by field">
+      <div class="stack" data-gap="lg">
+        <p class="typography-body-md">Each field follows one side, or whichever changed last.</p>
+        <ul class="stack firma2-gis-sync__rows" data-gap="lg" data-rows></ul>
+        <div data-access-alert hidden>
+          <EsaAlertBox variant="warning" title="Edit access needed">
+            <div class="stack" data-gap="sm">
+              <p class="typography-body-md" data-access-text></p>
+              <span><EsaButton variant="secondary" size="sm" data-check-access>Check edit access</EsaButton></span>
+            </div>
+          </EsaAlertBox>
+        </div>
+      </div>
+    </Firma2RailSection>
+
+    <Firma2RailSection title="Changed in both places">
+      <div class="stack" data-gap="lg">
+        <div data-no-conflicts>
+          <EsaEmptyState title="No conflicts" description="Fields changed on both sides since the last sync show up here." />
+        </div>
+        <div class="stack" data-gap="lg" data-conflicts></div>
+      </div>
+    </Firma2RailSection>
+  </div>
+
+  <!-- ---- clone sources ------------------------------------------------------ -->
+  <template data-tpl-conflict>
+    <div class="stack firma2-gis-sync__conflict" data-gap="sm">
+      <p class="typography-label-md-strong" data-title></p>
+      <dl class="firma2-gis-sync__sides">
+        <div><dt class="typography-body-sm">Layer</dt><dd class="typography-body-md" data-layer-side></dd></div>
+        <div><dt class="typography-body-sm">ProjectFirma</dt><dd class="typography-body-md" data-app-side></dd></div>
+      </dl>
+      <div class="cluster" data-gap="xs">
+        <EsaButton variant="secondary" size="sm" data-keep-layer>Keep layer value</EsaButton>
+        <EsaButton variant="secondary" size="sm" data-keep-app>Keep ProjectFirma value</EsaButton>
+      </div>
+    </div>
+  </template>
+  <template data-tpl-success>
+    <EsaAlertBox variant="success" title="Sync complete"><div class="stack" data-gap="2xs" data-lines></div></EsaAlertBox>
+  </template>
+
+  <esa-confirm-dialog
+    class="firma2-gis-sync__disconnect"
+    heading="Disconnect ArcGIS?"
+    confirm-label="Disconnect"
+    cancel-label="Stay connected"
+    message="Every project keeps its shapes and fields, still editable here. Syncing stops until you connect again."
+  ></esa-confirm-dialog>
+</div>
+
+<style>
+  .firma2-gis-sync [hidden] {
+    display: none !important;
+  }
+
+  .firma2-gis-sync__center {
+    display: flex;
+    justify-content: center;
+  }
+
+  .firma2-gis-sync__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Two equal columns whether or not the layer-field cell shows, so a row with
+     one select lines up with a row that has two. */
+  .firma2-gis-sync :global(.firma2-gis-sync__row) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--spacing-400);
+  }
+
+  .firma2-gis-sync__meta,
+  .firma2-gis-sync :global(.firma2-gis-sync__sides) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--spacing-400) var(--spacing-600);
+    margin: 0;
+  }
+
+  .firma2-gis-sync :global(.firma2-gis-sync__meta dt),
+  .firma2-gis-sync :global(.firma2-gis-sync__sides dt) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-gis-sync :global(.firma2-gis-sync__meta dd),
+  .firma2-gis-sync :global(.firma2-gis-sync__sides dd) {
+    margin: var(--spacing-100) 0 0;
+  }
+
+  .firma2-gis-sync :global(.firma2-gis-sync__conflict) {
+    padding-block-end: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+
+  .firma2-gis-sync :global(code) {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 0.9em;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-confirm-dialog';
+  import type { SharedLayer } from '../../data/firma2-geography';
+  import type { Conflict, Direction, FieldRow } from '../../data/firma2-gis-sync';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string; helpText?: string; checked?: boolean; message?: string; show?: () => void };
+
+  interface Config {
+    account: { org: string; email: string };
+    group: { id: string; title: string };
+    layers: SharedLayer[];
+    total: number;
+    featureCounts: Record<string, number>;
+    unmatched: Record<string, string[]>;
+    matches: Record<string, Record<string, number>>;
+    suggested: Record<string, string>;
+    rows: FieldRow[];
+    directions: { value: Direction; label: string }[];
+    conflicts: Conflict[];
+    sync: { fromLayer: number; toLayer: number; staleShapes: string[] };
+  }
+
+  interface State {
+    connected: boolean;
+    layerId: string;
+    joinField: string;
+    createUnmatched: boolean;
+    linked: boolean;
+    access: 'read' | 'edit';
+    fields: Record<string, { direction: Direction; layerField: string }>;
+    resolved: string[];
+    conflictsFound: boolean;
+    lastSync: string | null;
+    lastMessage: string | null;
+  }
+
+  const KEY = 'firma2:gis-sync:v1';
+  const fresh = (): State => ({
+    connected: false,
+    layerId: '',
+    joinField: '',
+    createUnmatched: false,
+    linked: false,
+    access: 'read',
+    fields: {},
+    resolved: [],
+    conflictsFound: false,
+    lastSync: null,
+    lastMessage: null,
+  });
+  const load = (): State => {
+    try {
+      const raw = localStorage.getItem(KEY);
+      return raw ? { ...fresh(), ...(JSON.parse(raw) as Partial<State>) } : fresh();
+    } catch {
+      return fresh();
+    }
+  };
+  const store = (s: State) => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(s));
+    } catch {
+      // Blocked storage: the change holds for this page view.
+    }
+  };
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never';
+  const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+  document.querySelectorAll<HTMLElement>('.firma2-gis-sync').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const clone = (name: string) => ($<HTMLTemplateElement>(`[data-tpl-${name}]`).content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+    let state = load();
+    let busy: 'connect' | 'sync' | 'access' | null = null;
+
+    const set = (patch: Partial<State>) => {
+      state = { ...state, ...patch };
+      store(state);
+      paint();
+    };
+    const layerOf = () => config.layers.find((l) => l.id === state.layerId);
+    const matched = () => config.matches[state.layerId]?.[state.joinField] ?? 0;
+    const setLabel = (btn: HTMLElement, text: string) => {
+      const label = btn.querySelector('.esa-button__label');
+      if (label) label.textContent = text;
+    };
+
+    const layerSel = $<Control>('[data-layer]');
+    const joinSel = $<Control>('[data-join]');
+    const createSw = $<Control>('[data-create]');
+    const rowsEl = $('[data-rows]');
+    const rowControls = new Map<string, { direction: Control; layerField: Control; cell: HTMLElement }>();
+
+    const fieldOptions = (layer: SharedLayer | undefined) =>
+      (layer?.fields ?? [])
+        .filter((f) => !f.name.startsWith('Shape__') && f.type !== 'OID' && f.type !== 'GlobalID')
+        .map((f) => ({ value: f.name, label: f.alias ? `${f.name} — ${f.alias}` : f.name }));
+
+    // ---- the linked rows: built once, then only their values move ---------------
+    const buildRows = () => {
+      rowsEl.replaceChildren(
+        ...config.rows.map((row) => {
+          const li = document.createElement('li');
+          li.className = 'firma2-gis-sync__row';
+          const direction = document.createElement('esa-select') as Control;
+          direction.setAttribute('size', 'md');
+          direction.setAttribute('label', row.label);
+          const layerField = document.createElement('esa-select') as Control;
+          layerField.setAttribute('size', 'md');
+          layerField.setAttribute('label', `${row.label}: layer field`);
+          layerField.setAttribute('placeholder', 'Choose a field');
+          customElements.whenDefined('esa-select').then(() => {
+            direction.options = config.directions;
+            syncRows();
+          });
+          direction.addEventListener('change', () => {
+            const dir = String(direction.value ?? 'none') as Direction;
+            set({ fields: { ...state.fields, [row.key]: { ...state.fields[row.key], direction: dir } } });
+          });
+          layerField.addEventListener('change', () => {
+            set({ fields: { ...state.fields, [row.key]: { ...state.fields[row.key], layerField: String(layerField.value ?? '') } } });
+          });
+          const cell = document.createElement('div');
+          cell.append(layerField);
+          li.append(direction, cell);
+          rowControls.set(row.key, { direction, layerField, cell });
+          return li;
+        }),
+      );
+    };
+
+    const writes = () => config.rows.filter((r) => ['app', 'both'].includes(state.fields[r.key]?.direction)).length;
+
+    const syncRows = () => {
+      const layer = layerOf();
+      const needsEdit = state.access === 'read';
+      config.rows.forEach((row) => {
+        const ctl = rowControls.get(row.key)!;
+        const cur = state.fields[row.key] ?? { direction: 'none' as Direction, layerField: '' };
+        ctl.direction.value = cur.direction;
+        ctl.direction.helpText = needsEdit && ['app', 'both'].includes(cur.direction) ? 'Writes to your layer, which needs edit access.' : '';
+        // Shapes are the geometry itself: nothing to pick. Unsynced fields pick nothing either.
+        ctl.cell.hidden = row.layerField === null || cur.direction === 'none';
+        ctl.layerField.options = fieldOptions(layer);
+        ctl.layerField.value = cur.layerField;
+      });
+    };
+
+    // ---- paint -------------------------------------------------------------------
+    const paint = () => {
+      const view = !state.connected ? 'disconnected' : state.linked ? 'linked' : 'choose';
+      root.querySelectorAll<HTMLElement>('[data-view]').forEach((el) => (el.hidden = el.dataset.view !== view));
+      setLabel($('[data-connect]'), busy === 'connect' ? 'Connecting…' : 'Connect ArcGIS');
+      if (view === 'choose') paintChoose();
+      if (view === 'linked') paintLinked();
+    };
+
+    const paintChoose = () => {
+      const layer = layerOf();
+      $('[data-match]').hidden = !layer;
+      layerSel.value = state.layerId;
+      if (!layer) return;
+      const total = config.total;
+      const counts = config.matches[layer.id] ?? {};
+      joinSel.options = layer.fields
+        .filter((f) => !f.name.startsWith('Shape__'))
+        .map((f) => ({ value: f.name, label: `${f.name}${f.alias ? ` — ${f.alias}` : ''} · ${counts[f.name] ?? 0} of ${total} projects` }));
+      joinSel.value = state.joinField;
+      const shapeId = [layer.globalIdField, layer.objectIdField].includes(state.joinField);
+      const suggested = config.suggested[layer.id];
+      joinSel.helpText = shapeId
+        ? `${state.joinField} identifies a shape, not a project, and changes when the layer is republished. Choose a project number.`
+        : state.joinField && state.joinField === suggested
+          ? `Suggested: it matches the most projects.`
+          : '';
+
+      const hit = matched();
+      const features = config.featureCounts[layer.id] ?? 0;
+      const orphans = Math.max(0, features - hit);
+      const names = config.unmatched[layer.id] ?? [];
+      const lines = [
+        `${n(hit, 'project links', 'projects link')} to a feature.`,
+        total - hit > 0 ? `${n(total - hit, 'project has', 'projects have')} no feature and ${total - hit === 1 ? 'keeps what it has' : 'keep what they have'}.` : '',
+        orphans > 0 ? `${n(orphans, 'feature matches', 'features match')} no project${names.length && hit > 0 ? `: ${names.join(', ')}` : ''}.` : '',
+      ].filter(Boolean);
+      $('[data-preview]').innerHTML = lines.map((l) => `<p class="typography-body-md">${esc(l)}</p>`).join('');
+      createSw.hidden = orphans === 0;
+      createSw.checked = state.createUnmatched;
+    };
+
+    const paintLinked = () => {
+      const layer = layerOf();
+      const hit = matched();
+      $('[data-meta]').innerHTML = [
+        ['Layer', esc(layer?.name ?? '')],
+        ['Matched on', `<code>${esc(state.joinField)}</code>`],
+        ['Linked', `${hit} of ${config.total} projects`],
+        ['Layer access', state.access === 'edit' ? 'Can edit' : 'Read only'],
+        ['Last sync', state.lastSync ? when(state.lastSync) : 'Not yet synced'],
+      ]
+        .map(([dt, dd]) => `<div><dt class="typography-body-sm">${dt}</dt><dd class="typography-body-md">${dd}</dd></div>`)
+        .join('');
+      const syncBtn = $('[data-sync]');
+      syncBtn.classList.toggle('esa-button--disabled', busy === 'sync');
+      setLabel(syncBtn, busy === 'sync' ? 'Syncing…' : 'Sync now');
+
+      syncRows();
+
+      const w = writes();
+      $('[data-access-alert]').hidden = !(w > 0 && state.access === 'read');
+      $('[data-access-text]').textContent = `${n(w, 'field writes', 'fields write')} to your layer, and ProjectFirma can only read it now. Ask your ArcGIS administrator for edit access in ${config.group.title}, then check again.`;
+      setLabel($('[data-check-access]'), busy === 'access' ? 'Checking…' : 'Check edit access');
+
+      // A conflict exists only where a field is set to "Either way" and a sync has found it.
+      const open = state.conflictsFound
+        ? config.conflicts.filter((c) => state.fields[c.field]?.direction === 'both' && !state.resolved.includes(`${c.project}|${c.field}`))
+        : [];
+      $('[data-no-conflicts]').hidden = open.length > 0;
+      const labelOf = (key: string) => config.rows.find((r) => r.key === key)?.label ?? key;
+      $('[data-conflicts]').replaceChildren(
+        ...open.map((c) => {
+          const el = clone('conflict');
+          el.querySelector('[data-title]')!.textContent = `${c.project} · ${labelOf(c.field)}`;
+          el.querySelector('[data-layer-side]')!.textContent = `${c.layer.value} · ${when(c.layer.at)}`;
+          el.querySelector('[data-app-side]')!.textContent = `${c.app.value} · ${when(c.app.at)}`;
+          const resolve = () => set({ resolved: [...state.resolved, `${c.project}|${c.field}`] });
+          el.querySelector('[data-keep-layer]')!.addEventListener('click', resolve);
+          el.querySelector('[data-keep-app]')!.addEventListener('click', resolve);
+          return el;
+        }),
+      );
+    };
+
+    // ---- connect, choose, link ----------------------------------------------------
+    $('[data-connect]').addEventListener('click', () => {
+      if (busy) return;
+      busy = 'connect';
+      paint();
+      window.setTimeout(() => {
+        busy = null;
+        set({ connected: true });
+      }, 900);
+    });
+
+    layerSel.addEventListener('change', () => {
+      const id = String(layerSel.value ?? '');
+      if (!id || id === state.layerId) return;
+      set({ layerId: id, joinField: config.suggested[id] ?? '', createUnmatched: false });
+    });
+    joinSel.addEventListener('change', () => set({ joinField: String(joinSel.value ?? '') }));
+    createSw.addEventListener('change', () => set({ createUnmatched: Boolean(createSw.checked) }));
+
+    $('[data-link]').addEventListener('click', () => {
+      if (!matched()) {
+        joinSel.errorText = 'No project matches this field. Choose one that holds project numbers.';
+        return;
+      }
+      joinSel.errorText = '';
+      const layer = layerOf()!;
+      const fields = Object.fromEntries(
+        config.rows.map((row) => {
+          const has = row.layerField === null || layer.fields.some((f) => f.name === row.layerField);
+          return [row.key, { direction: has ? row.direction : ('none' as Direction), layerField: has ? (row.layerField ?? '') : '' }];
+        }),
+      );
+      set({ linked: true, fields, resolved: [], conflictsFound: false, lastSync: null, lastMessage: null });
+    });
+
+    // ---- sync: scripted, saying what a real one would ---------------------------------
+    $('[data-sync]').addEventListener('click', () => {
+      if (busy) return;
+      busy = 'sync';
+      paint();
+      window.setTimeout(() => {
+        busy = null;
+        const dirs = Object.values(state.fields).map((f) => f.direction);
+        const reads = dirs.some((d) => d === 'layer' || d === 'both');
+        const writesOn = dirs.some((d) => d === 'app' || d === 'both');
+        const canWrite = state.access === 'edit';
+        const open = config.conflicts.filter((c) => state.fields[c.field]?.direction === 'both' && !state.resolved.includes(`${c.project}|${c.field}`));
+        const layer = layerOf()!;
+        const lines = [
+          `${n(reads ? config.sync.fromLayer : 0, 'change', 'changes')} came from your layer, and ${n(writesOn && canWrite ? config.sync.toLayer : 0, 'change', 'changes')} went to it.`,
+          writesOn && !canWrite ? `${n(writes(), 'field', 'fields')} could not write: your layer is read only for ProjectFirma.` : '',
+          open.length ? `${n(open.length, 'field changed', 'fields changed')} on both sides. Both values are kept until you choose.` : '',
+          ...(state.fields.shapes?.direction === 'layer' || state.fields.shapes?.direction === 'both'
+            ? config.sync.staleShapes.map((name) => `“${name}” is gone from the layer. It’s kept here and marked stale.`)
+            : []),
+          state.joinField === 'PROJ_ID' && config.unmatched[layer.id]?.length ? `Matched no project: ${config.unmatched[layer.id].join(', ')}.` : '',
+        ].filter(Boolean);
+        const alert = clone('success');
+        alert.querySelector('[data-lines]')!.innerHTML = lines.map((l) => `<p class="typography-body-sm">${esc(l)}</p>`).join('');
+        $('[data-result]').replaceChildren(alert);
+        set({ conflictsFound: true, lastSync: new Date().toISOString(), lastMessage: lines[0] });
+      }, 1200);
+    });
+
+    $('[data-check-access]').addEventListener('click', () => {
+      if (busy) return;
+      busy = 'access';
+      paint();
+      window.setTimeout(() => {
+        busy = null;
+        set({ access: 'edit' });
+      }, 900);
+    });
+
+    // ---- the exit that keeps everything -------------------------------------------------
+    const confirm = $<Control>('.firma2-gis-sync__disconnect');
+    root.querySelectorAll('[data-disconnect]').forEach((b) => b.addEventListener('click', () => confirm.show?.()));
+    confirm.addEventListener('resolved', (e) => {
+      if ((e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) {
+        $('[data-result]').replaceChildren();
+        set(fresh());
+      }
+    });
+
+    // ---- wire up --------------------------------------------------------------------------
+    buildRows();
+    customElements.whenDefined('esa-select').then(() => {
+      layerSel.options = config.layers.map((l) => ({ value: l.id, label: `${l.name} — ${l.geometry.toLowerCase()}s` }));
+      paint();
+    });
+    paint();
+  });
+</script>

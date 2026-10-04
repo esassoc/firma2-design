@@ -34,6 +34,21 @@
 //     </ol>
 //   </bcn-sortable-list>
 //
+// LINKED LISTS. Lists that share a `group` attribute pass rows between them —
+// tags between tag groups. A row dragged over a linked list drops into it, and
+// the grip's menu adds "Move to <label>" for every other list in the group
+// (each list's `label` attribute names it, or `move-label` gives the whole
+// item — "Remove from group" for the list of tags in none). An empty list stays a drop target
+// if the consumer gives it a placeholder <li> with no data-sort-key; it is
+// hidden as soon as the list holds a real row.
+//
+//   <bcn-sortable-list group="tags" label="Partners">…</bcn-sortable-list>
+//   <bcn-sortable-list group="tags" label="Community">…</bcn-sortable-list>
+//
+// A row that lands in another list fires `sort-change` on the list it LANDED
+// IN, with `detail.from` the list it left. The event bubbles, so a consumer
+// with nested lists checks `event.target`.
+//
 // It decorates every movable <li> with a grip (and re-decorates whenever the
 // consumer repaints — a MutationObserver, so the consumer never calls it).
 // A move fires `sort-change` with `detail: { order: string[], key: string }`:
@@ -71,7 +86,7 @@ function cloneGrip(template: HTMLTemplateElement): DocumentFragment {
 }
 
 interface MenuEl extends HTMLElement {
-  items: { label: string; action: string; disabled?: boolean }[];
+  items: { label: string; action: string; disabled?: boolean; divider?: boolean }[];
 }
 
 // ---- styles, once per document ----------------------------------------------
@@ -95,6 +110,7 @@ const STYLES = `
   }
   bcn-sortable-list li[data-dragging] [data-sort-grip] button { cursor: grabbing; }
   bcn-sortable-list[data-sorting] { user-select: none; cursor: grabbing; }
+  bcn-sortable-list :is(ol, ul):has(> li[data-sort-key]) > li[data-sort-placeholder] { display: none; }
   @media (prefers-reduced-motion: reduce) {
     bcn-sortable-list li { transition: none !important; }
   }
@@ -112,6 +128,8 @@ function ensureStyles(): void {
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export class BcnSortableList extends HTMLElement {
+  static observedAttributes = ['label', 'move-label'];
+
   #observer = new MutationObserver(() => this.#decorate());
   /** Key whose grip gets focus after the consumer's next repaint. */
   #refocus: string | null = null;
@@ -130,6 +148,18 @@ export class BcnSortableList extends HTMLElement {
 
   disconnectedCallback(): void {
     this.#observer.disconnect();
+  }
+
+  /** A renamed list renames every linked list's "Move to …" item. */
+  attributeChangedCallback(): void {
+    if (this.isConnected) this.#peers().forEach((p) => p.#decorate());
+  }
+
+  /** Every list linked to this one by `group`, this one included, in page order. */
+  #peers(): BcnSortableList[] {
+    const group = this.getAttribute('group');
+    if (!group) return [this];
+    return Array.from(document.querySelectorAll<BcnSortableList>(`bcn-sortable-list[group="${CSS.escape(group)}"]`));
   }
 
   get #list(): HTMLElement | null {
@@ -181,12 +211,19 @@ export class BcnSortableList extends HTMLElement {
       const button = menu.querySelector('button');
       button?.setAttribute('aria-label', `Move ${name}`);
       button?.setAttribute('title', 'Drag to move, or click for options');
-      const items = [
+      const items: MenuEl['items'] = [
         { label: 'Move up', action: 'up', disabled: i === 0 },
         { label: 'Move down', action: 'down', disabled: i === movable.length - 1 },
         { label: 'Move to top', action: 'top', disabled: i === 0 },
         { label: 'Move to bottom', action: 'bottom', disabled: i === movable.length - 1 },
       ];
+      const peers = this.#peers().filter((p) => p !== this);
+      if (peers.length) {
+        items.push({ label: '', action: '', divider: true });
+        peers.forEach((p, n) =>
+          items.push({ label: p.getAttribute('move-label') ?? `Move to ${p.getAttribute('label') ?? `list ${n + 1}`}`, action: `to:${n}` }),
+        );
+      }
       customElements.whenDefined('esa-dropdown-menu').then(() => {
         menu!.items = items;
       });
@@ -211,12 +248,13 @@ export class BcnSortableList extends HTMLElement {
   }
 
   // ---- commit -------------------------------------------------------------------
-  #commit(key: string, order: string[]): void {
+  #commit(key: string, order: string[], from?: BcnSortableList): void {
     const li = this.#movable().find((r) => r.dataset.sortKey === key);
     const name = li?.dataset.sortLabel ?? 'Row';
-    announce(`${name} moved to ${order.indexOf(key) + 1} of ${order.length}.`);
+    const where = from && from !== this ? ` ${this.getAttribute('label') ?? 'another list'},` : '';
+    announce(`${name} moved to${where} ${order.indexOf(key) + 1} of ${order.length}.`);
     this.#refocus = key;
-    this.dispatchEvent(new CustomEvent('sort-change', { detail: { order, key }, bubbles: true }));
+    this.dispatchEvent(new CustomEvent('sort-change', { detail: { order, key, from: from ?? this }, bubbles: true }));
     // If the consumer did not repaint, the grips still need fresh menus and focus.
     queueMicrotask(() => this.#decorate());
   }
@@ -226,7 +264,18 @@ export class BcnSortableList extends HTMLElement {
     const action = (event as CustomEvent<string>).detail;
     const grip = (event.target as HTMLElement).closest('[data-sort-grip]');
     const li = grip?.closest('li') as HTMLLIElement | null;
-    if (!li?.dataset.sortKey || !['up', 'down', 'top', 'bottom'].includes(action)) return;
+    if (!li?.dataset.sortKey) return;
+    if (action.startsWith('to:')) {
+      event.stopPropagation();
+      const peer = this.#peers().filter((p) => p !== this)[Number(action.slice(3))];
+      if (!peer?.#list) return;
+      // Joins the end of the list it moves to.
+      peer.#list.append(li);
+      peer.#commit(li.dataset.sortKey, peer.#order(), this);
+      queueMicrotask(() => this.#decorate());
+      return;
+    }
+    if (!['up', 'down', 'top', 'bottom'].includes(action)) return;
     event.stopPropagation();
     const order = this.#order();
     const key = li.dataset.sortKey;
@@ -256,6 +305,8 @@ export class BcnSortableList extends HTMLElement {
     if (event.button !== 0) return;
     const startY = event.clientY;
     const original = this.#order();
+    // Where the row came from, to put it back exactly on Escape.
+    const home = { parent: li.parentElement!, next: li.nextSibling };
     let dragging = false;
     // The pointer's offset inside the row, so the row stays under it as the
     // DOM reorders around it.
@@ -292,21 +343,32 @@ export class BcnSortableList extends HTMLElement {
         this.dataset.sorting = '';
       }
       e.preventDefault();
-      const others = this.#movable().filter((r) => r !== li);
+      const y = e.clientY;
+      // The list under the pointer — or, between lists, the nearest one.
+      // Unlinked, that is always this list.
+      const peers = this.#peers();
+      const distance = (p: BcnSortableList) => {
+        const r = p.getBoundingClientRect();
+        return y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      };
+      const target = peers.reduce((best, p) => (distance(p) < distance(best) ? p : best), (li.closest('bcn-sortable-list') as BcnSortableList) ?? this);
+      const others = target.#movable().filter((r) => r !== li);
+      const everyRow = peers.flatMap((p) => p.#movable()).filter((r) => r !== li);
       // Find the first movable row whose midpoint is below the pointer: the
       // dragged row belongs just before it. Locked rows are never crossed —
       // they are not in `others`, and the row is only ever placed beside a
       // movable one.
-      const y = e.clientY;
       const next = others.find((r) => {
         const rect = r.getBoundingClientRect();
         return y < rect.top + rect.height / 2;
       });
-      const currentNext = this.#movable()[this.#movable().indexOf(li) + 1];
-      if (next !== currentNext) {
-        flip(others, () => {
+      const inTarget = li.parentElement === target.#list;
+      const currentNext = inTarget ? target.#movable()[target.#movable().indexOf(li) + 1] : undefined;
+      if (!inTarget || next !== currentNext) {
+        flip(everyRow, () => {
           if (next) next.before(li);
-          else others[others.length - 1]?.after(li);
+          else if (others.length) others[others.length - 1].after(li);
+          else target.#list?.append(li);
         });
       }
       follow(y);
@@ -328,15 +390,13 @@ export class BcnSortableList extends HTMLElement {
       li.addEventListener('transitionend', () => (li.style.transition = ''), { once: true });
       const key = li.dataset.sortKey!;
       if (cancelled) {
-        const rows = this.#movable();
-        const byKey = new Map(rows.map((r) => [r.dataset.sortKey!, r]));
-        const list = this.#list!;
-        const firstLocked = this.#rows().find((r) => 'sortLocked' in r.dataset && list.contains(r));
-        original.forEach((k) => {
-          const r = byKey.get(k)!;
-          if (firstLocked) firstLocked.before(r);
-          else list.append(r);
-        });
+        home.parent.insertBefore(li, home.next);
+        return;
+      }
+      const landed = li.closest('bcn-sortable-list') as BcnSortableList | null;
+      if (landed && landed !== this) {
+        landed.#commit(key, landed.#order(), this);
+        queueMicrotask(() => this.#decorate());
         return;
       }
       const order = this.#order();

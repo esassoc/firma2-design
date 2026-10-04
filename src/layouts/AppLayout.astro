@@ -12,9 +12,13 @@
 import BaseLayout from './BaseLayout.astro';
 import EsaAppShell from '@esa/ecology/esa-app-shell.astro';
 import EsaContainer from '@esa/ecology/esa-container.astro';
-import { navItems, workspaceSettingsNavItems, searchIndex } from '../data/firma2-nav';
+import { navItemsFor, organizationNavItems, workspaceSettingsNavItems, searchIndex } from '../data/firma2-nav';
+import type { Firma2NavItem } from '../data/firma2-nav';
 import { withBase } from '../lib/base';
 import { CONTENT_MAX, CONTENT_READING } from '../lib/content-width';
+import Firma2PagesNav from '../components/shared/firma2-pages-nav.astro';
+import { seedEntries } from '../data/firma2-pages';
+import { pagesNavItems } from '../lib/custom-pages';
 
 interface Props {
   /** Document title. The shell's wordmark is the product name and does not change. */
@@ -59,12 +63,32 @@ const { title = 'ProjectFirma 2.0', active, nav = 'app', width = 'default' } = A
 // Most of the rail is dimmed today because most of the product is unbuilt. That
 // is an accurate picture of a spoke with one working screen, not a styling
 // problem — the dimming recedes on its own as pages land.
-const items = (nav === 'workspace-settings' ? workspaceSettingsNavItems : navItems).map((item) => ({
-  ...item,
-  href: item.href ? withBase(item.href) : undefined,
-  disabled: !item.href,
-}));
+//
+// A PARENT ROW is the exception: it has no href by construction (it opens, it
+// does not go), so it is never disabled — even when every child is unbuilt,
+// opening it is how a reader sees what that organization will offer.
+const toRailItem = (item: Firma2NavItem): Firma2NavItem & { disabled: boolean } => {
+  const children = item.children?.map(toRailItem);
+  return {
+    ...item,
+    href: item.href ? withBase(item.href) : undefined,
+    children,
+    disabled: children ? false : !item.href,
+  };
+};
+const items = (nav === 'workspace-settings' ? workspaceSettingsNavItems : [...navItemsFor(active), ...organizationNavItems]).map(toRailItem);
+// PAGES CLOSE THE APP RAIL: the workspace's own pages and folders, after the
+// product's fixed groups. The seeds render here so the group is on the page
+// before any script runs; Firma2PagesNav swaps in this browser's adds and puts
+// the + on the heading. Built already based and enabled — a folder has no href
+// and must not be dimmed by the rule above.
+const railItems = nav === 'app' ? [...items, ...pagesNavItems(seedEntries)] : items;
 const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry.id) }));
+
+// THE ACCOUNT MENU IS SIGN OUT ALONE. The shell's default adds Profile and
+// Settings, both cut (user call): the settings rail already opens on the
+// Personal pages, so the account menu was a second door to the same room.
+const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as const }];
 
 // No `mark` is passed: this spoke has no ProjectFirma wordmark or glyph yet, and
 // the brand ramp still points at the hub's default. Inventing a logo for a real
@@ -76,15 +100,17 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     <EsaAppShell
       title="ProjectFirma 2.0"
       active={active}
-      items={items}
+      items={railItems}
       searchIndex={searchEntries}
       searchPlaceholder="Search projects, organizations, and pages"
       userName="Dana Whitfield"
+      userMenu={userMenu}
       brandHref={withBase('/')}
     >
       {width === 'full' ? <slot /> : <EsaContainer maxWidth={width === 'reading' ? CONTENT_READING : CONTENT_MAX}><slot /></EsaContainer>}
     </EsaAppShell>
   </div>
+  {nav === 'app' && <Firma2PagesNav />}
 </BaseLayout>
 
 <script>
@@ -96,18 +122,17 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   // routing is the spoke's, and it belongs in the layout rather than on a page —
   // the menu is on every screen, so its behaviour has to be too.
   //
-  // Settings is the only action wired, because it is the only one this spoke has
-  // built. Profile and Sign out stay inert for now, which is the same honesty the
-  // sidenav applies to unbuilt routes (see the `disabled` note in the frontmatter
-  // above) — except that esa-app-shell's AppShellMenuItem has no `disabled` field
-  // to pass through, so they cannot yet be DIMMED the way a nav row is. That gap
-  // is upstream. Wire each one here as its screen lands.
+  // The account menu is Sign out alone (see the frontmatter), and it stays inert:
+  // there is no sign-in screen to land on. esa-app-shell's AppShellMenuItem has
+  // no `disabled` field, so it cannot yet be DIMMED the way a nav row is — an
+  // upstream gap. Only the workspace menu's actions are wired.
   import { withBase } from '../lib/base';
+  import { SETTINGS_HOME } from '../data/firma2-nav';
 
   const ROUTES: Record<string, string> = {
-    settings: '/prototypes/settings',
-    // The workspace menu on the rail's wordmark emits the same event.
-    'workspace-settings': '/prototypes/workspace-settings/project-types',
+    // The workspace menu on the rail's wordmark emits the same event. Settings
+    // opens on the first row of its rail, Personal › Preferences.
+    settings: SETTINGS_HOME,
   };
 
   // On `document`, not on the menu: the event is composed and bubbling, and the
@@ -117,9 +142,39 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     const route = ROUTES[(event as CustomEvent<string>).detail];
     if (route) window.location.href = withBase(route);
   });
+
+  // G THEN S OPENS SETTINGS — the two-key "go to" convention Linear and GitHub
+  // use. Not ⌘, (the desktop-app habit): in a browser that is the browser's own
+  // settings, and a page that steals it surprises more people than it helps.
+  // The second key has to follow within a second, and neither counts while the
+  // reader is typing — in a field, in the omnibox, or inside a lego's shadow
+  // root, which is why the target is read through composedPath().
+  const isTyping = (event: KeyboardEvent): boolean =>
+    event.composedPath().some(
+      (node) =>
+        node instanceof HTMLElement &&
+        (node.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)),
+    );
+
+  let goPressedAt = 0;
+  document.addEventListener('keydown', (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.repeat || isTyping(event)) return;
+    const key = event.key.toLowerCase();
+    if (key === 'g') {
+      goPressedAt = event.timeStamp;
+    } else if (key === 's' && goPressedAt && event.timeStamp - goPressedAt < 1000) {
+      goPressedAt = 0;
+      event.preventDefault();
+      window.location.href = withBase(SETTINGS_HOME);
+    } else {
+      goPressedAt = 0;
+    }
+  });
 </script>
 
 <script>
+  // Staggers bcn-progress-ring's draw-in across every ring on the page.
+  import '../lib/ring-stagger';
   import { ICON_PATHS } from '@esa/ecology/icon-registry';
   // Registers <bcn-edge-handle>, the grip mountRailEdgeHandle appends to the
   // rail's edge below. A side-effect import: the module defines a custom element
@@ -307,8 +362,8 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   // scope attribute, so every shell rule for `.esa-app-shell__brand` still
   // matches) and the same children. Home stays one click away on the nav.
   const WORKSPACE_MENU = [
-    { label: 'Workspace settings', action: 'workspace-settings' },
-    { label: 'Change workspace', action: 'change-workspace' },
+    { label: 'Settings', action: 'settings' },
+    { label: 'Switch workspace', action: 'change-workspace' },
   ];
 
   // Drawn from the icon registry, so it is the spoke's icon set like every
@@ -344,7 +399,20 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
         const root = menu.shadowRoot;
         if (!root) return;
         const sheet = new CSSStyleSheet();
-        sheet.replaceSync('.esa-dropdown, .esa-dropdown__trigger { display: block; }');
+        // The shortcut beside Settings. EsaMenuItem has no shortcut field, so it
+        // is generated content on the first item, silent to assistive tech (the
+        // `/ ''` alt text) since a screen reader user meets it in the omnibox
+        // instead. Lego gap: a `shortcut` on EsaMenuItem would retire this.
+        sheet.replaceSync(`
+          .esa-dropdown, .esa-dropdown__trigger { display: block; }
+          .esa-dropdown-menu__item:first-child::after {
+            content: 'G S' / '';
+            margin-inline-start: auto;
+            padding-inline-start: var(--spacing-400, 1rem);
+            color: var(--color-content-default-secondary, #646464);
+            font-size: var(--typography-body-sm-font-size, 0.875rem);
+          }
+        `);
         root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
       });
     });
@@ -446,9 +514,15 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   // cannot be reached at all. Workspace settings was the first rail long enough
   // to hit it (Your organization, at 950px tall). `overflow-y: auto` on the
   // region the lego already sizes is the whole fix. A hub gap: /request-lego.
+  //
+  // A LONG LABEL ELLIPSIZES. `.label` is `flex: 1` with text-overflow set, but
+  // no `min-width: 0`, so a flex item's automatic minimum holds it at its full
+  // text width: "California Watershed Restoration Board" ran past the rail and
+  // pushed its parent row's chevron out of sight. Same hub gap.
   const RAIL_HEAD_CSS = `
     .rail-head { flex-direction: column; align-items: stretch; }
     .nav-content { overflow-y: auto; }
+    .label { min-width: 0; }
   `;
 
   function stackRailHead(): void {

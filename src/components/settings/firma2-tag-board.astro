@@ -1,0 +1,781 @@
+---
+// firma2-tag-board — the workspace's tags, set up like a table: grouped rows
+// you type into, add to, drag between groups and colour in place.
+//
+// ONE GRID, GROUPED. Every tag is a row — colour, name, when to use it, how
+// many projects carry it — under one set of column headings, so the columns
+// line up from group to group. Each group is a heading row with its own
+// colour, and the tags under it are indented one grip's width: a tree read
+// as a table. (User-directed, 2026-10-03.)
+//
+// ADDING IS ADDING A ROW. "Add tag" at the foot of a group opens an empty row
+// with the cursor in its name; Enter keeps it and opens the next, the way a
+// spreadsheet takes a list. A row left with no name is dropped. Groups add the
+// same way from the page header. This replaces the Add tag PAGE for this list
+// — a tag is a name and a line, which a row holds.
+//
+// MOVING IS ONE GRIP. Groups reorder by the grip beside their name; tags
+// reorder by theirs and, dragged over another group, drop into it. The grip's
+// menu does the same moves without dragging, "Move to <group>" included
+// (bcn-sortable-list, linked lists). That arrangement is the order every tag
+// picker in the application offers.
+//
+// EDITS SAVE AS THEY ARE MADE — a name or description when you leave the
+// field, a colour when you pick it — to this browser (src/lib/taxonomy-edits.ts).
+//
+// QUIET UNTIL YOU'RE ON A ROW: each row's grip and "…" menu (Delete) show on
+// hover or focus, as in every settings list with row actions.
+//
+// A GROUP IS OPTIONAL. Tags in no group head the list, above the groups;
+// "Add tag" in the page header adds one there, and "Remove from group" on a
+// grip or "…" menu (or a drag up to the top) puts one back, and a tag in no
+// group can be converted into a group of its own name, colour and line. Deleting a group keeps its
+// tags — they join the ones in no group. A tag on projects asks before it
+// comes off them; an unused one simply goes. New tags and groups are dealt a
+// colour at random (user, 2026-10-03).
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { STAGE_SWATCHES } from '../../data/firma2-workspace-settings';
+---
+<!-- bcn-lego-checked: every control is a lego (esa-text-field, esa-popover,
+     esa-color-picker, esa-button, esa-dropdown-menu, esa-confirm-dialog, esa-empty-state) or the
+     spoke's bcn-sortable-list (reorders, and moves rows between linked lists —
+     no esa- list does either; esassoc/ecology#39). The classes only lay the
+     rows on one shared column grid, which no esa- component does. Beacon is
+     not cloned on this machine. Same row construction as firma2-stage-editor. -->
+<div class="firma2-tag-board" data-swatches={JSON.stringify(STAGE_SWATCHES)}>
+  <div class="firma2-tag-board__head typography-label-md" aria-hidden="true">
+    <span></span><span></span><span></span>
+    <span>Tag</span>
+    <span class="firma2-tag-board__desc">When to use it</span>
+    <span class="firma2-tag-board__num">Projects</span>
+    <span></span>
+  </div>
+
+  <!-- Tags in no group. Its drop row shows only while a tag is being dragged,
+       so an empty list takes no room but can still be dropped on. -->
+  <div class="firma2-tag-board__loose">
+    <section aria-label="Tags in no group">
+      <bcn-sortable-list group="tags" label="No group" move-label="Remove from group">
+        <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+        <ol class="firma2-tag-board__tags" data-loose-tags>
+          <li class="firma2-tag-board__placeholder firma2-tag-board__drop" data-sort-placeholder>
+            <p class="typography-body-sm">Drop here for no group</p>
+          </li>
+        </ol>
+      </bcn-sortable-list>
+    </section>
+  </div>
+
+  <bcn-sortable-list data-group-sort>
+    <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+    <ol class="firma2-tag-board__groups" data-groups></ol>
+  </bcn-sortable-list>
+
+  <esa-confirm-dialog class="firma2-tag-board__confirm" variant="danger"></esa-confirm-dialog>
+
+  <!-- Clone sources: real legos, copied by the script per row. The swatch
+       button's glyph is redrawn as a filled dot in the row's colour. -->
+  <template data-tpl-grip><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+  <template data-tpl-swatch><EsaButton variant="chrome" size="md" iconOnly icon="circle" aria-label="Colour">Colour</EsaButton></template>
+  <template data-tpl-menu><esa-dropdown-menu position="below-end"><EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="Actions" /></esa-dropdown-menu></template>
+  <template data-tpl-add-tag><EsaButton variant="ghost" size="md" icon="plus">Add tag</EsaButton></template>
+  <template data-tpl-empty><EsaEmptyState size="sm" title="No tags in this group" /></template>
+</div>
+
+<style>
+  /* ONE COLUMN GRID FOR EVERY ROW. Each group's section lays six tracks —
+     tag grip | colour | name | when to use it | projects | delete — and every
+     row inside it (the group heading, each tag) takes them by subgrid. The
+     page's column heads add the group grip's track in front. */
+  .firma2-tag-board {
+    --tag-board-tracks: 2.5rem 2.5rem minmax(0, 2fr) minmax(0, 3fr) 5rem 2.5rem;
+  }
+
+  .firma2-tag-board [hidden] {
+    display: none !important;
+  }
+
+  .firma2-tag-board__head {
+    display: grid;
+    grid-template-columns: 2.5rem var(--tag-board-tracks);
+    column-gap: var(--spacing-200);
+    padding-block-end: var(--spacing-200);
+    border-block-end: 1px solid var(--color-border-default);
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-tag-board__num,
+  .firma2-tag-board :global(.firma2-tag-board__count) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-tag-board__groups,
+  .firma2-tag-board :global(.firma2-tag-board__tags) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* A group: its grip (added by bcn-sortable-list) in the first track, the
+     section across the rest. */
+  .firma2-tag-board__groups > :global(li),
+  .firma2-tag-board__loose {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    column-gap: var(--spacing-200);
+    align-items: start;
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+
+  /* Empty and not being dropped on: no room at all, no rule under it. */
+  .firma2-tag-board__loose:not(:has(li:is([data-sort-key], [data-sort-locked]))) {
+    padding-block: 0;
+    border-block-end: 0;
+  }
+  .firma2-tag-board__loose li[data-sort-placeholder] {
+    display: none;
+  }
+  .firma2-tag-board:has(bcn-sortable-list[group][data-sorting]) .firma2-tag-board__loose:not(:has(li[data-sort-key]:not([data-dragging]))) {
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-tag-board:has(bcn-sortable-list[group][data-sorting]) .firma2-tag-board__loose ol:not(:has(> li[data-sort-key])) > li[data-sort-placeholder] {
+    display: block;
+  }
+  .firma2-tag-board__drop p {
+    margin: 0;
+    padding: var(--spacing-300);
+    border: 1px dashed var(--color-border-default);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    text-align: center;
+  }
+
+  .firma2-tag-board :global(section) {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: var(--tag-board-tracks);
+    column-gap: var(--spacing-200);
+    row-gap: var(--spacing-200);
+  }
+
+  /* Everything in a section spans it, and the rows inherit its tracks. */
+  .firma2-tag-board :global(section) > :global(*),
+  .firma2-tag-board :global(.firma2-tag-board__tags) > :global(li) {
+    grid-column: 1 / -1;
+  }
+
+  .firma2-tag-board :global(section) > :global(bcn-sortable-list),
+  .firma2-tag-board :global(.firma2-tag-board__tags),
+  .firma2-tag-board :global(.firma2-tag-board__row),
+  .firma2-tag-board :global(.firma2-tag-board__group-head) {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+    column-gap: var(--spacing-200);
+    align-items: center;
+  }
+
+  .firma2-tag-board :global(.firma2-tag-board__tags) {
+    row-gap: var(--spacing-200);
+  }
+
+  /* Group heading: colour in the tags' grip track — one step out from its
+     tags — the name across colour, name and description, delete last. */
+  .firma2-tag-board :global(.firma2-tag-board__group-head) > :global(.firma2-tag-board__swatch) {
+    grid-column: 1;
+  }
+  .firma2-tag-board :global(.firma2-tag-board__group-head) > :global(.firma2-tag-board__name) {
+    grid-column: 2 / -3;
+  }
+  .firma2-tag-board :global(.firma2-tag-board__remove) {
+    grid-column: -2;
+  }
+
+  .firma2-tag-board :global(.firma2-tag-board__add) {
+    grid-column: 2 / -1;
+    justify-self: start;
+  }
+
+  /* GRIP AND "…" SHOW ON THE ROW YOU'RE ON (user, 2026-10-03) — the
+     firma2-settings-table__menu rule: a column of identical icons is noise,
+     and revealed on hover each says which row it acts on. Opacity, not
+     visibility, so both stay in the tab order; keyboard focus, an open menu,
+     a row being dragged and a device without hover all show them outright.
+     A group's grip answers to its heading row, not the whole group. */
+  .firma2-tag-board :global(.firma2-tag-board__row) > :global(:is([data-sort-grip], .firma2-tag-board__remove)),
+  .firma2-tag-board :global(.firma2-tag-board__group-head) > :global(.firma2-tag-board__remove),
+  .firma2-tag-board__groups > :global(li) > :global([data-sort-grip]) {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .firma2-tag-board :global(.firma2-tag-board__row:is(:hover, :focus-within, [data-dragging])) > :global(:is([data-sort-grip], .firma2-tag-board__remove)),
+  .firma2-tag-board :global(.firma2-tag-board__group-head:is(:hover, :focus-within)) > :global(.firma2-tag-board__remove),
+  .firma2-tag-board__groups > :global(li:is(:has(> section > .firma2-tag-board__group-head:hover), [data-dragging])) > :global([data-sort-grip]),
+  .firma2-tag-board__groups > :global(li) > :global([data-sort-grip]:focus-within),
+  .firma2-tag-board :global(:is([data-sort-grip], .firma2-tag-board__remove)[open]) {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .firma2-tag-board :global(.firma2-tag-board__row) > :global(:is([data-sort-grip], .firma2-tag-board__remove)),
+    .firma2-tag-board :global(.firma2-tag-board__group-head) > :global(.firma2-tag-board__remove),
+    .firma2-tag-board__groups > :global(li) > :global([data-sort-grip]) {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-tag-board :global(:is([data-sort-grip], .firma2-tag-board__remove)) {
+      transition: none;
+    }
+  }
+
+  /* The chrome button takes its colour from context; the dot inherits it. */
+  .firma2-tag-board :global(.firma2-tag-board__swatch) {
+    color: var(--swatch);
+  }
+
+  .firma2-tag-board :global(.firma2-tag-board__panel) {
+    width: min(20rem, 80vw);
+  }
+
+  .firma2-tag-board :global(.firma2-tag-board__warning) {
+    color: var(--color-content-utility-warning);
+  }
+
+  .firma2-tag-board :global(.firma2-tag-board__count a) {
+    color: inherit;
+  }
+
+  /* NARROW: the description drops under the name; grips, colour and delete
+     keep their 40px. A container query, not a media query: the nav rail
+     takes a fixed share of the viewport, so the board's own width decides. */
+  .firma2-tag-board {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 40rem) {
+    .firma2-tag-board__head {
+      grid-template-columns: 2.5rem 2.5rem 2.5rem minmax(0, 1fr) 3rem 2.5rem;
+    }
+    .firma2-tag-board :global(section) {
+      grid-template-columns: 2.5rem 2.5rem minmax(0, 1fr) 3rem 2.5rem;
+    }
+    .firma2-tag-board__desc {
+      display: none;
+    }
+    .firma2-tag-board :global(.firma2-tag-board__row) > :global(.firma2-tag-board__description) {
+      grid-row: 2;
+      grid-column: 3 / -1;
+    }
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-popover';
+  import '@esa/ecology/esa-color-picker';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '../shared/bcn-sortable-list';
+  import { announce } from '@esa/ecology/announcer';
+  import {
+    addEntry,
+    arrangeTags,
+    editEntry,
+    entries,
+    nameTaken,
+    removeEntry,
+    tagsIn,
+  } from '../../lib/taxonomy-edits';
+  import type { TaxonomyEntry } from '../../lib/taxonomy-edits';
+  import { projectsWithTag } from '../../lib/project-tags';
+  import { recordHref } from '../../lib/taxonomy-record';
+  import { contrast, isHex } from '../../lib/tenant-brand';
+  import { randomTagColor } from '../../data/firma2-tags';
+  import { nameButton } from '../../lib/name-button';
+
+  const LIST = '/prototypes/workspace-settings/tags';
+  const MARK_MIN = 3;
+  const DOT = '<circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/>';
+
+  type Field = HTMLElement & { value?: string; errorText?: string; focus: () => void };
+  type Picker = HTMLElement & { value?: string; swatches?: unknown };
+  type Confirm = HTMLElement & { heading: string; message: string; show: () => void };
+
+  document.querySelectorAll<HTMLElement>('.firma2-tag-board').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const swatches = JSON.parse(root.dataset.swatches ?? '[]') as { value: string; label: string }[];
+    const groupsOl = $<HTMLOListElement>('[data-groups]');
+    const looseOl = $<HTMLOListElement>('[data-loose-tags]');
+    const addTagButton = () => document.querySelector<HTMLElement>('[data-add-tag]');
+    const confirm = $<Confirm>('.firma2-tag-board__confirm');
+
+    const clone = (name: string) =>
+      $<HTMLTemplateElement>(`[data-tpl-${name}]`).content.firstElementChild!.cloneNode(true) as HTMLElement;
+    const button = (el: HTMLElement) => el.querySelector<HTMLElement>('button, a') ?? el;
+
+    // ---- shared parts --------------------------------------------------------
+
+    const textField = (label: string, value: string, cls: string): Field => {
+      const f = document.createElement('esa-text-field') as Field;
+      f.className = cls;
+      f.setAttribute('size', 'md');
+      f.setAttribute('aria-label', label);
+      // Set once the lego is defined: before, `value` would shadow its accessor.
+      void customElements.whenDefined('esa-text-field').then(() => (f.value = value));
+      return f;
+    };
+
+    /** The coloured dot, and the popover that changes its colour. */
+    const swatch = (label: string, color: string, onPick: (hex: string) => void): HTMLElement => {
+      const wrap = document.createElement('span');
+      wrap.className = 'firma2-tag-board__swatch';
+      wrap.style.setProperty('--swatch', color);
+      const popover = document.createElement('esa-popover');
+      // RIGHT, not below: below, the panel spilled left over the nav rail
+      // (firma2-stage-editor found the same); to the right it covers the row.
+      popover.setAttribute('position', 'right');
+      popover.setAttribute('label', label);
+      const trigger = clone('swatch');
+      trigger.querySelector('svg')?.replaceChildren();
+      const svg = trigger.querySelector('svg');
+      if (svg) svg.innerHTML = DOT;
+      nameButton(trigger, label);
+
+      const panel = document.createElement('div');
+      panel.slot = 'content';
+      panel.className = 'firma2-tag-board__panel stack';
+      panel.dataset.gap = 'xs';
+      const picker = document.createElement('esa-color-picker') as Picker;
+      picker.setAttribute('label', 'Colour');
+      picker.setAttribute('show-input', '');
+      const warning = document.createElement('p');
+      warning.className = 'firma2-tag-board__warning typography-body-sm';
+      const paintWarning = (hex: string) => {
+        const ratio = contrast(hex, '#ffffff');
+        warning.hidden = ratio >= MARK_MIN;
+        warning.textContent = `Hard to see on white: ${ratio.toFixed(1)} : 1. Colours need at least ${MARK_MIN} : 1.`;
+      };
+      void customElements.whenDefined('esa-color-picker').then(() => {
+        picker.swatches = swatches;
+        picker.value = color;
+        paintWarning(color);
+      });
+      picker.addEventListener('change', () => {
+        const next = String(picker.value ?? '');
+        if (!isHex(next)) return;
+        wrap.style.setProperty('--swatch', next);
+        paintWarning(next);
+        onPick(next);
+      });
+      panel.append(picker, warning);
+      // esa-popover toggles on any click inside its anchor, its panel included;
+      // stopping clicks at the panel keeps it open while choosing (same hub gap
+      // as firma2-stage-editor).
+      panel.addEventListener('click', (e) => e.stopPropagation());
+      popover.append(trigger, panel);
+      wrap.append(popover);
+      return wrap;
+    };
+
+    type MenuItem = { label: string; action: string; variant?: 'danger'; divider?: boolean };
+
+    /**
+     * The row's "…" menu. `items` is asked again each time the menu opens — a
+     * tag's choices depend on whether it is in a group, and a drag can change
+     * that at any moment. A capture listener on the host runs before the
+     * lego's own trigger handler, so the list is fresh when it renders.
+     */
+    const rowMenu = (label: string, items: () => MenuItem[], onAction: (action: string) => void): HTMLElement => {
+      const el = clone('menu') as HTMLElement & { items: MenuItem[] };
+      el.classList.add('firma2-tag-board__remove');
+      nameButton(el, label);
+      const refresh = () => void customElements.whenDefined('esa-dropdown-menu').then(() => (el.items = items()));
+      refresh();
+      el.addEventListener('click', refresh, true);
+      el.addEventListener('menu-action', (e) => {
+        e.stopPropagation();
+        onAction((e as CustomEvent<string>).detail);
+      });
+      return el;
+    };
+
+    /** A menu of one destructive item. */
+    const only = (label: string) => () => [{ label, action: 'pick', variant: 'danger' as const }];
+
+    const askFirst = (heading: string, message: string, confirmLabel: string, go: () => void) => {
+      confirm.heading = heading;
+      confirm.message = message;
+      confirm.setAttribute('confirm-label', confirmLabel);
+      confirm.addEventListener('resolved', (e) => (e as CustomEvent<{ confirmed: boolean }>).detail.confirmed && go(), { once: true });
+      confirm.show();
+    };
+
+    const projectsLine = (n: number) =>
+      n === 1 ? 'It comes off the one project that carries it.' : `It comes off the ${n} projects that carry it.`;
+
+    /**
+     * Focus after the menu has closed. esa-dropdown-menu restores focus to its
+     * trigger in its own next render — a trigger a delete has just removed —
+     * so focusing now would be undone (bcn-sortable-list defers the same way).
+     */
+    const focusLater = (el: HTMLElement | null | undefined) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => el?.focus()));
+
+    /** Commit a field when focus leaves it or Enter is pressed. */
+    const onCommit = (f: Field, commit: (viaEnter: boolean) => void) => {
+      let busy = false;
+      const run = (viaEnter: boolean) => {
+        if (busy) return;
+        busy = true;
+        try {
+          commit(viaEnter);
+        } finally {
+          busy = false;
+        }
+      };
+      f.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Enter') {
+          e.preventDefault();
+          run(true);
+        }
+      });
+      f.addEventListener('focusout', () => run(false));
+    };
+
+    const fieldValue = (f: Field) => String(f.value ?? '').trim();
+
+    // ---- a tag row ------------------------------------------------------------
+
+    const tagRow = (t: TaxonomyEntry): HTMLLIElement => {
+      const li = document.createElement('li');
+      li.className = 'firma2-tag-board__row';
+      li.dataset.sortKey = t.slug;
+      li.dataset.sortLabel = t.name;
+
+      const name = textField(`Name of ${t.name}`, t.name, 'firma2-tag-board__name');
+      const description = textField(`When to use ${t.name}`, t.description, 'firma2-tag-board__description');
+
+      onCommit(name, () => {
+        const next = fieldValue(name);
+        const current = entries('tag').find((e) => e.slug === t.slug);
+        if (!current || next === current.name) {
+          name.errorText = '';
+          return;
+        }
+        name.errorText = !next ? 'Name the tag.' : nameTaken('tag', next, t.slug) ? 'A tag already has this name.' : '';
+        if (name.errorText) return;
+        editEntry('tag', t.slug, { name: next });
+        t.name = next;
+        li.dataset.sortLabel = next;
+        name.setAttribute('aria-label', `Name of ${next}`);
+        description.setAttribute('aria-label', `When to use ${next}`);
+        nameButton(dot, `Colour of ${next}`);
+        nameButton(remove, `Actions for ${next}`);
+        count.setAttribute('aria-label', countLabel(next));
+      });
+      onCommit(description, () => {
+        const next = fieldValue(description);
+        if (next !== (entries('tag').find((e) => e.slug === t.slug)?.description ?? '')) editEntry('tag', t.slug, { description: next });
+      });
+
+      const dot = swatch(`Colour of ${t.name}`, t.color ?? '#646464', (hex) => editEntry('tag', t.slug, { color: hex }));
+
+      const used = projectsWithTag(t.slug).length;
+      const countLabel = (n: string) => `${used} ${used === 1 ? 'project' : 'projects'} tagged ${n}`;
+      const cell = document.createElement('span');
+      cell.className = 'firma2-tag-board__count typography-body-md';
+      const count = document.createElement('a');
+      count.href = recordHref(LIST, t.slug);
+      count.textContent = String(used);
+      count.setAttribute('aria-label', countLabel(t.name));
+      cell.append(count);
+
+      const inGroup = () => !li.closest('[data-loose-tags]');
+      const remove = rowMenu(
+        `Actions for ${t.name}`,
+        () => [
+          inGroup() ? { label: 'Remove from group', action: 'ungroup' } : { label: 'Convert to group', action: 'convert' },
+          { label: '', action: '', divider: true },
+          { label: 'Delete tag', action: 'delete', variant: 'danger' },
+        ],
+        (action) => {
+          const inUse = projectsWithTag(t.slug).length;
+          if (action === 'ungroup') {
+            // Joins the end of the tags in no group, at the top of the grid.
+            looseOl.append(li);
+            saveArrangement();
+            announce(`${t.name} removed from its group.`);
+            focusLater(button(remove));
+          } else if (action === 'convert') {
+            // A group is named like a tag, so the name must be free among groups.
+            if (nameTaken('tagGroup', t.name)) {
+              name.errorText = 'A group already has this name.';
+              return;
+            }
+            const go = () => {
+              const g = addEntry('tagGroup', { name: t.name, description: t.description, color: t.color });
+              removeEntry('tag', t.slug);
+              li.remove();
+              const item = groupItem(g);
+              groupsOl.append(item);
+              saveArrangement();
+              announce(`${t.name} is now a group.`);
+              focusLater(item.querySelector<HTMLElement>('.firma2-tag-board__add button'));
+            };
+            if (!inUse) return go();
+            // A group is never given to a project, so the tag comes off them.
+            askFirst(`Convert ${t.name} to a group?`, `${projectsLine(inUse)} Groups aren’t given to projects.`, 'Convert to group', go);
+          } else if (action === 'delete') {
+            const drop = () => {
+              removeEntry('tag', t.slug);
+              const group = li.closest<HTMLElement>('section');
+              li.remove();
+              saveArrangement();
+              announce(`${t.name} deleted.`);
+              focusLater(group?.querySelector<HTMLElement>('.firma2-tag-board__add button') ?? addTagButton());
+            };
+            if (!inUse) return drop();
+            askFirst(`Delete ${t.name}?`, projectsLine(inUse), 'Delete tag', drop);
+          }
+        },
+      );
+
+      li.append(dot, name, description, cell, remove);
+      return li;
+    };
+
+    /**
+     * An empty row for a new tag: kept once named, dropped if left empty.
+     * `group` null is the list of tags in no group.
+     */
+    const pendingTagRow = (group: TaxonomyEntry | null, list: HTMLElement) => {
+      const li = document.createElement('li');
+      li.className = 'firma2-tag-board__row';
+      // Locked: a row with no name yet cannot be moved, and gets the grip's
+      // width as a spacer so its fields line up with the rest.
+      li.dataset.sortLocked = '';
+      // Dealt at random, and shown from the start, so the row is already the
+      // colour it will be kept with.
+      let color = randomTagColor();
+      const dot = swatch('Colour of the new tag', color, (hex) => (color = hex));
+      const name = textField('Name of the new tag', '', 'firma2-tag-board__name');
+      const description = textField('When to use the new tag', '', 'firma2-tag-board__description');
+      const cell = document.createElement('span');
+      cell.className = 'firma2-tag-board__count typography-body-md';
+      cell.textContent = '0';
+      const discard = rowMenu('Actions for the new tag', only('Discard'), () => {
+        li.remove();
+        focusLater(addButtonOf(list));
+      });
+      li.append(dot, name, description, cell, discard);
+      list.append(li);
+
+      let done = false;
+      const keep = (viaEnter: boolean) => {
+        if (done) return;
+        const value = fieldValue(name);
+        if (!value) {
+          name.errorText = viaEnter ? 'Name the tag.' : '';
+          return;
+        }
+        if (nameTaken('tag', value)) {
+          name.errorText = 'A tag already has this name.';
+          return;
+        }
+        done = true;
+        const t = addEntry('tag', { name: value, description: fieldValue(description), group: group?.slug ?? '', color });
+        li.replaceWith(tagRow(t));
+        saveArrangement();
+        announce(group ? `${t.name} added to ${group.name}.` : `${t.name} added.`);
+        if (viaEnter) pendingTagRow(group, list);
+        else addButtonOf(list)?.focus({ preventScroll: true });
+      };
+      onCommit(name, (viaEnter) => keep(viaEnter));
+      // Leaving the ROW (not just the name) with no name drops it; with one,
+      // keeps it — the description may have been the last thing typed.
+      li.addEventListener('focusout', (e) => {
+        const to = (e as FocusEvent).relatedTarget as Node | null;
+        if (to && li.contains(to)) return;
+        setTimeout(() => {
+          if (done || li.matches(':focus-within')) return;
+          if (fieldValue(name)) keep(false);
+          else li.remove();
+        }, 0);
+      });
+      void customElements.whenDefined('esa-text-field').then(() => requestAnimationFrame(() => name.focus()));
+    };
+
+    /** The Add tag that feeds a list: its group's own, or the page header's. */
+    const addButtonOf = (list: HTMLElement) =>
+      list.closest('section')?.querySelector<HTMLElement>('.firma2-tag-board__add button') ?? addTagButton();
+
+    // ---- a group --------------------------------------------------------------
+
+    const groupItem = (g: TaxonomyEntry): HTMLLIElement => {
+      const li = document.createElement('li');
+      li.dataset.sortKey = g.slug;
+      li.dataset.sortLabel = g.name;
+      const section = document.createElement('section');
+      section.setAttribute('aria-label', g.name);
+
+      const head = document.createElement('div');
+      head.className = 'firma2-tag-board__group-head';
+      const name = textField(`Name of the ${g.name} group`, g.name, 'firma2-tag-board__name');
+
+      const tagsList = document.createElement('bcn-sortable-list');
+      tagsList.setAttribute('group', 'tags');
+      tagsList.setAttribute('label', g.name);
+      const handle = document.createElement('template');
+      handle.setAttribute('data-sort-handle', '');
+      handle.content.append(clone('grip'));
+      const ol = document.createElement('ol');
+      ol.className = 'firma2-tag-board__tags';
+      const placeholder = document.createElement('li');
+      placeholder.className = 'firma2-tag-board__placeholder';
+      placeholder.dataset.sortPlaceholder = '';
+      placeholder.append(clone('empty'));
+      ol.append(placeholder, ...tagsIn(g.slug).map(tagRow));
+      tagsList.append(handle, ol);
+
+      onCommit(name, () => {
+        const next = fieldValue(name);
+        const current = entries('tagGroup').find((e) => e.slug === g.slug);
+        if (!current || next === current.name) {
+          name.errorText = '';
+          return;
+        }
+        name.errorText = !next ? 'Name the group.' : nameTaken('tagGroup', next, g.slug) ? 'A group already has this name.' : '';
+        if (name.errorText) return;
+        editEntry('tagGroup', g.slug, { name: next });
+        g.name = next;
+        li.dataset.sortLabel = next;
+        section.setAttribute('aria-label', next);
+        tagsList.setAttribute('label', next);
+        name.setAttribute('aria-label', `Name of the ${next} group`);
+        nameButton(dot, `Colour of the ${next} group`);
+        nameButton(remove, `Actions for the ${next} group`);
+      });
+
+      const dot = swatch(`Colour of the ${g.name} group`, g.color ?? '#646464', (hex) => editEntry('tagGroup', g.slug, { color: hex }));
+      const remove = rowMenu(`Actions for the ${g.name} group`, only('Delete group'), () => {
+        // The group goes; its tags stay, joining the ones in no group.
+        const kept = [...ol.querySelectorAll<HTMLLIElement>(':scope > li[data-sort-key]')];
+        kept.forEach((row) => editEntry('tag', row.dataset.sortKey!, { group: '' }));
+        looseOl.append(...kept);
+        removeEntry('tagGroup', g.slug);
+        li.remove();
+        saveArrangement();
+        announce(
+          kept.length
+            ? `${g.name} group deleted. Its ${kept.length === 1 ? 'tag is' : `${kept.length} tags are`} now in no group.`
+            : `${g.name} group deleted.`,
+        );
+        focusLater(document.querySelector<HTMLElement>('[data-add-group] button, [data-add-group]'));
+      });
+      head.append(dot, name, remove);
+
+      const add = clone('add-tag');
+      add.classList.add('firma2-tag-board__add');
+      nameButton(add, `Add tag to ${g.name}`);
+      // nameButton sets a title; the visible text already says it.
+      button(add).removeAttribute('title');
+      button(add).addEventListener('click', () => pendingTagRow(g, ol));
+
+      section.append(head, tagsList, add);
+      li.append(section);
+      return li;
+    };
+
+    /** An empty group heading: kept once named, dropped if left empty. */
+    const pendingGroup = () => {
+      const li = document.createElement('li');
+      li.dataset.sortLocked = '';
+      const section = document.createElement('section');
+      section.setAttribute('aria-label', 'New group');
+      const head = document.createElement('div');
+      head.className = 'firma2-tag-board__group-head';
+      let color = randomTagColor();
+      const dot = swatch('Colour of the new group', color, (hex) => (color = hex));
+      const name = textField('Name of the new group', '', 'firma2-tag-board__name');
+      const discard = rowMenu('Actions for the new group', only('Discard'), () => li.remove());
+      head.append(dot, name, discard);
+      section.append(head);
+      li.append(section);
+      groupsOl.append(li);
+
+      let done = false;
+      const keep = (viaEnter: boolean) => {
+        if (done) return;
+        const value = fieldValue(name);
+        if (!value) {
+          name.errorText = viaEnter ? 'Name the group.' : '';
+          return;
+        }
+        if (nameTaken('tagGroup', value)) {
+          name.errorText = 'A group already has this name.';
+          return;
+        }
+        done = true;
+        const g = addEntry('tagGroup', { name: value, description: '', color });
+        const item = groupItem(g);
+        li.replaceWith(item);
+        saveArrangement();
+        announce(`${g.name} group added.`);
+        // Enter goes straight on to the group's first tag.
+        if (viaEnter) pendingTagRow(g, item.querySelector<HTMLElement>('.firma2-tag-board__tags')!);
+      };
+      onCommit(name, (viaEnter) => keep(viaEnter));
+      li.addEventListener('focusout', (e) => {
+        const to = (e as FocusEvent).relatedTarget as Node | null;
+        if (to && li.contains(to)) return;
+        setTimeout(() => {
+          if (done || li.matches(':focus-within')) return;
+          if (fieldValue(name)) keep(false);
+          else li.remove();
+        }, 0);
+      });
+      void customElements.whenDefined('esa-text-field').then(() => requestAnimationFrame(() => name.focus()));
+    };
+
+    // ---- the arrangement ------------------------------------------------------
+
+    /** Read the order of groups and of each group's tags off the page, and keep it. */
+    const saveArrangement = () =>
+      arrangeTags([
+        { slug: '', tags: [...looseOl.querySelectorAll<HTMLLIElement>(':scope > li[data-sort-key]')].map((t) => t.dataset.sortKey!) },
+        ...[...groupsOl.querySelectorAll<HTMLLIElement>(':scope > li[data-sort-key]')].map((li) => ({
+          slug: li.dataset.sortKey!,
+          tags: [...li.querySelectorAll<HTMLLIElement>('.firma2-tag-board__tags > li[data-sort-key]')].map((t) => t.dataset.sortKey!),
+        })),
+      ]);
+
+    // Every move — a group reordered, a tag reordered or moved to another
+    // group — lands as a sort-change bubbling up here; the page already shows
+    // it, so this only saves.
+    root.addEventListener('sort-change', () => saveArrangement());
+
+    looseOl.append(...tagsIn('').map(tagRow));
+    groupsOl.replaceChildren(...entries('tagGroup').map(groupItem));
+
+    document.querySelectorAll<HTMLElement>('[data-add-tag]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        pendingTagRow(null, looseOl);
+      }),
+    );
+
+    document.querySelectorAll<HTMLElement>('[data-add-group]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        pendingGroup();
+      }),
+    );
+  });
+</script>

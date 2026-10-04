@@ -1,0 +1,884 @@
+---
+// firma2-my-projects-map — the MAP-BASED fork of firma2-my-projects, shown
+// beside the original through the page's variant switch so the two can be
+// compared. Forked 2026-10-03 as an exact copy; the map-based changes land
+// here, and the original stays as it was.
+//
+// 2026-10-03, first pass: the plate is the project's newest photo, on the
+// card's leading edge, and the facts lose their labels. Hierarchy carries
+// what the label column did — the lead reads as the title's byline,
+// size · timeline as one dot-separated row (values that name themselves, no
+// per-fact icons), the last update at the card's foot — relative ("Updated 3 days ago") within 90 days. Each label
+// survives as a visually-hidden <dt>, so a screen reader still hears "Lead",
+// "Area" (or "Length", for a project of reaches alone) and the rest.
+//
+// Second pass: no description and no buttons — the card itself is the way
+// in, to the project page. The stage pill, glyph and name, leads the facts
+// column, above the title — the photo itself is shown as taken.
+// Classifications are cut from this version's card.
+//
+// Third pass: THE MAP IS THE PAGE. A map of every project's work areas fills
+// the whole pane under the header and holds still; the cards stack in one
+// column over its leading side, see-through, and scroll past it. The two are
+// bound both ways: hovering or focusing a card lights its work on the map
+// (and names it there), hovering a shape lights its card, and clicking a
+// shape scrolls its card into view — the card stays the one way into the
+// project. Over the map the wheel zooms; over the list it scrolls the cards.
+// The search and stage filter narrow the map with the list and
+// reframe it on what is left. A project with no work areas has a card and
+// nothing on the map, which its card already says.
+//
+// The project editor's landing page: the projects you can
+// change, as media cards. Ported from ProjectFirma2 hackathon team 5 (project
+// updates), story 0007, from Kathleen's "Project Editor Landing v2" canvas.
+//
+// MISSION 5 NAMED THE HOLE: the reporter-facing "what is being asked of me"
+// surface was built nowhere. This is the way in. It lists what the signed-in
+// person may edit, so one page serves Wade with one project and Theo with
+// thirty — the brief's own test. Dana administers the workspace, so she sees
+// every project.
+//
+// MEDIA CARDS, COMFORTABLE DENSITY — the canvas's default and Kathleen's call.
+// The plate is the project's newest photo, because a reporter knows their
+// project by what the ground looks like before they know its name. A project
+// with no photos yet says so in the plate's place. Where the work is reads in
+// the facts as its size alone — the acres of its work areas, or the miles of
+// its reaches when it has no areas; county and estimated cost are cut from this version.
+//
+// ONE ACTION: the card opens the project. The original's Update (straight to
+// the Record work sheet) and Open buttons are gone here; the name's link
+// stretches over the card so it reads as one link, named for the project.
+//
+// WHAT THE MOCKUP HAD THAT TEAM 5 DROPPED stays dropped: the reporting-cycle
+// header, the submitted-of-total meter and the per-project status pill — team 5
+// moved status to field grain on 2026-09-11.
+//
+// THE STAGE FILTER OFFERS ALL SIX STAGES, not just the ones present: a reporter
+// asking "show me my completed ones" should find the option and an honest empty
+// state, not a missing option.
+//
+// bcn-lego-checked: esa-card, esa-pill, esa-button (Clear
+// filters), esa-text-field, esa-select, esa-empty-state, esa-icon. The
+// plate is a plain <img> of the project's photo; the grid and facts are
+// layout primitives and <dl>s. The map is Leaflet — no map lego exists;
+// firma2-portfolio-map is the precedent for every project on one canvas.
+// Beacon is not cloned here.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import Firma2ProjectPeekButton from './firma2-project-peek-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { projects, projectHref, projectSlug, STAGE_ORDER, STAGE_TONE } from '../../data/firma2-projects';
+import { projectDetails } from '../../data/firma2-project-detail';
+import { seedWorkAreas } from '../../data/firma2-geography';
+import { withBase } from '../../lib/base';
+import { photoSrc } from '../../lib/project-photos';
+import { projectSize } from '../../lib/geo';
+import { asDate, relativeDays } from '../../lib/format';
+import { TODAY } from '../../data/firma2-directory';
+import { stageSettings } from '../../data/firma2-workspace-settings';
+
+
+// "Updated 3 days ago" within 90 days of the fixture's today, the date itself
+// as MM/DD/YY past that — recent work reads as recent, old work as a date.
+const updatedLabel = (label: string | undefined): string => {
+  if (!label) return 'No updates yet';
+  const d = asDate(label);
+  return `Updated ${d ? relativeDays(d, TODAY) : label}`;
+};
+
+const cards = [...projects]
+  .sort((a, b) => a.projectName.localeCompare(b.projectName))
+  .map((p) => {
+    const detail = projectDetails.get(p.projectName)!;
+    return {
+      slug: projectSlug(p),
+      name: p.projectName,
+      stage: p.stage,
+      tone: STAGE_TONE[p.stage],
+      lead: p.leadOrganization,
+      timeline: `${p.implementationStartYear} – ${p.completionYear}`,
+      county: `${p.county} County`,
+      lastUpdate: updatedLabel(detail.audit[0]?.date),
+      // The newest photo is the cover — photos are stored oldest first.
+      cover: detail.photos.at(-1) ?? null,
+      href: withBase(projectHref(p)),
+      seed: seedWorkAreas(p),
+      size: projectSize(seedWorkAreas(p)),
+    };
+  });
+
+const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s) => ({ value: s, label: s }))];
+---
+<div class="firma2-my-projects-map" data-stage-options={JSON.stringify(stageOptions)}>
+  <div class="firma2-my-projects-map__list stack" data-gap="xl">
+    <EsaCard variant="elevated" padding="compact">
+      <div class="firma2-my-projects-map__controls">
+        <esa-text-field
+          class="firma2-my-projects-map__search"
+          data-search
+          type="search"
+          size="md"
+          aria-label="Search your projects"
+          data-aliasable-attr="aria-label,placeholder"
+          placeholder="Search by name, lead organization or place"
+          autocomplete="off"
+        ></esa-text-field>
+        <esa-select class="firma2-my-projects-map__stage" data-stage size="md" aria-label="Stage"></esa-select>
+        <p class="firma2-my-projects-map__count typography-body-sm" aria-live="polite" data-count></p>
+      </div>
+    </EsaCard>
+
+    <ul class="firma2-my-projects-map__grid" role="list" data-grid>
+      {cards.map((c) => (
+        <li
+          class="firma2-my-projects-map__cell"
+          data-card
+          data-peek-row
+          data-slug={c.slug}
+          data-stage={c.stage}
+          data-search-text={`${c.name} ${c.lead} ${c.county}`.toLowerCase()}
+          data-seed={JSON.stringify(c.seed)}
+        >
+          <EsaCard class="firma2-my-projects-map__card" variant="elevated" padding="none">
+            <div class="firma2-my-projects-map__layout">
+              <div class="firma2-my-projects-map__plate">
+                {c.cover ? (
+                  <img
+                    class="firma2-my-projects-map__photo"
+                    src={photoSrc(c.cover, 480, 600)}
+                    alt={c.cover.caption}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <p class="firma2-my-projects-map__no-photo typography-body-sm">
+                    <EsaIcon name="image" size="md" />
+                    No photos yet
+                  </p>
+                )}
+              </div>
+              <div class="firma2-my-projects-map__body stack" data-gap="sm">
+                <div class="cluster" data-gap="xs">
+                  <EsaPill label={c.stage} variant={c.tone} size="sm" removable={false}>
+                    <EsaIcon slot="icon" name="" size="xs" paths={stageSettings.find((x) => x.key === c.stage)?.iconPaths} />
+                  </EsaPill>
+                </div>
+                <div class="firma2-my-projects-map__heading">
+                  <div class="firma2-my-projects-map__title">
+                    <h2 class="typography-title-strong firma2-my-projects-map__name">
+                      <a class="firma2-my-projects-map__link" href={c.href}>{c.name}</a>
+                    </h2>
+                    <Firma2ProjectPeekButton slug={c.slug} name={c.name} />
+                  </div>
+                  <dl class="firma2-my-projects-map__byline">
+                    <dt class="visually-hidden">Lead</dt>
+                    <dd class="typography-body-md firma2-my-projects-map__muted">{c.lead}</dd>
+                  </dl>
+                </div>
+                <dl class="firma2-my-projects-map__meta typography-body-sm">
+                  <div>
+                    <dt class="visually-hidden" data-size-label>{c.size.label}</dt>
+                    <dd data-size>{c.size.text}</dd>
+                  </div>
+                  <div>
+                    <dt class="visually-hidden">Timeline</dt>
+                    <dd>{c.timeline}</dd>
+                  </div>
+                </dl>
+                <dl class="firma2-my-projects-map__meta firma2-my-projects-map__updated typography-body-sm">
+                  <div>
+                    <dt class="visually-hidden">Last update</dt>
+                    <dd>{c.lastUpdate}</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          </EsaCard>
+        </li>
+      ))}
+    </ul>
+
+    <div data-empty hidden>
+      <EsaCard variant="elevated">
+        <EsaEmptyState
+          title="No projects match that"
+          description="Try a different name or clear the stage filter — every project you can edit is on this page."
+          headingLevel={2}
+        />
+        <div class="firma2-my-projects-map__center">
+          <EsaButton variant="secondary" appearance="outline" size="md" data-clear>Clear filters</EsaButton>
+        </div>
+      </EsaCard>
+    </div>
+  </div>
+
+  <div class="firma2-my-projects-map__surface">
+    <div class="firma2-my-projects-map__canvas" role="application" aria-label="Map of your projects" data-canvas></div>
+  </div>
+</div>
+
+<style>
+  .firma2-my-projects-map [hidden] {
+    display: none !important;
+  }
+
+  /* Search, stage, count — one row that wraps on a narrow pane. */
+  .firma2-my-projects-map__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-300) var(--spacing-400);
+  }
+
+  /* Search takes its own row — at the list's width a shared row cuts the
+     placeholder off mid-word. */
+  .firma2-my-projects-map__search {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+  }
+
+  .firma2-my-projects-map__stage {
+    flex: 0 1 14rem;
+    min-inline-size: 12rem;
+  }
+
+  .firma2-my-projects-map__count {
+    margin: 0 0 0 auto;
+    color: var(--color-content-default-secondary, #646464);
+    white-space: nowrap;
+  }
+
+  /* THE MAP IS THE PAGE. It fills the whole pane under the header — rail edge
+     to window edge, header to window foot — and holds still; the list floats
+     over its leading side and scrolls past it. The cards are see-through, so
+     the ground under them stays in view.
+     Both share one grid cell: the map is sticky in it, the list lies on top. */
+  .firma2-my-projects-map {
+    /* esa-app-shell's content padding, reached through to put the map on the
+       pane's edges — the same literal firma2-page-header and
+       firma2-project-peek restate (no hook exposes it). */
+    --_bleed: var(--spacing-500, 1.5rem);
+    --_list-width: 36rem;
+    /* THE SEE-THROUGH SURFACE. Ecology's one translucent background role is
+       overlay-scrim ("veils content in place so what is underneath stays
+       readable") — white at 80%, with no dark counterpart, so dark mode takes
+       the matching black primitive. */
+    --_glass: var(--color-background-overlay-scrim, rgba(255, 255, 255, 0.8));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    /* Gives back the pane's bottom padding, so the map meets the window's
+       foot at the end of the list too; the list pads its own end instead. */
+    margin-block-end: calc(var(--_bleed) * -1);
+  }
+
+  :global(:root[data-scheme='dark']) .firma2-my-projects-map {
+    --_glass: var(--color-black-a-9, rgba(0, 0, 0, 0.7));
+  }
+
+  .firma2-my-projects-map__list,
+  .firma2-my-projects-map__surface {
+    grid-area: 1 / 1;
+  }
+
+  /* THE COLUMN IS THE LIST'S, GAPS INCLUDED: a wheel anywhere over it scrolls
+     the cards, and only the map beside it zooms. */
+  .firma2-my-projects-map__list {
+    position: relative;
+    z-index: 1;
+    inline-size: min(var(--_list-width), 100%);
+    min-inline-size: 0;
+    padding-block-end: var(--_bleed);
+  }
+
+  /* PINNED UNDER THE HEADER. It rests flush under the band — lifted over the
+     page's gap above this view, which the script MEASURES (--_lift) rather
+     than restating the page's stack token — so it sticks from the first
+     pixel of scroll and never moves. */
+  .firma2-my-projects-map__surface {
+    position: sticky;
+    inset-block-start: var(--firma2-band-height, 77px);
+    align-self: start;
+    block-size: calc(100dvh - var(--firma2-band-height, 77px));
+    margin-block-start: calc(var(--_lift, 0px) * -1);
+    margin-inline: calc(var(--_bleed) * -1);
+    overflow: hidden;
+    /* Leaflet's panes bid z-index up to 1000; this keeps them in this box,
+       under the list and the sticky page header. */
+    isolation: isolate;
+  }
+
+  .firma2-my-projects-map__canvas {
+    position: absolute;
+    inset: 0;
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+    font-family: var(--typography-body-sm-font-family);
+    font-size: var(--typography-body-sm-font-size);
+    line-height: var(--typography-body-sm-line-height);
+  }
+
+  /* See-through cards and controls: esa-card's own background hook, frosted.
+     The blur is what keeps the text readable over a busy map — roads and
+     labels soften into colour instead of fighting the words on top.
+     OFF-SYSTEM: Ecology has no blur scale; its one frost is esa-side-dialog's
+     opt-in --side-dialog-backdrop-filter (default none), so the amount is a
+     literal here. */
+  .firma2-my-projects-map :global(.esa-card) {
+    --card-bg: var(--_glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* NARROW WINDOWS: no room to float a list over a map. The map goes on top
+     at a fixed height, the list below it, both opaque as usual. */
+  @media (max-width: 64rem) {
+    .firma2-my-projects-map {
+      margin-block-end: 0;
+      gap: var(--spacing-600, 2rem);
+    }
+
+    .firma2-my-projects-map__list,
+    .firma2-my-projects-map__surface {
+      grid-area: auto;
+    }
+
+    .firma2-my-projects-map__list {
+      inline-size: auto;
+    }
+
+    .firma2-my-projects-map :global(.esa-card) {
+      --card-bg: initial;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+
+    .firma2-my-projects-map__surface {
+      position: relative;
+      inset-block-start: auto;
+      order: -1;
+      block-size: 22rem;
+      margin: 0;
+      border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+      border-radius: var(--radius-md, 0.5rem);
+    }
+  }
+
+  .firma2-my-projects-map__grid {
+    display: grid;
+    gap: var(--spacing-200);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-my-projects-map__cell {
+    display: flex;
+    min-inline-size: 0;
+  }
+
+  .firma2-my-projects-map__cell :global(.esa-card) {
+    display: flex;
+    flex-direction: column;
+    inline-size: 100%;
+    overflow: hidden;
+  }
+
+  .firma2-my-projects-map__cell :global(.esa-card__body) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  /* PHOTO LEADS, FACTS FOLLOW. The card's own width decides: side by side
+     when there is room for both, the photo on top when there is not. */
+  .firma2-my-projects-map__cell :global(.esa-card__body) {
+    container-type: inline-size;
+  }
+
+  .firma2-my-projects-map__layout {
+    display: grid;
+    grid-template-columns: 13rem 1fr;
+    flex: 1;
+  }
+
+  @container (inline-size < 30rem) {
+    .firma2-my-projects-map__layout {
+      grid-template-columns: 1fr;
+    }
+
+    /* Scoped through the layout so it outranks the plate's own rule below. */
+    .firma2-my-projects-map__layout .firma2-my-projects-map__plate {
+      min-block-size: 10rem;
+      block-size: 10rem;
+    }
+  }
+
+  /* THE PLATE: the project's newest photo, filling the card's leading edge
+     whatever the facts' height. */
+  /* At least square — as tall as the plate is wide — so the photo has room
+     to read as a picture, not a strip, even on a card of few facts. */
+  .firma2-my-projects-map__plate {
+    position: relative;
+    min-block-size: 13rem;
+    /* Every corner rounds to the card's radius — with no resting border the
+       photo is the card's visible edge, so its inner corners round too. */
+    overflow: hidden;
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+  }
+
+  .firma2-my-projects-map__photo {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  .firma2-my-projects-map__no-photo {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-200);
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-my-projects-map__body {
+    flex: 1;
+    padding: var(--spacing-400) var(--spacing-500) var(--spacing-500);
+  }
+
+  .firma2-my-projects-map__muted {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-my-projects-map__name {
+    margin: 0;
+  }
+
+  /* The name and its side-panel button: the name takes the room, the button
+     stays at the row's end, beside the heading rather than inside it. */
+  .firma2-my-projects-map__title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-100, 0.25rem);
+  }
+
+  .firma2-my-projects-map__title .firma2-my-projects-map__name {
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  /* The lead reads as the title's byline — set tight under it, so the two
+     scan as one unit. */
+  .firma2-my-projects-map__heading {
+    display: grid;
+    gap: var(--spacing-050, 2px);
+  }
+
+  .firma2-my-projects-map__byline,
+  .firma2-my-projects-map__byline dd {
+    margin: 0;
+  }
+
+  /* Size and timeline in one wrapping row, the last update at the foot. No
+     glyphs — each value names itself ("22 acres", "2026 – 2030", "Updated
+     …"), and design-principles keeps icons for structure, never items. */
+  .firma2-my-projects-map__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-100) var(--spacing-200);
+    margin: 0;
+  }
+
+  .firma2-my-projects-map__meta dd {
+    margin: 0;
+  }
+
+  /* A middle dot between facts — drawn, not typed, so it is silent to a
+     screen reader (the alt text after the slash is empty). */
+  .firma2-my-projects-map__meta > div + div::before {
+    content: '·' / '';
+    margin-inline-end: var(--spacing-200);
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-my-projects-map__meta > div {
+    display: flex;
+  }
+
+  /* THE WHOLE CARD IS THE LINK: the name's anchor stretches over the card, so
+     a screen reader hears one link named for the project, not the card's
+     every line. */
+  /* esa-card's `elevated` variant: no resting border, a faint shadow. The
+     border comes back on hover, as the sign that the whole card is the link —
+     the same cue firma2-recent-projects gives its cards. */
+  .firma2-my-projects-map__cell :global(.esa-card) {
+    position: relative;
+    transition: border-color 120ms ease;
+  }
+
+  .firma2-my-projects-map__link {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .firma2-my-projects-map__link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  .firma2-my-projects-map__link:focus-visible {
+    outline: none;
+  }
+
+  .firma2-my-projects-map__cell:hover :global(.esa-card),
+  .firma2-my-projects-map__cell[data-active] :global(.esa-card) {
+    border-color: var(--color-border-default-strong, #8d8d8d);
+  }
+
+  .firma2-my-projects-map__cell:has(.firma2-my-projects-map__link:focus-visible) :global(.esa-card) {
+    outline: 2px solid var(--color-border-focus, #0d74ce);
+    outline-offset: 2px;
+  }
+
+  /* The last update takes the foot of the card, so it lines up along the
+     bottom of the photo whatever the facts above it run to. */
+  .firma2-my-projects-map__updated {
+    margin-block-start: auto;
+  }
+
+  .firma2-my-projects-map__center {
+    display: flex;
+    justify-content: center;
+  }
+
+  .firma2-my-projects-map :global(.leaflet-bar) {
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-sm, 0.25rem);
+    box-shadow: var(--elevation-1, 0 1px 4px rgba(0, 0, 0, 0.06));
+  }
+
+  .firma2-my-projects-map :global(.leaflet-bar a) {
+    background-color: var(--color-background-elevation-raised, #fcfcfc);
+    color: var(--color-content-default, #202020);
+  }
+
+  .firma2-my-projects-map :global(.firma2-map-tip) {
+    padding: var(--spacing-200) var(--spacing-300);
+    background: var(--color-background-elevation-floating, #fcfcfc);
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-sm, 0.25rem);
+    color: var(--color-content-default, #202020);
+    font: inherit;
+    box-shadow: var(--elevation-2, 0 2px 12px 0 rgba(0, 0, 0, 0.04));
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import type { MapWorkArea } from '../../data/firma2-geography';
+  import { centroid, projectSize } from '../../lib/geo';
+  import { createMap, kindColor, loadLeaflet, shapeStyle, token } from '../../lib/leaflet';
+  import type { Leaflet } from '../../lib/leaflet';
+  import { onGeoChange, readWorkAreas } from '../../lib/work-areas';
+  import { label } from '../../lib/vocabulary';
+  import { readStages } from '../../lib/stage-draft';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown };
+
+  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-my-projects-map').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const search = $<Control>('[data-search]');
+    const stage = $<Control>('[data-stage]');
+    const cells = [...root.querySelectorAll<HTMLElement>('[data-card]')];
+
+    // Each stage pill leads with its stage's icon; redraw it from the Stages
+    // page's saved edits, as the Projects grid does, so the two always agree.
+    const stageLook = new Map(readStages().map((s) => [s.key, s.iconPaths]));
+    cells.forEach((cell) => {
+      const svg = cell.querySelector('.esa-pill__icon svg');
+      const paths = stageLook.get(cell.dataset.stage ?? '');
+      if (svg && paths) svg.innerHTML = paths;
+    });
+
+    customElements.whenDefined('esa-select').then(() => {
+      stage.options = JSON.parse(root.dataset.stageOptions ?? '[]');
+      stage.value = '';
+    });
+
+    const areasOf = (cell: HTMLElement): MapWorkArea[] =>
+      readWorkAreas(cell.dataset.slug ?? '', JSON.parse(cell.dataset.seed ?? '[]'));
+    const cellOf = new Map(cells.map((cell) => [cell.dataset.slug ?? '', cell]));
+
+    // ---- the map: every project's work areas, one layer group per project ----
+    // Set once Leaflet loads; until then (or if it never does) the list works alone.
+    let map: Leaflet | null = null;
+    let L: Leaflet | null = null;
+    type Drawn = { group: Leaflet; dot: Leaflet; kinds: Map<Leaflet, MapWorkArea['kind']> };
+    const drawn = new Map<string, Drawn>();
+    const dots = { layer: null as Leaflet | null };
+    let active = '';
+
+    // A STATE IS TOO BIG FOR A TREATMENT UNIT: zoomed out, a 60-acre polygon is
+    // a speck, so each project also gets a dot at its work's centre — the
+    // portfolio map's rule, at its threshold.
+    const DOT_ZOOM = 9;
+    const dotStyle = (on: boolean) => ({
+      radius: on ? 10 : 7,
+      color: token('--color-background-elevation-floating', '#fff'),
+      weight: 2,
+      fillColor: kindColor('area'),
+      fillOpacity: 1,
+    });
+
+    // One project lit, the rest set back — or every project at rest.
+    const paint = () => {
+      drawn.forEach(({ group, dot, kinds }, slug) => {
+        const on = slug === active;
+        const dim = Boolean(active) && !on;
+        group.eachLayer((layer: Leaflet) => {
+          const base = shapeStyle(kinds.get(layer)!);
+          layer.setStyle({
+            ...base,
+            weight: on ? base.weight + 2 : base.weight,
+            opacity: dim ? 0.35 : base.opacity,
+            ...('fillOpacity' in base ? { fillOpacity: on ? 0.5 : dim ? 0.08 : base.fillOpacity } : {}),
+          });
+        });
+        dot.setStyle({ ...dotStyle(on), fillOpacity: dim ? 0.35 : 1 });
+        if (on) {
+          group.bringToFront();
+          dot.bringToFront();
+        }
+      });
+    };
+
+    // How much of the map's leading side the list covers (none once the list
+    // stacks above the map on a narrow window).
+    const covered = () => {
+      const list = $('.firma2-my-projects-map__list').getBoundingClientRect();
+      const box = $('.firma2-my-projects-map__surface');
+      if (getComputedStyle(box).position !== 'sticky') return 0;
+      return Math.max(0, list.right - box.getBoundingClientRect().left);
+    };
+
+    // A name opens AWAY from the list: to the right of a shape near it, to the
+    // left of one near the window's edge, above anything else. Leaflet's own
+    // `auto` splits on the map's centre, which sits under the list. Bound
+    // before the tooltip, so it runs before Leaflet opens it.
+    const aim = (event: { target: Leaflet }) => {
+      const tooltip = event.target.getTooltip?.();
+      if (!map || !tooltip) return;
+      const x = map.latLngToContainerPoint(event.target.getBounds?.().getCenter() ?? event.target.getLatLng()).x;
+      const room = 260;
+      tooltip.options.direction = x < covered() + room ? 'right' : x > map.getSize().x - room ? 'left' : 'top';
+    };
+
+    // THE BINDING, BOTH WAYS. A card hovered or focused lights its work on the
+    // map and names it there; a shape hovered lights its card. `from` says
+    // which side asked, so neither echoes the other's tooltip back.
+    const setActive = (slug: string, from: 'card' | 'map') => {
+      if (slug === active) return;
+      const prev = drawn.get(active);
+      prev?.dot.closeTooltip();
+      prev?.group.eachLayer((layer: Leaflet) => layer.closeTooltip());
+      cellOf.get(active)?.removeAttribute('data-active');
+      active = slug;
+      cellOf.get(slug)?.setAttribute('data-active', '');
+      paint();
+      const next = drawn.get(slug);
+      if (next && from === 'card' && map) {
+        const target = map.hasLayer(dots.layer) ? next.dot : next.group.getLayers()[0];
+        if (target) {
+          aim({ target });
+          target.openTooltip();
+        }
+      }
+    };
+
+    const draw = () => {
+      if (!map || !L) return;
+      drawn.forEach(({ group }) => map.removeLayer(group));
+      dots.layer?.clearLayers();
+      drawn.clear();
+      cells.forEach((cell) => {
+        const areas = areasOf(cell);
+        if (!areas.length) return;
+        const slug = cell.dataset.slug ?? '';
+        const name = cell.querySelector('.firma2-my-projects-map__link')?.textContent ?? '';
+        const tip = { className: 'firma2-map-tip', direction: 'top' as const };
+        const kinds = new Map<Leaflet, MapWorkArea['kind']>();
+        const group = L.featureGroup(
+          areas.map((area) => {
+            const style = shapeStyle(area.kind);
+            const shape =
+              area.kind === 'point'
+                ? L.circleMarker(area.path[0], { ...style, radius: 6 })
+                : area.kind === 'reach'
+                  ? L.polyline(area.path, style)
+                  : L.polygon(area.path, style);
+            kinds.set(shape, area.kind);
+            return shape.on('mouseover', aim).bindTooltip(esc(name), { ...tip, sticky: true });
+          }),
+        );
+        const dot = L.circleMarker(centroid(areas.flatMap((a) => a.path)), dotStyle(false)).on('mouseover', aim).bindTooltip(esc(name), tip);
+        [group, dot].forEach((layer) =>
+          layer
+            .on('mouseover', () => setActive(slug, 'map'))
+            .on('mouseout', () => setActive('', 'map'))
+            // A click on the map brings its card into view: the card is the
+            // door to the project, the map only says which one this is.
+            .on('click', () => {
+              setActive(slug, 'map');
+              cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }),
+        );
+        dots.layer.addLayer(dot);
+        drawn.set(slug, { group, dot, kinds });
+      });
+      show();
+      paint();
+    };
+
+    // The shown cards' work is what the map draws, and what it frames.
+    const show = () => {
+      if (!map) return;
+      drawn.forEach(({ group, dot }, slug) => {
+        const visible = !cellOf.get(slug)?.hidden;
+        if (visible && !map.hasLayer(group)) group.addTo(map);
+        if (!visible && map.hasLayer(group)) map.removeLayer(group);
+        if (visible && !dots.layer.hasLayer(dot)) dots.layer.addLayer(dot);
+        if (!visible && dots.layer.hasLayer(dot)) dots.layer.removeLayer(dot);
+      });
+      syncDots();
+    };
+
+    const syncDots = () => {
+      if (!map) return;
+      const zoomedOut = map.getZoom() < DOT_ZOOM;
+      if (zoomedOut && !map.hasLayer(dots.layer)) dots.layer.addTo(map);
+      if (!zoomedOut && map.hasLayer(dots.layer)) map.removeLayer(dots.layer);
+    };
+
+    const frame = () => {
+      if (!map || !L) return;
+      const shown = [...drawn].filter(([slug]) => !cellOf.get(slug)?.hidden).flatMap(([, d]) => d.group.getLayers());
+      if (!shown.length) return;
+      // The list covers the map's leading side, so the work is framed in
+      // what is left beside it (the whole map, once the list stacks above).
+      map.fitBounds(L.featureGroup(shown).getBounds(), {
+        paddingTopLeft: [covered() + 48, 48],
+        paddingBottomRight: [48, 48],
+        maxZoom: 13,
+      });
+    };
+
+    cells.forEach((cell) => {
+      const slug = cell.dataset.slug ?? '';
+      cell.addEventListener('mouseenter', () => setActive(slug, 'card'));
+      cell.addEventListener('mouseleave', () => setActive('', 'card'));
+      cell.addEventListener('focusin', () => setActive(slug, 'card'));
+      cell.addEventListener('focusout', () => setActive('', 'card'));
+    });
+
+    // ---- filter: search and stage narrow the one list, and the count reads
+    //      off the same set the cards do, so they cannot disagree ----------
+    const filter = () => {
+      const q = String(search.value ?? '').trim().toLowerCase();
+      const s = String(stage.value ?? '');
+      let shown = 0;
+      cells.forEach((cell) => {
+        const ok = (!q || (cell.dataset.searchText ?? '').includes(q)) && (!s || cell.dataset.stage === s);
+        cell.hidden = !ok;
+        if (ok) shown += 1;
+      });
+      const noun = label(shown === 1 && cells.length === 1 ? 'project' : 'projects');
+      $('[data-count]').textContent =
+        shown === cells.length ? `Showing all ${cells.length} ${noun}` : `Showing ${shown} of ${cells.length} ${label('projects')}`;
+      $('[data-empty]').hidden = shown > 0;
+      $('[data-grid]').hidden = shown === 0;
+      show();
+    };
+    // A narrowed list reframes the map on what is left; the reader's own pan
+    // and zoom hold until they change the filter again.
+    const refilter = () => {
+      filter();
+      frame();
+    };
+    search.addEventListener('change', refilter);
+    stage.addEventListener('change', refilter);
+    $('[data-clear]').addEventListener('click', () => {
+      search.value = '';
+      stage.value = '';
+      refilter();
+    });
+
+    // ---- the project's size (area, or length for reaches alone), redrawn
+    //      from its work areas as this browser has edited them — the server
+    //      rendered the seeded ones ------------------------------------------
+    const drawSizes = () =>
+      cells.forEach((cell) => {
+        const size = projectSize(areasOf(cell));
+        cell.querySelector<HTMLElement>('[data-size-label]')!.textContent = size.label;
+        cell.querySelector<HTMLElement>('[data-size]')!.textContent = size.text;
+      });
+    drawSizes();
+
+    // A shape drawn or uploaded on a project updates its size and its shapes here.
+    onGeoChange(() => {
+      drawSizes();
+      draw();
+    });
+
+    filter();
+
+    // How far this view rests below the header band: the map is lifted by
+    // that much so it starts flush under the header. Re-measured when the
+    // view resizes — including the first time it is shown, when the page
+    // opened on the other version.
+    const pin = () => {
+      if (!root.offsetParent) return;
+      const band = document.querySelector('.firma2-page-header')?.getBoundingClientRect().height ?? 0;
+      const lift = Math.max(0, Math.round(root.getBoundingClientRect().top + window.scrollY - band));
+      root.style.setProperty('--_lift', `${lift}px`);
+    };
+    new ResizeObserver(pin).observe(root);
+    pin();
+
+    void loadLeaflet()
+      .then((leaflet) => {
+        L = leaflet;
+        // Repainting on a scheme change picks up the dark ramp's colours.
+        // Zoom on the trailing side — the leading side is under the list.
+        map = createMap(L, $('[data-canvas]'), { zoomControl: false }, paint);
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        // THE WHEEL ZOOMS THE MAP where the map is the page. Once it stacks
+        // into a box in the page's flow, a wheel over it would trap the
+        // page's own scroll, so there it scrolls the page and the buttons zoom.
+        const narrow = window.matchMedia('(max-width: 64rem)');
+        const wheel = () => (narrow.matches ? map.scrollWheelZoom.disable() : map.scrollWheelZoom.enable());
+        narrow.addEventListener('change', wheel);
+        wheel();
+        map.setView([37.6, -120.4], 6);
+        dots.layer = L.featureGroup();
+        map.on('zoomend', syncDots);
+        draw();
+        frame();
+        // The list moves off the map, or back over it: frame the work again.
+        window.matchMedia('(max-width: 64rem)').addEventListener('change', () => requestAnimationFrame(frame));
+      })
+      .catch(() => {
+        $('.firma2-my-projects-map__surface').hidden = true;
+      });
+  });
+</script>

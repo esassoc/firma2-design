@@ -39,11 +39,11 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
 import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
-import { CLASSIFICATIONS } from '../../data/firma2-performance-measures';
+import { CLASSIFICATION_NAMES } from '../../data/firma2-performance-measures';
 import { withBase } from '../../lib/base';
 
 const catalogHref = withBase('/prototypes/performance-measures');
-const themeOptions = CLASSIFICATIONS.map((c) => ({ value: c, label: c }));
+const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
 ---
 <!-- bcn-lego-checked: every control here is a lego (esa-card, esa-textarea,
      esa-chip-group, esa-button, esa-alert-box, esa-badge,
@@ -282,6 +282,7 @@ const themeOptions = CLASSIFICATIONS.map((c) => ({ value: c, label: c }));
   import type { DraftActivity, MeasureDraftResult } from '../../data/firma2-measure-drafting';
   import { COUNTING_RULES, getSchema, kindName } from '../../data/firma2-performance-measures';
   import { nextLocalMeasureSlug, writeDraft } from '../../lib/measure-draft';
+  import { writeMeasureWarnings } from '../../lib/measure-notes';
   import { nextLocalSchemaId, writeLocalSchema } from '../../lib/schema-draft';
 
   type Field = HTMLElement & { value?: string; options?: unknown; errorText?: string };
@@ -316,6 +317,19 @@ const themeOptions = CLASSIFICATIONS.map((c) => ({ value: c, label: c }));
     customElements.whenDefined('esa-chip-group').then(() => {
       themes.options = JSON.parse(themes.dataset.options ?? '[]');
     });
+
+    // ARRIVING THROUGH A DOOR. The catalog's "How would you like to start?"
+    // lands here as #guided or #claim; the page still shows both doors, and
+    // puts the reader at the one they chose.
+    const door = window.location.hash;
+    if (door === '#guided' || door === '#claim') {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      const target = door === '#claim' ? claimField : themes;
+      requestAnimationFrame(() => {
+        target.scrollIntoView({ block: 'center' });
+        (target.shadowRoot?.querySelector<HTMLElement>('textarea, button') ?? target).focus();
+      });
+    }
 
     // ---- interview state ----------------------------------------------------
     let theme = '';
@@ -567,6 +581,8 @@ const themeOptions = CLASSIFICATIONS.map((c) => ({ value: c, label: c }));
         reporterGuidance: a.reporterGuidance,
         status: 'Draft',
       });
+      // The warnings travel with the draft, to the sheet where publishing is decided.
+      writeMeasureWarnings(slug, draft.warnings);
       window.location.assign(`${root.dataset.catalogHref}#measure=${encodeURIComponent(slug)}`);
     });
   });

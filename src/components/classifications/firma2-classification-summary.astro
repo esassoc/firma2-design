@@ -1,0 +1,83 @@
+---
+// firma2-classification-summary — the top of a classification's page: what
+// the classification is (its stored description) and the four figures the
+// portfolio adds up to under it.
+//
+// THE DESCRIPTION IS A DATUM, not a lede. It is the sentence an administrator
+// stored on the classification in Workspace settings, the same field the
+// roster prints — the page header carries no lede slot for exactly the reason
+// this is not one.
+//
+// FOUR FIGURES, EACH STATED ONCE. Spent is read against estimated cost because
+// both are on the records being summed; nothing here is derived to make a
+// comparison possible. The projects tile is read against the portfolio, which
+// is the question the hover card on a project's classification chip raises
+// and this page answers.
+//
+// Renames, descriptions and removals made in Workspace settings are applied
+// in the browser (src/lib/taxonomy-edits.ts).
+//
+// Layout is the hub's `.grid` primitive and esa-stat throughout; the only CSS
+// here sets the track minimum, so four tiles go four-up or two-up, never three
+// and an orphan — the same call firma2-project-expenditures makes.
+import EsaStat from '@esa/ecology/esa-stat.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import type { Classification } from '../../data/firma2-classifications';
+import type { ClassificationRollup } from '../../data/firma2-classification-rollup';
+import { projects as portfolio } from '../../data/firma2-projects';
+import { currencyFormatter as currency } from '../../lib/format';
+
+interface Props {
+  classification: Classification;
+  rollup: ClassificationRollup;
+}
+
+const { classification, rollup } = Astro.props;
+const spentShare = rollup.estimatedTotalCost > 0 ? Math.round((rollup.spentToDate / rollup.estimatedTotalCost) * 100) : 0;
+---
+<section class="firma2-classification-summary stack" data-gap="lg" aria-label="Summary" data-slug={classification.slug}>
+  <div data-removed hidden>
+    <EsaAlertBox variant="warning" title="Removed">This classification was removed in Workspace settings. Its figures stay here until the page is rebuilt.</EsaAlertBox>
+  </div>
+  <p class="firma2-classification-summary__description typography-body-lg" data-description>{classification.description}</p>
+  <div class="firma2-classification-summary__figures grid" data-gap="md">
+    <EsaStat value={rollup.projects.length} label="Projects" sub={`of ${portfolio.length} in the portfolio`} />
+    <EsaStat value={currency.format(rollup.estimatedTotalCost)} label="Estimated cost" sub="Total across all years" />
+    <EsaStat value={currency.format(rollup.spentToDate)} label="Spent to date" sub={`${spentShare}% of estimated cost`} />
+    <EsaStat value={rollup.funders} label="Funders" />
+  </div>
+</section>
+
+<style>
+  .firma2-classification-summary__description {
+    margin: 0;
+    max-inline-size: 60ch;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* Two-up or four-up: a track minimum that four $-figures fit at the content
+     cap, and that halves cleanly below it. */
+  .firma2-classification-summary__figures {
+    --grid-min: 13rem;
+  }
+</style>
+
+<script>
+  // Renames and descriptions edited in Workspace settings show here too.
+  import { getEntry, isRemoved } from '../../lib/taxonomy-edits';
+  import { retitle } from '../../lib/taxonomy-record';
+
+  document.querySelectorAll<HTMLElement>('.firma2-classification-summary').forEach((root) => {
+    const slug = root.dataset.slug ?? '';
+    const removed = root.querySelector<HTMLElement>('[data-removed]');
+    if (isRemoved('classification', slug)) {
+      if (removed) removed.hidden = false;
+      return;
+    }
+    const entry = getEntry('classification', slug);
+    if (!entry) return;
+    retitle(entry.name);
+    const description = root.querySelector('[data-description]');
+    if (description) description.textContent = entry.description;
+  });
+</script>

@@ -1,0 +1,178 @@
+---
+// firma2-settings-grid-columns — Preferences › Table columns: which columns
+// YOU see in each data table, and in what order. The personal layer over
+// Workspace settings › Grid defaults (see src/data/firma2-grid-defaults.ts for
+// how the layers fold).
+//
+// THE WORKSPACE'S COLUMNS ARE THE STARTING POINT, not a blank list: the rows
+// open in the order and with the switches the workspace set, so the first
+// change a person makes is a change to what they already see. Untouched, a
+// table keeps following the workspace; "Use the workspace's columns" is the
+// way back, and it only appears once there is somewhere to go back from.
+//
+// A ROW IS A SWITCH NAMED FOR ITS COLUMN, as on the rest of this page
+// (firma2-switch-list) — the column's name is the switch's label, so there is
+// no separate "Shown" word repeated down the list. The grip reorders, by drag
+// or by its menu (bcn-sortable-list). Applies as it is made; no Save.
+//
+// THE IDENTIFYING COLUMN IS PINNED — first and always shown, locked in the
+// list, for the same reason the workspace editor pins it.
+//
+// bcn-lego-checked: esa-button-toggle (which table), esa-switch-toggle (each
+// column), esa-button (grip, reset), and the spoke's bcn-sortable-list for
+// reordering (stand-in for esa-sortable-list, esassoc/ecology#39). The classes
+// only lay out the row; no esa- component does. Beacon is not cloned here.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import '../shared/firma2-switch-list.css';
+import { GRIDS } from '../../data/firma2-grid-defaults';
+
+const grids = GRIDS.map((g) => ({ key: g.key, label: g.label }));
+---
+<Firma2RailSection title="Table columns">
+  <div class="firma2-grid-columns stack" data-gap="lg" data-grids={JSON.stringify(grids)}>
+    <esa-button-toggle data-grid-picker label="Table" size="md"></esa-button-toggle>
+    <p class="firma2-grid-columns__help typography-body-sm">Only you see these. Until you change them, tables show your workspace’s columns.</p>
+    <bcn-sortable-list data-column-sort>
+      <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+      <ol class="firma2-grid-columns__rows" data-column-rows></ol>
+    </bcn-sortable-list>
+    <div>
+      <span data-reset-wrap hidden>
+        <EsaButton variant="ghost" size="md" icon="rotate-ccw" data-reset>Use the workspace’s columns</EsaButton>
+      </span>
+    </div>
+  </div>
+</Firma2RailSection>
+
+<style>
+  .firma2-grid-columns :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-grid-columns__help {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-grid-columns__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-grid-columns__rows :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-200);
+    border-block-end: 1px solid var(--color-border-default-subtle);
+  }
+
+  /* Rules between rows only, as in firma2-switch-list. */
+  .firma2-grid-columns__rows :global(li:last-child) {
+    border-block-end: 0;
+  }
+
+  .firma2-grid-columns__rows :global(.firma2-grid-columns__body) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .firma2-grid-columns :global(.firma2-grid-columns__meta) {
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '../shared/bcn-sortable-list';
+  import { getGrid, resolveLayered } from '../../data/firma2-grid-defaults';
+  import type { ColumnsDelta } from '../../data/firma2-grid-defaults';
+  import { readGridDefault, readGridPersonal, writeGridPersonal } from '../../lib/grid-defaults';
+  import { label } from '../../lib/vocabulary';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean };
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-grid-columns').forEach((root) => {
+    const grids: { key: string; label: string }[] = JSON.parse(root.dataset.grids ?? '[]');
+    const picker = root.querySelector<Control>('[data-grid-picker]')!;
+    const list = root.querySelector<HTMLElement>('[data-column-rows]')!;
+    let gridKey = grids[0]?.key ?? '';
+
+    const save = (delta: ColumnsDelta) => {
+      writeGridPersonal(gridKey, delta.order || delta.hidden ? delta : null);
+      paint();
+    };
+
+    const paint = () => {
+      const grid = getGrid(gridKey);
+      if (!grid) return;
+      const personal = readGridPersonal(gridKey);
+      const resolved = resolveLayered(grid, readGridDefault(gridKey), personal);
+      list.replaceChildren(
+        ...resolved.map(({ column, visible }) => {
+          const li = document.createElement('li');
+          const name = label(column.label);
+          if (column.pinned) {
+            li.dataset.sortLocked = '';
+            li.innerHTML = `<div class="firma2-grid-columns__body stack" data-gap="2xs">
+                <span class="typography-body-md">${esc(name)}</span>
+                <span class="firma2-grid-columns__meta typography-body-sm">Always first, always shown</span>
+              </div>`;
+            return li;
+          }
+          li.dataset.sortKey = column.key;
+          li.dataset.sortLabel = name;
+          const body = document.createElement('div');
+          body.className = 'firma2-grid-columns__body firma2-switch-list';
+          const sw = document.createElement('esa-switch-toggle') as Control;
+          sw.setAttribute('label', name);
+          sw.setAttribute('label-position', 'before');
+          customElements.whenDefined('esa-switch-toggle').then(() => (sw.checked = visible));
+          // The whole shown/hidden set is written, not a toggle of one key:
+          // from the first switch on, this person's set is theirs.
+          sw.addEventListener('change', () => {
+            const hidden = resolved.filter((r) => !r.column.pinned && (r.column.key === column.key ? !sw.checked : !r.visible)).map((r) => r.column.key);
+            save({ ...personal, hidden });
+          });
+          body.append(sw);
+          li.append(body);
+          return li;
+        }),
+      );
+      root.querySelector<HTMLElement>('[data-reset-wrap]')!.hidden = !personal.order && !personal.hidden;
+    };
+
+    root.querySelector('[data-column-sort]')!.addEventListener('sort-change', (e) => {
+      const { order } = (e as CustomEvent<{ order: string[] }>).detail;
+      save({ ...readGridPersonal(gridKey), order });
+    });
+
+    customElements.whenDefined('esa-button-toggle').then(() => {
+      picker.options = grids.map((g) => ({ value: g.key, label: label(g.label) }));
+      picker.value = gridKey;
+    });
+    picker.addEventListener('change', () => {
+      gridKey = String(picker.value ?? gridKey);
+      paint();
+    });
+
+    root.querySelector('[data-reset]')?.addEventListener('click', () => {
+      writeGridPersonal(gridKey, null);
+      paint();
+    });
+
+    // The workspace default can change in another window; this list follows it.
+    window.addEventListener('storage', (event) => {
+      if (event.key?.endsWith(`:${gridKey}`)) paint();
+    });
+
+    paint();
+  });
+</script>

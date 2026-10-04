@@ -1,0 +1,161 @@
+---
+// firma2-project-type-roster — every project type the workspace has, and what
+// each one asks. The way into the studio, and the screen that answers "what
+// kinds of work do we file, and what does each kind ask?" read cold.
+//
+// A TABLE, NOT CARDS: a homogeneous list of the same facts, scanned down a
+// column. The swatch is the type's own colour, as on the map.
+//
+// One project, one type, so "Projects" is both how many carry the type and
+// how many pages it builds — the two counts the classification roster used to
+// need are one here.
+import { PAGE_SECTIONS, PROJECT_TYPES, resolveSections } from '../../data/firma2-project-types';
+import { projects } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+const rows = PROJECT_TYPES.map((t) => ({
+  t,
+  href: withBase(`/prototypes/workspace-settings/project-types/${t.slug}`),
+  projects: projects.filter((p) => p.projectType === t.name).length,
+  fields: t.fields.length,
+  hidden: resolveSections(t.sections)
+    .filter((r) => !r.visible)
+    .map((r) => r.section.label),
+}));
+const sectionCount = PAGE_SECTIONS.length;
+---
+<!-- bcn-lego-checked: a plain data table, no card around it (its own rules
+     already bound every row, and it is the page's only content) — a few
+     scannable columns over a handful of rows, too small for the AG Grid chrome;
+     no esa- table lego exists. Beacon is not cloned on this machine. -->
+<table class="firma2-project-type-roster" aria-label="Project types" data-project-type-roster>
+  <thead>
+    <tr>
+      <th scope="col">Project type</th>
+      <th scope="col" class="firma2-project-type-roster__num" data-aliasable>Projects</th>
+      <th scope="col" class="firma2-project-type-roster__num">Own fields</th>
+      <th scope="col" class="firma2-project-type-roster__page">Page</th>
+    </tr>
+  </thead>
+  <tbody>
+    {rows.map((r) => (
+      <tr data-project-type-slug={r.t.slug} data-slug={r.t.slug}>
+        <th scope="row">
+          <a class="firma2-project-type-roster__name cluster" data-gap="xs" href={r.href}>
+            <span class="firma2-project-type-roster__swatch" style={`background:${r.t.color}`} aria-hidden="true" data-swatch></span>
+            <span data-row-name>{r.t.name}</span>
+          </a>
+          <span class="firma2-project-type-roster__meta firma2-project-type-roster__desc typography-body-sm" data-row-desc>{r.t.description}</span>
+        </th>
+        <td class="firma2-project-type-roster__num" data-cell="projects">{r.projects}</td>
+        <td class="firma2-project-type-roster__num" data-field-count>{r.fields}</td>
+        <td data-page-summary>
+          {r.hidden.length === 0 ? `All ${sectionCount} sections` : `Leaves out ${r.hidden.join(', ').toLowerCase()}`}
+        </td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+<style>
+  /* No card, so no inset: the first and last columns sit on the page's own
+     edges, in line with the title above. */
+  .firma2-project-type-roster tr > :first-child {
+    padding-inline-start: 0;
+  }
+  .firma2-project-type-roster tr > :last-child {
+    padding-inline-end: 0;
+  }
+
+  /* Fixed widths on the fact columns, so the name column takes the rest. */
+  .firma2-project-type-roster {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .firma2-project-type-roster thead .firma2-project-type-roster__num {
+    width: 7rem;
+  }
+
+  .firma2-project-type-roster thead .firma2-project-type-roster__page {
+    width: 11rem;
+  }
+
+  .firma2-project-type-roster th,
+  .firma2-project-type-roster td {
+    padding: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    vertical-align: top;
+    font-weight: normal;
+  }
+
+  .firma2-project-type-roster thead th {
+    color: var(--color-text-secondary);
+  }
+
+  /* Element-qualified so it outranks the `th, td { text-align: start }` base. */
+  .firma2-project-type-roster th.firma2-project-type-roster__num,
+  .firma2-project-type-roster td.firma2-project-type-roster__num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-project-type-roster__name {
+    color: var(--color-content-link);
+  }
+
+  .firma2-project-type-roster__swatch {
+    width: var(--spacing-300);
+    height: var(--spacing-300);
+    border-radius: var(--radius-sm);
+  }
+
+  .firma2-project-type-roster__meta {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-project-type-roster__desc {
+    display: block;
+    margin-block-start: var(--spacing-100);
+  }
+</style>
+
+<script>
+  // Counts follow this browser's edits, so the roster agrees with the studio.
+  import { PAGE_SECTIONS, resolveSections } from '../../data/firma2-project-types';
+  import { withProjectTypeDraft } from '../../lib/project-type-draft';
+  import { label } from '../../lib/vocabulary';
+  import { syncTaxonomyList } from '../../lib/taxonomy-list';
+  import { recordHref } from '../../lib/taxonomy-record';
+
+  // Rows added, renamed or removed in this browser first; the counts below
+  // then read every row, added ones included.
+  document.querySelectorAll<HTMLElement>('[data-project-type-roster] tbody').forEach((tbody) =>
+    syncTaxonomyList(tbody, 'projectType', {
+      listPath: '/prototypes/workspace-settings/project-types',
+      cells: () => ({ projects: '0' }),
+      paint: (row, e) => {
+        row.dataset.projectTypeSlug = e.slug;
+        const swatch = row.querySelector<HTMLElement>('[data-swatch]');
+        if (swatch && e.color) swatch.style.background = e.color;
+        // The name is a span inside the link here, so the link's href is set on the link.
+        const link = row.querySelector<HTMLAnchorElement>('.firma2-project-type-roster__name');
+        if (link) link.href = recordHref('/prototypes/workspace-settings/project-types', e.slug);
+      },
+    }),
+  );
+
+  document.querySelectorAll<HTMLElement>('[data-project-type-roster] tr[data-project-type-slug]').forEach((tr) => {
+    const c = withProjectTypeDraft(tr.dataset.projectTypeSlug ?? '');
+    if (!c) return;
+    const count = tr.querySelector('[data-field-count]');
+    if (count) count.textContent = String(c.fields.length);
+    const hidden = resolveSections(c.sections).filter((r) => !r.visible).map((r) => r.section.label);
+    const summary = tr.querySelector('[data-page-summary]');
+    if (summary)
+      summary.textContent = hidden.length === 0 ? `All ${PAGE_SECTIONS.length} sections` : label(`Leaves out ${hidden.join(', ').toLowerCase()}`);
+  });
+</script>

@@ -24,58 +24,68 @@
 // already nominated that the current layer no longer carries stays listed,
 // marked, so a schema change upstream never silently drops a nomination.
 //
-// The editor is a side sheet with five steps in the order the decisions fall:
-// access decides what the rest of the form even is. Adding is an act, so it
-// has a button; editing an existing subscription saves as it happens.
+// ADDING AND EDITING ARE DIFFERENT SURFACES over the same five steps
+// (firma2-gis-subscription-steps). Adding is a wizard on its own page —
+// /gis-subscriptions/new — because the analyst often has to leave halfway to
+// share a layer into the ArcGIS group, and a page keeps its place where a
+// sheet would not. Editing a saved subscription is this side sheet, all five
+// steps at once, saving as it happens. An unfinished add is shown here, so
+// leaving the wizard never hides the work.
 //
 // bcn-lego-checked: legos throughout — esa-card, esa-button, esa-badge,
-// esa-alert-box, esa-empty-state, esa-side-dialog, esa-radio-group,
-// esa-select, esa-text-field, esa-switch-toggle, esa-confirm-dialog. The
-// schema table and the mapped-field rows are plain markup in the
-// firma2-settings-table style; no lego is a data table. Beacon's BCN-1599
-// (choose from what is shared to your group) is the precedent for step 2;
-// Beacon is not cloned here.
+// esa-alert-box, esa-empty-state, esa-side-dialog, esa-confirm-dialog; the
+// form's own legos are listed in firma2-gis-subscription-steps. Beacon is not
+// cloned here.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
-import { ARCGIS_GROUP, MAPPABLE_PROJECT_FIELDS, SHARED_LAYERS, SYNC_RESULT } from '../../data/firma2-geography';
-import { projects, STAGE_ORDER } from '../../data/firma2-projects';
+import Firma2GisSubscriptionSteps from './firma2-gis-subscription-steps.astro';
+import { ARCGIS_GROUP, SHARED_LAYERS, SUBSCRIPTION_STEPS, SYNC_RESULT } from '../../data/firma2-geography';
 import { withBase } from '../../lib/base';
 
 const config = {
-  layers: SHARED_LAYERS,
+  layers: SHARED_LAYERS.map(({ id, name, geometry }) => ({ id, name, geometry })),
   group: ARCGIS_GROUP,
-  mappable: MAPPABLE_PROJECT_FIELDS,
-  programs: [...new Set(projects.map((p) => p.program))].sort(),
-  stages: STAGE_ORDER,
+  steps: SUBSCRIPTION_STEPS,
   sync: SYNC_RESULT,
 };
 const sourceHref = withBase('/prototypes/workspace-settings/project-source');
+const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new');
 ---
 <div class="firma2-gis-subs stack" data-gap="xl" data-config={JSON.stringify(config)}>
   <!-- WHERE THE SWITCH IS. Subscribed mode is set on a different screen, so a
        reader whose administrator changes it would otherwise find this page
        changed with nothing saying why. -->
   <p class="typography-body-md" data-mode-note>
-    This workspace gets its projects from these subscriptions. That is set in <a href={sourceHref}>Workspace settings › Project source</a>, which is also where you would leave it.
+    Projects in this workspace come from these subscriptions. Change that in <a href={sourceHref}>Project source</a>.
   </p>
 
   <div data-off hidden>
     <EsaEmptyState
-      title="This workspace creates its projects here"
-      description="Subscriptions keep projects current from a GIS your organization already maintains. Switching to them changes how every project gets its shapes, so it is set in Workspace settings › Project source."
+      title="Subscriptions are off for this workspace"
+      description="Turn them on in Project source to keep projects current from your organization’s GIS. It changes how every project gets its shapes."
     />
     <div class="firma2-gis-subs__center">
       <EsaButton variant="secondary" size="md" tag="a" href={sourceHref}>Open Project source</EsaButton>
     </div>
   </div>
 
+  <!-- THE WIZARD'S DRAFT, where its author will look for it. -->
+  <div data-draft hidden>
+    <EsaAlertBox variant="info" title="Unfinished setup">
+      <div class="repel" data-gap="sm">
+        <p class="typography-body-md" data-draft-text></p>
+        <EsaButton variant="secondary" size="md" tag="a" href={newHref}>Continue setup</EsaButton>
+      </div>
+    </EsaAlertBox>
+  </div>
+
   <div class="stack" data-gap="lg" data-list></div>
 
   <div data-none hidden>
-    <EsaEmptyState title="No subscriptions yet" description="Add one to keep project footprints current from your own GIS." />
+    <EsaEmptyState title="No subscriptions yet" description="Add one to keep project shapes current from your own GIS." />
   </div>
 
   <!-- ---- clone sources ---------------------------------------------------- -->
@@ -88,11 +98,11 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
         <div class="repel" data-card-actions>
           <span class="cluster" data-gap="xs">
             <span data-sync-wrap><EsaButton variant="primary" size="sm" icon="rotate-ccw" data-sync>Sync now</EsaButton></span>
-            <EsaButton variant="secondary" appearance="outline" size="sm" data-edit>Edit</EsaButton>
+            <EsaButton variant="chrome" size="md" iconOnly icon="pencil" label="Edit subscription" data-edit />
           </span>
           <span class="cluster" data-gap="xs">
             <EsaButton variant="ghost" size="sm" data-retire>Take over the shapes and retire</EsaButton>
-            <span data-delete-wrap><EsaButton variant="danger" appearance="soft" size="sm" data-delete>Delete</EsaButton></span>
+            <span data-delete-wrap><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Delete subscription" data-delete /></span>
           </span>
         </div>
         <dl class="firma2-gis-subs__meta" data-meta></dl>
@@ -104,82 +114,12 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
   <template data-tpl-success>
     <EsaAlertBox variant="success" title="Sync complete"><div class="stack" data-gap="2xs" data-lines></div></EsaAlertBox>
   </template>
-  <template data-tpl-badge-geometry><EsaBadge variant="info" size="sm" value="Polygon" /></template>
-  <template data-tpl-badge-role><EsaBadge variant="secondary" size="xs" value="role" /></template>
-  <template data-tpl-remove><EsaButton variant="ghost" size="sm" iconOnly icon="x" aria-label="Remove">Remove</EsaButton></template>
 
   <!-- ---- the editor --------------------------------------------------------- -->
-  <esa-side-dialog class="firma2-gis-subs__sheet" heading="Add subscription" size="lg" position="right">
-    <div class="stack" data-gap="2xl">
-      <section class="stack" data-gap="md">
-        <h4 class="typography-label-md-strong firma2-gis-subs__step"><span class="firma2-gis-subs__num">1</span> Access</h4>
-        <esa-radio-group data-access label="How ProjectFirma reaches this service"></esa-radio-group>
-        <p class="typography-body-sm" data-access-help></p>
-      </section>
-
-      <section class="stack" data-gap="md">
-        <h4 class="typography-label-md-strong firma2-gis-subs__step"><span class="firma2-gis-subs__num">2</span> Layer</h4>
-        <esa-select data-layer label="Shared layer" placeholder="Choose a layer shared to your group" size="md"></esa-select>
-        <esa-text-field data-url label="Feature service URL" size="md" placeholder="https://services.arcgis.com/…/FeatureServer/0"></esa-text-field>
-        <div class="cluster" data-gap="sm" data-read-wrap hidden>
-          <EsaButton variant="secondary" size="sm" data-read>Read the layer</EsaButton>
-        </div>
-        <div class="stack" data-gap="sm" data-schema hidden>
-          <div class="cluster" data-gap="sm">
-            <span class="typography-title-strong" data-schema-name></span>
-            <span data-schema-geometry></span>
-            <span class="typography-body-sm firma2-gis-subs__muted" data-schema-count></span>
-          </div>
-          <div class="firma2-gis-subs__scroll">
-            <table class="firma2-gis-subs__table">
-              <thead><tr><th scope="col">Field</th><th scope="col">Type</th></tr></thead>
-              <tbody data-schema-rows></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section class="stack" data-gap="md">
-        <h4 class="typography-label-md-strong firma2-gis-subs__step"><span class="firma2-gis-subs__num">3</span> Matching</h4>
-        <p class="typography-body-sm firma2-gis-subs__muted" data-locked>Choose a layer above and its fields are listed here.</p>
-        <div class="stack" data-gap="md" data-unlocked>
-          <esa-select data-join label="Match projects on" size="md"></esa-select>
-          <esa-select data-feature-id label="Tell shapes apart by" size="md"></esa-select>
-          <esa-select data-label-field label="Call each shape" size="md"></esa-select>
-          <esa-select data-extra label="Extra fields to bring across" multiple chip-mode placeholder="None — only the fields above are read" size="md"></esa-select>
-        </div>
-      </section>
-
-      <section class="stack" data-gap="md">
-        <h4 class="typography-label-md-strong firma2-gis-subs__step"><span class="firma2-gis-subs__num">4</span> Project fields from this layer</h4>
-        <p class="typography-body-sm">A sync <strong>creates the projects this layer describes</strong>. A project field mapped to a layer field is <strong>kept by the layer on every sync</strong>: read-only on the project, and changed in your GIS.</p>
-        <div class="stack" data-gap="md" data-unlocked>
-          <esa-select data-name-field label="Project name from" size="md"></esa-select>
-          <div class="firma2-gis-subs__pair">
-            <esa-select data-default-program label="Program, when not mapped" size="md"></esa-select>
-            <esa-select data-default-stage label="Stage, when not mapped" size="md"></esa-select>
-          </div>
-          <esa-text-field data-default-lead label="Lead organization, when not mapped" size="md" placeholder="Leave blank to require one in the layer"></esa-text-field>
-          <div class="stack" data-gap="sm">
-            <span class="typography-label-md">Mapped project fields</span>
-            <ul class="firma2-gis-subs__mappings stack" data-gap="sm" data-mappings></ul>
-            <p class="typography-body-sm firma2-gis-subs__muted" data-no-mappings>None. County, years and cost are left empty on a created project and edited on the project.</p>
-            <esa-select data-add-mapping label="Map another project field" placeholder="Choose a project field" size="md"></esa-select>
-            <p class="typography-body-sm firma2-gis-subs__muted">Program and stage are matched to yours by name. A value that matches none keeps the default, and the sync result lists it.</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="stack" data-gap="md">
-        <h4 class="typography-label-md-strong firma2-gis-subs__step"><span class="firma2-gis-subs__num">5</span> This subscription</h4>
-        <esa-text-field data-name label="Name" size="md" placeholder="Enterprise project boundaries"></esa-text-field>
-        <esa-switch-toggle data-active label="Active — included in syncs"></esa-switch-toggle>
-      </section>
-    </div>
+  <esa-side-dialog class="firma2-gis-subs__sheet" heading="Edit subscription" size="lg" position="right">
+    <Firma2GisSubscriptionSteps headingLevel={4} />
     <div slot="footer" class="cluster" data-gap="xs">
-      <span data-add-wrap><EsaButton variant="primary" size="md" data-add>Add subscription</EsaButton></span>
-      <span data-done-wrap hidden><EsaButton variant="secondary" size="md" data-done>Done</EsaButton></span>
-      <span data-cancel-wrap><EsaButton variant="ghost" size="md" data-cancel>Cancel</EsaButton></span>
+      <EsaButton variant="secondary" size="md" data-done>Done</EsaButton>
     </div>
   </esa-side-dialog>
 
@@ -232,104 +172,27 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
     font-family: var(--font-family-mono, monospace);
     font-size: 0.9em;
   }
-
-  .firma2-gis-subs__step {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-200);
-    margin: 0;
-  }
-
-  .firma2-gis-subs__num {
-    display: inline-grid;
-    place-items: center;
-    inline-size: 1.5rem;
-    block-size: 1.5rem;
-    border-radius: 50%;
-    background: var(--color-background-brand-subtle, #e9f6e9);
-    color: var(--color-content-brand, #2a7e3b);
-  }
-
-  .firma2-gis-subs__pair {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--spacing-400);
-  }
-
-  /* A layer with sixty fields would push the sheet's footer away. */
-  .firma2-gis-subs__scroll {
-    max-block-size: 16rem;
-    overflow-y: auto;
-    border: 1px solid var(--color-border-default);
-    border-radius: var(--radius-sm, 0.25rem);
-  }
-
-  .firma2-gis-subs__table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .firma2-gis-subs__table th,
-  .firma2-gis-subs__table :global(td) {
-    padding: var(--spacing-200) var(--spacing-300);
-    border-block-end: 1px solid var(--color-border-default);
-    text-align: start;
-    font-weight: normal;
-    vertical-align: middle;
-  }
-
-  .firma2-gis-subs__table thead th {
-    position: sticky;
-    top: 0;
-    background: var(--color-background-elevation-raised, #fcfcfc);
-    color: var(--color-text-secondary);
-  }
-
-  .firma2-gis-subs :global(.firma2-gis-subs__field) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-200);
-  }
-
-  .firma2-gis-subs__mappings {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .firma2-gis-subs :global(.firma2-gis-subs__mapping) {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: end;
-    gap: var(--spacing-200);
-  }
 </style>
 
 <script>
   import '@esa/ecology/esa-side-dialog';
-  import '@esa/ecology/esa-radio-group';
-  import '@esa/ecology/esa-select';
-  import '@esa/ecology/esa-text-field';
-  import '@esa/ecology/esa-switch-toggle';
   import '@esa/ecology/esa-confirm-dialog';
-  import type { SharedLayer, Subscription } from '../../data/firma2-geography';
+  import type { Subscription } from '../../data/firma2-geography';
+  import { mountSubscriptionEditor } from '../../lib/gis-subscription-editor';
+  import { nameButton } from '../../lib/name-button';
   import { fixSideDialog } from '../../lib/side-dialog-fix';
-  import { onGeoChange, readProjectSource, readSubscriptions, writeSubscriptions } from '../../lib/work-areas';
+  import { onGeoChange, readProjectSource, readSubscriptionDraft, readSubscriptions, writeSubscriptions } from '../../lib/work-areas';
 
-  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string; helpText?: string; checked?: boolean; disabled?: boolean; heading?: string; message?: string };
-  type Sheet = HTMLElement & { show: () => void; close: () => void; heading?: string };
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
+  type Confirm = HTMLElement & { show: () => void; message?: string };
 
   interface Config {
-    layers: SharedLayer[];
+    layers: { id: string; name: string; geometry: string }[];
     group: { id: string; title: string };
-    mappable: { value: string; label: string }[];
-    programs: string[];
-    stages: string[];
+    steps: { key: string; title: string }[];
     sync: { added: number; updated: number; stale: string[]; projectsUpdated: number; unmatched: string[]; skippedWithoutJoin: number };
   }
 
-  const PLUMBING = ['OID', 'GlobalID'];
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
   const dateText = (iso: string | null) =>
     iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never';
@@ -352,6 +215,13 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
       $('[data-mode-note]').hidden = !subscribed;
       $('[data-none]').hidden = !subscribed || subs.length > 0;
       document.querySelectorAll<HTMLElement>('[data-add-subscription]').forEach((el) => (el.hidden = !subscribed));
+      const unfinished = readSubscriptionDraft();
+      $('[data-draft]').hidden = !subscribed || !unfinished;
+      if (unfinished) {
+        const step = config.steps[unfinished.step] ?? config.steps[0];
+        const name = unfinished.subscription.name.trim() || 'A new subscription';
+        $('[data-draft-text]').textContent = `${name} stopped at step ${unfinished.step + 1} of ${config.steps.length}, ${step.title}.`;
+      }
       const list = $('[data-list]');
       if (!subscribed) return list.replaceChildren();
 
@@ -380,6 +250,8 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
           const syncLabel = syncWrap.querySelector('.esa-button__label');
           if (syncLabel) syncLabel.textContent = syncing === sub.id ? 'Syncing…' : 'Sync now';
           card.querySelector('[data-sync]')!.addEventListener('click', () => sync(sub.id));
+          nameButton(card.querySelector<HTMLElement>('[data-edit]')!, `Edit ${sub.name}`);
+          nameButton(card.querySelector<HTMLElement>('[data-delete]')!, `Delete ${sub.name}`);
           card.querySelector('[data-edit]')!.addEventListener('click', () => openEditor(sub.id));
           card.querySelector('[data-retire]')!.addEventListener('click', () => askRetire(sub));
           // Delete only when it keeps nothing current: deleting one that does
@@ -405,7 +277,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
         const alert = clone('success');
         const lines = [
           `${r.added} added, ${r.updated} updated. ${r.projectsUpdated} projects had a mapped field change.`,
-          ...r.stale.map((name) => `“${name}” is no longer upstream. It was kept and marked stale, never deleted.`),
+          ...r.stale.map((name) => `“${name}” is gone from the layer. It’s kept here and marked stale.`),
           r.skippedWithoutJoin ? `${r.skippedWithoutJoin} feature skipped: nothing in ${sub.joinField} to match a project on.` : '',
           r.unmatched.length ? `Matched no project: ${r.unmatched.join(', ')}. Add the project, or correct ${sub.joinField} in your layer.` : '',
           sub.extraFields.length ? `${sub.extraFields.join(' and ')} updated on every matched project.` : '',
@@ -421,6 +293,8 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
                   lastSuccess: new Date().toISOString(),
                   lastMessage: `Matched ${s.projectCount} of ${s.projectCount + 1} features on ${s.joinField}. ${r.stale.length} no longer upstream, kept. 1 matched no project: ${r.unmatched.join(', ')}.`,
                   staleLabels: r.stale,
+                  // Fields ever brought across keep their values when un-nominated.
+                  syncedFields: [...new Set([...(s.syncedFields ?? []), ...s.extraFields])],
                 }
               : s,
           ),
@@ -429,11 +303,11 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
     };
 
     // ---- the exit that keeps the shapes ------------------------------------------
-    const retire = $<Control & { show: () => void }>('.firma2-gis-subs__retire');
+    const retire = $<Confirm>('.firma2-gis-subs__retire');
     let retiring: Subscription | null = null;
     const askRetire = (sub: Subscription) => {
       retiring = sub;
-      retire.message = `The ${sub.workAreaCount} work areas it keeps current stay on their ${sub.projectCount} projects and become editable in ProjectFirma. Nothing is read from this layer again. To follow the layer later, add a new subscription.`;
+      retire.message = `Its ${sub.workAreaCount} work areas stay on their ${sub.projectCount} projects and become editable here. Syncs stop reading this layer; to follow it again, add a new subscription.`;
       retire.show();
     };
     retire.addEventListener('resolved', (e) => {
@@ -442,282 +316,22 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
       retiring = null;
     });
 
-    // ---- the editor --------------------------------------------------------------
+    // ---- the editor: a saved subscription, saving as it changes ----------------------
+    // Adding is the wizard's job (the page header's Add links to it).
     const sheet = $<Sheet>('.firma2-gis-subs__sheet');
     void fixSideDialog(sheet);
-    const f = {
-      access: $<Control>('[data-access]'),
-      layer: $<Control>('[data-layer]'),
-      url: $<Control>('[data-url]'),
-      join: $<Control>('[data-join]'),
-      featureId: $<Control>('[data-feature-id]'),
-      label: $<Control>('[data-label-field]'),
-      extra: $<Control>('[data-extra]'),
-      nameField: $<Control>('[data-name-field]'),
-      program: $<Control>('[data-default-program]'),
-      stage: $<Control>('[data-default-stage]'),
-      lead: $<Control>('[data-default-lead]'),
-      addMapping: $<Control>('[data-add-mapping]'),
-      name: $<Control>('[data-name]'),
-      active: $<Control>('[data-active]'),
-    };
-
-    let draft: Subscription;
     let editingId: string | null = null;
-
-    const blank = (): Subscription => ({
-      id: `sub-${Date.now().toString(36)}`,
-      name: '',
-      access: 'arcgis',
-      layerId: '',
-      url: '',
-      joinField: '',
-      featureIdField: '',
-      labelField: '',
-      extraFields: [],
-      nameField: '',
-      defaultLead: '',
-      defaultProgram: config.programs[0],
-      defaultStage: 'Planning & Design',
-      mappings: [],
-      active: true,
-      projectCount: 0,
-      workAreaCount: 0,
-      lastSuccess: null,
-      lastMessage: null,
+    const editor = mountSubscriptionEditor($('.firma2-gis-steps'), (draft) => {
+      if (editingId) save(readSubscriptions().map((s) => (s.id === editingId ? draft : s)));
     });
-
-    /** Edits to an existing subscription save as they happen. */
-    const commit = () => {
-      if (!editingId) return;
-      save(readSubscriptions().map((s) => (s.id === editingId ? draft : s)));
-    };
-
-    const fieldOptions = (layer: SharedLayer | undefined, includePlumbing = true) =>
-      (layer?.fields ?? [])
-        .filter((field) => includePlumbing || !PLUMBING.includes(field.type) && !field.name.startsWith('Shape__'))
-        .map((field) => ({ value: field.name, label: field.alias ? `${field.name} — ${field.alias}` : field.name }));
-
-    const paintSchema = () => {
-      const layer = layerById(draft.layerId);
-      $('[data-schema]').hidden = !layer;
-      root.querySelectorAll<HTMLElement>('[data-unlocked]').forEach((el) => (el.hidden = !layer));
-      $('[data-locked]').hidden = Boolean(layer);
-      if (!layer) return;
-      $('[data-schema-name]').textContent = layer.name;
-      const geometry = clone('badge-geometry');
-      geometry.querySelector('.esa-badge__text')!.textContent = layer.geometry;
-      $('[data-schema-geometry]').replaceChildren(geometry);
-      $('[data-schema-count]').textContent = `${layer.fields.length} fields`;
-      $('[data-schema-rows]').replaceChildren(
-        ...layer.fields.map((field) => {
-          const tr = document.createElement('tr');
-          const roles = [
-            field.name === layer.globalIdField && 'global ID',
-            field.name === layer.objectIdField && 'object ID',
-            field.name === layer.displayField && 'display',
-          ].filter(Boolean) as string[];
-          const cell = document.createElement('td');
-          cell.innerHTML = `<span class="firma2-gis-subs__field typography-body-sm"><code>${esc(field.name)}</code>${field.alias && field.alias !== field.name ? `<span class="firma2-gis-subs__muted">${esc(field.alias)}</span>` : ''}</span>`;
-          roles.forEach((role) => {
-            const badge = clone('badge-role');
-            badge.querySelector('.esa-badge__text')!.textContent = role;
-            cell.firstElementChild!.append(badge);
-          });
-          const type = document.createElement('td');
-          type.className = 'typography-body-sm';
-          type.textContent = field.type;
-          tr.append(cell, type);
-          return tr;
-        }),
-      );
-
-      // Three of the four pickers offer every field; the extra-fields list
-      // offers none of the plumbing, plus anything already nominated that
-      // this layer no longer carries — marked, so it is never dropped silently.
-      const all = fieldOptions(layer);
-      f.join.options = all;
-      f.featureId.options = all;
-      f.label.options = all;
-      f.nameField.options = [{ value: '', label: 'The external ID (no name field)' }, ...all];
-      const extras = fieldOptions(layer, false);
-      const missing = draft.extraFields.filter((name) => !layer.fields.some((x) => x.name === name)).map((name) => ({ value: name, label: `${name} — not in this layer` }));
-      f.extra.options = [...extras, ...missing];
-      f.join.value = draft.joinField;
-      f.featureId.value = draft.featureIdField;
-      f.label.value = draft.labelField;
-      f.nameField.value = draft.nameField;
-      f.extra.value = [...draft.extraFields];
-      const shapeId = [layer.globalIdField, layer.objectIdField].includes(draft.joinField);
-      f.join.helpText = shapeId
-        ? `${draft.joinField} identifies a shape, not a project. Republishing the layer regenerates it, and every project would read as abandoned at once. Choose the field that means “this project”: a project number or grant ID.`
-        : 'Matched against each project’s external ID. Only you know which field carries it.';
-      f.join.errorText = '';
-      f.featureId.helpText = 'Only matters when one project has several shapes.';
-      f.label.helpText = 'What each shape is called on the map.';
-      paintMappings();
-    };
-
-    const paintMappings = () => {
-      const layer = layerById(draft.layerId);
-      const list = $('[data-mappings]');
-      list.replaceChildren(
-        ...draft.mappings.map((m) => {
-          const li = document.createElement('li');
-          li.className = 'firma2-gis-subs__mapping';
-          const select = document.createElement('esa-select') as Control;
-          select.setAttribute('size', 'md');
-          select.setAttribute('label', config.mappable.find((x) => x.value === m.projectField)?.label ?? m.projectField);
-          customElements.whenDefined('esa-select').then(() => {
-            select.options = fieldOptions(layer);
-            select.value = m.layerField;
-          });
-          select.addEventListener('change', () => {
-            draft = { ...draft, mappings: draft.mappings.map((x) => (x.projectField === m.projectField ? { ...x, layerField: String(select.value ?? '') } : x)) };
-            commit();
-          });
-          const remove = clone('remove');
-          remove.setAttribute('aria-label', `Stop mapping ${select.getAttribute('label')}`);
-          remove.addEventListener('click', () => {
-            draft = { ...draft, mappings: draft.mappings.filter((x) => x.projectField !== m.projectField) };
-            commit();
-            paintMappings();
-          });
-          li.append(select, remove);
-          return li;
-        }),
-      );
-      $('[data-no-mappings]').hidden = draft.mappings.length > 0;
-      const addable = config.mappable.filter((x) => !draft.mappings.some((m) => m.projectField === x.value));
-      f.addMapping.hidden = addable.length === 0;
-      f.addMapping.options = addable;
-      f.addMapping.value = '';
-    };
-
-    const paintAccess = () => {
-      const arcgis = draft.access === 'arcgis';
-      f.layer.hidden = !arcgis;
-      $('[data-read-wrap]').hidden = arcgis;
-      $('[data-access-help]').textContent = arcgis
-        ? `No credentials. Your organization adds the ProjectFirma ArcGIS account to ${config.group.title} and shares feature services into it; nothing is stored here and there is no password to rotate.`
-        : 'A service anyone can read without signing in. It must return GeoJSON — for ArcGIS, the query URL with f=geojson.';
-      f.url.helpText = arcgis ? 'Filled in from the layer you choose.' : '';
-      f.url.disabled = arcgis;
-    };
-
-    const fill = () => {
-      f.access.value = draft.access;
-      f.layer.value = draft.layerId;
-      f.url.value = draft.url;
-      f.program.value = draft.defaultProgram;
-      f.stage.value = draft.defaultStage;
-      f.lead.value = draft.defaultLead;
-      f.name.value = draft.name;
-      f.name.errorText = '';
-      f.url.errorText = '';
-      f.active.checked = draft.active;
-      paintAccess();
-      paintSchema();
-    };
-
-    const openEditor = (id: string | null) => {
+    const openEditor = (id: string) => {
+      const sub = readSubscriptions().find((s) => s.id === id);
+      if (!sub) return;
       editingId = id;
-      draft = id ? { ...readSubscriptions().find((s) => s.id === id)! } : blank();
-      sheet.heading = id ? 'Edit subscription' : 'Add subscription';
-      $('[data-add-wrap]').hidden = Boolean(id);
-      $('[data-cancel-wrap]').hidden = Boolean(id);
-      $('[data-done-wrap]').hidden = !id;
-      void Promise.all(['esa-select', 'esa-radio-group', 'esa-text-field', 'esa-switch-toggle'].map((t) => customElements.whenDefined(t))).then(() => {
-        fill();
-        sheet.show();
-      });
+      void editor.load(sub).then(() => sheet.show());
     };
-
-    void Promise.all(['esa-select', 'esa-radio-group'].map((t) => customElements.whenDefined(t))).then(() => {
-      f.access.options = [
-        { value: 'arcgis', label: 'Shared with the ProjectFirma ArcGIS account' },
-        { value: 'public', label: 'A public service' },
-      ];
-      f.layer.options = config.layers.map((l) => ({ value: l.id, label: `${l.name} — ${l.geometry.toLowerCase()}s` }));
-      f.program.options = config.programs.map((p) => ({ value: p, label: p }));
-      f.stage.options = config.stages.map((s) => ({ value: s, label: s }));
-    });
-
-    // Choosing a layer fills in the URL, the name, and the defaults ArcGIS
-    // already knows — the feature ID from the GlobalID, the label from the
-    // display field. The join is NOT guessed: only the tenant knows it.
-    f.access.addEventListener('change', () => {
-      draft = { ...draft, access: String(f.access.value ?? 'arcgis') as 'arcgis' | 'public' };
-      commit();
-      paintAccess();
-    });
-    f.layer.addEventListener('change', () => {
-      const layer = layerById(String(f.layer.value ?? ''));
-      if (!layer) return;
-      draft = {
-        ...draft,
-        layerId: layer.id,
-        url: layer.url,
-        name: draft.name || layer.name,
-        featureIdField: layer.globalIdField,
-        labelField: layer.displayField,
-        joinField: layer.fields.some((x) => x.name === draft.joinField) ? draft.joinField : '',
-      };
-      f.url.value = draft.url;
-      f.name.value = draft.name;
-      commit();
-      paintSchema();
-    });
-    f.url.addEventListener('change', () => {
-      draft = { ...draft, url: String(f.url.value ?? '').trim() };
-      commit();
-    });
-    $('[data-read]').addEventListener('click', () => {
-      if (!String(f.url.value ?? '').trim()) {
-        f.url.errorText = 'Paste the service’s query URL first.';
-        return;
-      }
-      f.url.errorText = '';
-      draft = { ...draft, layerId: config.layers[0].id, featureIdField: config.layers[0].globalIdField, labelField: config.layers[0].displayField };
-      commit();
-      paintSchema();
-    });
-    const bind = (control: Control, key: keyof Subscription, after?: () => void) =>
-      control.addEventListener('change', () => {
-        draft = { ...draft, [key]: control === f.active ? Boolean(control.checked) : Array.isArray(control.value) ? [...control.value] : String(control.value ?? '') };
-        commit();
-        after?.();
-      });
-    bind(f.join, 'joinField', paintSchema);
-    bind(f.featureId, 'featureIdField');
-    bind(f.label, 'labelField');
-    bind(f.extra, 'extraFields');
-    bind(f.nameField, 'nameField');
-    bind(f.program, 'defaultProgram');
-    bind(f.stage, 'defaultStage');
-    bind(f.lead, 'defaultLead');
-    bind(f.name, 'name');
-    bind(f.active, 'active');
-    f.addMapping.addEventListener('change', () => {
-      const field = String(f.addMapping.value ?? '');
-      if (!field || draft.mappings.some((m) => m.projectField === field)) return;
-      draft = { ...draft, mappings: [...draft.mappings, { projectField: field, layerField: '' }] };
-      commit();
-      paintMappings();
-    });
-
-    $('[data-add]').addEventListener('click', () => {
-      f.name.errorText = draft.name.trim() ? '' : 'Name it the way your team will.';
-      f.url.errorText = draft.url ? '' : draft.access === 'arcgis' ? 'Choose a shared layer.' : 'Paste the service’s query URL.';
-      f.join.errorText = draft.joinField ? '' : 'Choose the field that says which project a shape belongs to.';
-      if (f.name.errorText || f.url.errorText || (draft.layerId && f.join.errorText)) return;
-      save([...readSubscriptions(), draft]);
-      sheet.close();
-    });
+    sheet.addEventListener('close', () => (editingId = null));
     $('[data-done]').addEventListener('click', () => sheet.close());
-    $('[data-cancel]').addEventListener('click', () => sheet.close());
-    // The page header owns the Add button; it is wired here, where the editor is.
-    document.querySelectorAll('[data-add-subscription]').forEach((b) => b.addEventListener('click', () => openEditor(null)));
 
     onGeoChange(paint);
     paint();
