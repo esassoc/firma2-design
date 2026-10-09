@@ -1,0 +1,112 @@
+---
+// firma2-measure-danger-zone — deleting a performance measure. One act, its
+// cost stated beside it, then a confirm.
+//
+// HISTORY DECIDES WHETHER IT IS OFFERED (team 6). A measure with figures filed
+// against it is retired, not deleted — the figures would lose the definition
+// that gives them meaning — so the button is disabled with that reason in view
+// (brief §4, "Inert, not disabled": disabled must tell the truth, with the
+// reason beside it). A measure from the workspace's catalog is retired too: a
+// static site cannot truly remove one. Only a measure made in this browser,
+// with nothing filed, can go.
+//
+// Decided in the browser, because the slug of a draft and the entries filed
+// in this browser are only known there.
+//
+// bcn-lego-checked: esa-danger-zone is the box, esa-button the act,
+// esa-confirm-dialog the confirm — firma2-taxonomy-danger-zone's construction.
+// Beacon is not cloned on this machine.
+import EsaDangerZone from '@esa/ecology/esa-danger-zone.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { seededMeasureHistory } from '../../data/firma2-measure-history';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** The seeded measure's slug; omitted on the draft route. */
+  slug?: string;
+}
+
+const { slug } = Astro.props;
+---
+<EsaDangerZone heading="Danger zone">
+  <div
+    class="firma2-measure-danger-zone repel"
+    data-gap="md"
+    data-slug={slug}
+    data-list-href={withBase('/prototypes/workspace-settings/performance-measures')}
+    data-history={JSON.stringify(seededMeasureHistory())}
+  >
+    <div class="stack" data-gap="3xs" id="danger-delete-measure">
+      <span class="typography-label-md-strong">Delete measure</span>
+      <span class="typography-body-sm" data-delete-body></span>
+    </div>
+    <EsaButton variant="danger" appearance="soft" size="md" disabled aria-describedby="danger-delete-measure" data-delete>Delete</EsaButton>
+  </div>
+</EsaDangerZone>
+
+<esa-confirm-dialog
+  class="firma2-measure-danger-zone__confirm"
+  variant="danger"
+  heading="Delete this measure?"
+  message="Its definition leaves the catalog. This can't be undone."
+  confirm-label="Delete"
+  cancel-label="Keep it"
+></esa-confirm-dialog>
+
+<script>
+  import '@esa/ecology/esa-confirm-dialog';
+  import { clearDraft, emitMeasureChange, isLocalMeasureSlug, MEASURE_CHANGE_EVENT, withDraft } from '../../lib/measure-draft';
+  import { clearMeasureWarnings } from '../../lib/measure-notes';
+  import { measureFiled } from '../../lib/measure-history';
+  import type { MeasureHistory } from '../../data/firma2-measure-history';
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-danger-zone').forEach((root) => {
+    const slug = root.dataset.slug || new URLSearchParams(window.location.search).get('slug') || '';
+    const button = root.querySelector<HTMLElement>('[data-delete]');
+    const body = root.querySelector<HTMLElement>('[data-delete-body]');
+    const confirm = document.querySelector<HTMLElement & { show: () => void }>('.firma2-measure-danger-zone__confirm');
+    const history = JSON.parse(root.dataset.history ?? '{}') as MeasureHistory;
+    if (!slug || !button || !body) return;
+
+    // Re-read on every save: a rename can match the measure to filed history.
+    const paint = () => {
+      const filed = measureFiled(withDraft(slug), history);
+      const local = isLocalMeasureSlug(slug);
+      const deletable = local && filed.entries === 0;
+      // The same markup EsaButton renders for `disabled`.
+      button.toggleAttribute('disabled', !deletable);
+      // The class lives on the lego's wrapper, which it uses to drop pointer events.
+      button.closest('.esa-button')?.classList.toggle('esa-button--disabled', !deletable);
+      body.textContent = filed.entries > 0
+        ? `${filed.entries.toLocaleString('en-US')} figures are filed against it. Retire it instead, so they keep their meaning.`
+        : local
+          ? 'Nothing is filed against it yet.'
+          : 'Only measures added in this browser can be deleted. Retire it instead.';
+    };
+    paint();
+    document.addEventListener(MEASURE_CHANGE_EVENT, paint);
+
+    button.addEventListener('click', () => confirm?.show());
+    confirm?.addEventListener('resolved', (e) => {
+      if (!(e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) return;
+      const record = withDraft(slug);
+      clearDraft(slug);
+      clearMeasureWarnings(slug);
+      emitMeasureChange(record);
+      window.location.assign(root.dataset.listHref!);
+    });
+  });
+</script>
+
+<style>
+  /* The lego's slot is a wrapping flex row; this row takes all of it. */
+  .firma2-measure-danger-zone {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+  }
+
+  .firma2-measure-danger-zone .stack {
+    flex: 1 1 14rem;
+    min-inline-size: 0;
+  }
+</style>

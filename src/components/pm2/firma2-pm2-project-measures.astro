@@ -1,0 +1,811 @@
+---
+// firma2-pm2-project-measures — PM 2's measures card on a project:
+// projectfirma2's project-measures component (story 0010), view for view.
+//
+// EVERY PUBLISHED MEASURE SHOWS ON EVERY PROJECT. There is no "choose
+// measures" step on the branch: a measure is asked of a project by being
+// published, and a TARGET is what commits the project to an amount. Setting a
+// target is how a measure attaches; removing it detaches, and is never refused.
+// A target is for the project's life, never per period, and progress against it
+// is cumulative.
+//
+// TWO VIEWS, one card.
+//   By period — measures down, periods across (only periods with anything in
+//     them), then Total, then Against target. A dash is a period with nothing
+//     reported. A measure that does not sum carries no total, no ring and no
+//     "X of Y": "Not a total". A chevron expands a measure into the option
+//     combinations the project actually used.
+//   Report — the entry form for one reporting period. The LAST category is the
+//     pivot (a multi-select); the earlier ones are single selects, and one
+//     block is one combination of them. Each picked pivot option takes an
+//     amount, saved on blur or Enter; clearing it deletes the entry.
+// Plus Record work: a side sheet that files one entry against the right
+// measure from "what did you do?".
+//
+// WHO SEES WHAT is the branch's split, and "Viewing as" switches it so the
+// three can be compared: an Administrator curates targets and records work, a
+// Project editor records work only, a Reader sees the history and no write
+// affordance at all (hidden, not disabled).
+//
+// The change log is written by every target and entry write (pm2-store) but,
+// as on the branch, nothing here reads it yet.
+//
+// bcn-lego-checked: the card, buttons, selects, text fields, toggles, empty
+// state, pills and side sheet are esa-* legos; the ring is the spoke's own
+// bcn-progress-ring, cloned from a template. The history TABLE is a native
+// <table>: no esa-* lego is a data table with expandable rows, and ag-grid's
+// row grouping is enterprise-only (the original firma2-project-measures makes
+// the same call). Beacon is not cloned here.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import BcnProgressRing from '../shared/bcn-progress-ring.astro';
+
+interface Props {
+  projectSlug: string;
+}
+
+const { projectSlug } = Astro.props;
+---
+<section class="firma2-pm2-project stack" data-gap="lg" data-project-slug={projectSlug}>
+  <div class="firma2-pm2-project__role">
+    <esa-button-toggle data-role label="Viewing as" size="md"></esa-button-toggle>
+  </div>
+
+  <EsaCard title="Performance measures">
+    <EsaButton slot="actions" variant="secondary" size="sm" icon="notepad-text" data-record>Record work</EsaButton>
+    <esa-button-toggle slot="actions" data-view size="sm" aria-label="View"></esa-button-toggle>
+
+    <div data-empty hidden>
+      <EsaEmptyState size="sm" title="Nothing is being asked of this project yet" description="Once your program publishes a performance measure, it will appear here for you to report against." />
+    </div>
+
+    <div class="stack" data-gap="md" data-history-view hidden>
+      <div class="firma2-pm2-project__scroll">
+        <table class="firma2-pm2-project__table typography-body-sm">
+          <thead><tr data-head></tr></thead>
+          <tbody data-body></tbody>
+        </table>
+      </div>
+      <p class="typography-body-sm firma2-pm2-project__quiet">A dash is a period with nothing reported. A measure whose values do not add up carries no total, because summing them would not mean anything.</p>
+    </div>
+
+    <div class="stack" data-gap="lg" data-report-view hidden>
+      <div class="stack" data-gap="sm">
+        <esa-button-toggle data-period label="Reporting period" size="md"></esa-button-toggle>
+        <p class="typography-body-md" data-progress></p>
+        <ul class="firma2-pm2-project__errors typography-body-sm" data-errors role="alert"></ul>
+      </div>
+      <div class="stack" data-gap="xl" data-sections></div>
+    </div>
+  </EsaCard>
+
+  <esa-side-dialog data-sheet heading="Record work" size="md" position="right">
+    <div class="stack" data-gap="lg">
+      <p class="typography-body-md" data-sheet-intro></p>
+      <esa-combobox data-sheet-what label="What did you do?" size="md" placeholder="e.g. planting, fencing, pile burning"></esa-combobox>
+      <div class="stack" data-gap="md" data-sheet-body hidden>
+        <p class="typography-body-md" data-sheet-filing></p>
+        <p class="typography-body-sm firma2-pm2-project__quiet" data-sheet-guidance></p>
+        <esa-text-field data-sheet-amount size="md" type="number" inputmode="decimal" label="Amount"></esa-text-field>
+        <div class="stack" data-gap="md" data-sheet-categories></div>
+        <ul class="firma2-pm2-project__errors typography-body-sm" data-sheet-errors role="alert"></ul>
+      </div>
+      <div class="stack" data-gap="xs" data-sheet-recorded hidden>
+        <p class="typography-label-md-strong">Recorded just now</p>
+        <ul class="firma2-pm2-project__recorded typography-body-sm" data-sheet-recorded-list></ul>
+      </div>
+    </div>
+    <div slot="footer" class="cluster" data-gap="sm">
+      <EsaButton variant="secondary" size="md" data-sheet-done>Done</EsaButton>
+      <EsaButton variant="primary" size="md" data-sheet-save disabled>Save entry</EsaButton>
+    </div>
+  </esa-side-dialog>
+
+  <!-- Lego markup the script clones into the rows it builds. -->
+  <template data-tpl="ring"><BcnProgressRing value={0} size="xs" decorative={false} /></template>
+  <template data-tpl="set-target"><EsaButton variant="secondary" size="sm" icon="plus">Set a target</EsaButton></template>
+  <template data-tpl="remove-target"><EsaButton variant="ghost" size="sm" iconOnly icon="trash-2" label="Remove target" /></template>
+  <template data-tpl="save"><EsaButton variant="primary" size="sm">Save</EsaButton></template>
+  <template data-tpl="cancel"><EsaButton variant="ghost" size="sm">Cancel</EsaButton></template>
+  <template data-tpl="chevron"><EsaButton variant="ghost" size="sm" iconOnly icon="chevron-down" label="Show breakdown" /></template>
+  <template data-tpl="add"><EsaButton variant="secondary" size="sm" icon="plus">Add</EsaButton></template>
+  <template data-tpl="discard"><EsaButton variant="ghost" size="sm" iconOnly icon="x" label="Discard this entry" /></template>
+  <template data-tpl="reported"><EsaPill label="Reported" variant="success" size="sm" removable={false} /></template>
+</section>
+
+<!-- GLOBAL because the rows, cells, blocks and target controls are built by
+     the script, and Astro's scoping attribute never reaches a node created at
+     runtime. Every selector is under the component's own prefix. -->
+<style is:global>
+  .firma2-pm2-project__role {
+    max-inline-size: 32rem;
+  }
+
+  .firma2-pm2-project__scroll {
+    overflow-x: auto;
+  }
+
+  .firma2-pm2-project__table {
+    inline-size: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-pm2-project__table :is(th, td) {
+    padding: var(--spacing-200) var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default-subtle);
+    text-align: end;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  .firma2-pm2-project__table :is(th, td):first-child,
+  .firma2-pm2-project__table :is(th, td)[data-left] {
+    text-align: start;
+    white-space: normal;
+  }
+
+  .firma2-pm2-project__table th {
+    color: var(--color-content-default-secondary);
+    font-weight: 600;
+  }
+
+  .firma2-pm2-project__table tr[data-sub] td:first-child {
+    padding-inline-start: var(--spacing-600);
+    color: var(--color-content-default-secondary);
+  }
+
+  .firma2-pm2-project__target {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-200);
+  }
+
+  .firma2-pm2-project__target esa-text-field {
+    inline-size: 9rem;
+  }
+
+  .firma2-pm2-project__section {
+    border-inline-start: 2px solid var(--color-border-default);
+    padding-inline-start: var(--spacing-400);
+  }
+
+  .firma2-pm2-project__section[data-reported] {
+    border-inline-start-color: var(--color-border-brand, var(--color-content-brand));
+  }
+
+  .firma2-pm2-project__block {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--spacing-300);
+  }
+
+  .firma2-pm2-project__block > esa-select {
+    min-inline-size: 12rem;
+  }
+
+  .firma2-pm2-project__block > esa-text-field {
+    inline-size: 12rem;
+  }
+
+  .firma2-pm2-project__section > .esa-button {
+    align-self: start;
+  }
+
+  .firma2-pm2-project__quiet {
+    color: var(--color-content-default-secondary);
+  }
+
+  .firma2-pm2-project__errors {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+    color: var(--color-content-utility-danger);
+  }
+
+  .firma2-pm2-project__errors:empty {
+    display: none;
+  }
+
+  .firma2-pm2-project__recorded {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+  }
+
+  .firma2-pm2-project [hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-combobox';
+  import '@esa/ecology/esa-side-dialog';
+  import {
+    PM2_CHANGE_EVENT,
+    createEntry,
+    deleteEntry,
+    formatAmount,
+    getReport,
+    optionLabel,
+    removeTarget,
+    setTarget,
+    updateEntry,
+  } from '../../lib/pm2-store';
+  import type { Pm2Report, Pm2ReportMeasure } from '../../lib/pm2-store';
+  import type { Pm2Entry, Pm2Measure } from '../../data/firma2-pm2';
+  import { UNSPECIFIED } from '../../data/firma2-pm2';
+
+  type Lit = HTMLElement & { value: any; options?: unknown; disabled?: boolean; errorText?: string; show?: () => void; close?: () => void };
+  type Role = 'admin' | 'editor' | 'reader';
+  const ROLE_KEY = 'firma2:pm2:role';
+
+  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] => {
+    const n = document.createElement(tag);
+    if (text != null) n.textContent = text;
+    return n;
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-pm2-project').forEach((root) => {
+    const slug = root.dataset.projectSlug ?? '';
+    const q = <T extends HTMLElement = Lit>(sel: string) => root.querySelector<T>(sel)!;
+    // EsaButton is a <span> around the native <button>: names, state and
+    // disabled belong on the button, clicks bubble to either.
+    const native = (w: HTMLElement) => w.querySelector('button') ?? w;
+    const tpl = (name: string) =>
+      (root.querySelector<HTMLTemplateElement>(`[data-tpl="${name}"]`)!.content.firstElementChild!.cloneNode(true) as HTMLElement);
+
+    let role: Role = 'admin';
+    try {
+      role = (localStorage.getItem(ROLE_KEY) as Role) || 'admin';
+    } catch {
+      /* default */
+    }
+    let view: 'history' | 'report' | null = null;
+    let periodId: number | undefined;
+    let errors: string[] = [];
+    const expanded = new Set<number>();
+    const editingTarget = new Set<number>();
+    // Report-view state that is not yet an entry: picked pivot options with
+    // no amount, and blocks added but not filled. Keyed by period+measure, and
+    // dropped when the period changes — as the branch does.
+    const pickedPivots = new Map<string, Set<string>>();
+    const newBlocks = new Map<string, (number | null)[][]>();
+
+    const canUpdate = () => role !== 'reader';
+    const canCurate = () => role === 'admin';
+
+    // ── Header controls ───────────────────────────────────────────────────
+    const roleToggle = q('[data-role]');
+    roleToggle.options = [
+      { label: 'Administrator', value: 'admin' },
+      { label: 'Project editor', value: 'editor' },
+      { label: 'Reader', value: 'reader' },
+    ];
+    roleToggle.value = role;
+    roleToggle.addEventListener('change', () => {
+      role = roleToggle.value as Role;
+      try {
+        localStorage.setItem(ROLE_KEY, role);
+      } catch {
+        /* per-tab */
+      }
+      view = null;
+      paint();
+    });
+
+    const viewToggle = q('[data-view]');
+    viewToggle.options = [
+      { label: 'By period', value: 'history' },
+      { label: 'Report', value: 'report' },
+    ];
+    viewToggle.addEventListener('change', () => {
+      view = viewToggle.value;
+      paint();
+    });
+
+    const periodToggle = q('[data-period]');
+    periodToggle.addEventListener('change', () => {
+      periodId = Number(periodToggle.value);
+      pickedPivots.clear();
+      newBlocks.clear();
+      errors = [];
+      paint();
+    });
+
+    // ── Paint ─────────────────────────────────────────────────────────────
+    function paint(): void {
+      const report = getReport(slug, periodId);
+      periodId = report.period.id;
+      const hasMeasures = report.measures.length > 0;
+      const hasHistory = report.measures.some((m) => m.periodTotals.some((p) => p.entryCount > 0));
+
+      if (!canUpdate()) view = 'history';
+      else if (view == null) view = hasHistory ? 'history' : 'report';
+
+      q('[data-empty]').hidden = hasMeasures;
+      (q('[data-record]').closest<HTMLElement>('.esa-button') ?? q('[data-record]')).hidden = !(canUpdate() && hasMeasures);
+      q('[data-view]').hidden = !(hasMeasures && hasHistory && canUpdate());
+      viewToggle.value = view;
+      q('[data-history-view]').hidden = !hasMeasures || view !== 'history';
+      q('[data-report-view]').hidden = !hasMeasures || view !== 'report';
+
+      if (view === 'history') paintHistory(report);
+      else paintReport(report);
+    }
+
+    // ── By period ─────────────────────────────────────────────────────────
+    function cell(total: number | null, entryCount: number, unit: string): string {
+      if (entryCount === 0) return '—';
+      if (total == null) return `${entryCount} readings`;
+      return formatAmount(total, unit);
+    }
+
+    function paintHistory(report: Pm2Report): void {
+      const periods = [...report.periods]
+        .reverse()
+        .filter((p) => report.measures.some((m) => m.periodTotals.some((t) => t.periodId === p.id && t.entryCount > 0)));
+
+      const head = q<HTMLTableRowElement>('[data-head]');
+      head.replaceChildren(
+        el('th', 'Measure'),
+        el('th', 'Against target'),
+        ...periods.map((p) => el('th', p.name)),
+        el('th', 'Total'),
+        Object.assign(el('th'), { innerHTML: '<span class="visually-hidden">Breakdown</span>' }),
+      );
+      head.children[1].setAttribute('data-left', '');
+
+      const body = q('[data-body]');
+      body.replaceChildren();
+      for (const m of report.measures) {
+        const tr = el('tr');
+        tr.append(el('td', m.measure.name));
+        const target = el('td');
+        target.setAttribute('data-left', '');
+        target.append(targetCell(m));
+        tr.append(target);
+        for (const p of periods) {
+          const t = m.periodTotals.find((x) => x.periodId === p.id)!;
+          tr.append(el('td', cell(t.total, t.entryCount, m.unitAbbreviation)));
+        }
+        tr.append(el('td', m.allPeriodsTotal == null ? '—' : formatAmount(m.allPeriodsTotal, m.unitAbbreviation)));
+        const chev = el('td');
+        if (m.breakdowns.length) {
+          const b = tpl('chevron');
+          const open = expanded.has(m.measure.id);
+          native(b).setAttribute('aria-label', `Show how ${m.measure.name} divides`);
+          native(b).setAttribute('aria-expanded', String(open));
+          b.style.transform = open ? 'rotate(180deg)' : '';
+          b.addEventListener('click', () => {
+            if (open) expanded.delete(m.measure.id);
+            else expanded.add(m.measure.id);
+            paint();
+          });
+          chev.append(b);
+        }
+        tr.append(chev);
+        body.append(tr);
+
+        if (expanded.has(m.measure.id)) {
+          for (const bd of m.breakdowns) {
+            const sub = el('tr');
+            sub.setAttribute('data-sub', '');
+            sub.append(el('td', bd.label), el('td'));
+            for (const p of periods) {
+              const t = bd.periodTotals.find((x) => x.periodId === p.id)!;
+              sub.append(el('td', cell(t.total, t.entryCount, m.unitAbbreviation)));
+            }
+            sub.append(el('td', bd.allPeriodsTotal == null ? '—' : formatAmount(bd.allPeriodsTotal, m.unitAbbreviation)), el('td'));
+            body.append(sub);
+          }
+        }
+      }
+    }
+
+    function targetCell(m: Pm2ReportMeasure): HTMLElement {
+      const wrap = el('span');
+      wrap.className = 'firma2-pm2-project__target';
+      const id = m.measure.id;
+      const unit = m.unitAbbreviation;
+      if (!m.isSummable) {
+        wrap.textContent = 'Not a total';
+        return wrap;
+      }
+      const reported = formatAmount(m.allPeriodsTotal ?? 0, unit);
+
+      if (m.targetValue != null) {
+        const ring = tpl('ring');
+        const pct = m.targetPercentComplete ?? 0;
+        const fill = ring.querySelector<SVGCircleElement>('.bcn-progress-ring__fill');
+        const circ = Number(fill?.getAttribute('stroke-dasharray') ?? 0);
+        fill?.setAttribute('stroke-dashoffset', String(circ * (1 - Math.min(100, pct) / 100)));
+        ring.setAttribute('aria-label', `${m.measure.name}: ${Math.round(pct)}% of target`);
+        wrap.append(ring);
+        if (!canCurate()) {
+          wrap.append(el('span', `${reported} of ${formatAmount(m.targetValue, unit)}`));
+          return wrap;
+        }
+        wrap.append(el('span', `${reported} of`));
+        const field = targetField(m, String(m.targetValue));
+        wrap.append(field);
+        const remove = tpl('remove-target');
+        native(remove).setAttribute('aria-label', `Remove target for ${m.measure.name}`);
+        remove.addEventListener('click', () => removeTarget(slug, id));
+        wrap.append(remove);
+        return wrap;
+      }
+
+      if (!canCurate()) {
+        wrap.textContent = 'No target set';
+        return wrap;
+      }
+      if (!editingTarget.has(id)) {
+        const set = tpl('set-target');
+        set.addEventListener('click', () => {
+          editingTarget.add(id);
+          paint();
+          (root.querySelector(`[data-target-for="${id}"]`) as HTMLElement | null)?.focus();
+        });
+        wrap.append(set);
+        return wrap;
+      }
+      const field = targetField(m, '', true);
+      const save = tpl('save');
+      const cancel = tpl('cancel');
+      native(save).setAttribute('disabled', '');
+      field.addEventListener('change', () => {
+        if (Number(field.value) > 0) native(save).removeAttribute('disabled');
+        else native(save).setAttribute('disabled', '');
+      });
+      save.addEventListener('click', () => commitTarget(m, field));
+      cancel.addEventListener('click', () => {
+        editingTarget.delete(id);
+        paint();
+      });
+      wrap.append(field, save, cancel);
+      return wrap;
+    }
+
+    function targetField(m: Pm2ReportMeasure, value: string, isNew = false): Lit {
+      const f = document.createElement('esa-text-field') as Lit;
+      f.setAttribute('size', 'sm');
+      f.setAttribute('type', 'number');
+      f.setAttribute('inputmode', 'decimal');
+      f.setAttribute('aria-label', `Target for ${m.measure.name}`);
+      f.setAttribute('suffix', m.unitAbbreviation);
+      f.dataset.targetFor = String(m.measure.id);
+      f.value = value;
+      if (!isNew) {
+        f.addEventListener('focusout', () => commitTarget(m, f));
+        f.addEventListener('keydown', (ev) => (ev as KeyboardEvent).key === 'Enter' && commitTarget(m, f));
+      } else {
+        f.addEventListener('keydown', (ev) => (ev as KeyboardEvent).key === 'Enter' && commitTarget(m, f));
+      }
+      return f;
+    }
+
+    function commitTarget(m: Pm2ReportMeasure, f: Lit): void {
+      const raw = String(f.value ?? '').trim();
+      const n = Number(raw);
+      if (raw === '' || !(n > 0)) {
+        f.errorText = 'Enter a target greater than zero.';
+        return;
+      }
+      if (n === m.targetValue) return;
+      const r = setTarget(slug, m.measure.id, n);
+      if (!r.ok) {
+        f.errorText = r.errors[0];
+        return;
+      }
+      editingTarget.delete(m.measure.id);
+    }
+
+    // ── Report ────────────────────────────────────────────────────────────
+    function paintReport(report: Pm2Report): void {
+      periodToggle.options = [...report.periods].reverse().map((p) => ({ label: p.name, value: String(p.id) }));
+      periodToggle.value = String(report.period.id);
+      q('[data-progress]').textContent = `${report.reportedCount} of ${report.measures.length} measures reported for ${report.period.name}`;
+      q('[data-errors]').replaceChildren(...errors.map((e) => el('li', e)));
+
+      // Rebuilt whole on every write; the field being tabbed INTO gets its
+      // focus back, so typing down a column of amounts is uninterrupted.
+      const focusKey = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[data-key]')?.dataset.key;
+      const sections = q('[data-sections]');
+      sections.replaceChildren(...report.measures.map((m) => measureSection(m, report)));
+      if (focusKey) root.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusKey)}"]`)?.focus();
+    }
+
+    const comboKey = (ids: (number | null)[]) => ids.map((i) => i ?? '').join('|');
+
+    function measureSection(m: Pm2ReportMeasure, report: Pm2Report): HTMLElement {
+      const measure = m.measure;
+      const sec = el('section');
+      sec.className = 'firma2-pm2-project__section stack';
+      sec.dataset.gap = 'sm';
+      if (m.isReported) sec.setAttribute('data-reported', '');
+
+      const h = el('h4');
+      h.className = 'typography-title-sm-strong cluster';
+      h.dataset.gap = 'sm';
+      h.append(el('span', measure.name));
+      if (m.isReported) h.append(tpl('reported'));
+      sec.append(h);
+      if (measure.reporterGuidance) {
+        const g = el('p', measure.reporterGuidance);
+        g.className = 'typography-body-sm firma2-pm2-project__quiet';
+        sec.append(g);
+      }
+      if (m.previousPeriodEntries.length) {
+        const parts = m.previousPeriodEntries.map((e) => {
+          const label = e.optionIds.length ? ` ${optionLabel(measure, e.optionIds)}` : '';
+          return `${formatAmount(e.value, m.unitAbbreviation)}${label}`;
+        });
+        const prev = el('p', `Last period: ${parts.join(', ')}`);
+        prev.className = 'typography-body-sm firma2-pm2-project__quiet';
+        sec.append(prev);
+      }
+
+      const unitLabel = m.unitAbbreviation || m.unitDisplayName;
+      const cats = measure.categories;
+      const fixedCats = cats.slice(0, -1);
+      const pivot = cats[cats.length - 1];
+      const key = `${report.period.id}:${measure.id}`;
+
+      // No categories: one amount.
+      if (!pivot) {
+        const block = el('div');
+        block.className = 'firma2-pm2-project__block';
+        const entry = m.entries.find((e) => e.optionIds.length === 0) ?? m.entries[0];
+        block.append(amountField(measure, `Amount (${unitLabel})`, entry, [], report.period.id));
+        sec.append(block);
+        return sec;
+      }
+
+      // Blocks: one per combination of the fixed categories.
+      const fixedOf = (e: Pm2Entry) => fixedCats.map((c) => c.options.find((o) => e.optionIds.includes(o.id))?.id ?? null);
+      const pivotOf = (e: Pm2Entry) => pivot.options.find((o) => e.optionIds.includes(o.id))?.id ?? null;
+      const saved = new Map<string, { fixed: (number | null)[]; entries: Pm2Entry[] }>();
+      for (const e of m.entries) {
+        const f = fixedOf(e);
+        const k = comboKey(f);
+        saved.set(k, { fixed: f, entries: [...(saved.get(k)?.entries ?? []), e] });
+      }
+      if (saved.size === 0 && fixedCats.length === 0) saved.set('', { fixed: [], entries: [] });
+      const pending = newBlocks.get(key) ?? [];
+      if (saved.size === 0 && pending.length === 0) pending.push(fixedCats.map(() => null));
+      newBlocks.set(key, pending);
+
+      const blocks = [
+        ...[...saved.values()].map((b) => ({ ...b, isNew: false })),
+        ...pending.map((fixed) => ({ fixed, entries: [] as Pm2Entry[], isNew: true })),
+      ];
+      const usedKeys = blocks.map((b) => comboKey(b.fixed));
+
+      blocks.forEach((b, bi) => {
+        const block = el('div');
+        block.className = 'firma2-pm2-project__block';
+        // Keyed by the combination, so a block keeps its picks when its first
+        // amount saves and it stops being new. Only an unfinished combination
+        // needs the position to tell two apart.
+        const bkey = `${key}:${comboKey(b.fixed)}` + (b.fixed.includes(null) ? `:new${bi}` : '');
+
+        fixedCats.forEach((c, ci) => {
+          const sel = document.createElement('esa-select') as Lit;
+          sel.setAttribute('size', 'md');
+          sel.setAttribute('label', c.name);
+          sel.setAttribute('placeholder', 'Choose…');
+          sel.options = c.options.map((o) => {
+            const candidate = [...b.fixed];
+            candidate[ci] = o.id;
+            const taken = usedKeys.some((k, i) => i !== bi && k === comboKey(candidate));
+            return { label: o.name, value: String(o.id), disabled: taken };
+          });
+          sel.value = b.fixed[ci] != null ? String(b.fixed[ci]) : '';
+          sel.addEventListener('change', () => {
+            const next = [...b.fixed];
+            next[ci] = Number(sel.value) || null;
+            if (b.isNew) {
+              pending[bi - saved.size] = next;
+              paint();
+              return;
+            }
+            // Re-tag every entry in the block, one after another.
+            errors = [];
+            for (const e of b.entries) {
+              const ids = [...next.filter((x): x is number => x != null), ...(pivotOf(e) ? [pivotOf(e)!] : [])];
+              const r = updateEntry(slug, e.id, { measureId: measure.id, periodId: report.period.id, value: e.value, optionIds: ids });
+              if (!r.ok) errors.push(...r.errors);
+            }
+            paint();
+          });
+          block.append(sel);
+        });
+
+        // The pivot: which of its options this block reports.
+        const savedPivots = b.entries.map((e) => (pivotOf(e) == null ? '' : String(pivotOf(e))));
+        const picked = pickedPivots.get(bkey) ?? new Set(savedPivots);
+        savedPivots.forEach((p) => picked.add(p));
+        pickedPivots.set(bkey, picked);
+        const pv = document.createElement('esa-select') as Lit;
+        pv.setAttribute('size', 'md');
+        pv.setAttribute('label', pivot.name);
+        pv.setAttribute('placeholder', 'Choose…');
+        pv.setAttribute('multiple', '');
+        pv.options = pivot.options.map((o) => ({ label: o.name, value: String(o.id) }));
+        pv.value = [...picked].filter(Boolean);
+        pv.addEventListener('change', () => {
+          const now = new Set<string>((pv.value as string[]) ?? []);
+          if (picked.has('')) now.add('');
+          errors = [];
+          for (const e of b.entries) {
+            const p = pivotOf(e);
+            if (p != null && !now.has(String(p))) deleteEntry(slug, e.id);
+          }
+          pickedPivots.set(bkey, now);
+          paint();
+        });
+        block.append(pv);
+
+        for (const p of picked) {
+          const option = pivot.options.find((o) => String(o.id) === p);
+          const entry = b.entries.find((e) => String(pivotOf(e) ?? '') === p);
+          const label = `${option?.name ?? 'Not specified'} (${unitLabel})`;
+          const ids = [...b.fixed.filter((x): x is number => x != null), ...(option ? [option.id] : [])];
+          block.append(amountField(measure, label, entry, ids, report.period.id, () => {
+            if (b.isNew && entry == null) pending.splice(bi - saved.size, 1);
+          }));
+        }
+
+        if (b.isNew && saved.size + pending.length > 1) {
+          const x = tpl('discard');
+          x.addEventListener('click', () => {
+            pending.splice(bi - saved.size, 1);
+            pickedPivots.delete(bkey);
+            paint();
+          });
+          block.append(x);
+        }
+        sec.append(block);
+      });
+
+      const combos = fixedCats.reduce((n, c) => n * c.options.length, 1);
+      if (fixedCats.length > 0 && blocks.length < combos) {
+        const add = tpl('add');
+        add.addEventListener('click', () => {
+          pending.push(fixedCats.map(() => null));
+          paint();
+        });
+        sec.append(add);
+      }
+      return sec;
+    }
+
+    function amountField(measure: Pm2Measure, label: string, entry: Pm2Entry | undefined, optionIds: number[], pid: number, onCreate?: () => void): Lit {
+      const f = document.createElement('esa-text-field') as Lit;
+      f.setAttribute('size', 'md');
+      f.setAttribute('type', 'number');
+      f.setAttribute('inputmode', 'decimal');
+      f.setAttribute('label', label);
+      f.dataset.key = `${pid}:${measure.id}:${[...optionIds].sort().join(',')}`;
+      f.value = entry ? String(entry.value) : '';
+      let done = false;
+      const commit = () => {
+        if (done) return;
+        const raw = String(f.value ?? '').trim();
+        if (raw === (entry ? String(entry.value) : '')) return;
+        done = true;
+        errors = [];
+        // Clearing deletes; a 0 is a reported zero, not "didn't do it".
+        if (raw === '') {
+          if (entry) deleteEntry(slug, entry.id);
+          else paint();
+          return;
+        }
+        const dto = { measureId: measure.id, periodId: pid, value: Number(raw), optionIds };
+        const r = entry ? updateEntry(slug, entry.id, dto) : createEntry(slug, dto);
+        if (!r.ok) {
+          errors = r.errors.length ? r.errors : ['One of those could not be saved.'];
+          paint();
+        } else if (!entry) onCreate?.();
+      };
+      f.addEventListener('focusout', commit);
+      f.addEventListener('keydown', (ev) => (ev as KeyboardEvent).key === 'Enter' && commit());
+      return f;
+    }
+
+    // ── Record work ───────────────────────────────────────────────────────
+    const sheet = q('[data-sheet]');
+    const what = q('[data-sheet-what]');
+    const amount = q('[data-sheet-amount]');
+    const saveBtn = q('[data-sheet-save]');
+    let filing: { measure: Pm2Measure; unit: string; selects: { categoryId: number; el: Lit }[] } | null = null;
+    let recorded: string[] = [];
+
+    function openSheet(): void {
+      const report = getReport(slug, periodId);
+      const intro = q('[data-sheet-intro]');
+      intro.replaceChildren('Reporting for ', Object.assign(el('strong'), { textContent: report.period.name }), '. Say what you did and we will file it against the right measure.');
+      what.options = report.measures.flatMap((m) => [
+        { label: m.measure.name, value: `m:${m.measure.id}` },
+        ...m.measure.categories.flatMap((c) =>
+          c.options.filter((o) => o.name !== UNSPECIFIED).map((o) => ({ label: `${o.name} · ${m.measure.name}`, value: `o:${m.measure.id}:${o.id}` })),
+        ),
+      ]);
+      what.value = '';
+      filing = null;
+      recorded = [];
+      paintSheet();
+      sheet.show?.();
+    }
+
+    function paintSheet(): void {
+      q('[data-sheet-body]').hidden = !filing;
+      q('[data-sheet-recorded]').hidden = recorded.length === 0;
+      q('[data-sheet-recorded-list]').replaceChildren(...recorded.map((r) => el('li', r)));
+      if (String(amount.value ?? '').trim() && filing) saveBtn.removeAttribute('disabled');
+      else saveBtn.setAttribute('disabled', '');
+    }
+
+    what.addEventListener('change', () => {
+      const v = String(what.value ?? '');
+      const [kind, mid, oid] = v.split(':');
+      const report = getReport(slug, periodId);
+      const m = report.measures.find((x) => x.measure.id === Number(mid));
+      q('[data-sheet-errors]').replaceChildren();
+      if (!kind || !m) {
+        filing = null;
+        paintSheet();
+        return;
+      }
+      const unit = m.unitAbbreviation || m.unitDisplayName;
+      q('[data-sheet-filing]').replaceChildren('Filing against ', Object.assign(el('strong'), { textContent: m.measure.name }));
+      q('[data-sheet-guidance]').textContent = m.measure.reporterGuidance;
+      amount.setAttribute('label', `Amount (${unit})`);
+      amount.value = '';
+      const box = q('[data-sheet-categories]');
+      const selects = m.measure.categories.map((c) => {
+        const s = document.createElement('esa-select') as Lit;
+        s.setAttribute('size', 'md');
+        s.setAttribute('label', c.name);
+        s.options = c.options.map((o) => ({ label: o.name, value: String(o.id) }));
+        const pre = kind === 'o' ? c.options.find((o) => String(o.id) === oid) : undefined;
+        s.value = String((pre ?? c.options[0]).id);
+        return { categoryId: c.id, el: s };
+      });
+      box.replaceChildren(...selects.map((s) => s.el));
+      filing = { measure: m.measure, unit, selects };
+      paintSheet();
+    });
+
+    amount.addEventListener('change', paintSheet);
+
+    saveBtn.addEventListener('click', () => {
+      if (!filing || periodId == null) return;
+      const value = Number(amount.value);
+      const optionIds = filing.selects.map((s) => Number(s.el.value)).filter(Boolean);
+      const r = createEntry(slug, { measureId: filing.measure.id, periodId, value, optionIds });
+      if (!r.ok) {
+        q('[data-sheet-errors]').replaceChildren(...r.errors.map((e) => el('li', e)));
+        return;
+      }
+      const label = filing.measure.categories.length ? ` — ${optionLabel(filing.measure, optionIds)}` : '';
+      recorded.push(`${formatAmount(value, filing.unit)} ${filing.measure.name}${label}`);
+      amount.value = '';
+      q('[data-sheet-errors]').replaceChildren();
+      paintSheet();
+    });
+
+    q('[data-sheet-done]').addEventListener('click', () => {
+      sheet.close?.();
+      paint();
+    });
+    q('[data-record]').addEventListener('click', openSheet);
+
+    document.addEventListener(PM2_CHANGE_EVENT, () => setTimeout(paint, 0));
+    Promise.all(['esa-button-toggle', 'esa-select', 'esa-text-field'].map((t) => customElements.whenDefined(t))).then(paint);
+  });
+</script>

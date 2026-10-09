@@ -1,0 +1,165 @@
+---
+// firma2-org-updates — what changed on an organization's projects, newest
+// first: values filed, stages moved, comments left, records edited. One feed
+// across every project the organization leads or funds, so nobody has to open
+// nine project pages to learn what happened this month.
+//
+// TWO USES, one component. Home shows the latest few under a heading with a
+// link to the rest; the Updates page shows all of them, grouped by month, with
+// a filter by kind. Same row either way, so a reader who learned it on Home
+// reads it on Updates without relearning.
+//
+// THE ROW IS THE RECORD'S OWN WORDS. The change text is the project change
+// log's sentence and the comment is the comment — nothing is paraphrased, so
+// the feed and the project page cannot tell two stories about one edit.
+//
+// bcn-lego-checked: a dated activity list has no esa- lego — walked the
+// catalog (esa-card, esa-link-column, esa-collapsible, esa-file-list are the
+// nearest and none is a feed of dated rows). The filter is esa-select, the
+// "All updates" link is esa-button (tag="a"), and the rows are plain list
+// markup on the layout primitives; this is the reusable home for an
+// organization's feed. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import type { OrganizationUpdate } from '../../data/firma2-organization-pages';
+import { UPDATE_KINDS } from '../../data/firma2-organization-pages';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  updates: OrganizationUpdate[];
+  /** Home: show only the newest few, under a heading, with a link to the rest. */
+  limit?: number;
+  /** Where "All updates" goes. Required with `limit`. */
+  allHref?: string;
+}
+
+const { updates, limit, allHref } = Astro.props;
+const shown = limit ? updates.slice(0, limit) : updates;
+const grouped = !limit;
+
+const monthOf = (iso: string): string =>
+  new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso}T00:00:00Z`));
+const months = grouped
+  ? shown.reduce<{ label: string; items: OrganizationUpdate[] }[]>((acc, u) => {
+      const label = monthOf(u.iso);
+      if (acc.at(-1)?.label === label) acc.at(-1)!.items.push(u);
+      else acc.push({ label, items: [u] });
+      return acc;
+    }, [])
+  : [{ label: '', items: shown }];
+
+const filterOptions = [{ value: '', label: 'All updates' }, ...UPDATE_KINDS];
+---
+<section class="firma2-org-updates stack" data-gap="md" aria-labelledby={limit ? 'firma2-org-updates-title' : undefined} aria-label={limit ? undefined : 'Updates'} data-filter-options={JSON.stringify(filterOptions)}>
+  {limit ? (
+    <div class="repel">
+      <h2 id="firma2-org-updates-title" class="typography-title-sm-strong">Latest updates</h2>
+      {allHref && updates.length > shown.length && <EsaButton variant="ghost" size="md" tag="a" href={withBase(allHref)}>All updates</EsaButton>}
+    </div>
+  ) : (
+    <div class="firma2-org-updates__controls cluster" data-gap="md">
+      <esa-select data-kind-filter size="md" aria-label="Show"></esa-select>
+      <p class="typography-body-sm firma2-org-updates__count" aria-live="polite" data-count>{shown.length} updates</p>
+    </div>
+  )}
+
+  {shown.length === 0 ? (
+    <p class="typography-body-md">No updates on these projects yet.</p>
+  ) : (
+    months.map((month) => (
+      <section class="stack" data-gap="xs" data-month>
+        {month.label && <h2 class="typography-title-sm-strong firma2-org-updates__month">{month.label}</h2>}
+        <ol class="firma2-org-updates__list" role="list">
+          {month.items.map((u) => (
+            <li class="firma2-org-updates__row" data-kind={u.kind}>
+              <div class="repel" data-gap="md">
+                <a class="firma2-org-updates__project typography-label-md-strong" href={withBase(u.projectHref)}>{u.projectName}</a>
+                <time class="typography-body-sm firma2-org-updates__meta" datetime={u.iso}>{u.date}</time>
+              </div>
+              <p class="typography-body-md firma2-org-updates__text">{u.kind === 'comment' ? `“${u.text}”` : u.text}</p>
+              <p class="typography-body-sm firma2-org-updates__meta">{u.kind === 'comment' ? `Comment from ${u.author}` : u.author}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+    ))
+  )}
+</section>
+
+<style>
+  .firma2-org-updates__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Ruled like firma2-settings-table: a hairline under each row, no card. */
+  .firma2-org-updates__row {
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-org-updates__row[hidden],
+  .firma2-org-updates [data-month][hidden] {
+    display: none;
+  }
+
+  .firma2-org-updates__month {
+    margin: 0;
+    padding-block-start: var(--spacing-400);
+  }
+
+  .firma2-org-updates__project {
+    color: var(--color-content-default-primary);
+    text-decoration: none;
+  }
+  .firma2-org-updates__project:hover {
+    text-decoration: underline;
+  }
+
+  .firma2-org-updates__text,
+  .firma2-org-updates__meta {
+    margin: 0;
+  }
+  .firma2-org-updates__text {
+    margin-block-start: var(--spacing-100);
+    max-inline-size: 72ch;
+  }
+  .firma2-org-updates__meta {
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-org-updates__controls .firma2-org-updates__count {
+    margin: 0;
+  }
+  .firma2-org-updates__controls esa-select {
+    min-inline-size: 14rem;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-select';
+
+  // The kind filter. esa-select's `options` is a property, so it is assigned
+  // after the element upgrades (src/lib/hydrate-select.ts says why).
+  document.querySelectorAll<HTMLElement>('.firma2-org-updates').forEach(async (root) => {
+    const select = root.querySelector<HTMLElement & { options: unknown; value: string }>('[data-kind-filter]');
+    if (!select) return;
+    await customElements.whenDefined('esa-select');
+    select.options = JSON.parse(root.dataset.filterOptions ?? '[]');
+    select.value = '';
+    const count = root.querySelector('[data-count]');
+    const apply = () => {
+      const kind = select.value;
+      let shown = 0;
+      root.querySelectorAll<HTMLElement>('[data-month]').forEach((month) => {
+        let inMonth = 0;
+        month.querySelectorAll<HTMLElement>('[data-kind]').forEach((row) => {
+          row.hidden = Boolean(kind) && row.dataset.kind !== kind;
+          if (!row.hidden) inMonth += 1;
+        });
+        month.hidden = inMonth === 0;
+        shown += inMonth;
+      });
+      if (count) count.textContent = `${shown} update${shown === 1 ? '' : 's'}`;
+    };
+    select.addEventListener('change', apply);
+  });
+</script>

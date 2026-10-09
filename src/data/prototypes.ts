@@ -129,7 +129,7 @@ export const prototypes: Prototype[] = [
     title: 'Draft a measure from a claim',
     description:
       'Write what you owe your funder, or answer two clickable questions, and get a measure drafted with its reporting cost priced.',
-    route: '/prototypes/performance-measures/new',
+    route: '/prototypes/workspace-settings/performance-measures/new',
     createdAt: '2026-10-01',
     status: 'in-progress',
   },
@@ -154,12 +154,33 @@ export const prototypes: Prototype[] = [
     createdAt: '2026-08-24',
     status: 'in-progress',
   },
+  // PM 2: projectfirma2's measures as built on branch
+  // features/0010_project_performance_measures (categories, targets, a change
+  // log), ported beside the original so the two can be compared.
+  {
+    slug: 'pm2-catalog',
+    title: 'Performance measures (PM 2)',
+    description:
+      'The measure catalog and setup page as ProjectFirma2 built them: breakdowns, not subcategories, frozen when a measure is published.',
+    route: '/prototypes/workspace-settings/pm2',
+    createdAt: '2026-10-08',
+    status: 'in-progress',
+  },
+  {
+    slug: 'pm2-project',
+    title: 'Project measures (PM 2)',
+    description:
+      'A project’s measures by period and as a report form, with per-project targets and Record work. Switch who you are viewing as.',
+    route: '/prototypes/pm2/projects/deer-creek-riparian-corridor-enhancement',
+    createdAt: '2026-10-08',
+    status: 'in-progress',
+  },
   {
     slug: 'performance-measures',
     title: 'Performance measure setup',
     description:
       'Every performance measure in one searchable table, with the draft-first setup page each one is defined on.',
-    route: '/prototypes/performance-measures',
+    route: '/prototypes/workspace-settings/performance-measures',
     createdAt: '2026-08-20',
     status: 'in-progress',
   },

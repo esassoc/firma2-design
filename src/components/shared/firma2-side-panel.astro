@@ -1,0 +1,204 @@
+---
+// firma2-side-panel — a page spine with a docked, closable side panel: the
+// page's content in a capped column, and an <aside> at the window's edge
+// holding whatever the page puts in its "panel" slot. Opened and closed by any
+// firma2-side-panel-toggle on the page.
+//
+// FOR A LIVE COMPANION TO WHAT YOU ARE EDITING — the measure page's reporter
+// preview first (user, 2026-10-08): the preview sat in a sticky column inside
+// the old side sheet, was demoted to the bottom of a one-column page, and came
+// back as this, so the cost of an edit is in view while the edit is made.
+//
+// A RAIL, NOT A SHEET. Docked and non-modal, like firma2-project-peek: the
+// form beside it stays live, which is the whole point of a preview. An
+// esa-side-dialog would put a scrim over the thing being previewed.
+//
+// Use on an AppLayout with width="full" so the panel reaches the window edge;
+// `max` caps the content column (CONTENT_READING for a settings record).
+//
+// OPEN BY DEFAULT, REMEMBERED WHEN CLOSED. A reader who closes it wants the
+// room; one who has never seen it should meet it. The choice is kept per
+// panel id in localStorage — a per-viewer convenience, so every read and
+// write is guarded and the panel opens if storage is unavailable.
+//
+// bcn-lego-checked: esa-side-dialog is a modal overlay (its own file says
+// so) and this must not be modal; no esa- lego is a page-level docked rail.
+// Construction is firma2-project-peek's — sticky 100dvh aside in the
+// `.sidebar` primitive, bcn-edge-handle to resize, an unpinned full-width
+// section when the window cannot hold both tracks — restated here because
+// that panel is bound to project records and this one takes any content.
+// Controls are esa-button. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaContainer from '@esa/ecology/esa-container.astro';
+import { CONTENT_MAX } from '../../lib/content-width';
+
+interface Props {
+  /** The aside's id — what a toggle's `controls` names — and its storage key. */
+  id: string;
+  /** The panel's heading, and the name its landmark is announced by. */
+  title: string;
+  /** The content column's cap. */
+  max?: string;
+  /** Opening width; the reader can drag it from there, between 320 and 640px. */
+  panelWidth?: string;
+}
+
+const { id, title, max = CONTENT_MAX, panelWidth = '26rem' } = Astro.props;
+const titleId = `${id}-title`;
+---
+<div class="sidebar firma2-side-panel-layout" data-side="end" style={`--sidebar-width: ${panelWidth}; --sidebar-content-min: 20rem`}>
+  <aside class="firma2-side-panel" id={id} aria-labelledby={titleId} data-side-panel>
+    <div class="firma2-side-panel__inner stack" data-gap="xl">
+      <div class="repel" data-gap="sm">
+        <h2 class="firma2-side-panel__title typography-title" id={titleId}>{title}</h2>
+        <EsaButton variant="chrome" iconOnly icon="x" label={`Close ${title.toLowerCase()}`} size="xs" data-side-panel-close />
+      </div>
+      <slot name="panel" />
+    </div>
+    <bcn-edge-handle
+      edge="start"
+      size-var="--sidebar-width"
+      size-host="parent"
+      min="320"
+      max="640"
+      label={title.toLowerCase()}
+      storage-key={`side-panel-${id}`}
+    ></bcn-edge-handle>
+  </aside>
+  <EsaContainer maxWidth={max}><slot /></EsaContainer>
+</div>
+
+<style>
+  /* ---- THE PINNED TRACK — firma2-project-peek's construction, with this
+     panel's numbers. See that file for why each half is load-bearing. ---- */
+  .firma2-side-panel {
+    --_bleed: var(--spacing-500, 1.5rem);
+    position: sticky;
+    top: 0;
+    align-self: start;
+    block-size: 100dvh;
+    display: flex;
+    flex-direction: column;
+    z-index: var(--z-sidebar, 100);
+    margin-block-start: calc(var(--_bleed) * -1);
+    margin-inline-end: calc(var(--_bleed) * -1);
+    padding: var(--_bleed);
+    /* Stated width, capped so `.sidebar` gives width back before it wraps;
+       20rem is the handle's floor. */
+    flex-basis: max(
+      20rem,
+      min(
+        var(--sidebar-width, 26rem),
+        calc(100% - var(--sidebar-content-min, 60%) - var(--spacing-500, 1.5rem) - 1px)
+      )
+    );
+    flex-grow: 0;
+    box-sizing: border-box;
+    overflow: visible;
+    background: var(--color-background-default, #fcfcfc);
+    border-inline-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+    transition: flex-basis var(--transition-base, 200ms ease);
+  }
+  .firma2-side-panel[data-resizing] {
+    transition: none;
+  }
+  /* Closed is gone: the toggle is the way back. */
+  .firma2-side-panel[hidden] {
+    display: none;
+  }
+
+  .firma2-side-panel__inner {
+    flex: 1;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .firma2-side-panel__title {
+    margin: 0;
+  }
+
+  /* ---- WHEN THE PRIMITIVE WRAPS, THE PANEL STOPS BEING A RAIL ----
+     20rem track + 1.5rem gutter + 20rem content = 41.5rem = 664px. Below it
+     `.sidebar` drops the aside under the content; a 100dvh sticky box must not
+     ride down with it, so it becomes a plain section. */
+  :global(.sidebar:has(> .firma2-side-panel)) {
+    container: firma2-side-panel-track / inline-size;
+  }
+  @container firma2-side-panel-track (width <= 664px) {
+    .firma2-side-panel {
+      position: static;
+      block-size: auto;
+      flex-basis: 100%;
+      margin-block-start: 0;
+      margin-inline-end: 0;
+      border-inline-start: none;
+      transition: none;
+    }
+    .firma2-side-panel__inner {
+      overflow: visible;
+    }
+    .firma2-side-panel bcn-edge-handle {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-side-panel {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import './bcn-edge-handle';
+
+  const key = (id: string) => `firma2:side-panel:${id}`;
+  const readOpen = (id: string): boolean => {
+    try {
+      return localStorage.getItem(key(id)) !== 'closed';
+    } catch {
+      return true;
+    }
+  };
+  const writeOpen = (id: string, open: boolean): void => {
+    try {
+      if (open) localStorage.removeItem(key(id));
+      else localStorage.setItem(key(id), 'closed');
+    } catch {
+      /* storage unavailable: the choice lasts until reload */
+    }
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-side-panel]').forEach((panel) => {
+    const toggles = () => [...document.querySelectorAll<HTMLElement>(`[data-side-panel-toggle="${panel.id}"]`)];
+    const set = (open: boolean) => {
+      panel.hidden = !open;
+      toggles().forEach((t) => t.setAttribute('aria-expanded', String(open)));
+      writeOpen(panel.id, open);
+    };
+
+    set(readOpen(panel.id));
+
+    document.addEventListener('click', (event) => {
+      const toggle = (event.target as Element).closest<HTMLElement>(`[data-side-panel-toggle="${panel.id}"]`);
+      if (toggle) set(panel.hidden);
+    });
+
+    // esa-button spreads its extra attributes onto the native <button>, so the
+    // data hooks below ARE the buttons.
+    panel.querySelector<HTMLElement>('[data-side-panel-close]')?.addEventListener('click', () => {
+      set(false);
+      toggles()[0]?.focus();
+    });
+
+    // Escape closes it from inside — a non-modal panel's Escape belongs to the
+    // panel only when focus is in it. Anything that already used the key (an
+    // open field or menu) has prevented its default.
+    panel.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      set(false);
+      toggles()[0]?.focus();
+    });
+  });
+</script>

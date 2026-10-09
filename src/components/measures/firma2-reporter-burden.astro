@@ -1,0 +1,144 @@
+---
+// firma2-reporter-burden — how much a measure asks of the person filing it,
+// as one of three levels: Low, Moderate, High. Shown where a measure is
+// defined (the drafter's review, the measure page), because the burden is
+// invisible to the author at the moment it is imposed — the brief's
+// compliance loop — and a level reads faster than a sentence.
+//
+// A SCALE, NOT A PROGRESS BAR. Three segments fill up to the level, in the
+// level's tone, with all three named beneath, so "Moderate" reads as a place
+// on a scale rather than "two-thirds done". The name and the one-line reason
+// beside it carry the whole signal in text; the colour only repeats it
+// (forced-colors flattens fills, and colour alone fails colour-blind readers).
+// role="meter" gives the level to assistive tech.
+//
+// THE RULE IS ON THE SCALE: each step names its range of answers per entry
+// ("Moderate · 2–3"), so what a level means is never behind a tooltip (it
+// was, briefly — esa-tooltip is one short unwrapped line and clipped it).
+//
+// Painted on the client (src/lib/reporter-burden.ts → paintBurden) because
+// both surfaces derive it live from the definition being edited. The server
+// render is the Low state, so it is never empty.
+//
+// bcn-lego-checked: esa-progress-bar draws one value as a fill toward done —
+// the reading this must not have; esa-badge would carry the word but not the
+// scale; esa-stat is a figure, not a level. Beacon is not cloned on this
+// machine. The segments
+// are the only bespoke paint, from the utility tone tokens.
+import { BURDEN_LEVELS, BURDEN_NAME, BURDEN_RANGE, reporterBurden } from '../../lib/reporter-burden';
+
+interface Props {
+  /** The level alone ("Moderate"), for a place whose heading already says "Reporter burden". */
+  bare?: boolean;
+  /**
+   * One line — a small scale and "Low burden" — for pricing each answer in a
+   * choice list. No step names and no detail: the full scale is shown where
+   * the draft is reviewed.
+   */
+  compact?: boolean;
+}
+
+const { bare = false, compact = false } = Astro.props;
+const initial = reporterBurden(0);
+---
+{compact ? (
+<span class="firma2-reporter-burden firma2-reporter-burden--compact cluster" data-gap="xs" data-level={initial.level} data-reporter-burden>
+  <span class="firma2-reporter-burden__meter" role="meter" aria-label="Reporter burden" aria-valuemin="1" aria-valuemax="3" aria-valuenow="1" aria-valuetext={`${BURDEN_NAME[initial.level]} burden`} data-burden-meter>
+    {BURDEN_LEVELS.map((level) => (
+      <span class="firma2-reporter-burden__step" data-step={level}><span class="firma2-reporter-burden__bar"></span></span>
+    ))}
+  </span>
+  <span class="typography-body-sm" data-burden-label>{BURDEN_NAME[initial.level]} burden</span>
+</span>
+) : (
+<div class="firma2-reporter-burden stack" data-gap="sm" data-level={initial.level} data-reporter-burden>
+  <span class="typography-title-sm-strong" data-burden-label data-bare={bare ? '' : undefined}>{BURDEN_NAME[initial.level]}{bare ? '' : ' burden'}</span>
+  <div
+    class="firma2-reporter-burden__meter"
+    role="meter"
+    aria-label="Reporter burden"
+    aria-valuemin="1"
+    aria-valuemax="3"
+    aria-valuenow="1"
+    aria-valuetext={`${BURDEN_NAME[initial.level]} burden`}
+    data-burden-meter
+  >
+    {BURDEN_LEVELS.map((level) => (
+      <span class="firma2-reporter-burden__step" data-step={level}>
+        <span class="firma2-reporter-burden__bar"></span>
+        <span class="typography-meta">{BURDEN_NAME[level]} · {BURDEN_RANGE[level]}</span>
+      </span>
+    ))}
+  </div>
+  <p class="typography-body-md" data-burden-detail>{initial.detail}</p>
+</div>
+)}
+
+<style>
+  .firma2-reporter-burden p {
+    margin: 0;
+  }
+
+  .firma2-reporter-burden__meter {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--spacing-100, 0.25rem);
+    max-inline-size: 24rem;
+  }
+
+  .firma2-reporter-burden__step {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-100, 0.25rem);
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-reporter-burden__bar {
+    block-size: 0.5rem;
+    border-radius: var(--radius-sm, 0.25rem);
+    background: var(--color-background-default-hover, #e8e8e8);
+  }
+
+  /* Fill up to the level, in the level's tone. */
+  .firma2-reporter-burden { --burden-fill: var(--color-background-utility-success, #46a758); }
+  .firma2-reporter-burden[data-level='moderate'] { --burden-fill: var(--color-background-utility-warning, #ffc53d); }
+  .firma2-reporter-burden[data-level='high'] { --burden-fill: var(--color-background-utility-danger, #e5484d); }
+
+  .firma2-reporter-burden [data-step='low'] .firma2-reporter-burden__bar,
+  .firma2-reporter-burden[data-level='moderate'] [data-step='moderate'] .firma2-reporter-burden__bar,
+  .firma2-reporter-burden[data-level='high'] :is([data-step='moderate'], [data-step='high']) .firma2-reporter-burden__bar {
+    background: var(--burden-fill);
+  }
+
+  /* The current level's name, in full ink, so the scale reads where it sits. */
+  .firma2-reporter-burden[data-level='low'] [data-step='low'],
+  .firma2-reporter-burden[data-level='moderate'] [data-step='moderate'],
+  .firma2-reporter-burden[data-level='high'] [data-step='high'] {
+    color: var(--color-content-default);
+  }
+
+  /* Compact: a short scale inline before its label. */
+  .firma2-reporter-burden--compact {
+    flex-wrap: nowrap;
+  }
+
+  .firma2-reporter-burden--compact .firma2-reporter-burden__meter {
+    inline-size: 3rem;
+    gap: 2px;
+  }
+
+  .firma2-reporter-burden--compact .firma2-reporter-burden__bar {
+    block-size: 0.375rem;
+  }
+
+  .firma2-reporter-burden--compact [data-burden-label] {
+    white-space: nowrap;
+    color: var(--color-content-default);
+  }
+
+  @media (forced-colors: active) {
+    .firma2-reporter-burden__bar {
+      border: 1px solid CanvasText;
+    }
+  }
+</style>

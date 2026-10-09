@@ -6,14 +6,15 @@
 // TWO DOORS, ONE SURFACE. The hackathon put a chooser dialog in front of two
 // separate pages: "I know what I need to say" and "Help me work out what to
 // measure". Here both doors are on screen at once, in the order a reader
-// meets them: the claim box first (one sentence, one click), and under it the
-// themes for the author who does not have that sentence yet. Nobody has to
+// meets them: the claim box first (one sentence, one click), and under it a
+// searchable list of the work (firma2-work-picker) for the author who does
+// not have that sentence yet. Nobody has to
 // classify themselves before they can start, and the chooser's extra click
 // is gone.
 //
-// THE INTERVIEW IS TWO CLICKS. Turn 0 is the theme — no model call, because
-// the vocabulary already exists. Turn 1 is the work. Turn 2 is the cost
-// question, asked as competing sentences the author would actually say,
+// THE INTERVIEW IS TWO CLICKS. The first is a row in the work list, which
+// names the goal and the work at once (they were two turns, theme then work,
+// until 2026-10-08). The second is the cost question, asked as competing sentences the author would actually say,
 // with what each costs a reporter written under it WHILE THE CHOICE IS OPEN.
 // That line is the reason the interview exists: the brief's compliance loop
 // says the burden is invisible at the moment it is imposed, and here it is
@@ -28,32 +29,37 @@
 // Every split says where its answer comes from: a shared list this program
 // already keeps, a list the system fills in, or a new one.
 //
-// NOTHING IS SAVED UNTIL "Open in setup". That hands the draft to the
-// catalog's own sheet as an ordinary Draft, where it is finished like any
-// other — this page drafts, the sheet defines.
+// NOTHING IS SAVED UNTIL "Save as draft". That hands the draft to the
+// measure's own settings page as an ordinary Draft, where it is finished
+// like any other — this page drafts, that page defines.
 //
 // SCRIPTED. There is no model in a static prototype; see
 // src/data/firma2-measure-drafting.ts for what stands in for it and why.
-import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
-import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
 import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
-import { CLASSIFICATION_NAMES } from '../../data/firma2-performance-measures';
+import Firma2WorkPicker from './firma2-work-picker.astro';
+import Firma2ReporterBurden from './firma2-reporter-burden.astro';
 import { withBase } from '../../lib/base';
 
-const catalogHref = withBase('/prototypes/performance-measures');
-const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
+const measuresPath = '/prototypes/workspace-settings/performance-measures';
+// The measure's own page: a draft made here opens on the draft route.
+const draftHref = withBase(`${measuresPath}/draft`);
 ---
-<!-- bcn-lego-checked: every control here is a lego (esa-card, esa-textarea,
-     esa-chip-group, esa-button, esa-alert-box, esa-badge,
-     esa-loading-spinner); the classes are layout for the transcript and the
-     definition rows, which no esa- component lays out. Beacon is not cloned
-     on this machine. -->
-<div class="firma2-measure-drafter stack" data-gap="xl" data-catalog-href={catalogHref}>
-  <!-- ===== START: the two doors ===== -->
-  <div class="stack" data-gap="xl" data-stage="start">
-    <EsaCard title="What do you need to tell your funder?">
+<!-- bcn-lego-checked: sections are firma2-rail-section (the settings
+     section); controls are legos (esa-textarea, esa-button, esa-alert-box,
+     esa-pill, esa-loading-spinner) or spoke components (firma2-work-picker,
+     firma2-reporter-burden). Bespoke: the funder-question choice (see its
+     style rule), and layout for the transcript and definition rows. Beacon is
+     not cloned on this machine. -->
+<div class="firma2-measure-drafter" data-draft-href={draftHref}>
+  <!-- ===== START: the two doors =====
+       UNBOXED SETTINGS SECTIONS (2026-10-08), like the measure page this
+       hands off to: firma2-rail-section, not esa-card. -->
+  <div class="stack" data-gap="2xl" data-stage="start">
+    <Firma2RailSection title="What do you need to tell your funder?">
       <div class="stack" data-gap="md">
         <esa-textarea
           data-claim
@@ -65,48 +71,45 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
           <EsaButton variant="ai" size="md" data-draft-claim>Draft the measure</EsaButton>
         </div>
         <div data-no-match hidden>
-          <EsaAlertBox variant="info" title="Couldn’t place that claim">
-            Name the work itself — planting, thinning, trail building — or start from a theme below.
+          <EsaAlertBox variant="info" title="No work found in that claim">
+            Name the work itself — planting, thinning, trail building — or pick it from the list below.
           </EsaAlertBox>
         </div>
       </div>
-    </EsaCard>
+    </Firma2RailSection>
 
-    <EsaCard title="Not sure how to say it?">
+    <Firma2RailSection title="Not sure how to say it?">
       <div class="stack" data-gap="md">
-        <p class="typography-body-md">Start from what your program works on. Two questions, answered by clicking.</p>
-        <esa-chip-group data-themes label="What your program works on" size="md" data-options={JSON.stringify(themeOptions)}></esa-chip-group>
+        <p class="typography-body-md">Pick the work your program does, then answer one question.</p>
+        <Firma2WorkPicker />
       </div>
-    </EsaCard>
+    </Firma2RailSection>
 
     <div>
-      <EsaButton variant="ghost" size="md" tag="a" href={`${catalogHref}#measure=new`}>Start from a blank measure</EsaButton>
+      <EsaButton variant="ghost" size="md" tag="a" href={draftHref}>Start from a blank measure</EsaButton>
     </div>
   </div>
 
   <!-- ===== INTERVIEW ===== -->
   <div data-stage="interview" hidden>
-    <EsaCard>
+    <!-- Titled with the goal the picked work serves; the script writes it. -->
+    <Firma2RailSection title="Your measure" data-interview>
+      <EsaButton slot="actions" variant="ghost" size="md" data-restart>Start over</EsaButton>
       <div class="stack" data-gap="lg">
-        <div class="repel">
-          <h2 class="typography-title-strong" data-theme-heading></h2>
-          <EsaButton variant="ghost" size="sm" data-restart>Start over</EsaButton>
-        </div>
 
         <!-- The conversation so far, kept on screen: at the end it is the
              record of what the claim was built from. -->
         <ol class="firma2-measure-drafter__transcript stack" data-gap="sm" data-transcript></ol>
 
         <div class="stack" data-gap="md" data-turn>
-          <h3 class="typography-title" data-question></h3>
-          <div class="stack" data-gap="xs" data-answers></div>
+          <h4 class="firma2-measure-drafter__h typography-title" data-question></h4>
+          <div class="stack" data-gap="sm" data-answers></div>
           <p class="firma2-measure-drafter__cost typography-body-md" data-cost hidden></p>
           <div>
-            <EsaButton variant="ghost" size="sm" data-own-toggle>None of these — I’ll describe it</EsaButton>
+            <EsaButton variant="ghost" size="md" data-own-toggle>None of these — I’ll describe it</EsaButton>
           </div>
           <div class="stack" data-gap="sm" data-own hidden>
             <esa-textarea data-own-text label="In your own words" rows="2"></esa-textarea>
-            <p class="typography-body-sm" data-own-miss hidden>Couldn’t place that. Try naming the work itself, or pick the closest answer above.</p>
             <div class="cluster" data-gap="sm">
               <EsaButton variant="secondary" size="md" data-own-continue>Continue</EsaButton>
             </div>
@@ -114,12 +117,12 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
         </div>
 
         <div class="stack" data-gap="md" data-claim-block hidden>
-          <h3 class="typography-title">Here’s what you need to say</h3>
+          <h4 class="firma2-measure-drafter__h typography-title">Here’s what you need to say</h4>
           <esa-textarea
             data-claim-readback
             aria-label="Your claim"
             rows="3"
-            help-text="Change anything that isn’t quite right. The measure is built from this sentence."
+            help-text="The measure is built from this claim. Change anything that isn’t right."
           ></esa-textarea>
           <div class="cluster" data-gap="sm">
             <EsaButton variant="ai" size="md" data-draft-readback>Draft the measure</EsaButton>
@@ -127,68 +130,74 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
           </div>
         </div>
       </div>
-    </EsaCard>
+    </Firma2RailSection>
   </div>
 
   <!-- ===== DRAFTING ===== -->
   <div data-stage="drafting" hidden>
-    <EsaCard>
-      <div class="cluster" data-gap="sm" role="status">
-        <EsaLoadingSpinner size="sm" decorative />
-        <p class="typography-body-md">Drafting your measure…</p>
-      </div>
-    </EsaCard>
+    <div class="cluster" data-gap="sm" role="status">
+      <EsaLoadingSpinner size="sm" decorative />
+      <p class="typography-body-md">Drafting your measure…</p>
+    </div>
   </div>
 
   <!-- ===== THE DRAFT ===== -->
-  <div class="stack" data-gap="xl" data-stage="draft" hidden tabindex="-1">
-    <EsaCard>
+  <div class="stack" data-gap="2xl" data-stage="draft" hidden tabindex="-1">
+    <Firma2RailSection title="What a reporter will say, every year">
       <div class="stack" data-gap="sm">
-        <p class="typography-label-md">What a reporter will say, every year</p>
         <p class="firma2-measure-drafter__sentence typography-heading-md" data-sentence></p>
         <p class="typography-body-sm">From your claim: <q data-claim-echo></q></p>
       </div>
-    </EsaCard>
+    </Firma2RailSection>
 
-    <EsaCard title="The measure">
-      <dl class="firma2-measure-drafter__rows" data-definition></dl>
-    </EsaCard>
-
-    <EsaCard title="What reporters answer">
+    <!-- THE BURDEN LEADS the reporter's section, and the section comes
+         straight after the sentence: what a definition costs the people who
+         file it is the first thing to weigh, before its own fields. -->
+    <Firma2RailSection title="What reporters answer">
       <div class="stack" data-gap="lg">
+        <Firma2ReporterBurden />
         <dl class="firma2-measure-drafter__rows" data-answers-def></dl>
-        <div class="firma2-measure-drafter__trade">
-          <div class="stack" data-gap="2xs">
-            <p class="typography-label-md">Reporters pay</p>
-            <p class="typography-body-md" data-cost-line></p>
-          </div>
-          <div class="stack" data-gap="2xs">
-            <p class="typography-label-md">You can report</p>
-            <p class="typography-body-md" data-payoff-line></p>
-          </div>
+        <div class="stack" data-gap="2xs">
+          <p class="typography-label-md">What you can report</p>
+          <p class="typography-body-md" data-payoff-line></p>
         </div>
       </div>
-    </EsaCard>
+    </Firma2RailSection>
+
+    <Firma2RailSection title="The measure">
+      <dl class="firma2-measure-drafter__rows" data-definition></dl>
+    </Firma2RailSection>
 
     <div data-warnings hidden>
-      <EsaAlertBox variant="warning" title="Worth a look before you publish">
+      <EsaAlertBox variant="warning" title="Check these before you publish">
         <ul class="firma2-measure-drafter__warnings stack" data-gap="xs" data-warning-list></ul>
       </EsaAlertBox>
     </div>
 
     <div class="cluster" data-gap="sm">
-      <EsaButton variant="primary" size="md" data-open-setup>Open in setup</EsaButton>
+      <EsaButton variant="primary" size="md" data-open-setup>Save as draft</EsaButton>
       <EsaButton variant="ghost" size="md" data-revise>Change the claim</EsaButton>
     </div>
   </div>
 
   <!-- Clone sources: real legos rendered once, copied by the script. -->
+  <!-- One answer to the funder question: what it is, in two or three words
+       first (the difference between answers leads), the sentence it commits
+       to under it, and what it costs a reporter as a level. -->
   <template data-answer-template>
-    <EsaButton variant="secondary" appearance="outline" size="md" class="firma2-measure-drafter__answer">Answer</EsaButton>
+    <button type="button" class="firma2-measure-drafter__choice">
+      <span class="stack" data-gap="3xs">
+        <span class="typography-label-md-strong" data-choice-title></span>
+        <span class="firma2-measure-drafter__choice-sentence typography-body-sm" data-choice-sentence></span>
+      </span>
+      <Firma2ReporterBurden compact />
+    </button>
   </template>
-  <template data-badge-shared><EsaBadge variant="info" size="sm" value="Shared list" /></template>
-  <template data-badge-system><EsaBadge variant="success" size="sm" value="Filled in automatically" /></template>
-  <template data-badge-new><EsaBadge variant="warning" size="sm" value="New list" /></template>
+  <!-- Where a split's list comes from. Quiet neutral tags: an origin is not a
+       severity, and the word carries it (the measure page's schema markers). -->
+  <template data-badge-shared><EsaPill label="Shared list" size="sm" removable={false} /></template>
+  <template data-badge-system><EsaPill label="Filled in automatically" size="sm" removable={false} /></template>
+  <template data-badge-new><EsaPill label="New list" size="sm" removable={false} /></template>
 </div>
 
 <style>
@@ -198,13 +207,48 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
     display: none !important;
   }
 
-  /* Answers read as a list of sentences, so they sit flush left and take the
-     column's width — a centred label in a wide button reads as a toolbar. */
-  .firma2-measure-drafter :global(.firma2-measure-drafter__answer),
-  .firma2-measure-drafter :global(.firma2-measure-drafter__answer .esa-button__native) {
-    width: 100%;
-    justify-content: flex-start;
+  /* bcn-lego-checked: an answer is a two-line choice with a burden level —
+     esa-button carries one unwrapped label (the long sentences ran out of the
+     column) and esa-radio-group selects on arrow keys, so it cannot advance
+     the interview on a pick. Native button, bordered like the inputs above
+     it, full width, wrapping. Beacon is not cloned on this machine. */
+  .firma2-measure-drafter :global(.firma2-measure-drafter__choice) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-400, 1rem);
+    inline-size: 100%;
+    padding: var(--spacing-300, 0.75rem) var(--spacing-400, 1rem);
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-raised, #fcfcfc);
+    color: var(--color-content-default, #202020);
+    font: inherit;
     text-align: start;
+    cursor: pointer;
+  }
+
+  .firma2-measure-drafter :global(.firma2-measure-drafter__choice:hover) {
+    border-color: var(--color-border-brand, #46a758);
+    background: var(--color-background-default-hover, #f0f0f0);
+  }
+
+  .firma2-measure-drafter :global(.firma2-measure-drafter__choice:focus-visible) {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+
+  .firma2-measure-drafter :global(.firma2-measure-drafter__choice-sentence) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* The level never squeezes the words: it keeps its width and sits right. */
+  .firma2-measure-drafter :global(.firma2-measure-drafter__choice .firma2-reporter-burden) {
+    flex: none;
+  }
+
+  .firma2-measure-drafter__h {
+    margin: 0;
   }
 
   .firma2-measure-drafter__transcript {
@@ -249,14 +293,6 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
     margin: 0;
   }
 
-  .firma2-measure-drafter__trade {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: var(--spacing-600);
-    padding-block-start: var(--spacing-400);
-    border-block-start: 1px solid var(--color-border-default);
-  }
-
   .firma2-measure-drafter__warnings {
     margin: 0;
     padding-inline-start: var(--spacing-600);
@@ -265,20 +301,18 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
 
 <script>
   import '@esa/ecology/esa-textarea';
-  import '@esa/ecology/esa-chip-group';
   import {
-    activitiesFor,
     claimFor,
     costOfSplit,
     draftFromClaim,
     FUNDER_QUESTION,
     funderAnswers,
-    matchActivity,
+    getActivity,
     payoff,
-    reporterCost,
+    reporterPicks,
     sentenceFor,
-    workQuestion,
   } from '../../data/firma2-measure-drafting';
+  import { paintBurden, reporterBurden } from '../../lib/reporter-burden';
   import type { DraftActivity, MeasureDraftResult } from '../../data/firma2-measure-drafting';
   import { COUNTING_RULES, getSchema, kindName } from '../../data/firma2-performance-measures';
   import { nextLocalMeasureSlug, writeDraft } from '../../lib/measure-draft';
@@ -300,8 +334,8 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
 
     const claimField = $<Field>('[data-claim]');
     const noMatch = $('[data-no-match]');
-    const themes = $<Field>('[data-themes]');
-    const themeHeading = $('[data-theme-heading]');
+    // The interview section's own heading: the goal of the work picked.
+    const themeHeading = $('[data-interview] .firma2-rail-section__title');
     const transcript = $('[data-transcript]');
     const turn = $('[data-turn]');
     const question = $('[data-question]');
@@ -309,27 +343,17 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
     const cost = $('[data-cost]');
     const own = $('[data-own]');
     const ownText = $<Field>('[data-own-text]');
-    const ownMiss = $('[data-own-miss]');
     const claimBlock = $('[data-claim-block]');
     const readback = $<Field>('[data-claim-readback]');
     const answerTemplate = $<HTMLTemplateElement>('[data-answer-template]');
 
-    customElements.whenDefined('esa-chip-group').then(() => {
-      themes.options = JSON.parse(themes.dataset.options ?? '[]');
-    });
-
-    // ARRIVING THROUGH A DOOR. The catalog's "How would you like to start?"
-    // lands here as #guided or #claim; the page still shows both doors, and
-    // puts the reader at the one they chose.
-    const door = window.location.hash;
-    if (door === '#guided' || door === '#claim') {
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-      const target = door === '#claim' ? claimField : themes;
-      requestAnimationFrame(() => {
-        target.scrollIntoView({ block: 'center' });
-        (target.shadowRoot?.querySelector<HTMLElement>('textarea, button') ?? target).focus();
-      });
-    }
+    // ARRIVING. "New measure" in the catalog links straight here (its
+    // "How would you like to start?" dialog went 2026-10-08 — this page
+    // already offers both doors), so the cursor starts in the claim, the
+    // first field, as every settings add page starts in its first.
+    customElements.whenDefined('esa-textarea').then(() =>
+      requestAnimationFrame(() => (claimField.shadowRoot?.querySelector<HTMLElement>('textarea') ?? claimField).focus()),
+    );
 
     // ---- interview state ----------------------------------------------------
     let theme = '';
@@ -344,50 +368,43 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
       transcript.append(li);
     };
 
-    const answerButton = (label: string, onPick: () => void): HTMLElement => {
+    type Choice = { title: string; sentence: string; picks: number; pick: () => void };
+
+    const answerButton = (choice: Choice): HTMLElement => {
       const node = answerTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement;
-      node.querySelector('.esa-button__label')!.textContent = label;
-      node.querySelector('button')!.addEventListener('click', onPick);
+      node.querySelector('[data-choice-title]')!.textContent = choice.title;
+      node.querySelector('[data-choice-sentence]')!.textContent = choice.sentence;
+      paintBurden(node.querySelector<HTMLElement>('[data-reporter-burden]'), reporterBurden(choice.picks));
+      node.addEventListener('click', choice.pick);
       return node;
     };
 
-    const ask = (text: string, options: { label: string; pick: () => void }[], costLine?: string) => {
+    const ask = (text: string, options: Choice[], costLine?: string) => {
       turn.hidden = false;
       claimBlock.hidden = true;
       own.hidden = true;
-      ownMiss.hidden = true;
       ownText.value = '';
       question.textContent = text;
-      answers.replaceChildren(...options.map((o) => answerButton(o.label, o.pick)));
+      answers.replaceChildren(...options.map(answerButton));
       cost.hidden = !costLine;
       cost.textContent = costLine ?? '';
       requestAnimationFrame(() => answers.querySelector('button')?.focus());
     };
 
-    /** Turn 1 — what the work is. */
-    const askWork = () => {
-      ask(
-        workQuestion(theme),
-        activitiesFor(theme).map((a) => ({
-          label: a.activity,
-          pick: () => {
-            addTranscript(workQuestion(theme), a.activity);
-            activity = a;
-            askFunder();
-          },
-        })),
-      );
-    };
-
-    /** Turn 2 — the cost question. Skipped when the work has no split to price. */
+    /** The cost question. Skipped when the work has no split to price. */
     const askFunder = () => {
       if (!activity) return;
       const choices = funderAnswers(activity);
       if (choices.length === 1) return readBack(false);
+      const work = activity;
       ask(
         FUNDER_QUESTION,
         choices.map((c) => ({
-          label: c.label,
+          // The difference leads: "One total" or "Split by barrier type".
+          title: c.split && work.split ? `Split by ${work.split.label}` : 'One total',
+          sentence: c.label,
+          // A split the system fills in costs the reporter nothing.
+          picks: c.split && work.split && work.split.source !== 'system' ? 1 : 0,
           pick: () => {
             addTranscript(FUNDER_QUESTION, c.label);
             readBack(c.split);
@@ -405,18 +422,20 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
       requestAnimationFrame(() => readback.focus());
     };
 
-    const beginInterview = (picked: string) => {
-      theme = picked;
-      activity = undefined;
+    // A row in the work list names the goal and the work at once, so the
+    // interview opens on the funder question with the work already answered.
+    root.addEventListener('firma2:work-pick', (event) => {
+      const picked = getActivity((event as CustomEvent<{ id: string }>).detail.id);
+      if (!picked) return;
+      theme = picked.theme;
       transcript.replaceChildren();
       themeHeading.textContent = theme;
       show('interview');
-      askWork();
-    };
-
-    themes.addEventListener('change', () => {
-      const value = String(themes.value ?? '');
-      if (value) beginInterview(value);
+      // The work was picked from the list, not asked — so the transcript
+      // names it as what it is, not as an answer to a question.
+      addTranscript('The work', picked.activity);
+      activity = picked;
+      askFunder();
     });
 
     $('[data-own-toggle]').addEventListener('click', () => {
@@ -424,21 +443,12 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
       requestAnimationFrame(() => ownText.focus());
     });
 
-    // Typed instead of clicked: on turn 1 it names the work; on turn 2 it IS
-    // the claim, in the author's words, so it goes straight to the read-back.
+    // Typed instead of clicked: on the funder question it IS the claim, in
+    // the author's words, so it goes straight to the read-back.
     $('[data-own-continue]').addEventListener('click', () => {
       const text = String(ownText.value ?? '').trim();
       if (!text) return;
-      if (!activity) {
-        const match = matchActivity(text);
-        if (!match) {
-          ownMiss.hidden = false;
-          return;
-        }
-        addTranscript(workQuestion(theme), text);
-        activity = match;
-        askFunder();
-      } else {
+      {
         addTranscript(FUNDER_QUESTION, text);
         turn.hidden = true;
         claimBlock.hidden = false;
@@ -453,13 +463,13 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
       if (activity && funderAnswers(activity).length > 1) {
         askFunder();
       } else {
+        // The work was the first answer; it was picked from the list.
         activity = undefined;
-        askWork();
+        show('start');
       }
     });
 
     $('[data-restart]').addEventListener('click', () => {
-      themes.value = '';
       show('start');
     });
 
@@ -483,7 +493,7 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
     $('[data-draft-claim]').addEventListener('click', () => {
       const claim = String(claimField.value ?? '').trim();
       if (!claim) {
-        claimField.errorText = 'Write the sentence first, or start from a theme below.';
+        claimField.errorText = 'Write your claim first, or pick the work below.';
         return;
       }
       claimField.errorText = '';
@@ -523,7 +533,9 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
         row('Reporter guidance', esc(a.reporterGuidance)),
       ].join('');
 
-      const rows = [row('The number', esc(a.unit ? `${a.unit}, one figure per entry` : 'one figure per entry'))];
+      // "each" is a count, not a unit to name: "One count per entry".
+      const number = !a.unit ? 'One figure per entry' : a.unit === 'each' ? 'One count per entry' : `One figure per entry, in ${a.unit}`;
+      const rows = [row('The number', esc(number))];
       if (d.split && a.split) {
         const s = a.split;
         const name = s.source === 'new' ? s.name : getSchema(s.schemaId)?.name ?? '';
@@ -539,7 +551,9 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
       if (autos.length) rows.push(row('Filled in automatically', esc(autos.join(', '))));
       $('[data-answers-def]').innerHTML = rows.join('');
 
-      $('[data-cost-line]').textContent = reporterCost(d);
+      // Scoped to the draft stage: each funder-question choice carries a
+      // compact burden of its own, earlier in the DOM.
+      paintBurden(root.querySelector<HTMLElement>('[data-stage="draft"] [data-reporter-burden]'), reporterBurden(reporterPicks(d)));
       $('[data-payoff-line]').textContent = payoff(d);
 
       $('[data-warnings]').hidden = d.warnings.length === 0;
@@ -547,8 +561,8 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
     };
 
     // ---- hand-off ------------------------------------------------------------------
-    // The draft becomes an ordinary browser-local Draft in the catalog, and the
-    // catalog's own sheet opens on it. A NEW split list is written to the
+    // The draft becomes an ordinary browser-local Draft in the catalog, and its
+    // own page opens on it. A NEW split list is written to the
     // shared-list store first, so the measure references it rather than
     // carrying a private copy — the same rule every other list follows.
     $('[data-open-setup]').addEventListener('click', () => {
@@ -581,9 +595,9 @@ const themeOptions = CLASSIFICATION_NAMES.map((c) => ({ value: c, label: c }));
         reporterGuidance: a.reporterGuidance,
         status: 'Draft',
       });
-      // The warnings travel with the draft, to the sheet where publishing is decided.
+      // The warnings travel with the draft, to the page where publishing is decided.
       writeMeasureWarnings(slug, draft.warnings);
-      window.location.assign(`${root.dataset.catalogHref}#measure=${encodeURIComponent(slug)}`);
+      window.location.assign(`${root.dataset.draftHref}?slug=${encodeURIComponent(slug)}`);
     });
   });
 </script>

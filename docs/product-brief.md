@@ -563,6 +563,28 @@ sharing one set of idioms.
 *Proved on: measure setup — folded into the project anatomy and then walked as
 a first-time setup, both 2026-08-20. The walk won.*
 
+### Settings detail pages: state and acts up top, delete at the bottom
+
+Every settings record page (a tag, a classification, a group, a project type,
+a performance measure) has one anatomy:
+
+1. **Page header.** Crumb back to the list, the record's name as the title.
+   If the record has a lifecycle, its **state** sits in the `status` slot under
+   the title (pill plus one line saying what that state means right now), and
+   the **act that moves it** sits in the `actions` slot beside the title. The
+   state and the button that changes it are read in one glance.
+2. **Body, reading width, unboxed sections.** Details first (name, the fields
+   that identify it), then the record's own sections in authoring order.
+3. **Danger zone last.** Delete lives only here, never in the header.
+
+A record with no lifecycle leaves both slots empty. It does not invent a state
+to fill them. A gated act (Publish while incomplete) stays in place, inert, and
+the status line names what is missing (see "Inert, not disabled").
+
+*Proved on: performance measures, 2026-10-08. Status had become a body section
+carrying its own Publish/Retire buttons, and no sibling page did that. Moving
+both into the header made it match the project page's Stage + Edit.*
+
 ### A collection gets "Add"; a scalar gets a per-field affordance
 
 A set has no single field to hover — you add to it, remove from it, reorder it —
@@ -681,6 +703,7 @@ a styling problem.
 | Workspace settings › Administration | **Workspace**, **Organizations**, **Users**, **Security**, **Custom pages**, **Import & export** | built |
 | Workspace settings › Organizations | **Organization record** (each organization's page from the list, your own included) | built |
 | Workspace settings › Your organization | **Settings** (General, Members, Access, Notifications) | built |
+| Your organizations (app rail) | **Home**, **Projects**, **Updates**, **Views** (+ one page per saved view), **Reports** — each scoped to one of the reader's organizations | built — reports list and price their coverage; the report itself is still unbuilt |
 
 The two built areas are deliberately different exercises: the project pages are
 about **reading a record**, the measure pages about **setting one up**. Most

@@ -1,0 +1,164 @@
+---
+// firma2-work-picker — the drafter's guided door: every kind of work the
+// drafting call knows, as one searchable list, each row tagged with the goal
+// it serves.
+//
+// A LIST, NOT CHIPS (user, 2026-10-08). Twenty wrapped chips had no reading
+// order and no search, and twelve of them (the practices) led to an interview
+// with no answers — only the seven plan goals have scripted work. So the list
+// is the work itself, the leaves of the old two-step tree (goal, then work),
+// tagged with its goal: picking a row answers both, and the interview opens
+// on the funder question.
+//
+// THE GOAL IS A TAG, AND THE TAG IS THE SORT (user, 2026-10-08): one list,
+// rows ordered by goal A–Z and then by work A–Z, so a goal's work sits
+// together and both levels have an order a reader can predict. It replaced
+// goal headings in the workspace's classification order over work in
+// authoring order — neither of which a scanner could anticipate. The tag
+// sits at the row's end, before the chevron, so the work names keep one
+// left edge to scan down.
+//
+// SEARCH MATCHES WHAT PEOPLE TYPE: the work's name, its goal, and the words
+// the drafting call already listens for ("culvert", "burn", "blackberry"), so
+// a reader who knows the job but not the program's vocabulary still lands.
+// No match at all shows the empty state.
+//
+// A PICK IS AN EVENT. The row dispatches `firma2:work-pick` ({ id }) and the
+// drafter, which owns the interview, takes it from there.
+//
+// bcn-lego-checked: walked the catalog for a searchable list of choices.
+// esa-combobox and esa-select hide the list behind a field (the opposite of
+// scannable); esa-radio-group selects on arrow keys, so it cannot start the
+// interview on a pick; esa-chip-group is what this replaces; esa-search-panel
+// is an overlay. The search is esa-text-field, the no-match state is
+// esa-empty-state, the goal tag is esa-pill (neutral, not removable — the
+// schema origin markers' treatment), the chevron is esa-icon; the rows take
+// firma2-settings-link-list's construction (ruled rows, hover fill, chevron
+// column) as native buttons, because a pick is an action here, not a link.
+// Beacon is not cloned on this machine.
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import { DRAFT_ACTIVITIES } from '../../data/firma2-measure-drafting';
+
+// Goal A–Z, then work A–Z within it.
+const rows = [...DRAFT_ACTIVITIES].sort(
+  (a, b) => a.theme.localeCompare(b.theme) || a.activity.localeCompare(b.activity),
+);
+
+const haystack = (a: (typeof DRAFT_ACTIVITIES)[number]) =>
+  [a.activity, a.theme, ...a.keywords].join(' ').toLowerCase();
+---
+<div class="firma2-work-picker stack" data-gap="lg">
+  <esa-text-field
+    data-work-search
+    type="search"
+    label="Search by work or goal"
+    placeholder="e.g. culverts, prescribed burning, trails"
+    size="md"
+  ></esa-text-field>
+
+  <ul class="firma2-work-picker__list" role="list">
+    {rows.map((a) => (
+      <li data-work-row data-search={haystack(a)}>
+        <button type="button" class="firma2-work-picker__row repel" data-gap="md" data-work-id={a.id}>
+          <span class="typography-body-md">{a.activity}</span>
+          <span class="firma2-work-picker__end cluster" data-gap="sm">
+            <EsaPill label={a.theme} size="sm" removable={false} />
+            <EsaIcon name="chevron-right" size="sm" />
+          </span>
+        </button>
+      </li>
+    ))}
+  </ul>
+
+  <div data-work-empty hidden>
+    <EsaEmptyState size="sm" title="No work matches" description="Try another word, or write your claim above." />
+  </div>
+</div>
+
+<style>
+  .firma2-work-picker__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Ruled apart, as firma2-settings-link-list rules its rows: a hairline
+     between rows, none above the first or below the last — counted among
+     the rows the search leaves visible. */
+  .firma2-work-picker__list > li:not([hidden]) ~ li:not([hidden]) {
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  /* The row bleeds a step past the text so the hover fill has room, then the
+     negative margin puts the label back on the heading's edge. */
+  .firma2-work-picker__row {
+    inline-size: calc(100% + 2 * var(--spacing-200, 0.5rem));
+    padding: var(--spacing-300, 0.75rem) var(--spacing-200, 0.5rem);
+    margin-inline: calc(-1 * var(--spacing-200, 0.5rem));
+    border: 0;
+    border-radius: var(--radius-sm, 0.25rem);
+    background: none;
+    color: var(--color-content-default);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .firma2-work-picker__row:hover {
+    background: var(--color-background-default-hover);
+  }
+
+  .firma2-work-picker__row:focus-visible {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+
+  .firma2-work-picker__row :global(svg) {
+    flex: none;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* The tag and chevron hold together at the row's end and never wrap apart;
+     line-height 0 keeps the inline pill from adding leading to the row. */
+  .firma2-work-picker__end {
+    flex: none;
+    line-height: 0;
+    flex-wrap: nowrap;
+  }
+
+  /* The layout utilities set display, which beats the UA's [hidden]. */
+  .firma2-work-picker [hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+
+  document.querySelectorAll<HTMLElement>('.firma2-work-picker').forEach((root) => {
+    const search = root.querySelector<HTMLElement & { value: string }>('[data-work-search]');
+    const rows = [...root.querySelectorAll<HTMLElement>('[data-work-row]')];
+    const empty = root.querySelector<HTMLElement>('[data-work-empty]');
+
+    // Every word typed must appear somewhere in the row's text, in any order.
+    const filter = () => {
+      const words = String(search?.value ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      for (const row of rows) {
+        const hit = words.every((w) => (row.dataset.search ?? '').includes(w));
+        row.hidden = !hit;
+        if (hit) shown += 1;
+      }
+      if (empty) empty.hidden = shown > 0;
+    };
+    search?.addEventListener('input', filter);
+
+    root.addEventListener('click', (event) => {
+      const row = (event.target as Element).closest<HTMLElement>('[data-work-id]');
+      if (!row) return;
+      root.dispatchEvent(new CustomEvent('firma2:work-pick', { bubbles: true, detail: { id: row.dataset.workId } }));
+    });
+  });
+</script>

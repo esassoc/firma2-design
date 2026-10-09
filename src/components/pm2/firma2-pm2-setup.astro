@@ -1,0 +1,581 @@
+---
+// firma2-pm2-setup — PM 2's measure setup page body: projectfirma2's
+// performance-measure-setup page, card for card, copy for copy. One page for a
+// new measure and an existing one; a Draft saves in any state of completeness
+// and only Publish is gated.
+//
+// ORDER IS THE BRANCH'S. The claim card leads ("What do you need to be able to
+// tell your funder?") and its Draft fills the form without saving anything. A
+// sticky aside shows the reporter's form as it will be met, with what it costs
+// and what it buys. The form is three cards — The measure (editable at any
+// status), What is counted (unit and counting rule: the hard-to-undo choices),
+// Breakdowns (categories, each a Question with a closed option list) — then the
+// draft's warnings, the history, and the lifecycle bar.
+//
+// FROZEN AT PUBLISH. A published measure's breakdowns cannot change, and the
+// store refuses it with the branch's message. Unit and counting rule are
+// disabled here too, matching the card's copy ("fixed once the measure is
+// published") — note the branch's SERVER does not lock those two; only its copy
+// says so.
+//
+// "Unspecified" is appended to every category on save if missing — added,
+// never demanded — and a new breakdown starts with it already in the list.
+//
+// bcn-lego-checked: every control is a lego — esa-card, esa-text-field,
+// esa-textarea, esa-select, esa-input-tag (a category's options: typed, Enter
+// to add, × to remove), esa-button, esa-alert-box, esa-empty-state,
+// esa-confirm-dialog. The reporter preview is the same legos DISABLED, which is
+// what an inert form is. The only layout CSS is the two-column split with a
+// sticky aside, which no layout primitive provides; Beacon is not cloned here.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { withBase } from '../../lib/base';
+import { PM2_COUNTING_RULES, PM2_ROUTES, PM2_THEMES, PM2_UNITS } from '../../data/firma2-pm2';
+
+interface Props {
+  /** A seeded measure's id. Omit on the new page, which also reads ?id=. */
+  measureId?: number;
+}
+
+const { measureId } = Astro.props;
+const themeOptions = PM2_THEMES.map((t) => ({ label: t.displayName, value: String(t.id) }));
+// Sentence case from the enum key, as the branch's option labels are.
+const unitOptions = PM2_UNITS.filter((u) => u.id >= 5).map((u) => ({ label: u.displayName[0].toUpperCase() + u.displayName.slice(1), value: String(u.id) }));
+const ruleOptions = PM2_COUNTING_RULES.map((r) => ({ label: r.optionLabel, value: String(r.id) }));
+---
+<section
+  class="firma2-pm2-setup stack"
+  data-gap="xl"
+  data-measure-id={measureId ?? ''}
+  data-base={withBase('/')}
+  data-catalog-href={withBase(PM2_ROUTES.catalog)}
+>
+  <div data-alert="success" hidden>
+    <EsaAlertBox variant="success" live><span data-alert-text></span></EsaAlertBox>
+  </div>
+  <div data-alert="danger" hidden>
+    <EsaAlertBox variant="danger" live>
+      <div class="stack" data-gap="xs">
+        <span data-alert-text></span>
+        <ul class="firma2-pm2-setup__list" data-alert-list></ul>
+      </div>
+    </EsaAlertBox>
+  </div>
+
+  <EsaCard title="What do you need to be able to tell your funder?">
+    <div class="stack" data-gap="md">
+      <p class="typography-body-md">Say it the way you would say it to them. We will turn it into a measure your reporters can answer.</p>
+      <esa-textarea
+        data-claim
+        rows="2"
+        size="md"
+        aria-label="What you need to be able to tell your funder"
+        placeholder="I need to tell my funder how much riparian habitat we treat each year, and by what method."
+      ></esa-textarea>
+      <div class="cluster" data-gap="md">
+        <EsaButton variant="ai" size="md" data-draft>Draft it</EsaButton>
+        <p class="typography-body-sm firma2-pm2-setup__quiet" data-draft-status aria-live="polite"></p>
+      </div>
+    </div>
+  </EsaCard>
+
+  <div class="firma2-pm2-setup__columns">
+    <aside class="firma2-pm2-setup__aside">
+      <EsaCard title="What reporters see">
+        <div class="stack" data-gap="md">
+          <p class="typography-body-sm">This is the form a project sponsor fills in, every reporting period.</p>
+          <esa-text-field data-preview-amount size="md" label="Your measure" placeholder="0" suffix="…" disabled></esa-text-field>
+          <div class="stack" data-gap="sm" data-preview-categories></div>
+          <p class="typography-body-sm" data-preview-cost></p>
+          <p class="typography-body-sm"><strong>In return:</strong> <span data-preview-payoff></span></p>
+        </div>
+      </EsaCard>
+    </aside>
+
+    <div class="stack" data-gap="xl">
+      <EsaCard title="The measure">
+        <div class="stack" data-gap="lg">
+          <esa-text-field data-field="name" size="md" label="Name" placeholder="e.g. Riparian habitat treated" help-text="Keep the unit out of the name — the unit is its own field below." required></esa-text-field>
+          <esa-select data-field="theme" size="md" label="Theme" placeholder="Pick a theme" options={JSON.stringify(themeOptions)}></esa-select>
+          <esa-textarea data-field="definition" size="md" rows="3" label="Definition" placeholder="What counts toward this measure, and what does not." help-text="This is what makes two reporters answer the same question the same way."></esa-textarea>
+          <esa-textarea data-field="guidance" size="md" rows="2" label="Reporter guidance" placeholder="Shown at the moment a value is entered." help-text="Written for someone who opens this twice a year and remembers none of its conventions."></esa-textarea>
+        </div>
+      </EsaCard>
+
+      <EsaCard title="What is counted" subtitle="These are the choices that are hard to undo. They are fixed once the measure is published.">
+        <div class="stack" data-gap="lg">
+          <esa-select data-field="unit" size="md" label="Unit" placeholder="Pick a unit" options={JSON.stringify(unitOptions)} help-text="Chosen from a fixed list, because 'acres', 'Acres' and 'ac' do not total together."></esa-select>
+          <esa-select data-field="rule" size="md" label="Do these values add up?" placeholder="Pick a counting rule" options={JSON.stringify(ruleOptions)} help-text="Work someone did adds up. A condition someone measured — a temperature, a percentage — does not, and offering a total for one would be reporting a lie."></esa-select>
+        </div>
+      </EsaCard>
+
+      <EsaCard title="Breakdowns" subtitle="Each one is a question the reporter answers alongside the number. Fewest that still support your claim.">
+        <EsaButton slot="actions" variant="secondary" size="sm" icon="plus" data-add-category>Add a breakdown</EsaButton>
+        <div class="stack" data-gap="lg">
+          <p class="typography-body-sm" data-frozen hidden>This measure has been published, so its breakdowns are fixed. A question added now could not be backfilled — earlier entries would have no answer for it, and every past total would quietly change meaning.</p>
+          <div data-categories-empty>
+            <EsaEmptyState size="sm" title="No breakdowns" description="The reporter enters one number and nothing else — which is a perfectly good measure." />
+          </div>
+          <ol class="firma2-pm2-setup__categories stack" data-gap="lg" data-categories></ol>
+        </div>
+      </EsaCard>
+
+      <div data-warnings hidden>
+        <EsaAlertBox variant="warning" title="Worth a look before you publish">
+          <ul class="firma2-pm2-setup__list" data-warning-list></ul>
+        </EsaAlertBox>
+      </div>
+
+      <div data-history hidden>
+        <EsaCard title="What has been reported">
+          <p class="typography-body-md" data-history-text></p>
+        </EsaCard>
+      </div>
+
+      <div class="firma2-pm2-setup__bar repel">
+        <p class="typography-body-sm firma2-pm2-setup__quiet" data-missing></p>
+        <div class="cluster" data-gap="sm">
+          <EsaButton variant="danger" appearance="outline" size="md" data-delete hidden>Delete draft</EsaButton>
+          <EsaButton variant="secondary" size="md" data-retire hidden>Retire</EsaButton>
+          <EsaButton variant="secondary" size="md" data-save>Save draft</EsaButton>
+          <EsaButton variant="primary" size="md" data-publish hidden>Publish</EsaButton>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <template data-category-template>
+    <li class="firma2-pm2-setup__category stack" data-gap="sm" data-category>
+      <div class="firma2-pm2-setup__category-head cluster" data-gap="sm">
+        <esa-text-field data-category-name size="md" label="Question" placeholder="e.g. Treatment type"></esa-text-field>
+        <EsaButton variant="ghost" size="md" icon="trash-2" data-category-remove>Remove</EsaButton>
+      </div>
+      <esa-input-tag data-category-options size="md" label="Options" placeholder="Add an option" hint="e.g. Planting"></esa-input-tag>
+      <p class="typography-body-sm firma2-pm2-setup__quiet">Options are chosen, never typed. "Unspecified" is the reporter's way out when none of the others is honest.</p>
+    </li>
+  </template>
+
+  <esa-confirm-dialog data-confirm></esa-confirm-dialog>
+</section>
+
+<style>
+  .firma2-pm2-setup__columns {
+    display: grid;
+    grid-template-columns: 22rem minmax(0, 1fr);
+    gap: var(--spacing-600);
+    align-items: start;
+  }
+
+  .firma2-pm2-setup__aside {
+    position: sticky;
+    top: var(--spacing-600);
+  }
+
+  @media (max-width: 1024px) {
+    .firma2-pm2-setup__columns {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .firma2-pm2-setup__aside {
+      position: static;
+    }
+  }
+
+  .firma2-pm2-setup__categories {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .firma2-pm2-setup__category + .firma2-pm2-setup__category {
+    border-block-start: 1px solid var(--color-border-default-subtle);
+    padding-block-start: var(--spacing-400);
+  }
+
+  .firma2-pm2-setup__category-head {
+    align-items: end;
+  }
+
+  .firma2-pm2-setup__category-head esa-text-field {
+    flex: 1;
+  }
+
+  .firma2-pm2-setup__list {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+  }
+
+  .firma2-pm2-setup__quiet {
+    color: var(--color-content-default-secondary);
+  }
+
+  .firma2-pm2-setup__bar {
+    border-block-start: 1px solid var(--color-border-default);
+    padding-block-start: var(--spacing-400);
+  }
+
+  .firma2-pm2-setup [hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-input-tag';
+  import '@esa/ecology/esa-confirm-dialog';
+  import {
+    PM2_CHANGE_EVENT,
+    createMeasure,
+    deleteMeasure,
+    draftFromClaim,
+    getMeasure,
+    measureHistory,
+    missingForPublish,
+    publishMeasure,
+    retireMeasure,
+    updateMeasure,
+  } from '../../lib/pm2-store';
+  import type { Pm2MeasureUpsert, Result } from '../../lib/pm2-store';
+  import { PM2_ROUTES, UNSPECIFIED, pm2Status, pm2Unit } from '../../data/firma2-pm2';
+
+  type Field = HTMLElement & { value: any; disabled: boolean; errorText?: string; options?: unknown };
+
+  document.querySelectorAll<HTMLElement>('.firma2-pm2-setup').forEach((root) => {
+    const $ = <T extends HTMLElement = Field>(sel: string) => root.querySelector<T>(sel)!;
+    const base = root.dataset.base ?? '/';
+    const href = (path: string) => base + path.replace(/^\//, '');
+
+    let id: number | null = Number(root.dataset.measureId) || Number(new URLSearchParams(location.search).get('id')) || null;
+    let warnings: string[] = [];
+    let payoffOverride: string | null = null;
+
+    const name = $('[data-field="name"]');
+    const theme = $('[data-field="theme"]');
+    const definition = $('[data-field="definition"]');
+    const guidance = $('[data-field="guidance"]');
+    const unit = $('[data-field="unit"]');
+    const rule = $('[data-field="rule"]');
+    const claim = $('[data-claim]');
+    const list = $<HTMLOListElement>('[data-categories]');
+    const template = $<HTMLTemplateElement>('[data-category-template]');
+    const confirm = $<HTMLElement & { show(): void; heading: string; message: string; confirmLabel: string; cancelLabel: string; variant: string }>('[data-confirm]');
+
+    // ── The form ⇄ an upsert ──────────────────────────────────────────────
+    interface CategoryRow { id?: number; name: string; options: { id?: number; name: string }[] }
+
+    function addCategoryRow(cat: CategoryRow): void {
+      const li = template.content.firstElementChild!.cloneNode(true) as HTMLLIElement;
+      if (cat.id) li.dataset.categoryId = String(cat.id);
+      li.dataset.optionIds = JSON.stringify(cat.options.filter((o) => o.id).map((o) => [o.name, o.id]));
+      list.append(li);
+      // Lit upgrades on connect; set properties after.
+      customElements.whenDefined('esa-input-tag').then(() => {
+        (li.querySelector('[data-category-name]') as Field).value = cat.name;
+        (li.querySelector('[data-category-options]') as Field).value = cat.options.map((o) => o.name);
+        paint();
+      });
+      li.querySelector('[data-category-remove]')?.addEventListener('click', () => {
+        li.remove();
+        paint();
+      });
+    }
+
+    function readCategories(): CategoryRow[] {
+      return [...list.querySelectorAll<HTMLElement>('[data-category]')].map((li) => {
+        const known = new Map<string, number>(JSON.parse(li.dataset.optionIds ?? '[]'));
+        const names: string[] = (li.querySelector('[data-category-options]') as Field).value ?? [];
+        return {
+          id: Number(li.dataset.categoryId) || undefined,
+          name: (li.querySelector('[data-category-name]') as Field).value ?? '',
+          options: names.map((n) => ({ id: known.get(n), name: n })),
+        };
+      });
+    }
+
+    const numberOrNull = (v: unknown) => (v ? Number(v) : null);
+
+    function readForm(): Pm2MeasureUpsert {
+      return {
+        name: name.value ?? '',
+        definition: definition.value ?? '',
+        reporterGuidance: guidance.value ?? '',
+        claimText: claim.value ?? '',
+        themeId: numberOrNull(theme.value),
+        unitId: numberOrNull(unit.value),
+        countingRuleId: numberOrNull(rule.value) as 1 | 2 | null,
+        categories: readCategories(),
+      };
+    }
+
+    function fill(dto: Pm2MeasureUpsert): void {
+      name.value = dto.name;
+      definition.value = dto.definition;
+      guidance.value = dto.reporterGuidance;
+      claim.value = dto.claimText;
+      theme.value = dto.themeId ? String(dto.themeId) : '';
+      unit.value = dto.unitId ? String(dto.unitId) : '';
+      rule.value = dto.countingRuleId ? String(dto.countingRuleId) : '';
+      list.replaceChildren();
+      dto.categories.forEach(addCategoryRow);
+    }
+
+    // ── Painting ──────────────────────────────────────────────────────────
+    function paint(): void {
+      const dto = readForm();
+      const measure = id ? getMeasure(id) : null;
+      const status = measure ? pm2Status(measure.statusId).name : null;
+      const editableStructure = !measure || measure.statusId === 1;
+
+      // Header: title and status pill.
+      const title = dto.name.trim() || (measure ? 'Untitled measure' : 'New measure');
+      document.querySelectorAll('[data-pm2-title]').forEach((el) => (el.textContent = title));
+      const h1 = document.querySelector('.firma2-page-header h1, h1');
+      if (h1) h1.textContent = title;
+      document.querySelectorAll<HTMLElement>('[data-pm2-status-pill]').forEach((el) => {
+        el.hidden = el.dataset.pm2StatusPill !== status;
+      });
+
+      // Structure lock.
+      unit.disabled = !editableStructure;
+      rule.disabled = !editableStructure;
+      $('[data-add-category]').hidden = !editableStructure;
+      $('[data-frozen]').hidden = editableStructure;
+      list.querySelectorAll<Field>('[data-category-name], [data-category-options]').forEach((f) => (f.disabled = !editableStructure));
+      list.querySelectorAll<HTMLElement>('[data-category-remove]').forEach((b) => (b.hidden = !editableStructure));
+      $('[data-categories-empty]').hidden = list.children.length > 0;
+
+      // Preview.
+      const u = pm2Unit(dto.unitId);
+      const preview = $('[data-preview-amount]');
+      preview.setAttribute('label', dto.name.trim() || 'Your measure');
+      preview.setAttribute('suffix', u?.displayName ?? '…');
+      const previewCats = $('[data-preview-categories]');
+      previewCats.replaceChildren(
+        ...dto.categories.map((c) => {
+          const sel = document.createElement('esa-select') as Field;
+          sel.setAttribute('size', 'md');
+          sel.setAttribute('label', c.name || 'Question');
+          sel.setAttribute('placeholder', 'Choose…');
+          sel.setAttribute('disabled', '');
+          const first = c.options[0]?.name;
+          sel.options = first ? [{ label: first, value: first }] : [];
+          if (first) sel.value = first;
+          return sel;
+        }),
+      );
+      const picks = dto.categories.length;
+      $('[data-preview-cost]').textContent =
+        `One number and ${picks === 0 ? 'no picks' : picks === 1 ? 'one pick' : `${picks} picks`} per project, per reporting period, for as long as this measure runs.`;
+      const unitName = u?.displayName ?? 'units';
+      const label = (dto.name.trim() || 'this measure').toLowerCase();
+      const by = dto.categories.filter((c) => c.name.trim()).map((c) => `by ${c.name.trim().toLowerCase()}`).join(' and ');
+      $('[data-preview-payoff]').textContent =
+        payoffOverride ??
+        (dto.countingRuleId === 1
+          ? `Total ${unitName} of ${label}${by ? ` and broken down ${by}` : ''}, by period and cumulative.`
+          : `${unitName[0].toUpperCase()}${unitName.slice(1)} of ${label} per period${by ? `, ${by}` : ''}. This measure does not sum, so no total is offered.`);
+
+      // Warnings.
+      $('[data-warnings]').hidden = warnings.length === 0;
+      $('[data-warning-list]').replaceChildren(...warnings.map((w) => Object.assign(document.createElement('li'), { textContent: w })));
+
+      // History.
+      const history = id ? measureHistory(id) : { entryCount: 0, projectCount: 0 };
+      $('[data-history]').hidden = history.entryCount === 0;
+      $('[data-history-text]').textContent =
+        `${history.entryCount} ${history.entryCount === 1 ? 'entry' : 'entries'} from ${history.projectCount} ${history.projectCount === 1 ? 'project' : 'projects'}. This is the history that makes a published measure something to retire rather than delete.`;
+
+      // Lifecycle bar.
+      const missing = missingForPublish({ ...dto, countingRuleId: dto.countingRuleId });
+      const isDraft = !measure || measure.statusId === 1;
+      $('[data-save]').textContent = measure ? 'Save' : 'Save draft';
+      (($('[data-publish]').closest('.esa-button') ?? $('[data-publish]')) as HTMLElement).hidden = !(isDraft && missing.length === 0);
+      (($('[data-retire]').closest('.esa-button') ?? $('[data-retire]')) as HTMLElement).hidden = measure?.statusId !== 2;
+      (($('[data-delete]').closest('.esa-button') ?? $('[data-delete]')) as HTMLElement).hidden = !(measure && measure.statusId === 1 && history.entryCount === 0);
+      $('[data-missing]').textContent =
+        isDraft && missing.length
+          ? `Before publishing, this still needs ${missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`}.`
+          : '';
+    }
+
+    // ── Alerts ────────────────────────────────────────────────────────────
+    function alert(kind: 'success' | 'danger' | null, text = '', items: string[] = []): void {
+      root.querySelectorAll<HTMLElement>('[data-alert]').forEach((el) => {
+        el.hidden = el.dataset.alert !== kind;
+        if (el.dataset.alert === kind) {
+          el.querySelector('[data-alert-text]')!.textContent = text;
+          el.querySelector('[data-alert-list]')?.replaceChildren(...items.map((i) => Object.assign(document.createElement('li'), { textContent: i })));
+        }
+      });
+      if (kind) root.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+
+    function flag(errors: string[]): void {
+      const nameErr = errors.find((e) => /measure (needs a name|name cannot)|already has a measure/.test(e));
+      name.errorText = nameErr ?? '';
+    }
+
+    // ── Actions ───────────────────────────────────────────────────────────
+    function save(): Result<unknown> {
+      const dto = readForm();
+      const result = id ? updateMeasure(id, dto) : createMeasure(dto);
+      if (!result.ok) {
+        flag(result.errors);
+        alert('danger', 'We could not save that. Check the fields flagged below.', result.errors);
+        return result;
+      }
+      flag([]);
+      if (!id) {
+        id = (result.value as { id: number }).id;
+        history.replaceState(null, '', href(PM2_ROUTES.measure(id)));
+      }
+      load();
+      return result;
+    }
+
+    $('[data-save]').addEventListener('click', () => {
+      if (save().ok) alert('success', 'Draft saved.');
+    });
+
+    let pending: (() => void) | null = null;
+    function ask(opts: { heading: string; message: string; confirmLabel: string; cancelLabel: string; variant: string }, then: () => void): void {
+      Object.assign(confirm, opts);
+      pending = then;
+      confirm.show();
+    }
+    confirm.addEventListener('resolved', (ev) => {
+      const run = pending;
+      pending = null;
+      if ((ev as CustomEvent<{ confirmed: boolean }>).detail.confirmed) run?.();
+    });
+
+    $('[data-publish]').addEventListener('click', () =>
+      ask(
+        {
+          heading: 'Publish this measure',
+          message: 'Publishing starts collecting answers. From now on its categories and options are fixed — a question added later cannot be backfilled, so earlier entries would have no answer for it. The name, definition and guidance stay editable.',
+          confirmLabel: 'Publish',
+          cancelLabel: 'Not yet',
+          variant: 'default',
+        },
+        () => {
+          if (!save().ok || !id) return;
+          const r = publishMeasure(id);
+          if (r.ok) alert('success', 'Measure published. It is now collecting entries.');
+          else alert('danger', 'Publishing needs a few more fields — see what is missing below.', r.errors);
+          load();
+        },
+      ),
+    );
+
+    $('[data-retire]').addEventListener('click', () =>
+      ask(
+        {
+          heading: 'Retire this measure',
+          message: 'Retiring stops it being asked. Everything already reported against it stays exactly where it is, and every past report still totals the same.',
+          confirmLabel: 'Retire',
+          cancelLabel: 'Cancel',
+          variant: 'warning',
+        },
+        () => {
+          if (id && retireMeasure(id).ok) alert('success', 'Measure retired.');
+          load();
+        },
+      ),
+    );
+
+    $('[data-delete]').addEventListener('click', () =>
+      ask(
+        {
+          heading: 'Delete this draft',
+          message: 'Nothing has been reported against it, so nothing is lost. This cannot be undone.',
+          confirmLabel: 'Delete',
+          cancelLabel: 'Cancel',
+          variant: 'danger',
+        },
+        () => {
+          if (!id) return;
+          const r = deleteMeasure(id);
+          if (r.ok) location.href = root.dataset.catalogHref ?? '/';
+          else alert('danger', r.errors[0]);
+        },
+      ),
+    );
+
+    $('[data-add-category]').addEventListener('click', () => {
+      addCategoryRow({ name: '', options: [{ name: UNSPECIFIED }] });
+      paint();
+      (list.lastElementChild?.querySelector('[data-category-name]') as HTMLElement | null)?.focus();
+    });
+
+    // The draft: fills the form, saves nothing. ~1s stands in for Claude's ~20s.
+    const draftButton = $('[data-draft]');
+    const draftStatus = $('[data-draft-status]');
+    draftButton.addEventListener('click', () => {
+      const text = String(claim.value ?? '').trim();
+      if (!text) {
+        draftStatus.textContent = 'Tell us what you need to be able to report, and we will draft the measure.';
+        return;
+      }
+      draftButton.textContent = 'Drafting…';
+      draftButton.setAttribute('disabled', '');
+      draftStatus.textContent = 'Claude is drafting your measure — this takes about twenty seconds.';
+      setTimeout(() => {
+        const d = draftFromClaim(text);
+        const editableStructure = !id || getMeasure(id)?.statusId === 1;
+        fill({
+          name: d.name,
+          definition: d.definition,
+          reporterGuidance: d.reporterGuidance,
+          claimText: text,
+          themeId: d.themeId,
+          unitId: editableStructure ? d.unitId : numberOrNull(unit.value),
+          countingRuleId: editableStructure ? d.countingRuleId : (numberOrNull(rule.value) as 1 | 2 | null),
+          categories: editableStructure ? d.categories.map((c) => ({ name: c.name, options: c.options.map((n) => ({ name: n })) })) : readCategories(),
+        });
+        warnings = d.warnings;
+        payoffOverride = d.payoff;
+        draftButton.textContent = 'Draft it';
+        draftButton.removeAttribute('disabled');
+        draftStatus.textContent = '';
+        paint();
+      }, 1100);
+    });
+
+    // Any edit repaints the preview and the bar; a typed edit drops the
+    // draft's own payoff line, which described the draft, not this.
+    root.addEventListener('change', (ev) => {
+      if ((ev.target as HTMLElement).closest('[data-claim]')) return;
+      payoffOverride = null;
+      paint();
+    });
+
+    function load(): void {
+      const m = id ? getMeasure(id) : null;
+      if (id && !m) {
+        alert('danger', 'That measure does not exist.');
+        id = null;
+      }
+      if (m) {
+        fill({
+          name: m.name,
+          definition: m.definition,
+          reporterGuidance: m.reporterGuidance,
+          claimText: m.claimText,
+          themeId: m.themeId,
+          unitId: m.unitId,
+          countingRuleId: m.countingRuleId,
+          categories: m.categories.map((c) => ({ id: c.id, name: c.name, options: c.options.map((o) => ({ id: o.id, name: o.name })) })),
+        });
+      }
+      paint();
+    }
+
+    Promise.all(['esa-text-field', 'esa-textarea', 'esa-select', 'esa-input-tag'].map((t) => customElements.whenDefined(t))).then(load);
+    document.addEventListener(PM2_CHANGE_EVENT, () => paint());
+  });
+</script>

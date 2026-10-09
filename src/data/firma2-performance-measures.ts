@@ -63,7 +63,16 @@ export interface SubcategorySchema {
    * system resolves, not a blank one.
    */
   options: string[];
+  /**
+   * Options retired on a published measure: kept in `options` so past entries
+   * still read, never offered for a new entry. User schemas only.
+   */
+  retiredOptions?: string[];
 }
+
+/** The options a NEW entry may pick: every option but the retired ones. */
+export const liveOptions = (schema: Pick<SubcategorySchema, 'options' | 'retiredOptions'>): string[] =>
+  schema.options.filter((o) => !schema.retiredOptions?.includes(o));
 
 export const USER_SCHEMAS: SubcategorySchema[] = [
   {
@@ -406,6 +415,14 @@ export interface PerformanceMeasureDefinition {
    * header. System schemas mix in freely; their origin says who answers.
    */
   subcategorySchemaIds: string[];
+  /**
+   * Subcategories RETIRED on this measure — a subset of subcategorySchemaIds.
+   * A published measure cannot drop a subcategory (its filed entries answer
+   * it), so it retires one instead: reporters stop being asked it, the
+   * entries already filed keep their answers, and it can be restored. Per
+   * measure: the shared list itself is untouched for every other measure.
+   */
+  retiredSchemaIds?: string[];
   /** Instruction shown at the moment a value is entered. */
   reporterGuidance: string;
   status: MeasureStatus;
@@ -751,17 +768,23 @@ export const schemasFor = (
     .map((id) => getSchema(id, extra))
     .filter((s): s is SubcategorySchema => Boolean(s));
 
-/** The schemas a reporter answers by hand. The measure's real cost. */
+/** The subcategories a NEW entry is divided by: every one but the retired. */
+export const askedSchemaIds = (m: Pick<PerformanceMeasureDefinition, 'subcategorySchemaIds' | 'retiredSchemaIds'>): string[] =>
+  m.subcategorySchemaIds.filter((id) => !m.retiredSchemaIds?.includes(id));
+
+/** The schemas a reporter answers by hand. The measure's real cost — retired ones cost nothing. */
 export const reportedSchemas = (
   m: PerformanceMeasureDefinition,
   extra: SubcategorySchema[] = [],
-): SubcategorySchema[] => schemasFor(m, extra).filter((s) => s.origin !== 'system');
+): SubcategorySchema[] =>
+  schemasFor(m, extra).filter((s) => s.origin !== 'system' && !m.retiredSchemaIds?.includes(s.id));
 
 /** The schemas the system fills in. The measure's leverage. */
 export const systemSchemas = (
   m: PerformanceMeasureDefinition,
   extra: SubcategorySchema[] = [],
-): SubcategorySchema[] => schemasFor(m, extra).filter((s) => s.origin === 'system');
+): SubcategorySchema[] =>
+  schemasFor(m, extra).filter((s) => s.origin === 'system' && !m.retiredSchemaIds?.includes(s.id));
 
 /** The measures whose entries a schema divides. Backs the "Used by" column. */
 export const measuresUsingSchema = (

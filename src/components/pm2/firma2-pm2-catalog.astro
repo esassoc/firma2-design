@@ -1,0 +1,105 @@
+---
+// firma2-pm2-catalog — PM 2's measure list: projectfirma2's
+// performance-measure-list page, column for column. One searchable table of
+// every measure the program has defined, Drafts and Retired included (the
+// branch lists them, it does not hide them), each name the door to its setup
+// page.
+//
+// COLUMNS ARE THE BRANCH'S: Measure, Theme, Unit, Sums, Status, Categories,
+// Entries. "Sums" is the counting rule read as a yes/no, "—" until one is
+// chosen. No Type, no Classifications, no filter chips: the branch has neither
+// concept on a measure, and adding them here would make the comparison lie.
+//
+// ROWS COME FROM pm2-store, not the build: a measure made or renamed on its
+// page must show here on the way back, so the payload is filled client-side
+// before wireDataGrid parses it.
+//
+// bcn-lego-checked: the grid is the spoke's shared ag-grid chrome
+// (grid-chrome.ts + firma2-data-grid-chrome.css), the search is esa-text-field,
+// the status cell clones a server-rendered esa-pill per state, and the empty
+// catalog is esa-empty-state. Nothing bespoke. Beacon is not cloned here.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { withBase } from '../../lib/base';
+import { PM2_STATUS_TONE, PM2_STATUSES } from '../../data/firma2-pm2';
+---
+<section class="firma2-pm2-catalog stack" data-gap="md" data-base={withBase('/')}>
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__search">
+      <esa-text-field label="Search measures" placeholder="Name, theme, or unit" size="md" data-pm2-search></esa-text-field>
+    </div>
+    <EsaButton variant="chrome" iconOnly icon="download" label="Download CSV" size="sm" data-pm2-csv />
+  </div>
+
+  <div class="firma2-data-grid__grid" data-pm2-grid></div>
+
+  <div data-pm2-empty hidden>
+    <EsaEmptyState size="md" title="No measures yet" description="Add the first thing your program needs to be able to report." />
+  </div>
+
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-pm2-count></span>
+  </footer>
+
+  <template data-pm2-pills>
+    {PM2_STATUSES.map((s) => (
+      <span data-status={s.name}><EsaPill label={s.name} variant={PM2_STATUS_TONE[s.name]} size="sm" removable={false} /></span>
+    ))}
+  </template>
+  <script type="application/json" data-pm2-data>[]</script>
+</section>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import { catalogRows } from '../../lib/pm2-store';
+  import { PM2_ROUTES } from '../../data/firma2-pm2';
+  import type { Pm2CatalogRow } from '../../lib/pm2-store';
+
+  document.querySelectorAll<HTMLElement>('.firma2-pm2-catalog').forEach((root) => {
+    const base = root.dataset.base ?? '/';
+    const pills = new Map<string, string>();
+    root.querySelector<HTMLTemplateElement>('[data-pm2-pills]')?.content
+      .querySelectorAll<HTMLElement>('[data-status]')
+      .forEach((el) => pills.set(el.dataset.status ?? '', el.innerHTML));
+
+    const rows = catalogRows();
+    const payload = root.querySelector<HTMLElement>('[data-pm2-data]');
+    if (payload) payload.textContent = JSON.stringify(rows);
+    if (rows.length === 0) {
+      root.querySelector<HTMLElement>('[data-pm2-empty]')?.removeAttribute('hidden');
+      root.querySelector<HTMLElement>('[data-pm2-grid]')?.setAttribute('hidden', '');
+    }
+
+    wireDataGrid<Pm2CatalogRow>({
+      root,
+      gridSelector: '[data-pm2-grid]',
+      dataSelector: '[data-pm2-data]',
+      searchSelector: '[data-pm2-search]',
+      countSelector: '[data-pm2-count]',
+      csvSelector: '[data-pm2-csv]',
+      countNoun: 'measures',
+      csvFileName: 'performance-measures',
+      suppressCellFocus: true,
+      columnDefs: [
+        {
+          headerName: 'Measure', field: 'name', flex: 2, minWidth: 220, cellClass: 'firma2-grid-name',
+          getQuickFilterText: (p) => `${p.data?.name} ${p.data?.theme} ${p.data?.unit}`,
+          cellRenderer: (p: { data?: Pm2CatalogRow }) =>
+            p.data ? `<a class="firma2-grid-link" href="${esc(base + PM2_ROUTES.measure(p.data.id).replace(/^\//, ''))}">${esc(p.data.name)}</a>` : '',
+        },
+        { headerName: 'Theme', field: 'theme', width: 190 },
+        { headerName: 'Unit', field: 'unit', width: 150 },
+        { headerName: 'Sums', field: 'sums', width: 100 },
+        {
+          headerName: 'Status', field: 'status', width: 130,
+          cellRenderer: (p: { value?: string }) => pills.get(p.value ?? '') ?? esc(p.value ?? ''),
+        },
+        { headerName: 'Categories', field: 'categories', width: 120, type: 'numericColumn' },
+        { headerName: 'Entries', field: 'entries', width: 110, type: 'numericColumn' },
+      ],
+    });
+  });
+</script>

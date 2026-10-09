@@ -1,0 +1,657 @@
+---
+// firma2-measure-editor — one performance measure's settings page body: its
+// status, what it asks of reporters, its definition, what is counted, and the
+// subcategory schemas that divide its entries, then the reporter's form
+// derived live from all of it.
+//
+// THE PREVIEW IS IN A SIDE PANEL (user, 2026-10-08). The burden and the
+// reporter's entry form are firma2-measure-preview, which the page docks in a
+// firma2-side-panel beside this form; this script paints them wherever they
+// sit, by their data hooks. They were the last two sections of a one-column
+// page for a day — a schema edit's cost a scroll away from the edit.
+//
+// A SETTINGS PAGE, NOT A SHEET (2026-10-08). This was firma2-measure-sidesheet,
+// an esa-side-dialog over the catalog. Measure setup moved to Workspace
+// settings › Projects, and there every record — a project type, a
+// classification, a tag, an organization — opens on its own page from a link
+// in the list. The sheet's content survives whole; its container does not.
+//
+// ALWAYS SAVED, like every settings screen: each field writes when the reader
+// leaves it (the `change` boundary), so there is no Save or Cancel. A schema
+// row writes once it is a real list — named, with two options or more — and
+// says what it still needs until then; a blank new row is simply not saved.
+//
+// THE SETTINGS RECORD ANATOMY (product brief, "Settings detail pages: state
+// and acts up top, delete at the bottom"):
+// state and lifecycle in the page header — firma2-measure-status under the
+// title, firma2-measure-actions beside it, both painted from here — then
+// Details first, the record's own sections, the danger zone last. Status was
+// a body section with its buttons until 2026-10-08; no sibling did that.
+//
+// SCHEMAS ARE EDITED WHERE THEY LAY, set up like the Tags board (user,
+// 2026-10-08): firma2-schema-board — each subcategory a heading row, its
+// options rows under it you type into, add to with Enter, and drag within or
+// between subcategories. It was a card per schema with a chip editor until
+// then. System and imported schemas render the same rows read-only; editing
+// "Watershed" by hand is exactly the copy-drift failure the shared-schema
+// model exists to prevent.
+//
+// EVERY ROW SAYS WHAT IT COSTS TO EDIT IT — the origin marker: Automatic ·
+// Standard · Shared · Only here · New, over one line naming the consequence.
+// Renaming a SHARED list silently rewrites what other measures report; one
+// used only here costs nothing; a system list cannot be renamed at all.
+//
+// ADDING ONE IS TWO ACTS: the picker offers only schemas that exist, grouped
+// by who maintains them; New schema beside it invents one.
+//
+// PERSISTENCE is the localStorage draft store (src/lib/measure-draft.ts) for
+// the measure and the local schema store (src/lib/schema-draft.ts) for edited
+// schemas — browser-local only, and the UI never pretends otherwise.
+//
+// WHICH MEASURE: `slug` for a seeded one (its static route); on the draft
+// route, `?slug=`. With neither, this is a blank new measure: a local slug is
+// minted into the URL, and nothing is stored until a field differs from blank.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import Firma2SchemaBoard from './firma2-schema-board.astro';
+import { seededMeasureHistory } from '../../data/firma2-measure-history';
+
+interface Props {
+  /** The seeded measure's slug. Omitted on the draft route, where `?slug=` names it. */
+  slug?: string;
+}
+
+const { slug } = Astro.props;
+---
+<!-- bcn-lego-checked: every control is a lego (esa-text-field, esa-select,
+     esa-textarea, esa-button, esa-alert-box, esa-confirm-dialog) or a spoke
+     component (firma2-schema-board); sections are firma2-rail-section, the
+     settings section. Beacon is not cloned on this machine. -->
+<div class="firma2-measure-editor stack" data-gap="2xl" data-slug={slug} data-history={JSON.stringify(seededMeasureHistory())}>
+  <div class="firma2-measure-editor__form stack" data-gap="2xl" data-editor-form>
+    <!-- The drafting call's warnings, carried here from the drafting page. -->
+    <div data-editor-warnings hidden>
+      <EsaAlertBox variant="warning" title="Check these before you publish">
+        <ul class="firma2-measure-editor__warnings stack" data-gap="xs" data-editor-warning-list></ul>
+      </EsaAlertBox>
+    </div>
+
+    <Firma2RailSection title="Details">
+      <div class="stack" data-gap="md">
+        <esa-text-field data-field="name" label="Name" size="md" placeholder="e.g. Acres of riparian habitat restored"></esa-text-field>
+        <esa-select
+          data-field="kind"
+          label="Type"
+          size="md"
+          help-text="Outputs record work a project did. Outcomes record a condition a monitoring effort measured."
+        ></esa-select>
+        <!-- A multi-select whose picks render as chips: usually one or two
+             picks, and chips are this editor's language for "a set of named
+             things". -->
+        <esa-select
+          data-field="classifications"
+          label="Classifications"
+          size="md"
+          multiple
+          chip-mode
+          placeholder="Pick classifications"
+        ></esa-select>
+        <esa-textarea data-field="definition" label="Definition" size="md" auto-resize placeholder="What counts toward this measure, and what does not."></esa-textarea>
+        <esa-textarea data-field="reporterGuidance" label="Reporter guidance" size="md" auto-resize placeholder="Shown at the moment a value is entered."></esa-textarea>
+      </div>
+    </Firma2RailSection>
+
+    <Firma2RailSection title="What is counted">
+      <div class="stack" data-gap="md">
+        <p class="firma2-measure-editor__note typography-body-sm" data-structure-note>Hard to undo: these are fixed once the measure is published.</p>
+        <esa-select data-field="unit" label="Unit" size="md" placeholder="Pick a unit"></esa-select>
+        <esa-select data-field="countingRule" label="Counting rule" size="md" placeholder="Pick a counting rule"></esa-select>
+        <esa-select data-field="decimalPlaces" label="Decimal places" size="md"></esa-select>
+      </div>
+    </Firma2RailSection>
+
+    <Firma2RailSection title="Subcategory schemas">
+      <div class="stack" data-gap="md">
+        <!-- The one policy sentence this block owes the reader: what these
+             are for, and that none is demanded. -->
+        <p class="firma2-measure-editor__note typography-body-sm">Option lists this measure's entries are divided by. None are required.</p>
+        <p class="firma2-measure-editor__note typography-body-sm" data-structure-lock hidden>
+          Subcategories can’t be added while published — earlier entries would have no answer. Retire one, or an option, to stop asking it; past entries keep their answers.
+        </p>
+        <Firma2SchemaBoard />
+        <!-- Reuse on the left, invent on the right. -->
+        <div class="firma2-measure-editor__add cluster" data-gap="sm">
+          <esa-select data-add-schema label="Add an existing schema" size="md" placeholder="Pick a schema"></esa-select>
+          <EsaButton variant="secondary" appearance="outline" size="md" data-new-schema>New schema</EsaButton>
+        </div>
+      </div>
+    </Firma2RailSection>
+  </div>
+
+  <!-- REDRAFT FROM A CLAIM (team 6): the drafting call from the New measure
+       page, on a measure that exists. Last of the record's own sections: it
+       is a tool that rewrites the fields above, not a field. On a published
+       measure it rewrites only the words; the counted structure is fixed. -->
+  <Firma2RailSection title="Redraft from a claim">
+    <div class="stack" data-gap="sm" data-claim-tool>
+      <esa-textarea data-claim-text label="What do you need to tell your funder?" size="md" rows="2" placeholder="I need to tell my funder how many acres we plant each year, and by what method."></esa-textarea>
+      <div class="cluster" data-gap="sm">
+        <EsaButton variant="secondary" size="md" data-claim-draft>Redraft the measure</EsaButton>
+        <span class="typography-body-sm" data-claim-result></span>
+      </div>
+    </div>
+  </Firma2RailSection>
+
+  <esa-confirm-dialog class="firma2-measure-editor__publish" heading="Publish this measure?" confirm-label="Publish" cancel-label="Not yet"></esa-confirm-dialog>
+
+</div>
+
+<style>
+  .firma2-measure-editor__note {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-measure-editor__status-pill {
+    line-height: 0;
+  }
+
+  .firma2-measure-editor__warnings {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+  }
+
+  /* Picker and button on one baseline: the select is taller by its label. */
+  .firma2-measure-editor__add {
+    --align: flex-end;
+  }
+
+  .firma2-measure-editor__add > :global(esa-select) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .firma2-measure-editor__add > :global(.esa-button) {
+    flex: none;
+  }
+
+  /* Published: the structure is fixed, so its add and remove controls go. */
+  .firma2-measure-editor[data-structure-locked] .firma2-measure-editor__add {
+    display: none !important;
+  }
+
+  /* MAKE `hidden` MEAN HIDDEN: several toggled things carry an author display
+     rule (esa-button's native, the layout utilities) that outranks the UA's
+     [hidden] — see the esa-hidden-attribute trap. */
+  .firma2-measure-editor :global([hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { draftFromClaim } from '../../data/firma2-measure-drafting';
+  import { clearMeasureWarnings, readMeasureWarnings } from '../../lib/measure-notes';
+  import { measureFiled } from '../../lib/measure-history';
+  import { paintBurden, reporterBurden } from '../../lib/reporter-burden';
+  import { retitle } from '../../lib/taxonomy-record';
+  import type { MeasureHistory } from '../../data/firma2-measure-history';
+  import {
+    CLASSIFICATION_NAMES,
+    DECIMALS_LABELS,
+    MEASURE_KINDS,
+    UNITS,
+    countingRulesFor,
+    measureDisplayName,
+    measureKind,
+    measures,
+    measuresUsingSchema,
+    outstandingFields,
+  } from '../../data/firma2-performance-measures';
+  import type {
+    CountingRule,
+    MeasureKind,
+    MeasureStatus,
+    MeasureUnit,
+    PerformanceMeasureDefinition,
+    SchemaOrigin,
+    SubcategorySchema,
+  } from '../../data/firma2-performance-measures';
+  import {
+    draftedSlugs,
+    emitMeasureChange,
+    isLocalMeasureSlug,
+    mergeDraft,
+    nextLocalMeasureSlug,
+    persistMeasure,
+    readDraft,
+    withDraft,
+  } from '../../lib/measure-draft';
+  import { allSchemas, emitSchemaChange, nextLocalSchemaId, writeLocalSchema } from '../../lib/schema-draft';
+  import { mountSchemaBoard } from '../../lib/schema-board';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; disabled?: boolean };
+
+  /** The picker's groups: a header is a DISABLED option, which esa-select skips. */
+  const GROUPS: ReadonlyArray<{ origin: SchemaOrigin; header: string }> = [
+    { origin: 'user', header: 'Your schemas' },
+    { origin: 'imported', header: 'From a standard' },
+    { origin: 'system', header: 'Filled in automatically' },
+  ];
+
+  const NOTE_SYSTEM = 'Filled in by the system — reporters are never asked.';
+  const NOTE_ONLY = 'Used only by this measure — edits affect nothing else.';
+  const NOTE_NEW = 'Saves to your schemas once it has a name and two options.';
+  const noteShared = (n: number): string =>
+    `Used by ${n} other measure${n === 1 ? '' : 's'} — edits here change all of them.`;
+  const importedNote = (standard?: string): string =>
+    `Mirrors ${standard ?? 'an external standard'} — its options change with the standard, not here.`;
+
+  /** What each status means for collection — the line beside its pill. */
+  const STATUS_LINE: Record<MeasureStatus, string> = {
+    Draft: 'Ready to publish.',
+    Active: 'Reporters are filing values',
+    Retired: 'Keeps its past values and takes no new ones.',
+  };
+
+  function initEditor(root: HTMLElement) {
+    const form = root.querySelector<HTMLElement>('[data-editor-form]');
+    const boardRoot = root.querySelector<HTMLElement>('[data-schema-board]');
+    const addPicker = root.querySelector<Control>('[data-add-schema]');
+    if (!form || !boardRoot || !addPicker) return;
+
+    // ---- which measure ----------------------------------------------------
+    // A blank new measure gets its local slug in the URL straight away, so a
+    // reload lands on the same record — it is stored on its first real edit.
+    const params = new URLSearchParams(window.location.search);
+    let slug = root.dataset.slug || params.get('slug') || '';
+    if (!slug) {
+      slug = nextLocalMeasureSlug();
+      params.set('slug', slug);
+      history.replaceState(null, '', `${window.location.pathname}?${params}`);
+    }
+    let status: MeasureStatus = 'Draft';
+
+    const field = (name: string): Control | null => form.querySelector<Control>(`[data-field="${name}"]`);
+    const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+    // ---- options that never change --------------------------------------
+    const kindField = field('kind');
+    const unitField = field('unit');
+    const ruleField = field('countingRule');
+    const decimalsField = field('decimalPlaces');
+    if (kindField) kindField.options = MEASURE_KINDS.map((k) => ({ label: k.name, value: k.id }));
+    const classField = field('classifications');
+    if (classField) classField.options = CLASSIFICATION_NAMES.map((c) => ({ label: c, value: c }));
+    if (unitField) unitField.options = UNITS.map((u) => ({ label: u, value: u }));
+    if (decimalsField) decimalsField.options = DECIMALS_LABELS.map((label, i) => ({ label, value: String(i) }));
+
+    const schemaById = (id: string): SubcategorySchema | undefined => allSchemas().find((s) => s.id === id);
+
+    /** Every measure as it stands — the same reader the catalog uses. */
+    const currentMeasures = (): PerformanceMeasureDefinition[] => [
+      ...measures.map((seed) => mergeDraft(seed, readDraft(seed.slug))),
+      ...draftedSlugs().filter(isLocalMeasureSlug).map((s) => withDraft(s)),
+    ];
+
+    const otherUsers = (id: string): number =>
+      measuresUsingSchema(id, currentMeasures()).filter((m) => m.slug !== slug).length;
+
+    const markerFor = (schema: SubcategorySchema | null): { label: string; note: string } => {
+      if (!schema) return { label: 'New', note: NOTE_NEW };
+      if (schema.origin === 'system') return { label: 'Automatic', note: schema.description ?? NOTE_SYSTEM };
+      if (schema.origin === 'imported') return { label: 'Standard', note: importedNote(schema.standard) };
+      const n = otherUsers(schema.id);
+      return n > 0 ? { label: 'Shared', note: noteShared(n) } : { label: 'Only here', note: NOTE_ONLY };
+    };
+
+    // The subcategories: headings and option rows, the Tags board's pattern.
+    // Every edit, add, move or removal there lands here as a save.
+    const board = mountSchemaBoard(boardRoot, {
+      marker: markerFor,
+      onChange: () => {
+        refreshPicker();
+        paintPreview();
+        save();
+      },
+    });
+
+    /** Ids of the saved subcategories, in order — one still short of a list is left out. */
+    const attachedIds = (): string[] => board.ids();
+
+    /** The record as the form currently states it. */
+    const readForm = (): PerformanceMeasureDefinition => {
+      const unit = str(unitField?.value);
+      const rule = str(ruleField?.value);
+      const decimalsRaw = Number(str(decimalsField?.value));
+      const classes = classField?.value;
+      return {
+        slug,
+        kind: (str(kindField?.value) || 'output') as MeasureKind,
+        name: str(field('name')?.value),
+        definition: str(field('definition')?.value),
+        classifications: (Array.isArray(classes) ? classes : []) as PerformanceMeasureDefinition['classifications'],
+        unit: unit ? (unit as MeasureUnit) : undefined,
+        decimalPlaces: Number.isInteger(decimalsRaw) ? decimalsRaw : 0,
+        countingRule: rule ? (rule as CountingRule) : undefined,
+        subcategorySchemaIds: attachedIds(),
+        ...(board.retired().length ? { retiredSchemaIds: board.retired() } : {}),
+        reporterGuidance: str(field('reporterGuidance')?.value),
+        status,
+      };
+    };
+
+    /** Counting rules legal for the current type; a rule from the other type is cleared. */
+    const syncRuleOptions = () => {
+      if (!ruleField) return;
+      const record = readForm();
+      const legal = countingRulesFor(record.kind);
+      ruleField.options = legal.map((r) => ({ label: r.name, value: r.id }));
+      if (record.countingRule && !legal.some((r) => r.id === record.countingRule)) ruleField.value = '';
+    };
+
+    // ---- the reporter's form ----------------------------------------------
+    // THE ANATOMY MIRRORS THE REAL ENTRY SHEET (firma2-project-measures' record
+    // flow: period, figure, the measure's questions, the automatic splits
+    // named). Real legos, inert card; no example value is invented.
+    const paintPreview = () => {
+      // The preview lives in the page's side panel, outside this editor.
+      const preview = document.querySelector<HTMLElement>('[data-measure-preview]') ?? root;
+      const card = preview.querySelector<HTMLElement>('[data-preview-card]');
+      if (!card) return;
+      const record = readForm();
+      const rowData = board.lists();
+      const asked = rowData.filter((r) => r.origin !== 'system' && r.name);
+      const free = rowData.filter((r) => r.origin === 'system' && r.name);
+
+      card.replaceChildren();
+      const title = document.createElement('h3');
+      title.className = 'firma2-measure-editor__preview-title typography-label-md';
+      title.textContent = measureDisplayName(record);
+      card.append(title);
+
+      const filedBy = document.createElement('p');
+      filedBy.className = 'firma2-measure-editor__preview-meta typography-meta';
+      filedBy.textContent = `Filed by ${measureKind(record.kind).reportedBy}.`;
+      card.append(filedBy);
+
+      const period = document.createElement('esa-select') as Control;
+      period.setAttribute('label', 'Reporting year');
+      period.setAttribute('size', 'md');
+      period.setAttribute('placeholder', 'Pick a year');
+      period.options = ['2025', '2024', '2023'].map((y) => ({ label: y, value: y }));
+      card.append(period);
+
+      const amount = document.createElement('esa-text-field');
+      amount.setAttribute('label', 'Amount');
+      amount.setAttribute('size', 'md');
+      amount.setAttribute('inputmode', 'decimal');
+      amount.setAttribute('required', '');
+      if (record.unit) amount.setAttribute('suffix', record.unit);
+      const guidance = record.reporterGuidance.trim();
+      if (guidance) amount.setAttribute('help-text', guidance);
+      card.append(amount);
+
+      // One dropdown per subcategory the reporter answers by hand. THE FIRST
+      // TAKES SEVERAL, as the real entry sheet's does: two or more picks swap
+      // the one Amount for an amount per pick.
+      const split = document.createElement('div');
+      split.className = 'stack';
+      split.dataset.gap = 'md';
+      asked.forEach((q, i) => {
+        const select = document.createElement('esa-select') as Control & { multiple?: boolean };
+        select.setAttribute('label', q.name);
+        select.setAttribute('size', 'md');
+        select.setAttribute('placeholder', 'Optional');
+        select.options = q.options.map((o) => ({ label: o, value: o }));
+        if (i === 0) {
+          select.multiple = true;
+          select.setAttribute('help-text', 'Pick several to enter an amount for each.');
+          select.addEventListener('change', (event) => {
+            event.stopPropagation();
+            const picked = Array.isArray(select.value) ? (select.value as string[]) : [];
+            amount.hidden = picked.length >= 2;
+            split.replaceChildren(
+              ...(picked.length >= 2
+                ? picked.map((option) => {
+                    const f = document.createElement('esa-text-field');
+                    f.setAttribute('label', option);
+                    f.setAttribute('size', 'md');
+                    f.setAttribute('inputmode', 'decimal');
+                    if (record.unit) f.setAttribute('suffix', record.unit);
+                    return f;
+                  })
+                : []),
+            );
+          });
+        }
+        card.insertBefore(select, amount);
+      });
+      card.append(split);
+
+      if (free.length > 0) {
+        const autos = document.createElement('p');
+        autos.className = 'firma2-measure-editor__preview-meta typography-meta';
+        autos.textContent = `Added automatically: ${free.map((f) => f.name).join(', ')}.`;
+        card.append(autos);
+      }
+
+      const payoff = preview.querySelector<HTMLElement>('[data-preview-payoff]');
+      if (payoff) {
+        const by = asked.length ? `, split by ${asked.map((q) => q.name.toLowerCase()).join(' and ')}` : '';
+        const sums = !record.countingRule || ['sum', 'spatial-union', 'distinct-places'].includes(record.countingRule);
+        payoff.textContent = record.countingRule
+          ? sums
+            ? `In return: a program total${by}, for any year and any project.`
+            : `In return: the latest reading at every place${by}. No program total, because readings do not add up.`
+          : 'In return: pick a counting rule to see what this measure gives back.';
+      }
+
+      paintBurden(preview.querySelector<HTMLElement>('[data-reporter-burden]'), reporterBurden(asked.length));
+    };
+
+    // ---- the schema picker and rows ----------------------------------------
+    const refreshPicker = () => {
+      const attached = new Set(attachedIds());
+      const free = allSchemas().filter((s) => !attached.has(s.id));
+      const options: { label: string; value: string; disabled?: boolean }[] = [];
+      for (const group of GROUPS) {
+        const mine = free.filter((s) => s.origin === group.origin);
+        if (mine.length === 0) continue;
+        options.push({ label: group.header, value: `__group-${group.origin}`, disabled: true });
+        options.push(...mine.map((s) => ({ label: s.name, value: s.id })));
+      }
+      addPicker.options = options;
+      addPicker.value = '';
+    };
+
+    /** The h1: the name, or "New measure" until a blank local one is named. */
+    const titleFor = (record: PerformanceMeasureDefinition): string =>
+      isLocalMeasureSlug(record.slug) && !record.name.trim() ? 'New measure' : measureDisplayName(record);
+
+    // ---- save: every change, no Save button --------------------------------
+    const save = () => {
+      const record = readForm();
+      persistMeasure(record);
+      emitMeasureChange(record);
+      paintStatus();
+      retitle(titleFor(record));
+    };
+
+    // ---- status ------------------------------------------------------------
+    const paintStatus = () => {
+      const record = readForm();
+      const missing = outstandingFields(record).map((f) => f.label.toLowerCase());
+      // THE HEADER'S STATE AND LIFECYCLE (firma2-measure-status / -actions,
+      // in the page header's slots — outside this component, so `document`).
+      document.querySelectorAll<HTMLElement>('[data-measure-status] [data-status-pill]').forEach((pill) => (pill.hidden = pill.dataset.statusPill !== status));
+      const isDraft = status === 'Draft';
+      const filed = measureFiled(record, filedHistory);
+      const note = document.querySelector<HTMLElement>('[data-measure-status] [data-status-note]');
+      if (note) {
+        note.textContent =
+          isDraft && missing.length > 0
+            ? `Needed to publish: ${missing.join(', ')}.`
+            : status === 'Active' && filed.entries > 0
+              ? `${STATUS_LINE.Active} · ${filed.entries.toLocaleString('en-US')} figures from ${filed.projects} ${filed.projects === 1 ? 'project' : 'projects'}.`
+              : status === 'Active'
+                ? `${STATUS_LINE.Active}.`
+                : STATUS_LINE[status];
+      }
+      const actions = document.querySelector<HTMLElement>('[data-measure-actions]');
+      if (actions) {
+        actions.querySelector<HTMLElement>('[data-publish-wrap]')!.hidden = !isDraft;
+        // Inert, not hidden, while incomplete: the note beside the pill says why.
+        const publish = actions.querySelector<HTMLElement>('[data-editor-publish]');
+        publish?.toggleAttribute('disabled', missing.length > 0);
+        publish?.closest('.esa-button')?.classList.toggle('esa-button--disabled', missing.length > 0);
+        actions.querySelector<HTMLElement>('[data-retire-wrap]')!.hidden = status !== 'Active';
+        actions.querySelector<HTMLElement>('[data-reactivate-wrap]')!.hidden = status !== 'Retired' || missing.length > 0;
+      }
+
+      // Published: the counted structure is fixed.
+      const locked = status !== 'Draft';
+      root.toggleAttribute('data-structure-locked', locked);
+      [unitField, ruleField, kindField].forEach((f) => f && (f.disabled = locked));
+      root.querySelector<HTMLElement>('[data-structure-lock]')!.hidden = !locked;
+      board.setLocked(locked);
+    };
+
+    const filedHistory = JSON.parse(root.dataset.history ?? '{}') as MeasureHistory;
+
+    const setStatus = (next: MeasureStatus) => {
+      status = next;
+      save();
+    };
+
+    // ---- paint once --------------------------------------------------------
+    const paint = (record: PerformanceMeasureDefinition) => {
+      status = record.status;
+      field('name')!.value = record.name;
+      kindField!.value = record.kind;
+      classField!.value = [...record.classifications];
+      field('definition')!.value = record.definition;
+      field('reporterGuidance')!.value = record.reporterGuidance;
+      unitField!.value = record.unit ?? '';
+      decimalsField!.value = String(record.decimalPlaces);
+      syncRuleOptions();
+      ruleField!.value = record.countingRule ?? '';
+
+      board.setLocked(record.status !== 'Draft');
+      board.clear();
+      for (const id of record.subcategorySchemaIds) {
+        const schema = schemaById(id);
+        if (schema) board.add(schema, !!record.retiredSchemaIds?.includes(id));
+      }
+      refreshPicker();
+      paintPreview();
+      paintStatus();
+      retitle(titleFor(record));
+
+      const warnings = readMeasureWarnings(slug);
+      root.querySelector<HTMLElement>('[data-editor-warnings]')!.hidden = warnings.length === 0;
+      root.querySelector<HTMLElement>('[data-editor-warning-list]')!.innerHTML = warnings
+        .map((w) => `<li class="typography-body-sm">${w.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)}</li>`)
+        .join('');
+      // A blank measure starts where its first answer goes.
+      if (!record.name) (field('name') as HTMLElement & { focus: () => void }).focus();
+    };
+
+    // Values are assigned only after define — a `.value` set on a not-yet-
+    // upgraded element shadows the lego's setter for good.
+    Promise.all(['esa-text-field', 'esa-textarea', 'esa-select'].map((t) => customElements.whenDefined(t))).then(() =>
+      paint(withDraft(slug)),
+    );
+
+    // ---- live edits ----------------------------------------------------------
+    form.addEventListener('change', (event) => {
+      const target = event.target as HTMLElement;
+      // The board saves its own edits through onChange.
+      if (target.closest('[data-add-schema], [data-claim-text], [data-schema-board]')) return;
+      if (target === kindField) {
+        syncRuleOptions();
+      }
+      paintPreview();
+      save();
+    });
+
+    addPicker.addEventListener('change', () => {
+      const picked = str(addPicker.value);
+      if (!picked || picked.startsWith('__group-')) return;
+      const schema = schemaById(picked);
+      if (schema) board.add(schema);
+      refreshPicker();
+      paintPreview();
+      save();
+    });
+
+    // The other act: a blank subcategory, its name field focused where it lands.
+    root.querySelector('[data-new-schema]')?.addEventListener('click', () => board.add(null));
+
+    // ---- publish, retire, reactivate (team 6) ------------------------------
+    // Publishing names its consequence before it happens.
+    const publishDialog = root.querySelector<Control & { show: () => void; message?: string }>('.firma2-measure-editor__publish');
+    document.querySelector('[data-measure-actions] [data-editor-publish]')?.addEventListener('click', () => {
+      if (!publishDialog) return setStatus('Active');
+      publishDialog.message =
+        'Reporters start filing values. The unit and counting rule become fixed, and subcategories can’t be added. Subcategories and options can still be retired.';
+      publishDialog.show();
+    });
+    publishDialog?.addEventListener('resolved', (e) => {
+      if (!(e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) return;
+      clearMeasureWarnings(slug);
+      root.querySelector<HTMLElement>('[data-editor-warnings]')!.hidden = true;
+      setStatus('Active');
+    });
+    document.querySelector('[data-measure-actions] [data-editor-retire]')?.addEventListener('click', () => setStatus('Retired'));
+    document.querySelector('[data-measure-actions] [data-editor-reactivate]')?.addEventListener('click', () => setStatus('Active'));
+
+    // ---- redraft from a claim (team 6) -------------------------------------
+    root.querySelector('[data-claim-draft]')?.addEventListener('click', () => {
+      const claim = String(root.querySelector<Control>('[data-claim-text]')?.value ?? '').trim();
+      const result = root.querySelector<HTMLElement>('[data-claim-result]')!;
+      const outcome = claim ? draftFromClaim(claim) : { ok: false as const };
+      if (!outcome.ok) {
+        result.textContent = 'Name the work it is about — planting, fencing, pile burning, a barrier — and try again.';
+        return;
+      }
+      const a = outcome.draft.activity;
+      field('name')!.value = a.name;
+      field('definition')!.value = a.definition;
+      field('reporterGuidance')!.value = a.reporterGuidance;
+      if (status === 'Draft') {
+        kindField!.value = a.kind;
+        syncRuleOptions();
+        unitField!.value = a.unit;
+        ruleField!.value = a.countingRule;
+        decimalsField!.value = String(a.decimalPlaces);
+        if (a.split) {
+          if (a.split.source === 'new') {
+            const id = nextLocalSchemaId(a.split.name);
+            writeLocalSchema({ id, name: a.split.name, origin: 'user', options: a.split.options });
+            emitSchemaChange();
+            const schema = schemaById(id);
+            if (schema) board.add(schema);
+          } else if (!attachedIds().includes(a.split.schemaId)) {
+            const schema = schemaById(a.split.schemaId);
+            if (schema) board.add(schema);
+          }
+          refreshPicker();
+        }
+      }
+      const w = outcome.draft.warnings;
+      root.querySelector<HTMLElement>('[data-editor-warnings]')!.hidden = w.length === 0;
+      root.querySelector<HTMLElement>('[data-editor-warning-list]')!.innerHTML = w.map((x) => `<li class="typography-body-sm">${x}</li>`).join('');
+      result.textContent =
+        status === 'Draft' ? 'Drafted and saved. Check it before you publish.' : 'Redrafted the name, definition and guidance. The unit, counting rule and schemas stay fixed while published.';
+      paintPreview();
+      save();
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-editor').forEach(initEditor);
+</script>

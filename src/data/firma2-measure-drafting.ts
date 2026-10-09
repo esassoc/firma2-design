@@ -511,10 +511,7 @@ export const activitiesFor = (theme: string): DraftActivity[] =>
 export const getActivity = (id: string): DraftActivity | undefined =>
   DRAFT_ACTIVITIES.find((a) => a.id === id);
 
-/** Turn 1: what the work is. Free of charge — the theme was already picked. */
-export const workQuestion = (theme: string): string => `What does your ${theme.toLowerCase()} work mostly involve?`;
-
-/** Turn 2: the cost question, as competing sentences the author would say. */
+/** The cost question, as competing sentences the author would say. */
 export const FUNDER_QUESTION = 'Which is closest to what you need to tell your funder?';
 
 export interface FunderAnswer {
@@ -557,12 +554,12 @@ const OUTCOME_CUES: { pattern: RegExp; warning: string }[] = [
   {
     pattern: /\b(more|extra)\b[^.]*\b(fish|salmon|juveniles?|young)\b|\bbecause of (it|this|them)\b/,
     warning:
-      'Your claim also asks how much difference the work made. That is an outcome: it needs a comparison against places nobody treated, which is a study rather than a reporting field. It has been left out of this measure.',
+      'Your claim also asks how much difference the work made. Proving that needs a study against untreated places, not a reporting field, so this measure leaves it out.',
   },
   {
     pattern: /\b(happier|healthier|better off|improv\w*)\b/,
     warning:
-      'Your claim asks whether things got better. No two reporters would answer that the same way, so it has been left out. If it matters, it needs its own outcome measure with a unit.',
+      'Your claim asks whether things got better. Reporters would each judge that differently, so this measure leaves it out. If it matters, give it its own outcome measure.',
   },
 ];
 
@@ -614,14 +611,10 @@ export const sentenceFor = (d: MeasureDraftResult): string =>
 export const reporterPicks = (d: MeasureDraftResult): number =>
   d.split && d.activity.split && d.activity.split.source !== 'system' ? 1 : 0;
 
-export const reporterCost = (d: MeasureDraftResult): string =>
-  reporterPicks(d) === 0
-    ? 'One number per project, every year.'
-    : 'One number and one pick per project, every year.';
 
 export const payoff = (d: MeasureDraftResult): string => {
   const sums = d.activity.kind === 'output';
-  const by = d.split && d.activity.split ? ` and by ${d.activity.split.label}` : '';
+  const by = d.split && d.activity.split ? `, split by ${d.activity.split.label}` : '';
   return sums
     ? `A program total${by}, for any year and any project.`
     : `The latest reading at every station${by}. No program total, because readings do not add up.`;

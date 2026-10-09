@@ -18,6 +18,7 @@
 
 import { projects } from './firma2-projects';
 import { CURRENT_USER_ORGANIZATIONS, organizationSlug } from './firma2-directory';
+import { organizationNavKey, organizationPageHref } from './firma2-organization-pages';
 
 export interface Firma2NavItem {
   /** Stable id, matched against AppLayout's `active` prop. */
@@ -64,7 +65,8 @@ export const navItems: Firma2NavItem[] = [
   { key: 'progress-dashboard', label: 'Progress Dashboard', icon: 'layout-dashboard', group: 'Workspace' },
   // MORE: the workspace's less-visited lists, one expandable row so the
   // everyday rows above stay short. Members and Support Requests have no route
-  // yet, so they render dimmed (the navItems contract).
+  // yet, so they render dimmed (the navItems contract). Performance Measures left
+  // for Settings › Projects.
   {
     key: 'more',
     label: 'More',
@@ -73,7 +75,6 @@ export const navItems: Firma2NavItem[] = [
     children: [
       { key: 'organizations', label: 'Organizations', icon: 'users', aliasable: true },
       { key: 'funding-sources', label: 'Funding Sources', icon: 'database', aliasable: true },
-      { key: 'performance-measures', label: 'Performance Measures', href: '/prototypes/performance-measures', icon: 'trending-up', aliasable: true },
       { key: 'members', label: 'Members', icon: 'user' },
       { key: 'support-requests', label: 'Support Requests', icon: 'circle-question-mark' },
     ],
@@ -100,10 +101,9 @@ export const YOUR_ORGANIZATIONS_GROUP =
   CURRENT_USER_ORGANIZATIONS.length === 1 ? 'Your organization' : 'Your organizations';
 
 // YOUR ORGANIZATIONS: one expandable row per organization the reader belongs
-// to, each holding the same five pages scoped to it. No route is built yet, so
-// the sub-rows carry no href and render dimmed (the navItems contract); the
-// parent row itself stays live, because opening it is the only way to see what
-// an organization offers. Keys carry the slug so a future page can mark itself.
+// to, each holding the same five pages scoped to it
+// (src/pages/prototypes/organizations/[organization]/). Keys carry the slug, and
+// each page marks itself with organizationNavKey() so its row shows current.
 export const organizationNavItems: Firma2NavItem[] = CURRENT_USER_ORGANIZATIONS.map((name) => {
   const slug = organizationSlug(name);
   return {
@@ -112,11 +112,11 @@ export const organizationNavItems: Firma2NavItem[] = CURRENT_USER_ORGANIZATIONS.
     icon: 'building-2',
     group: YOUR_ORGANIZATIONS_GROUP,
     children: [
-      { key: `org-${slug}-home`, label: 'Home', icon: 'home' },
-      { key: `org-${slug}-projects`, label: 'Projects', icon: 'folder', aliasable: true },
-      { key: `org-${slug}-updates`, label: 'Updates', icon: 'activity' },
-      { key: `org-${slug}-views`, label: 'Views', icon: 'eye' },
-      { key: `org-${slug}-reports`, label: 'Reports', icon: 'file-text' },
+      { key: organizationNavKey(slug, 'home'), label: 'Home', href: organizationPageHref(slug, 'home'), icon: 'home' },
+      { key: organizationNavKey(slug, 'projects'), label: 'Projects', href: organizationPageHref(slug, 'projects'), icon: 'folder', aliasable: true },
+      { key: organizationNavKey(slug, 'updates'), label: 'Updates', href: organizationPageHref(slug, 'updates'), icon: 'activity' },
+      { key: organizationNavKey(slug, 'views'), label: 'Views', href: organizationPageHref(slug, 'views'), icon: 'eye' },
+      { key: organizationNavKey(slug, 'reports'), label: 'Reports', href: organizationPageHref(slug, 'reports'), icon: 'file-text' },
     ],
   };
 });
@@ -155,6 +155,15 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
 
   { key: 'ws-project-types', label: 'Project types', href: '/prototypes/workspace-settings/project-types', icon: 'folder', group: 'Projects' },
   { key: 'ws-classifications', label: 'Classifications', href: '/prototypes/workspace-settings/classifications', icon: 'folder', group: 'Projects' },
+  // Performance measures moved here from the app rail's More (2026-10-08):
+  // the catalog is configured by an administrator, not visited by readers —
+  // projects and classifications are where a measure's results are read.
+  // After Classifications because a goal carries its performance measures.
+  { key: 'ws-performance-measures', label: 'Performance measures', href: '/prototypes/workspace-settings/performance-measures', icon: 'trending-up', group: 'Projects', aliasable: true },
+  // PM 2 (2026-10-08): projectfirma2's measure model as built on branch
+  // features/0010_project_performance_measures, beside the original until the
+  // team picks one. Not aliasable: "(PM 2)" is a prototype label, not a noun.
+  { key: 'ws-pm2', label: 'Performance measures (PM 2)', href: '/prototypes/workspace-settings/pm2', icon: 'trending-up', group: 'Projects' },
   { key: 'ws-tags', label: 'Tags', href: '/prototypes/workspace-settings/tags', icon: 'list', group: 'Projects' },
   { key: 'ws-stages', label: 'Stages', href: '/prototypes/workspace-settings/stages', icon: 'activity', group: 'Projects' },
   { key: 'ws-custom-fields', label: 'Custom fields', href: '/prototypes/workspace-settings/custom-fields', icon: 'pencil', group: 'Projects' },
@@ -234,6 +243,16 @@ export const searchIndex: Firma2SearchEntry[] = [
       subtitle: item.group,
       category: 'Pages',
     })),
+  // An organization's pages share their labels across organizations, so the
+  // organization rides as the subtitle — "Reports" alone would not say whose.
+  ...organizationNavItems.flatMap((org) =>
+    (org.children ?? []).map((page) => ({
+      id: page.href!,
+      title: page.label,
+      subtitle: org.label,
+      category: 'Pages',
+    })),
+  ),
   // SETTINGS IS FINDABLE BY NAME. The omnibox matches title and subtitle, never
   // category, so a reader typing "settings" found nothing but the one row that
   // happened to be called it. Every settings page now carries its place in the

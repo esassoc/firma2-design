@@ -536,8 +536,25 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     });
   }
 
+  // A PARENT ROW OPENS ON ITS OWN when the page being read is one of its
+  // children — an organization's Home, Updates, … — or the reader lands on a
+  // page and cannot see where it is. `_expanded` is the rail's private open-set,
+  // keyed by label; there is no public way to open a parent row (the same lego
+  // gap firma2-pages-nav works around for folders).
+  type RailItem = { label: string; active?: boolean; children?: RailItem[] };
+  function openActiveParents(): void {
+    document.querySelectorAll('esa-sidebar-nav').forEach((nav) => {
+      const rail = nav as HTMLElement & { items?: RailItem[]; _expanded?: Set<string> };
+      const open = (rail.items ?? []).filter((i) => i.children?.some((c) => c.active)).map((i) => i.label);
+      if (open.length && rail._expanded) rail._expanded = new Set([...rail._expanded, ...open]);
+    });
+  }
+
   customElements.whenDefined('esa-sidebar-nav').then(() => {
-    requestAnimationFrame(stackRailHead);
+    requestAnimationFrame(() => {
+      stackRailHead();
+      openActiveParents();
+    });
   });
 
   // THE CONTENT PANE IS NOT A SCROLL REGION HERE, so it must not be a tab stop.
@@ -565,6 +582,24 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
 </script>
 
 <style>
+  /* md BUTTONS TAKE THE CONTROL LINE TOO. esa-button has no height: an md
+     button is 2 × 12px padding + its content + border, so a text-only one
+     lands at 41px and one carrying a 20px icon at 46px — "Add option", every
+     grip and "…". Beside 40px fields that put a 6px step into every row that
+     held one (the schema board's options measured 46px apart instead of 40).
+     The pin is the CONTROL_PINS rule, carried in light DOM because
+     esa-button is an .astro lego: same 40px, content centred by the button's
+     own inline-flex. Icon-only buttons are squares, so they take the width
+     too — their padding would otherwise leave a 46 × 40 rectangle. */
+  .firma2-app-frame :global(.esa-button--md > .esa-button__native) {
+    block-size: 40px;
+    padding-block: 0;
+  }
+  .firma2-app-frame :global(.esa-button--md.esa-button--icon-only > .esa-button__native) {
+    inline-size: 40px;
+    padding-inline: 0;
+  }
+
   /* THE PAGE SCROLLS, NOT A PANE — so the top bar scrolls AWAY with the content
      instead of hanging over it.
 

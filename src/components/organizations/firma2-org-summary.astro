@@ -1,0 +1,55 @@
+---
+// firma2-org-summary — the top of an organization's Home: how much work it is
+// in, what it has put in, and whether last year's reports came back.
+//
+// THE FIGURES FOLLOW THE ORGANIZATION'S ROLE. A funder's money is what it
+// committed to other people's projects; a lead's is the cost of the work it
+// runs. Each tile appears only when the organization has that role, so the
+// host board shows no "Estimated cost: $0" and the trust no "Funding: $0".
+//
+// The reporting tile counts projects that OWED a report for the last closed
+// year (firma2-organization-pages: coverage), never the whole list: a proposal
+// that has not started cannot be late, and counting it would make every new
+// organization look delinquent.
+//
+// Layout is the hub's `.grid` primitive and esa-stat throughout — the same
+// construction as firma2-classification-summary.
+import EsaStat from '@esa/ecology/esa-stat.astro';
+import type { OrganizationProject, Coverage } from '../../data/firma2-organization-pages';
+import { currencyFormatter as currency } from '../../lib/format';
+
+interface Props {
+  rows: OrganizationProject[];
+  coverage: Coverage;
+}
+
+const { rows, coverage } = Astro.props;
+const led = rows.filter((r) => r.leads);
+const funded = rows.filter((r) => !r.leads);
+const roles = [led.length && `${led.length} led`, funded.length && `${funded.length} funded`].filter(Boolean).join(', ');
+const committed = funded.reduce((sum, r) => sum + r.amount, 0);
+const leadCost = led.reduce((sum, r) => sum + r.project.estimatedTotalCost, 0);
+const owing = coverage.due - coverage.reported;
+---
+<section class="firma2-org-summary grid" data-gap="md" aria-label="Summary">
+  <EsaStat value={rows.length} label="Projects" sub={roles || undefined} />
+  {funded.length > 0 && (
+    <EsaStat value={currency.format(committed)} label="Funding committed" />
+  )}
+  {led.length > 0 && (
+    <EsaStat value={currency.format(leadCost)} label="Estimated cost" sub="Projects you lead" />
+  )}
+  <EsaStat
+    value={coverage.due ? `${coverage.reported} of ${coverage.due}` : 'None due'}
+    label={coverage.due ? `${coverage.year} reports filed` : `${coverage.year} reports`}
+    sub={coverage.due ? (owing ? `${owing} project${owing === 1 ? '' : 's'} still owe${owing === 1 ? 's' : ''} one` : 'Every project reported') : undefined}
+  />
+</section>
+
+<style>
+  /* Four tiles fit four-up at the content cap and halve cleanly below it — the
+     classification summary's track minimum. */
+  .firma2-org-summary {
+    --grid-min: 13rem;
+  }
+</style>
