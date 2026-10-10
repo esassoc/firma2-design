@@ -76,6 +76,7 @@ const seededKpis = classification ? catalog.filter((m) => m.classifications.incl
   import '@esa/ecology/esa-select';
   import { kpiSlugs, linkKpi, setTarget, targetsFor, unlinkKpi } from '../../lib/taxonomy-edits';
   import { recordSlug } from '../../lib/taxonomy-record';
+  import { draftedSlugs, isLocalMeasureSlug, readDraft, withDraft } from '../../lib/measure-draft';
   import type { GoalTarget } from '../../data/firma2-classifications';
 
   type Field = HTMLElement & { value: string; errorText: string; options?: unknown; helpText?: string };
@@ -84,7 +85,18 @@ const seededKpis = classification ? catalog.filter((m) => m.classifications.incl
   document.querySelectorAll<HTMLElement>('.firma2-kpi-editor').forEach((root) => {
     const slug = recordSlug(root);
     if (!slug) return;
-    const catalog: Measure[] = JSON.parse(root.dataset.catalog ?? '[]');
+    // The seeded catalog with this browser's renames laid over, plus the
+    // measures made here — a measure created in the browser has to be
+    // linkable, now that a goal is the only place a link is made.
+    const catalog: Measure[] = (JSON.parse(root.dataset.catalog ?? '[]') as Measure[]).map((m) => {
+      const draft = readDraft(m.slug);
+      return draft?.name ? { ...m, name: draft.name } : m;
+    });
+    draftedSlugs()
+      .filter(isLocalMeasureSlug)
+      .map((s) => withDraft(s))
+      .filter((m) => m.name.trim() && m.status !== 'Retired')
+      .forEach((m) => catalog.push({ slug: m.slug, name: m.name, unit: m.unit ?? '' }));
     const seededKpis: string[] = JSON.parse(root.dataset.seededKpis ?? '[]');
     const seededTargets: GoalTarget[] = JSON.parse(root.dataset.seededTargets ?? '[]');
     const rows = root.querySelector<HTMLElement>('[data-rows]')!;

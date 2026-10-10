@@ -1,0 +1,195 @@
+---
+// firma2-measure-claim-help — "Not sure how to say it?", under the claim on a
+// measure's page: pick the work your program does, answer one question, and
+// the claim is written for you.
+//
+// FOLDED INTO THE MEASURE PAGE (user, 2026-10-09). New measure was its own
+// drafting page with a review step, and the measure's page then offered to
+// draft again — two places to define one thing. Now New measure opens the
+// measure's page directly, and this is the guided door that used to sit
+// beside the claim on the drafting page: collapsed, because most admins
+// arrive knowing what they want and should not scroll past help.
+//
+// THE INTERVIEW IS TWO CLICKS, as it was: a row in the work list (which names
+// the goal and the work at once), then the funder question, asked as
+// competing sentences with what each costs a reporter written under it WHILE
+// THE CHOICE IS OPEN — the reason the interview exists (brief §0, the
+// compliance loop). Work with nothing to split skips the question.
+//
+// A PICK IS AN EVENT. The answer dispatches `firma2:claim-pick` ({ claim,
+// activityId }) and the editor, which owns the form, writes the claim and
+// drafts the fields from it. "None of these" dispatches `firma2:claim-own`:
+// the claim field above is where your own words go.
+//
+// bcn-lego-checked: the disclosure is esa-collapsible, the list
+// firma2-work-picker, buttons esa-button, the level firma2-reporter-burden.
+// Bespoke: an answer is a two-line choice with a burden level — esa-button
+// carries one unwrapped label and esa-radio-group selects on arrow keys, so
+// it cannot advance on a pick. Native button, bordered like the inputs, full
+// width, wrapping (carried over from the drafting page). Beacon is not
+// cloned on this machine.
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2WorkPicker from './firma2-work-picker.astro';
+import Firma2ReporterBurden from './firma2-reporter-burden.astro';
+---
+<div class="firma2-measure-claim-help">
+  <EsaCollapsible title="Not sure how to say it?" flush>
+    <div class="stack" data-gap="md">
+      <div class="stack" data-gap="md" data-help-pick>
+        <p class="typography-body-md">Pick the work your program does, then answer one question.</p>
+        <Firma2WorkPicker />
+      </div>
+
+      <div class="stack" data-gap="md" data-help-ask hidden>
+        <div class="repel">
+          <p class="typography-body-md"><span class="firma2-measure-claim-help__quiet">The work:</span> <span data-help-work></span></p>
+          <EsaButton variant="ghost" size="md" data-help-back>Pick other work</EsaButton>
+        </div>
+        <h4 class="firma2-measure-claim-help__h typography-title">Which is closest to what you need to tell your funder?</h4>
+        <div class="stack" data-gap="sm" data-help-answers></div>
+        <p class="firma2-measure-claim-help__quiet typography-body-md" data-help-cost hidden></p>
+      </div>
+
+      <div>
+        <EsaButton variant="ghost" size="md" data-help-own>None of these — I’ll describe it</EsaButton>
+      </div>
+    </div>
+  </EsaCollapsible>
+
+  <!-- One answer: the difference in two or three words first, the sentence it
+       commits to under it, and what it costs a reporter as a level. -->
+  <template data-help-answer>
+    <button type="button" class="firma2-measure-claim-help__choice">
+      <span class="stack" data-gap="3xs">
+        <span class="typography-label-md-strong" data-choice-title></span>
+        <span class="firma2-measure-claim-help__quiet typography-body-sm" data-choice-sentence></span>
+      </span>
+      <Firma2ReporterBurden compact />
+    </button>
+  </template>
+</div>
+
+<style>
+  .firma2-measure-claim-help [hidden] {
+    display: none !important;
+  }
+
+  .firma2-measure-claim-help__h,
+  .firma2-measure-claim-help p {
+    margin: 0;
+  }
+
+  .firma2-measure-claim-help :global(.firma2-measure-claim-help__quiet) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-measure-claim-help :global(.firma2-measure-claim-help__choice) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-400, 1rem);
+    inline-size: 100%;
+    padding: var(--spacing-300, 0.75rem) var(--spacing-400, 1rem);
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-raised, #fcfcfc);
+    color: var(--color-content-default, #202020);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .firma2-measure-claim-help :global(.firma2-measure-claim-help__choice:hover) {
+    border-color: var(--color-border-brand, #46a758);
+    background: var(--color-background-default-hover, #f0f0f0);
+  }
+
+  .firma2-measure-claim-help :global(.firma2-measure-claim-help__choice:focus-visible) {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+
+  /* The level never squeezes the words: it keeps its width and sits right. */
+  .firma2-measure-claim-help :global(.firma2-measure-claim-help__choice .firma2-reporter-burden) {
+    flex: none;
+  }
+</style>
+
+<script>
+  import { claimFor, costOfSplit, funderAnswers, getActivity } from '../../data/firma2-measure-drafting';
+  import type { DraftActivity } from '../../data/firma2-measure-drafting';
+  import { paintBurden, reporterBurden } from '../../lib/reporter-burden';
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-claim-help').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const details = root.querySelector<HTMLDetailsElement>('details');
+    const pickView = $('[data-help-pick]');
+    const askView = $('[data-help-ask]');
+    const answers = $('[data-help-answers]');
+    const cost = $('[data-help-cost]');
+    const template = $<HTMLTemplateElement>('[data-help-answer]');
+
+    const reset = () => {
+      pickView.hidden = false;
+      askView.hidden = true;
+      answers.replaceChildren();
+    };
+
+    /** Hand the claim to the editor, and fold the help away. */
+    const send = (activity: DraftActivity, split: boolean) => {
+      root.dispatchEvent(
+        new CustomEvent('firma2:claim-pick', {
+          bubbles: true,
+          detail: { claim: claimFor(activity, split), activityId: activity.id },
+        }),
+      );
+      reset();
+      if (details) details.open = false;
+    };
+
+    const choice = (title: string, sentence: string, picks: number, pick: () => void): HTMLElement => {
+      const node = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      node.querySelector('[data-choice-title]')!.textContent = title;
+      node.querySelector('[data-choice-sentence]')!.textContent = sentence;
+      paintBurden(node.querySelector<HTMLElement>('[data-reporter-burden]'), reporterBurden(picks));
+      node.addEventListener('click', pick);
+      return node;
+    };
+
+    // A row names the goal and the work at once; the funder question follows,
+    // unless the work has nothing to split.
+    root.addEventListener('firma2:work-pick', (event) => {
+      event.stopPropagation();
+      const activity = getActivity((event as CustomEvent<{ id: string }>).detail.id);
+      if (!activity) return;
+      const options = funderAnswers(activity);
+      if (options.length === 1) return send(activity, false);
+      $('[data-help-work]').textContent = activity.activity;
+      answers.replaceChildren(
+        ...options.map((c) =>
+          choice(
+            c.split && activity.split ? `Split by ${activity.split.label}` : 'One total',
+            c.label,
+            c.split && activity.split ? 1 : 0,
+            () => send(activity, c.split),
+          ),
+        ),
+      );
+      const line = costOfSplit(activity);
+      cost.hidden = !line;
+      cost.textContent = line ?? '';
+      pickView.hidden = true;
+      askView.hidden = false;
+      requestAnimationFrame(() => answers.querySelector('button')?.focus());
+    });
+
+    $('[data-help-back]').addEventListener('click', reset);
+
+    $('[data-help-own]').addEventListener('click', () => {
+      root.dispatchEvent(new CustomEvent('firma2:claim-own', { bubbles: true }));
+      reset();
+      if (details) details.open = false;
+    });
+  });
+</script>

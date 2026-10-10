@@ -2,11 +2,9 @@
 // relative level a program lead can read at a glance while the definition is
 // still open: Low, Moderate or High.
 //
-// THE COUNT IS ANSWERS PER ENTRY: the figure itself, plus every subcategory a
-// reporter picks by hand. Splits the system fills in (watershed, ownership,
-// the reporting year) cost the reporter nothing and do not count — that is
-// the leverage the level exists to make visible. Every entry repeats on every
-// project, every year, so the count is per entry, not per measure.
+// THE COUNT IS ANSWERS PER ENTRY: the figure itself, plus every breakdown a
+// reporter is asked (retired ones are not). Every entry repeats on every
+// project, every period, so the count is per entry, not per measure.
 //
 // THRESHOLDS: 1 answer is Low (a number and nothing else), 2–3 is Moderate,
 // 4 or more is High. Deliberately coarse — a relative signal, not a score.
@@ -38,16 +36,18 @@ export interface ReporterBurden {
   answers: number;
   /** The one line under the level. */
   detail: string;
+  /** What one entry asks, bare: "one number and one pick". */
+  asks: string;
 }
 
-/** `picks` is the number of subcategories a reporter answers by hand. */
+/** `picks` is the number of breakdowns a reporter answers. */
 export const reporterBurden = (picks: number): ReporterBurden => {
   const answers = 1 + Math.max(0, picks);
   const level: BurdenLevel = answers <= 1 ? 'low' : answers <= 3 ? 'moderate' : 'high';
   const words = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
   const count = words[picks] ?? String(picks);
   const asked = picks <= 0 ? 'one number' : `one number and ${count} ${picks === 1 ? 'pick' : 'picks'}`;
-  return { level, answers, detail: `Each entry asks for ${asked}, on every project, every year.` };
+  return { level, answers, asks: asked, detail: `Each entry asks for ${asked}, on every project, every year.` };
 };
 
 /** Fill a firma2-reporter-burden element in. */

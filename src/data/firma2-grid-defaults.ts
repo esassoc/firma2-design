@@ -57,11 +57,8 @@ export const GRIDS: GridDefinition[] = [
     page: '/prototypes/workspace-settings/performance-measures',
     columns: [
       { key: 'name', label: 'Measure', pinned: true },
-      { key: 'status', label: 'Status' },
-      { key: 'kind', label: 'Type' },
-      { key: 'classifications', label: 'Classifications' },
       { key: 'unit', label: 'Unit' },
-      { key: 'countingRule', label: 'Counting rule' },
+      { key: 'status', label: 'Status' },
     ],
   },
 ];

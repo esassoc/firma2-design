@@ -16,16 +16,13 @@
 // authored by someone; the page draws them against one another, but none is
 // derived to make a comparison possible (brief §4).
 //
-// THE COUNTING RULE DECIDES HOW PROJECTS COMBINE.
-//   sum, distinct-places   add across projects.
-//   spatial-union          adds too — ACROSS projects, whose mapped ground does
-//                          not overlap in this fixture; the union rule acts
-//                          within a project's own repeat treatments, which its
-//                          reported figure has already applied.
-//   latest-per-place,
-//   average-per-place      outcomes: a condition, not an amount. Averaged over
-//                          the reporting projects, and never given a committed
-//                          total — promising "80%" twice is not 160%.
+// THE COUNTING RULE DECIDES HOW PROJECTS COMBINE — PM 2's yes/no since the
+// 2026-10-09 reconciliation (isSummable).
+//   sums           add across projects.
+//   does not sum   a condition, not an amount. Averaged over the reporting
+//                  projects, and never given a committed total — promising
+//                  "80%" twice is not 160%. A measure with no rule yet is
+//                  treated the same way: false is the safe direction.
 //
 // Separate module (not firma2-classifications.ts) because it reads project
 // detail, and project detail already imports the classification vocabulary.
@@ -36,12 +33,10 @@ import { projectSlug } from './firma2-projects';
 import { getProjectDetail, isClosedPeriod } from './firma2-project-detail';
 import type { PerformanceMeasure } from './firma2-project-detail';
 import { measures as catalog } from './firma2-performance-measures';
-import type { CountingRule, PerformanceMeasureDefinition } from './firma2-performance-measures';
+import { isSummable } from './firma2-performance-measures';
+import type { PerformanceMeasureDefinition } from './firma2-performance-measures';
 import { CLASSIFICATIONS } from './firma2-classifications';
 import type { Classification, GoalTarget } from './firma2-classifications';
-
-/** Rules under which projects' figures add. The others are conditions. */
-const ADDITIVE: CountingRule[] = ['sum', 'spatial-union', 'distinct-places'];
 
 /**
  * A project row's unit, as the project page prints it, against the catalog
@@ -163,10 +158,28 @@ export const kpiProgress = (
   name: ClassificationName,
   measure: PerformanceMeasureDefinition,
   goal?: GoalTarget,
+): KpiProgress => progressOver(projects.filter((p) => p.classifications.includes(name)), measure, goal);
+
+/**
+ * Progress toward one measure across the WHOLE portfolio — every project that
+ * reports toward it, whatever its classifications. Backs the reader-facing
+ * Performance measures pages (user, 2026-10-09), the measure-shaped twin of a
+ * classification's KPI figure; same arithmetic, wider set of projects.
+ */
+export const measurePortfolio = (measure: PerformanceMeasureDefinition): KpiProgress => progressOver(projects, measure);
+
+/** The classifications a measure reports toward, in the workspace's order. */
+export const goalsOf = (measure: PerformanceMeasureDefinition): Classification[] =>
+  CLASSIFICATIONS.filter((c) => measure.classifications.includes(c.name));
+
+const progressOver = (
+  over: Project[],
+  measure: PerformanceMeasureDefinition,
+  goal?: GoalTarget,
 ): KpiProgress => {
-  const details = projects.filter((p) => p.classifications.includes(name)).map(getProjectDetail);
+  const details = over.map(getProjectDetail);
   const unit = measure.unit ?? '';
-  const additive = ADDITIVE.includes(measure.countingRule ?? 'sum');
+  const additive = isSummable(measure);
   const contributions: KpiContribution[] = [];
   for (const detail of details) {
     const rows = detail.measures.filter((m) => m.kpi === measure.slug);

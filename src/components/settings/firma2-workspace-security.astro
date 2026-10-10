@@ -29,8 +29,11 @@
 // link dies, and anyone holding it is locked out — so it asks first, in an
 // esa-confirm-dialog. Everything else is one edit back.
 //
-// MOCK: nothing persists. Copy really writes to the clipboard; Reset swaps the
-// token on this page until it reloads.
+// MOCK, MOSTLY: the permission thresholds persist in this browser
+// (src/lib/workspace-permissions.ts), because screens read them — setting a
+// project's targets is the first (2026-10-09). Nothing else persists. Copy
+// really writes to the clipboard; Reset swaps the token on this page until it
+// reloads.
 //
 // bcn-lego-checked: firma2-rail-section is each section; esa-switch-toggle,
 // esa-select is the threshold control; esa-button the link actions;
@@ -128,6 +131,7 @@ const json = (v: unknown) => JSON.stringify(v);
           size="md"
           options={json(PERMISSION_AUDIENCES)}
           data-seed={p.value}
+          data-permission={p.key}
         ></esa-select>
       ))}
     </div>
@@ -151,6 +155,8 @@ const json = (v: unknown) => JSON.stringify(v);
   import '@esa/ecology/esa-select';
   import '@esa/ecology/esa-confirm-dialog';
   import '@esa/ecology/esa-snackbar-container';
+  import { readPermission, writePermission } from '../../lib/workspace-permissions';
+  import type { Audience } from '../../lib/workspace-permissions';
 
   type SwitchEl = HTMLElement & { checked: boolean; updateComplete: Promise<unknown> };
   type Toasts = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
@@ -162,8 +168,15 @@ const json = (v: unknown) => JSON.stringify(v);
   // element becomes an own property that shadows the lego's setter for good.
   customElements.whenDefined('esa-select').then(() => {
     document.querySelectorAll<HTMLElement & { value: string }>('esa-select[data-seed]').forEach((el) => {
-      el.value = el.dataset.seed ?? '';
+      // A permission reads this browser's choice before the seeded default.
+      el.value = el.dataset.permission ? readPermission(el.dataset.permission) : el.dataset.seed ?? '';
     });
+  });
+
+  // Each permission threshold saves on change — screens read it to decide
+  // whether to offer the act.
+  document.querySelectorAll<HTMLElement & { value: string }>('esa-select[data-permission]').forEach((el) => {
+    el.addEventListener('change', () => writePermission(el.dataset.permission!, el.value as Audience));
   });
 
   // Each switch's description, handed to its inner button as aria-description —

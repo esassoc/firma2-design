@@ -179,7 +179,7 @@ export const prototypes: Prototype[] = [
     slug: 'performance-measures',
     title: 'Performance measure setup',
     description:
-      'Every performance measure in one searchable table, with the draft-first setup page each one is defined on.',
+      'Every performance measure in one searchable table, drafts first, with the setup page each one is defined on.',
     route: '/prototypes/workspace-settings/performance-measures',
     createdAt: '2026-08-20',
     status: 'in-progress',

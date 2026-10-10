@@ -173,8 +173,7 @@ const sourceOptions = [
   import '@esa/ecology/esa-select';
   import { addEntry, readEntries } from '../../lib/entry-draft';
   import { withDraft } from '../../lib/measure-draft';
-  import { allSchemas } from '../../lib/schema-draft';
-  import { askedSchemaIds, measures as catalogSeeds, measureDisplayName } from '../../data/firma2-performance-measures';
+  import { askedBreakdowns, liveOptions, measures as catalogSeeds, measureDisplayName, periodName } from '../../data/firma2-performance-measures';
   import { fixSideDialog } from '../../lib/side-dialog-fix';
   import type { ImportProposal, ImportReading } from '../../data/firma2-report-import';
 
@@ -188,14 +187,11 @@ const sourceOptions = [
   const esc = (s: string): string =>
     s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-  /** The lists a reporter answers for a measure — system lists answer themselves. */
-  const reportedListsFor = (measureName: string) => {
+  /** The questions a reporter answers for a measure: its live breakdowns. */
+  const reportedListsFor = (measureName: string): { name: string; options: string[] }[] => {
     const seed = catalogSeeds.find((m) => measureDisplayName(m).toLowerCase() === measureName.toLowerCase());
     if (!seed) return [];
-    const schemas = allSchemas();
-    return askedSchemaIds(withDraft(seed.slug))
-      .map((id) => schemas.find((s) => s.id === id))
-      .filter((s) => s && s.origin !== 'system') as { name: string; options: string[] }[];
+    return askedBreakdowns(withDraft(seed.slug)).map((b) => ({ name: b.question, options: liveOptions(b) }));
   };
 
   document.querySelectorAll<HTMLElement>('.firma2-report-import').forEach((root) => {
@@ -327,12 +323,12 @@ const sourceOptions = [
           ].join('');
           li.innerHTML = `
             <div class="repel">
-              <esa-checkbox data-pick label="${esc(`${p.measure} · ${p.year}`)}"></esa-checkbox>
+              <esa-checkbox data-pick label="${esc(`${p.measure} · ${periodName(p.year)}`)}"></esa-checkbox>
               <span class="cluster" data-gap="xs">${badges}</span>
             </div>
             <div class="firma2-report-import__fields">
               <esa-text-field data-amount size="md" inputmode="decimal" label="${esc(unit ? `Amount (${unit})` : 'Amount')}"></esa-text-field>
-              <esa-select data-year size="md" label="Reporting year"></esa-select>
+              <esa-select data-year size="md" label="Reporting period"></esa-select>
             </div>
             <div class="stack" data-gap="2xs">
               <p class="firma2-report-import__source typography-body-sm">${esc(p.quote)}</p>
@@ -366,7 +362,7 @@ const sourceOptions = [
           });
           customElements.whenDefined('esa-select').then(() => {
             const year = li.querySelector<Control>('[data-year]')!;
-            year.options = years.map((y) => ({ label: String(y), value: String(y) }));
+            year.options = years.map((y) => ({ label: periodName(y), value: String(y) }));
             year.value = String(p.year);
           });
           return li;

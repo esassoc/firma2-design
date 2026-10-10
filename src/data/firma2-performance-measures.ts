@@ -1,36 +1,36 @@
-// Performance measures — a FLAT ATTRIBUTE LIST plus SUBCATEGORY SCHEMAS.
+// Performance measures — a FLAT ATTRIBUTE LIST plus BREAKDOWNS.
 //
-// A measure is one number a reporter files: a name, a type (output or
-// outcome), classifications, a unit, a precision, a counting rule, guidance —
-// and zero or more SUBCATEGORY SCHEMAS, the named option lists its entries can
-// be divided by. The shape is what five production tenant catalogs of the
-// predecessor product reduce to (152 measures, 222 subcategories, 1,047
-// options); the evidence lives in docs/measure-model.md. Constraints:
+// A measure is one number a reporter files: a name, the claim it answers,
+// classifications, a unit, a precision, whether its values add up,
+// guidance — and zero or more BREAKDOWNS, each a question with a closed
+// option list that a reporter answers alongside the number.
 //
-//   1. A MEASURE IS ONE NUMBER. Every published name in the observed catalogs
-//      names one figure ("Acres of riparian habitat restored"); the measure's
-//      name IS the number's label, so there is no separate quantity label and
-//      no repeatable amount slot.
-//   2. SCHEMAS ARE SHARED, REFERENCED, NEVER COPIED. The observed catalogs
-//      paste the same option list onto up to 11 measures by hand and the
-//      copies drift by typo — which silently splits roll-up buckets. A measure
-//      carries schema IDS; the options live on the schema, once.
-//   3. NO SCHEMA IS REQUIRED. A forced subcategory slot is exactly how 20% of
-//      observed subcategory rows came to be Default/Default filler.
+// RECONCILED WITH PM 2 (user, 2026-10-09). The shape follows projectfirma2's
+// build (src/data/firma2-pm2.ts, branch features/0010) wherever the two
+// differed, except which breakdown takes several picks and what publishing
+// freezes:
 //
-// Schemas come in three origins, and the difference is who maintains the list:
+//   - Status reads Draft · Published · Retired.
+//   - NO THEME, unlike the branch. It came in with the reconciliation and
+//     went the same day (user, 2026-10-09): beside classifications it was a
+//     second, near-identical picker ("Riparian habitat" next to "Riparian &
+//     wetland habitat") that nothing used. Classifications group measures.
+//   - The author's CLAIM — "what do you need to tell your funder?" — is kept
+//     on the measure, not only used to draft it.
+//   - The counting rule is the branch's yes/no: SUMS or DOES NOT SUM. The
+//     output/outcome type and the five finer rules are gone.
+//   - Breakdowns are OWNED by their measure — no shared lists, no imported
+//     standards, no system-answered lists. This reverses the shared-schema
+//     rule this module used to state (docs/measure-model.md rule 2); the team
+//     chose the branch's simpler model, copy drift included.
+//   - "Unspecified" is appended to every breakdown — added, never demanded.
+//   - Reporting periods are tenant-wide records with real dates, shown by name.
 //
-//   user      — authored by this tenant, edited here, reusable across measures
-//   imported  — mirrors an external standard; the standard's name rides along
-//   system    — created and maintained by the system (map layers, the record's
-//               own fields, entry history). Attachable like any other schema;
-//               the system fills in the value, so it costs the reporter nothing.
+// The evidence behind the original model is still docs/measure-model.md.
 //
-// INVENTED CONTENT. Every measure, schema and option below is fabricated.
-// Vocabulary is drawn from public fuels-and-restoration practice; the
-// "imported standard" entries imitate the SHAPE of public standards with
-// fabricated content. Nothing is copied from a client system or any
-// ProjectFirma tenant. This repo and its site are public.
+// INVENTED CONTENT. Every measure, breakdown and option below is fabricated.
+// Nothing is copied from a client system or any ProjectFirma tenant. This repo
+// and its site are public.
 //
 // DETERMINISTIC — literal arrays, no Math.random(), no Date.now().
 
@@ -38,312 +38,104 @@ import { classifications } from './firma2-projects';
 import type { ClassificationName } from './firma2-projects';
 
 // ---------------------------------------------------------------------------
-// Subcategory schemas — the shared option lists measures reference
+// Breakdowns — the questions a reporter answers alongside the number
 // ---------------------------------------------------------------------------
 
-export type SchemaOrigin = 'user' | 'imported' | 'system';
+/** The escape option every breakdown carries. Added on save, never demanded. */
+export const UNSPECIFIED = 'Unspecified';
 
 /**
- * One named option list a measure's entries can be divided by. Referenced by
- * PerformanceMeasureDefinition.subcategorySchemaIds — never copied onto a
- * measure, which is what makes cross-measure rollups by the same axis possible
- * and kills the observed copy-drift failure.
+ * One question a measure's entries are broken down by, with its closed list.
+ * Owned by its measure: editing it changes this measure and nothing else.
  */
-export interface SubcategorySchema {
+export interface Breakdown {
   id: string;
-  name: string;
-  origin: SchemaOrigin;
-  /** The external standard an imported list mirrors. Imported schemas only. */
-  standard?: string;
-  /** How the system answers it. System schemas only. */
-  description?: string;
-  /**
-   * The values an entry can take. Empty on system schemas whose values come
-   * from the record itself (every project name, every year) — an open list the
-   * system resolves, not a blank one.
-   */
+  /** The question, as the reporter reads it. "Treatment type". */
+  question: string;
+  /** The choices, in the order offered. */
   options: string[];
   /**
    * Options retired on a published measure: kept in `options` so past entries
-   * still read, never offered for a new entry. User schemas only.
+   * still read, never offered for a new entry.
    */
   retiredOptions?: string[];
+  /**
+   * Retired on a published measure: no longer asked, past answers kept.
+   * A published measure cannot drop a question its entries already answer.
+   */
+  retired?: boolean;
 }
 
+/** Append Unspecified when a list lacks it (case-insensitive). Never removes anything. */
+export const withUnspecified = (options: string[]): string[] =>
+  options.length === 0 || options.some((o) => o.trim().toLowerCase() === UNSPECIFIED.toLowerCase())
+    ? options
+    : [...options, UNSPECIFIED];
+
 /** The options a NEW entry may pick: every option but the retired ones. */
-export const liveOptions = (schema: Pick<SubcategorySchema, 'options' | 'retiredOptions'>): string[] =>
-  schema.options.filter((o) => !schema.retiredOptions?.includes(o));
-
-export const USER_SCHEMAS: SubcategorySchema[] = [
-  {
-    id: 'fuels-treatment-types',
-    name: 'Fuels treatment types',
-    origin: 'user',
-    options: ['Biomass removal', 'Broadcast burning', 'Pile burning', 'Mastication', 'Hand thinning'],
-  },
-  {
-    id: 'treatment-phases',
-    name: 'Treatment phases',
-    origin: 'user',
-    options: ['Planning', 'Initial', 'Maintenance', 'Completed', 'Unspecified'],
-  },
-  {
-    id: 'riparian-treatments',
-    name: 'Riparian treatments',
-    origin: 'user',
-    options: ['Planting', 'Invasive removal', 'Natural recruitment'],
-  },
-  {
-    id: 'volunteer-activities',
-    name: 'Volunteer activities',
-    origin: 'user',
-    options: ['Planting', 'Monitoring', 'Site preparation', 'Outreach event'],
-  },
-  {
-    id: 'barrier-types',
-    name: 'Barrier types',
-    origin: 'user',
-    options: ['Culvert', 'Dam', 'Weir', 'Push-up dam', 'Flashboard'],
-  },
-  {
-    id: 'survey-intervals',
-    name: 'Survey intervals',
-    origin: 'user',
-    options: ['Year 1', 'Year 3', 'Year 5'],
-  },
-  {
-    id: 'restoration-actions',
-    name: 'Restoration actions',
-    origin: 'user',
-    options: ['Created', 'Enhanced', 'Restored'],
-  },
-  {
-    // The SHAPE of a practice-code standard — numbered entries an agency
-    // publishes — with fabricated numbers and names, per the confidentiality
-    // rule in the module header.
-    id: 'conservation-practices',
-    name: 'Conservation practice codes',
-    origin: 'imported',
-    standard: 'State conservation practice catalog',
-    options: [
-      '210 Brush management',
-      '218 Prescribed burning',
-      '341 Riparian planting',
-      '355 Streambank protection',
-      '362 In-channel structure',
-      '410 Access control',
-      '447 Tree and shrub establishment',
-    ],
-  },
-  {
-    // Public species names; the list itself is invented.
-    id: 'focal-species',
-    name: 'Focal species',
-    origin: 'imported',
-    standard: 'State special-status species list',
-    options: [
-      'Chinook salmon',
-      'Steelhead',
-      'Coho salmon',
-      'Willow flycatcher',
-      'Foothill yellow-legged frog',
-      'Western pond turtle',
-    ],
-  },
-];
+export const liveOptions = (b: Pick<Breakdown, 'options' | 'retiredOptions'>): string[] =>
+  b.options.filter((o) => !b.retiredOptions?.includes(o));
 
 /**
- * The system-maintained schemas. Each is a question the system can already
- * answer — from a geospatial layer, from the record's own fields, or from
- * earlier entries on the same place — so attaching one costs the reporter
- * nothing. Read-only: their options are maintained with the source they read.
+ * The seed lists, kept here only to build the seed measures' OWN copies —
+ * nothing references them at runtime. The two "imported" ones imitate the
+ * shape of public standards with fabricated content.
  */
-export const SYSTEM_SCHEMAS: SubcategorySchema[] = [
-  {
-    id: 'system-critical-zone',
-    name: 'Critical zone',
-    origin: 'system',
-    description: 'Answered from the map — designations the program treats as priority ground.',
-    options: ['Critical habitat', 'Critical headwater resources', 'Recreation area', 'Unspecified', 'None'],
+const SEED_LISTS: Record<string, { question: string; options: string[] }> = {
+  'fuels-treatment-types': { question: 'Treatment type', options: ['Biomass removal', 'Broadcast burning', 'Pile burning', 'Mastication', 'Hand thinning'] },
+  'treatment-phases': { question: 'Treatment phase', options: ['Planning', 'Initial', 'Maintenance', 'Completed'] },
+  'riparian-treatments': { question: 'Riparian treatment', options: ['Planting', 'Invasive removal', 'Natural recruitment'] },
+  'volunteer-activities': { question: 'Activity type', options: ['Planting', 'Monitoring', 'Site preparation', 'Outreach event'] },
+  'barrier-types': { question: 'Barrier type', options: ['Culvert', 'Dam', 'Weir', 'Push-up dam', 'Flashboard'] },
+  'survey-intervals': { question: 'Survey interval', options: ['Year 1', 'Year 3', 'Year 5'] },
+  'restoration-actions': { question: 'Restoration action', options: ['Created', 'Enhanced', 'Restored'] },
+  'conservation-practices': {
+    question: 'Conservation practice',
+    options: ['210 Brush management', '218 Prescribed burning', '341 Riparian planting', '355 Streambank protection', '362 In-channel structure', '410 Access control', '447 Tree and shrub establishment'],
   },
-  {
-    id: 'system-land-ownership',
-    name: 'Land ownership',
-    origin: 'system',
-    description: 'Answered from the map — surface ownership from the statewide parcel layer.',
-    options: ['Federal', 'State', 'Private', 'Tribal', 'Unknown'],
-  },
-  {
-    id: 'system-watershed',
-    name: 'Watershed',
-    origin: 'system',
-    description: 'Answered from the map — the HUC-12 subwatershed containing the treated extent.',
-    options: ['North Yuba', 'Middle Fork Feather', 'Upper Butte', 'Deer Creek', 'Battle Creek'],
-  },
-  {
-    id: 'system-county',
-    name: 'County',
-    origin: 'system',
-    description: 'Answered from the map — the county boundary containing the treated extent.',
-    options: ['Butte', 'Nevada', 'Plumas', 'Sierra', 'Tehama', 'Yuba'],
-  },
-  {
-    id: 'system-initial-vs-maintenance',
-    name: 'Initial vs maintenance',
-    origin: 'system',
-    description:
-      'Answered from entry history — the first entry on a place is Initial; a re-entry inside the program window is Maintenance.',
-    options: ['Initial', 'Maintenance'],
-  },
-  {
-    id: 'system-first-treatment-year',
-    name: 'First treated',
-    origin: 'system',
-    description: 'Answered from entry history — the year this place first appeared in any entry.',
-    options: [],
-  },
-  {
-    id: 'system-reporting-year',
-    name: 'Reporting year',
-    origin: 'system',
-    description: "Answered from the record — the entry's own date.",
-    options: [],
-  },
-  {
-    id: 'system-project',
-    name: 'Project',
-    origin: 'system',
-    description: 'Answered from the record — the project the entry belongs to.',
-    options: [],
-  },
-  {
-    id: 'system-lead-organization',
-    name: 'Lead organization',
-    origin: 'system',
-    description: "Answered from the record — the project's lead organization.",
-    options: [],
-  },
-  {
-    id: 'system-primary-classification',
-    name: 'Primary classification',
-    origin: 'system',
-    description: "Answered from the record — the project's first classification.",
-    options: [],
-  },
-];
-
-/** Every seeded schema, user-authored first. Browser-local ones layer on via src/lib/schema-draft.ts. */
-export const SCHEMAS: SubcategorySchema[] = [...USER_SCHEMAS, ...SYSTEM_SCHEMAS];
-
-/**
- * Resolve a schema id against the seeds plus any browser-local schemas.
- * LOCAL WINS: a browser-local schema with a seed's id is that seed EDITED, and
- * the edit has to show everywhere the schema is read or "editable" is a lie.
- */
-export const getSchema = (id: string, extra: SubcategorySchema[] = []): SubcategorySchema | undefined =>
-  extra.find((s) => s.id === id) ?? SCHEMAS.find((s) => s.id === id);
-
-export const SCHEMA_ORIGIN_LABEL: Record<SchemaOrigin, string> = {
-  user: 'User',
-  imported: 'Imported',
-  system: 'System',
+  'focal-species': { question: 'Focal species', options: ['Chinook salmon', 'Steelhead', 'Coho salmon', 'Willow flycatcher', 'Foothill yellow-legged frog', 'Western pond turtle'] },
 };
 
-// ---------------------------------------------------------------------------
-// The type fork: what KIND of statement a measure makes
-// ---------------------------------------------------------------------------
-
-/**
- * An OUTPUT records what someone did. An OUTCOME records what is true.
- * The fork changes who reports, and which counting rules are meaningful:
- * nobody "did" a water temperature, and summing readings is meaningless.
- * Displayed as "Type" everywhere a reader sees it.
- */
-export type MeasureKind = 'output' | 'outcome';
-
-export const MEASURE_KINDS: {
-  id: MeasureKind;
-  name: string;
-  /** What the measure records, in the author's terms. */
-  description: string;
-  /** Who files the record. */
-  reportedBy: string;
-}[] = [
-  {
-    id: 'output',
-    name: 'Output',
-    description: 'work someone did — acres treated, barriers removed, hours contributed',
-    reportedBy: 'the project',
-  },
-  {
-    id: 'outcome',
-    name: 'Outcome',
-    description: 'a condition someone measured — survival rate, water temperature, fish density',
-    reportedBy: 'a monitoring effort, about a place',
-  },
-];
-
-export const measureKind = (id: MeasureKind) => MEASURE_KINDS.find((k) => k.id === id)!;
-
-export const kindName = (id: MeasureKind): string => measureKind(id).name;
-
-export const kindFromName = (name: string): MeasureKind | undefined =>
-  MEASURE_KINDS.find((k) => k.name === name.trim())?.id;
+/** A seed measure's own copies of the named lists, Unspecified appended. */
+let seedBreakdownSeq = 0;
+const owned = (...ids: string[]): Breakdown[] =>
+  ids.map((id) => ({
+    id: `bd-${(seedBreakdownSeq += 1)}`,
+    question: SEED_LISTS[id].question,
+    options: withUnspecified([...SEED_LISTS[id].options]),
+  }));
 
 // ---------------------------------------------------------------------------
 // The number — how a measure is quantified
 // ---------------------------------------------------------------------------
 
-/** How entries combine. Replaces a summable/not-summable flag, which is too coarse. */
-export type CountingRule =
-  | 'sum'
-  | 'spatial-union'
-  | 'distinct-places'
-  | 'latest-per-place'
-  | 'average-per-place';
+/** Whether values add up. PM 2's yes/no, replacing five finer rules. */
+export type CountingRule = 'sum' | 'no-sum';
 
 export const COUNTING_RULES: {
   id: CountingRule;
+  /** The short form a table cell or summary uses. */
   name: string;
+  /** The answer to "Do these values add up?", as the select offers it. */
+  optionLabel: string;
   description: string;
-  /** Which kinds of measure this rule is meaningful for. */
-  appliesTo: MeasureKind[];
 }[] = [
   {
     id: 'sum',
-    name: 'Sum every entry',
-    description: 'Work delivered. Ground treated twice counts twice — correct for effort and cost.',
-    appliesTo: ['output'],
+    name: 'Sums',
+    optionLabel: 'Yes — totals and cumulative figures are meaningful',
+    description: 'Values add up. Totals and cumulative figures across projects and periods are meaningful — acres treated, barriers removed, hours contributed.',
   },
   {
-    id: 'spatial-union',
-    name: 'Union the mapped extent',
-    description: 'Ground in a treated condition. Treating the same acre twice counts once.',
-    appliesTo: ['output'],
-  },
-  {
-    id: 'distinct-places',
-    name: 'Count distinct places',
-    description: 'How many sites were reached, regardless of how much was done at each.',
-    appliesTo: ['output'],
-  },
-  {
-    id: 'latest-per-place',
-    name: 'Most recent reading per place',
-    description: 'The current condition. An older reading is superseded, never added to.',
-    appliesTo: ['outcome'],
-  },
-  {
-    id: 'average-per-place',
-    name: 'Average across places',
-    description: 'A typical condition over the places measured. Unweighted, so compare like sites.',
-    appliesTo: ['outcome'],
+    id: 'no-sum',
+    name: 'Does not sum',
+    optionLabel: 'No — report each value on its own',
+    description: 'Values do not add up. Report them individually or as an average, never as a total — a temperature, a percentage, a survival rate.',
   },
 ];
 
-/** The rules worth offering for a given kind. Summing temperatures is not a choice. */
-export const countingRulesFor = (kind: MeasureKind) =>
-  COUNTING_RULES.filter((r) => r.appliesTo.includes(kind));
+/** Derived, never stored. False until a rule is chosen — the safe direction. */
+export const isSummable = (m: Pick<PerformanceMeasureDefinition, 'countingRule'>): boolean => m.countingRule === 'sum';
 
 /**
  * Every unit a quantity can carry. CLOSED, because an open list cannot be
@@ -362,21 +154,46 @@ export const UNITS = [
   'acre-feet per year',
   // effort and money
   'hours', 'dollars',
-  // condition readings — outcome measures live here
+  // condition readings
   'percent', 'degrees Celsius', 'cubic feet per second', 'parts per million',
 ] as const;
 export type MeasureUnit = (typeof UNITS)[number];
 
 // ---------------------------------------------------------------------------
+// Reporting periods — tenant-wide, real dates, always shown by NAME
+// ---------------------------------------------------------------------------
+
+export interface ReportingPeriod {
+  id: number;
+  /** What every screen shows. Never derive a label from the dates. */
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+
+/** Calendar years, as PM 2 seeds them, wide enough for every seeded project window. */
+export const REPORTING_PERIODS: ReportingPeriod[] = Array.from({ length: 2035 - 2010 + 1 }, (_, i) => {
+  const y = 2010 + i;
+  return { id: i + 1, name: String(y), startDate: `${y}-01-01`, endDate: `${y}-12-31` };
+});
+
+/** The period a calendar year falls in — the bridge from the projects' year windows. */
+export const periodForYear = (year: number): ReportingPeriod | undefined =>
+  REPORTING_PERIODS.find((p) => p.startDate.startsWith(`${year}-`));
+
+/** A period's name for a year; the year itself when no period covers it. */
+export const periodName = (year: number): string => periodForYear(year)?.name ?? String(year);
+
+// ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
 
-export type MeasureStatus = 'Active' | 'Draft' | 'Retired';
+export type MeasureStatus = 'Draft' | 'Published' | 'Retired';
 
-export const MEASURE_STATUSES: MeasureStatus[] = ['Draft', 'Active', 'Retired'];
+export const MEASURE_STATUSES: MeasureStatus[] = ['Draft', 'Published', 'Retired'];
 
 export const MEASURE_STATUS_TONE: Record<MeasureStatus, 'default' | 'info' | 'primary' | 'success' | 'warning'> = {
-  Active: 'success',
+  Published: 'success',
   Draft: 'info',
   Retired: 'default',
 };
@@ -387,42 +204,30 @@ export const MEASURE_STATUS_TONE: Record<MeasureStatus, 'default' | 'info' | 'pr
 
 export interface PerformanceMeasureDefinition {
   slug: string;
-  /** Output (work done) or outcome (a condition measured). Shown as "Type". */
-  kind: MeasureKind;
   /** Empty until named — a measure exists before it is finished. */
   name: string;
+  /** The author's sentence to their funder — what this measure lets them say. */
+  claim: string;
   /** What counts toward this measure and what does not. */
   definition: string;
   /**
-   * The plan goals this measure reports toward — ProjectFirma's classification
-   * vocabulary, the same one projects associate with. A SET: one measure
-   * serves several goals at once. Empty is a real state on a draft, and one
-   * outstandingFields() flags.
+   * The SEEDED goal links — which classifications track this measure in the
+   * built data. Not edited from the measure: a classification picks its
+   * measures in Workspace settings (user, 2026-10-09), and browser edits to
+   * the link live goal-side (src/lib/measure-goals.ts reads both). Not
+   * required to publish: a measure is valid before any goal tracks it.
    */
   classifications: ClassificationName[];
   /**
-   * THE NUMBER. A measure is one figure a reporter types, so the unit, its
-   * precision and its counting rule sit directly on the measure. `unit` and
-   * `countingRule` are optional because a blank draft has decided neither;
-   * outstandingFields() is what makes emptiness cost something.
+   * THE NUMBER. `unit` and `countingRule` are optional because a blank draft
+   * has decided neither; outstandingFields() is what makes emptiness cost
+   * something.
    */
   unit?: MeasureUnit;
   decimalPlaces: number;
   countingRule?: CountingRule;
-  /**
-   * The subcategory schemas whose lists divide this measure's entries, in
-   * reporting order. REFERENCES, never copies — see rule 2 in the module
-   * header. System schemas mix in freely; their origin says who answers.
-   */
-  subcategorySchemaIds: string[];
-  /**
-   * Subcategories RETIRED on this measure — a subset of subcategorySchemaIds.
-   * A published measure cannot drop a subcategory (its filed entries answer
-   * it), so it retires one instead: reporters stop being asked it, the
-   * entries already filed keep their answers, and it can be restored. Per
-   * measure: the shared list itself is untouched for every other measure.
-   */
-  retiredSchemaIds?: string[];
+  /** The questions this measure's entries are broken down by, in reporting order. */
+  breakdowns: Breakdown[];
   /** Instruction shown at the moment a value is entered. */
   reporterGuidance: string;
   status: MeasureStatus;
@@ -431,7 +236,7 @@ export interface PerformanceMeasureDefinition {
 export const measures: PerformanceMeasureDefinition[] = [
   {
     slug: 'acres-forest-fuels-reduction-treatment',
-    kind: 'output',
+    claim: 'I need to tell my funder how many acres of forest we treat for fuels each year, and by what method.',
     name: 'Acres of forest fuels reduction treatment',
     definition:
       'Acres where surface or ladder fuels were removed, rearranged, or consumed under an approved prescription. Measured as the extent actually treated, not the unit planned.',
@@ -439,21 +244,14 @@ export const measures: PerformanceMeasureDefinition[] = [
     unit: 'acres',
     decimalPlaces: 0,
     countingRule: 'sum',
-    subcategorySchemaIds: [
-      'fuels-treatment-types',
-      'treatment-phases',
-      'system-critical-zone',
-      'system-land-ownership',
-      'system-watershed',
-      'system-reporting-year',
-    ],
+    breakdowns: owned('fuels-treatment-types', 'treatment-phases'),
     reporterGuidance:
       'Report the extent that was actually treated, not the unit planned. A unit re-entered in a later season is a new entry for that season.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'tons-biomass-removed-fuels-treatment',
-    kind: 'output',
+    claim: 'Our air district grant asks how much woody material we haul off instead of burning.',
     name: 'Tons of biomass removed in fuels treatment',
     definition:
       'Woody material hauled off the treatment unit, weighed at the landing. Material chipped or lopped and scattered on site stays on site and is not counted here.',
@@ -461,263 +259,246 @@ export const measures: PerformanceMeasureDefinition[] = [
     unit: 'tons',
     decimalPlaces: 0,
     countingRule: 'sum',
-    // No treatment-phases here: phase divides acres meaningfully but says
-    // nothing about tonnage. Per-measure schema sets are the point.
-    subcategorySchemaIds: [
-      'fuels-treatment-types',
-      'system-land-ownership',
-      'system-watershed',
-      'system-reporting-year',
-    ],
+    // No treatment phase here: phase divides acres meaningfully but says
+    // nothing about tonnage.
+    breakdowns: owned('fuels-treatment-types'),
     reporterGuidance:
       'Report the weight ticketed at the landing. Estimates scaled from acreage are not reportable here.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'acres-riparian-habitat-restored',
-    kind: 'output',
+    claim: 'I need to tell my funder how much streamside habitat we restore each year.',
     name: 'Acres of riparian habitat restored',
     definition:
       'Acres within the streamside corridor where native vegetation was planted or released and the site has passed its first survival check.',
     classifications: ['Riparian & wetland habitat', 'Water quality'],
     unit: 'acres',
     decimalPlaces: 1,
-    countingRule: 'spatial-union',
-    subcategorySchemaIds: [
-      'riparian-treatments',
-      'system-critical-zone',
-      'system-watershed',
-      'system-reporting-year',
-    ],
+    countingRule: 'sum',
+    breakdowns: owned('riparian-treatments'),
     reporterGuidance:
       'Count acres where planting is complete and the first survival check has passed. Do not count acres prepared but not yet planted.',
-    status: 'Active',
+    status: 'Published',
   },
   {
-    // THE COUNTER-EXAMPLE, on purpose: no place, so nothing spatial. One user
-    // schema and one record fact. A model that only works for mapped ground is
-    // not a model.
+    // THE COUNTER-EXAMPLE, on purpose: no place, so nothing spatial. A model
+    // that only works for mapped ground is not a model.
     slug: 'volunteer-hours-contributed',
-    kind: 'output',
+    claim: 'The board keeps asking how much of this work the community does.',
     name: 'Volunteer hours contributed',
     definition: 'Hours worked on site by unpaid participants, from the signed field log for each work day.',
     classifications: ['Riparian & wetland habitat', 'Public access & recreation'],
     unit: 'hours',
     decimalPlaces: 0,
     countingRule: 'sum',
-    subcategorySchemaIds: ['volunteer-activities', 'system-reporting-year'],
+    breakdowns: owned('volunteer-activities'),
     reporterGuidance: 'Count hours on site from the signed field log. Travel and training time are not reported here.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'fish-passage-barriers-removed',
-    kind: 'output',
+    claim: 'Our fisheries funder wants to know how many barriers we take out.',
     name: 'Fish passage barriers removed',
     definition:
       'Structures no longer impeding passage at any life stage, confirmed by a post-construction passage assessment.',
     classifications: ['Salmon & steelhead recovery', 'Barrier removal & fish screens'],
     unit: 'each',
     decimalPlaces: 0,
-    countingRule: 'distinct-places',
-    subcategorySchemaIds: ['barrier-types', 'system-watershed', 'system-reporting-year'],
+    countingRule: 'sum',
+    breakdowns: owned('barrier-types'),
     reporterGuidance:
       'Report a barrier once its passage assessment is signed. A barrier modified but still rated impassable does not count.',
-    status: 'Active',
+    status: 'Published',
   },
   {
-    // THE OUTCOME. Here to prove the fork is real rather than a label: nobody
-    // DID a survival rate — it was measured, and its counting rule is one no
-    // output can use.
+    // THE MEASURE THAT DOES NOT SUM: a survival rate is a reading, and
+    // adding two of them reports nothing.
     slug: 'plant-survival-rate',
-    kind: 'outcome',
+    claim: 'Funders ask whether the plants we put in are still alive a few years later.',
     name: 'Plant survival rate',
     definition:
       'Share of installed plants alive at the survey, against the count installed on the same unit.',
     classifications: ['Riparian & wetland habitat'],
     unit: 'percent',
     decimalPlaces: 0,
-    countingRule: 'latest-per-place',
-    subcategorySchemaIds: [
-      'survey-intervals',
-      'system-critical-zone',
-      'system-watershed',
-      'system-reporting-year',
-    ],
+    countingRule: 'no-sum',
+    breakdowns: owned('survey-intervals'),
     reporterGuidance:
       'Survey the same units each year so the series stays comparable. Report the plot average, not a whole-site estimate.',
-    status: 'Active',
+    status: 'Published',
   },
   // ---- KPIs added so every goal is tracked (2026-10-03). A classification is
   // a goal; the measures that list it are its KPIs, two to five each. Work
   // types carry none: they are becoming tags, which track without KPIs. ----
   {
     slug: 'native-plants-installed',
-    kind: 'output',
+    claim: 'I need to report how many native plants we put in the ground each season.',
     name: 'Native plants installed',
     definition: 'Container stock, cuttings and stakes of native species set in the ground. Seed is reported by weight elsewhere, not here.',
     classifications: ['Riparian & wetland habitat', 'Native planting'],
     unit: 'plants',
     decimalPlaces: 0,
     countingRule: 'sum',
-    subcategorySchemaIds: ['riparian-treatments', 'system-watershed', 'system-reporting-year'],
+    breakdowns: owned('riparian-treatments'),
     reporterGuidance: 'Count plants installed this season, including replacements for losses. Survival is a separate measure.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'stream-miles-reopened',
-    kind: 'output',
+    claim: 'The recovery plan tracks how many miles of stream salmon can reach again.',
     name: 'Stream miles reopened to fish',
     definition: 'Miles of stream upstream of a fixed or removed barrier that migrating fish can now reach, to the next barrier or the natural limit.',
     classifications: ['Salmon & steelhead recovery'],
     unit: 'miles',
     decimalPlaces: 1,
-    countingRule: 'spatial-union',
-    subcategorySchemaIds: ['barrier-types', 'system-watershed', 'system-reporting-year'],
+    countingRule: 'sum',
+    breakdowns: owned('barrier-types'),
     reporterGuidance: 'Measure to the next barrier upstream, not to the headwaters. Report a reach once, the year its barrier is cleared.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'miles-fuel-break',
-    kind: 'output',
+    claim: 'The fire safe council wants to know how many miles of fuel break we finish.',
     name: 'Miles of fuel break completed',
     definition: 'Shaded or cleared fuel break built to its prescribed width along a ridge, road or community edge.',
     classifications: ['Wildfire resilience', 'Fuel breaks'],
     unit: 'miles',
     decimalPlaces: 1,
-    countingRule: 'spatial-union',
-    subcategorySchemaIds: ['treatment-phases', 'system-land-ownership', 'system-reporting-year'],
+    countingRule: 'sum',
+    breakdowns: owned('treatment-phases'),
     reporterGuidance: 'Report a segment once it meets prescribed width end to end. Maintenance passes are entered as maintenance, not new miles.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'acres-wetland-meadow-restored',
-    kind: 'output',
+    claim: 'I need to tell my funder how many acres of wetland and meadow we rewet.',
     name: 'Acres of wetland and meadow restored',
     definition: 'Acres of tidal marsh, wet meadow or seasonal wetland where hydrology was restored and wetland vegetation is establishing.',
     classifications: ['Riparian & wetland habitat', 'Flood risk reduction', 'Meadow & marsh rewetting'],
     unit: 'acres',
     decimalPlaces: 0,
-    countingRule: 'spatial-union',
-    subcategorySchemaIds: ['restoration-actions', 'system-watershed', 'system-reporting-year'],
+    countingRule: 'sum',
+    breakdowns: owned('restoration-actions'),
     reporterGuidance: 'Count acres once water is back on the ground — breach open, plugs in, or channel raised. Graded but still dry ground is not reported yet.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'stream-miles-floodplain-reconnected',
-    kind: 'output',
+    claim: 'Our water agency asks how much channel we reconnect to its floodplain.',
     name: 'Stream miles reconnected to floodplain',
     definition: 'Miles of channel that now spill onto their floodplain at a typical winter high flow.',
     classifications: ['Water supply reliability'],
     unit: 'miles',
     decimalPlaces: 1,
-    countingRule: 'spatial-union',
-    subcategorySchemaIds: ['restoration-actions', 'system-watershed', 'system-reporting-year'],
+    countingRule: 'sum',
+    breakdowns: owned('restoration-actions'),
     reporterGuidance: 'Report the reach once the first overbank flow is observed or modeled at the design discharge.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'stream-miles-instream-habitat',
-    kind: 'output',
+    claim: 'Fisheries partners ask how many miles of channel we give fish better habitat in.',
     name: 'Stream miles of instream habitat improved',
     definition: 'Miles of channel where wood, gravel, pools or side channels were added to give fish places to spawn, rear or hold.',
     classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'],
     unit: 'miles',
     decimalPlaces: 1,
-    countingRule: 'spatial-union',
-    subcategorySchemaIds: ['restoration-actions', 'focal-species', 'system-watershed', 'system-reporting-year'],
+    countingRule: 'sum',
+    breakdowns: owned('restoration-actions', 'focal-species'),
     reporterGuidance: 'Measure the treated reach along the thalweg. A reach treated again in a later year is not new miles.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'acres-floodplain-habitat',
-    kind: 'output',
+    claim: 'The flood program wants acres of floodplain that flood again at high water.',
     name: 'Acres of floodplain habitat reconnected',
     definition: 'Acres of floodplain, side channel or off-channel rearing habitat that floods at the design flow.',
     classifications: ['Flood risk reduction', 'Salmon & steelhead recovery', 'Side channels & floodplains'],
     unit: 'acres',
     decimalPlaces: 0,
-    countingRule: 'spatial-union',
-    subcategorySchemaIds: ['restoration-actions', 'system-watershed', 'system-reporting-year'],
+    countingRule: 'sum',
+    breakdowns: owned('restoration-actions'),
     reporterGuidance: 'Count acres inside the inundation boundary at the design flow, from the as-built survey.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'tons-sediment-prevented',
-    kind: 'output',
+    claim: 'The water board asks how much sediment we keep out of the creek each year.',
     name: 'Tons of fine sediment prevented per year',
     definition: 'Estimated annual load of fine sediment kept out of the stream by a stabilized bank, upgraded crossing or treated road.',
     classifications: ['Water quality', 'Erosion & sediment control'],
     unit: 'tons per year',
     decimalPlaces: 0,
     countingRule: 'sum',
-    subcategorySchemaIds: ['conservation-practices', 'system-watershed', 'system-reporting-year'],
+    breakdowns: owned('conservation-practices'),
     reporterGuidance: 'Use the approved load-reduction calculator for the practice. Report once, the year the practice is complete.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'miles-road-decommissioned',
-    kind: 'output',
+    claim: 'I need to report how many miles of old road we close for good.',
     name: 'Miles of road decommissioned',
     definition: 'Miles of unpaved road ripped, outsloped and closed so it no longer routes runoff and sediment to streams.',
     classifications: ['Water quality'],
     unit: 'miles',
     decimalPlaces: 1,
     countingRule: 'sum',
-    subcategorySchemaIds: ['system-land-ownership', 'system-watershed', 'system-reporting-year'],
+    breakdowns: owned(),
     reporterGuidance: 'Report miles once the closure is complete and crossings are pulled. Seasonal gates do not count.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'stormwater-captured',
-    kind: 'output',
+    claim: 'Our stormwater grant asks how much runoff our projects catch in an average year.',
     name: 'Stormwater captured per year',
     definition: 'Estimated average annual runoff held, infiltrated or treated before it reaches a stream.',
     classifications: ['Water quality', 'Stormwater capture'],
     unit: 'acre-feet per year',
     decimalPlaces: 0,
     countingRule: 'sum',
-    subcategorySchemaIds: ['conservation-practices', 'system-watershed', 'system-reporting-year'],
+    breakdowns: owned('conservation-practices'),
     reporterGuidance: 'Use the design capture volume for an average rainfall year, not the largest storm.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'water-supply-gained',
-    kind: 'output',
+    claim: 'The water agency wants to know how much dry-season supply we add each year.',
     name: 'Water supply gained per year',
     definition: 'Acre-feet added to dry-season supply each year — by raised groundwater, new storage, or water use avoided.',
     classifications: ['Water supply reliability', 'Groundwater recharge'],
     unit: 'acre-feet per year',
     decimalPlaces: 0,
     countingRule: 'sum',
-    subcategorySchemaIds: ['restoration-actions', 'system-watershed', 'system-reporting-year'],
+    breakdowns: owned('restoration-actions'),
     reporterGuidance: 'Report the modeled average-year gain once the work is complete. Do not add a site again for a wet year.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'miles-levee-setback',
-    kind: 'output',
+    claim: 'The flood program tracks how many miles of levee we move back from the river.',
     name: 'Miles of levee set back',
     definition: 'Miles of levee moved back from the channel to give high water room, measured along the old alignment.',
     classifications: ['Flood risk reduction'],
     unit: 'miles',
     decimalPlaces: 1,
     countingRule: 'sum',
-    subcategorySchemaIds: ['system-land-ownership', 'system-watershed', 'system-reporting-year'],
+    breakdowns: owned(),
     reporterGuidance: 'Report once the new levee is certified and the old one is breached.',
-    status: 'Active',
+    status: 'Published',
   },
   {
     slug: 'miles-trail-opened',
-    kind: 'output',
+    claim: 'Our parks funder asks how many miles of trail we open to the public.',
     name: 'Miles of trail and greenway opened',
     definition: 'Miles of trail, greenway or river access route opened to the public.',
     classifications: ['Public access & recreation'],
     unit: 'miles',
     decimalPlaces: 1,
     countingRule: 'sum',
-    subcategorySchemaIds: ['system-land-ownership', 'system-reporting-year'],
+    breakdowns: owned(),
     reporterGuidance: 'Report miles the day the route opens to the public, not when construction ends.',
-    status: 'Active',
+    status: 'Published',
   },
 ];
 
@@ -739,58 +520,25 @@ export const getMeasure = (slug: string): PerformanceMeasureDefinition | undefin
   measures.find((m) => m.slug === slug);
 
 /**
- * A fresh, entirely undecided measure — what the blank sidesheet edits.
- * Everything empty is a field outstandingFields() flags, so a new measure
- * starts short of publishable rather than silently classified.
+ * A fresh, entirely undecided measure. Everything empty is a field
+ * outstandingFields() flags, so a new measure starts short of publishable
+ * rather than silently classified.
  */
 export const blankMeasure = (slug: string): PerformanceMeasureDefinition => ({
   slug,
-  kind: 'output',
   name: '',
+  claim: '',
   definition: '',
   classifications: [],
   decimalPlaces: 0,
-  subcategorySchemaIds: [],
+  breakdowns: [],
   reporterGuidance: '',
   status: 'Draft',
 });
 
-/**
- * This measure's schemas, resolved and in its own order. Ids that resolve to
- * nothing (a local schema on another browser) are dropped rather than rendered
- * as holes. `extra` carries browser-local schemas; server renders pass none.
- */
-export const schemasFor = (
-  m: PerformanceMeasureDefinition,
-  extra: SubcategorySchema[] = [],
-): SubcategorySchema[] =>
-  m.subcategorySchemaIds
-    .map((id) => getSchema(id, extra))
-    .filter((s): s is SubcategorySchema => Boolean(s));
-
-/** The subcategories a NEW entry is divided by: every one but the retired. */
-export const askedSchemaIds = (m: Pick<PerformanceMeasureDefinition, 'subcategorySchemaIds' | 'retiredSchemaIds'>): string[] =>
-  m.subcategorySchemaIds.filter((id) => !m.retiredSchemaIds?.includes(id));
-
-/** The schemas a reporter answers by hand. The measure's real cost — retired ones cost nothing. */
-export const reportedSchemas = (
-  m: PerformanceMeasureDefinition,
-  extra: SubcategorySchema[] = [],
-): SubcategorySchema[] =>
-  schemasFor(m, extra).filter((s) => s.origin !== 'system' && !m.retiredSchemaIds?.includes(s.id));
-
-/** The schemas the system fills in. The measure's leverage. */
-export const systemSchemas = (
-  m: PerformanceMeasureDefinition,
-  extra: SubcategorySchema[] = [],
-): SubcategorySchema[] =>
-  schemasFor(m, extra).filter((s) => s.origin === 'system' && !m.retiredSchemaIds?.includes(s.id));
-
-/** The measures whose entries a schema divides. Backs the "Used by" column. */
-export const measuresUsingSchema = (
-  schemaId: string,
-  list: PerformanceMeasureDefinition[] = measures,
-): PerformanceMeasureDefinition[] => list.filter((m) => m.subcategorySchemaIds.includes(schemaId));
+/** The breakdowns a NEW entry is asked: every one but the retired. */
+export const askedBreakdowns = (m: Pick<PerformanceMeasureDefinition, 'breakdowns'>): Breakdown[] =>
+  m.breakdowns.filter((b) => !b.retired);
 
 /**
  * THE DISPLAY STRINGS the form's selects trade in, and the maps back to
@@ -816,7 +564,7 @@ export const countingRuleName = (id: CountingRule | undefined): string =>
   id ? COUNTING_RULES.find((r) => r.id === id)?.name ?? '' : '';
 
 export const countingRuleFromName = (name: string): CountingRule | undefined =>
-  COUNTING_RULES.find((r) => r.name === name.trim())?.id;
+  COUNTING_RULES.find((r) => r.name === name.trim() || r.optionLabel === name.trim())?.id;
 
 /** A unit is stored as its own display string, so this is only a guard. */
 export const unitFromLabel = (label: string): MeasureUnit | undefined =>
@@ -827,26 +575,24 @@ export interface OutstandingField {
 }
 
 /**
- * What still stands between this measure and Active.
+ * What still stands between this measure and Published.
  *
- * SIX FIELDS, AND NOTHING ABOUT SCHEMAS. Schemas are deliberately absent: they
- * are optional, and a gate that demanded one is exactly the forcing function
- * that filled the observed catalogs with Default/Default filler
- * (docs/measure-model.md, PM2).
+ * NOTHING ABOUT BREAKDOWNS. They are optional, and a gate that demanded one
+ * is the forcing function that filled the observed catalogs with
+ * Default/Default filler (docs/measure-model.md).
  */
 export const outstandingFields = (m: PerformanceMeasureDefinition): OutstandingField[] => {
-  // Form order, so any rendering of this list walks the sheet top to bottom.
+  // Form order, so any rendering of this list walks the page top to bottom.
   const missing: OutstandingField[] = [];
   if (!m.name.trim()) missing.push({ label: 'Measure name' });
-  if (m.classifications.length === 0) missing.push({ label: 'Classifications' });
   if (!m.definition.trim()) missing.push({ label: 'Definition' });
-  if (!m.unit) missing.push({ label: 'Unit' });
-  if (!m.countingRule) missing.push({ label: 'Counting rule' });
   if (!m.reporterGuidance.trim()) missing.push({ label: 'Reporter guidance' });
+  if (!m.unit) missing.push({ label: 'Unit' });
+  if (!m.countingRule) missing.push({ label: 'Whether values add up' });
   return missing;
 };
 
-export const isReadyToActivate = (m: PerformanceMeasureDefinition): boolean =>
+export const isReadyToPublish = (m: PerformanceMeasureDefinition): boolean =>
   outstandingFields(m).length === 0;
 
 export const measuresByName = (): PerformanceMeasureDefinition[] =>

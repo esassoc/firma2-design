@@ -1,7 +1,16 @@
 ---
 // firma2-project-measures — the performance-measures section of a project's
-// detail page: every measure the project committed to, what it has reported
-// against each one, and — when a reader asks — what it reported in each year.
+// detail page: every measure asked of the project, the target it committed
+// to on each, what it has reported against each one, and — when a reader
+// asks — what it reported in each period.
+//
+// EVERY PUBLISHED MEASURE IS ASKED OF EVERY PROJECT (PM 2, reconciled
+// 2026-10-09). There is no choosing step: the project's own seeded rows come
+// first, then every published catalog measure. A TARGET — one number for the
+// project's life, never per period — is what commits the project; a row with
+// none reads "no target yet". Periods are shown by their NAME
+// (REPORTING_PERIODS), and every target and entry write lands in the change
+// log (src/lib/measure-changes.ts).
 //
 // ONE TABLE, MEASURES DOWN, YEARS ACROSS. Every measure on a project is built
 // from the same window — buildMeasures() walks
@@ -46,12 +55,10 @@
 // printed and shaded is being said twice. Reading down a column of tabular
 // numerals is what a table is for.
 //
-// ADD, NOT EDIT. This section is a COLLECTION, and that is what separates it
-// from Key facts and Description: those hold scalar values, so each got a
-// per-field affordance that appears on hover and edits in place, and their
-// section pencils went away. A set has no single field to hover — you add to it,
-// remove from it, reorder it — so the section keeps one control and it names the
-// act it actually performs.
+// NO ADD, NO REMOVE. This section is a COLLECTION, but not one the project
+// curates: publishing a measure is what puts it here, and retiring it is what
+// takes it away. What the project owns on each row is its target — set and
+// cleared on the row itself.
 //
 // THE AUTHORED ORDER IS NEVER RE-SORTED. A project's measure list has an
 // authored order — the headline measure first, its supporting measures after —
@@ -80,6 +87,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import type { PerformanceMeasure } from '../../data/firma2-project-detail';
 import { isClosedPeriod } from '../../data/firma2-project-detail';
+import { periodName } from '../../data/firma2-performance-measures';
 
 interface Props {
   /** The project's measures, in the order the project reports them. */
@@ -155,13 +163,11 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
          forms did to these users. The per-row Record button remains the
          measure-first path for fluent reporters.
 
-         There is NO "Add measure" button: the GHOST ROW at the table's foot
-         is the affordance, permanently — the same rule bcn-tag-editor's add
-         slot states ("the empty row IS the affordance"). -->
-    <!-- CHOOSE MEASURES (hackathon team 6). A project answers only the measures
-         ticked for it, so a new question reaches the projects it applies to and
-         no others. The sheet below; a measure with reports cannot be unticked. -->
-    <EsaButton slot="actions" variant="chrome" size="sm" icon="check" data-firma2-pm-choose>Choose measures</EsaButton>
+         There is NO "Add measure" or "Choose measures" control (PM 2,
+         reconciled 2026-10-09): every PUBLISHED measure is asked of every
+         project, so every one is already a row. A TARGET is what commits the
+         project to an amount — set it on the row's Progress cell, clear it the
+         same way; clearing is never refused and the row stays. -->
     <EsaButton slot="actions" variant="chrome" size="sm" icon="notepad-text" data-firma2-pm-record-work>Record work</EsaButton>
     <!-- THE DOCUMENT-FIRST DOOR (hackathon team 6): the crew log or grant
          report the reporter already keeps, read against these measures. -->
@@ -190,14 +196,21 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     ></esa-button-toggle>
 
     <div class="firma2-project-measures__body stack" data-gap="md" data-firma2-pm-section data-project-slug={projectSlug}>
-      <!-- NOTHING ASKED YET. Never an invitation to DEFINE a measure — that is
-           the program lead's job, on the catalog. Choosing which published
-           measures apply is offered here. -->
+      <!-- NOTHING ASKED YET — only when the program has published no measure
+           at all. Never an invitation to DEFINE one: that is the program
+           lead's job, on the catalog. PM 2's own copy. -->
+      <!-- WHAT IS DUE (user, 2026-10-09): the reporter's first question is
+           "is my record in good shape?", so the card opens on the last closed
+           period's count over the measures this project has committed to,
+           names what is missing, and offers the way in — the Report view on
+           that period. Hidden when nothing is committed. -->
+      <div class="firma2-project-measures__due repel" data-gap="sm" data-pm-due hidden>
+        <p class="typography-body-md" data-pm-due-text></p>
+        <EsaButton variant="secondary" size="md" data-pm-due-report>Report</EsaButton>
+      </div>
+
       <div data-pm-empty hidden>
-        <EsaEmptyState size="sm" headingLevel={4} title="Nothing is being asked of this project yet" description="Choose which of your program’s published measures this project reports on." />
-        <div class="firma2-project-measures__empty-action">
-          <EsaButton variant="primary" size="sm" icon="check" data-firma2-pm-choose-empty>Choose measures</EsaButton>
-        </div>
+        <EsaEmptyState size="sm" headingLevel={4} title="Nothing is being asked of this project yet" description="Once your program publishes a performance measure, it will appear here for you to report against." />
       </div>
 
       <!-- REPORT: one period at a time (team 6). Segments rather than a
@@ -233,8 +246,8 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
                    it. -->
               <th scope="col" class="firma2-project-measures__num">Progress</th>
               {years.map((year) => (
-                <th scope="col" class="firma2-project-measures__num firma2-project-measures__year">
-                  {year}
+                <th scope="col" class="firma2-project-measures__num firma2-project-measures__year" data-year={year}>
+                  {periodName(year)}
                 </th>
               ))}
               <!-- Empty on purpose — see the spacer note in the stylesheet. It
@@ -248,6 +261,15 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
             ))}
           </tbody>
         </table>
+      </div>
+      <!-- COMMITTED FIRST (user, 2026-10-09). Every published measure can be
+           committed to on every project (PM 2), but a riparian project's card
+           was two-thirds fuels and levees it will never report. Measures with
+           no target and nothing filed fold behind this one line; opening it
+           shows them with Set target. Offered only to someone allowed to set
+           targets, while editing. -->
+      <div data-pm-others data-edit-only hidden>
+        <EsaButton variant="ghost" size="md" icon="plus" data-pm-others-toggle>Other measures</EsaButton>
       </div>
     </div>
   </EsaCard>
@@ -263,8 +285,8 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
        project's measures, and the PRIMARY design of the reporting
        interaction (the measure catalog's admin preview mirrors this form).
        One entry is the model's atom: a period, the figure, and the reporter's
-       answers to the measure's subcategory schemas — the system-answered
-       splits are named at the foot, never asked. SAVE KEEPS THE SHEET OPEN:
+       answers to the measure's breakdowns — each optional, at most one option
+       per question. SAVE KEEPS THE SHEET OPEN:
        recording is a batch act (80 acres of thinning and 40 of burning are
        two entries in one sitting), so Save appends to the log below and
        clears for the next; Done is how a sitting ends. Entries live in this
@@ -287,14 +309,13 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
            beside the last one rather than from memory (team 6). -->
       <p class="firma2-project-measures__entry-previous typography-body-sm" data-entry-previous hidden></p>
       <div class="stack" data-gap="lg" data-entry-body>
-        <esa-select data-entry-year label="Reporting year" size="md"></esa-select>
+        <esa-select data-entry-year label="Reporting period" size="md"></esa-select>
         <div class="stack" data-gap="md" data-entry-questions></div>
         <esa-text-field data-entry-amount label="Amount" size="md" inputmode="decimal" required></esa-text-field>
         <!-- ONE AMOUNT PER OPTION when the first question is answered with
              several (team 6's pivot): planting AND fencing in one sitting, each
              with its own figure, each saved as its own entry. -->
         <div class="stack" data-gap="md" data-entry-split hidden></div>
-        <p class="firma2-project-measures__entry-autos typography-meta" data-entry-autos hidden></p>
         <section class="stack" data-gap="2xs" data-entry-log-block hidden>
           <h3 class="firma2-project-measures__entry-log-title typography-label-sm">Recorded in this browser</h3>
           <ul class="firma2-project-measures__entry-log stack" data-gap="2xs" data-entry-log></ul>
@@ -308,16 +329,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   </esa-side-dialog>
 
   <!-- Row affordance templates, cloned into name cells by the script:
-       Record on every row, Remove only on rows added in this browser. -->
-  <esa-side-dialog class="firma2-project-measures__picker" heading="Measures this project reports on" size="md" position="right">
-    <div class="stack" data-gap="lg">
-      <p class="typography-body-md">Each measure you tick is a question this project answers every reporting period. Tick only the ones its work applies to.</p>
-      <ul class="firma2-project-measures__picker-list stack" data-gap="md" data-picker-list></ul>
-    </div>
-    <div slot="footer" class="cluster" data-gap="xs">
-      <EsaButton variant="primary" size="md" data-picker-done>Done</EsaButton>
-    </div>
-  </esa-side-dialog>
+       Record on every row, Clear target on every row that has one. -->
   <template data-pm-seed-template>
     <table><tbody><Firma2ProjectMeasureRow measure={placeholderMeasure} /></tbody></table>
   </template>
@@ -334,8 +346,13 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   <div data-firma2-pm-record-template hidden aria-hidden="true">
     <EsaButton variant="chrome" iconOnly icon="plus" size="sm" aria-label="Record an entry">Record an entry</EsaButton>
   </div>
+  <!-- The visible way in to a target, on rows with none — double-clicking
+       the Progress cell does the same, but nothing on screen says so. -->
+  <div data-firma2-pm-set-target-template hidden aria-hidden="true">
+    <EsaButton variant="ghost" size="md" icon="plus">Set target</EsaButton>
+  </div>
   <div data-firma2-pm-remove-template hidden aria-hidden="true">
-    <EsaButton variant="chrome" iconOnly icon="x" size="sm" aria-label="Remove measure">Remove measure</EsaButton>
+    <EsaButton variant="chrome" iconOnly icon="x" size="sm" aria-label="Clear target">Clear target</EsaButton>
   </div>
   {canImport && (
     <Firma2ProjectReportImport projectSlug={projectSlug} years={[...years].reverse()} units={unitsByName} />
@@ -344,6 +361,48 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
 )}
 
 <style>
+  /* Uncommitted measures fold away until asked for (see data-pm-others). */
+  .firma2-project-measures:not([data-show-others]) :global(tr[data-uncommitted]) {
+    display: none;
+  }
+
+  /* A retired measure: its tag in quiet ink; nothing new can be recorded or
+     targeted on it. */
+  .firma2-project-measures :global(.firma2-project-measures__retired-tag) {
+    margin-inline-start: var(--spacing-200, 0.5rem);
+    color: var(--color-content-default-secondary, #646464);
+    white-space: nowrap;
+  }
+  .firma2-project-measures :global(.firma2-project-measures__retired-tag[hidden]) {
+    display: none;
+  }
+  .firma2-project-measures :global(tr[data-retired-measure] :is(.firma2-project-measures__record, .firma2-project-measures__remove, .firma2-project-measures__set-target)) {
+    display: none !important;
+  }
+
+  /* No ring where there is nothing to measure against. */
+  .firma2-project-measures :global(tr[data-no-target] .bcn-progress-ring) {
+    visibility: hidden;
+  }
+
+  /* Without the right to set targets, neither door shows — "No target"
+     stays as plain text even while editing. */
+  .firma2-project-measures[data-targets-locked] :global(:is(.firma2-project-measures__set-target, .firma2-project-measures__remove)) {
+    display: none !important;
+  }
+  :global(html[data-record-mode='edit']) .firma2-project-measures[data-targets-locked] :global(.firma2-project-measures__no-target) {
+    display: inline;
+  }
+
+  .firma2-project-measures__due p {
+    margin: 0;
+  }
+
+  .firma2-project-measures [data-pm-due][hidden],
+  .firma2-project-measures [data-pm-others][hidden] {
+    display: none !important;
+  }
+
   /* The container the scroller's own query reads. It goes on the WRAPPER, not on
      the scroller: an element cannot query its own container, and a rule written
      that way matches nothing at all — silently. */
@@ -568,8 +627,19 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     --firma2-measure-name-max: 26rem;
   }
 
-  /* ROW AFFORDANCES — Record on every row, Remove on rows added in this
-     browser. Built by cloning the server-rendered templates, so the rules
+  /* A row with no target says so while the record is read; while it is
+     edited the Set target button takes the same place instead. */
+  :global(html[data-record-mode='edit']) .firma2-project-measures :global(.firma2-project-measures__no-target) {
+    display: none;
+  }
+
+  .firma2-project-measures :global(.firma2-project-measures__set-target) {
+    display: inline-flex;
+    vertical-align: middle;
+  }
+
+  /* ROW AFFORDANCES — Record on every row, Clear target on every row that
+     has a target. Built by cloning the server-rendered templates, so the rules
      reach through :global (injected content has no scope hash). Quiet until
      the row is hovered or focused: opacity, not display, so the pinned name
      column never reflows, and the buttons stay in the tab order. */
@@ -602,49 +672,26 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     padding: 0;
   }
 
-  /* THE GHOST ROW's controls take their cells; the combobox needs the whole
-     pinned name column and the target the whole Progress column. */
-  .firma2-project-measures__table :global(tr[data-ghost] esa-combobox),
-  .firma2-project-measures__table :global(tr[data-ghost] esa-text-field) {
+  /* THE TARGET EDITOR takes the whole Progress cell it replaces. */
+  .firma2-project-measures__table :global(.firma2-project-measure-row__total esa-text-field) {
     display: block;
     inline-size: 100%;
     text-align: start;
   }
 
-  /* The resting invitation — placeholder ink in the row's own type, the
-     option-list grammar: a blank row that says what it does, and nothing
-     else until asked. */
-  .firma2-project-measures__table :global(.firma2-project-measures__ghost-invite) {
-    border: 0;
-    background: none;
-    padding: 0;
-    font: inherit;
-    color: var(--color-content-default-secondary, #646464);
-    cursor: pointer;
-  }
-
-  .firma2-project-measures__table :global(.firma2-project-measures__ghost-invite:hover) {
-    color: var(--color-content-default, #202020);
-  }
-
-  .firma2-project-measures__table :global(.firma2-project-measures__ghost-invite:focus-visible) {
-    outline: 2px solid var(--color-border-default-focus, #46a758);
-    outline-offset: 2px;
-    border-radius: 2px;
-  }
-
   /* COLLAPSED, THE SCROLLER MUST NOT CLIP: nothing can overflow sideways in
-     the two-column state, and the ghost row's combobox has to drop its list
-     past the table's foot — an overflow-x:auto box clips it. Only the
-     expanded state actually scrolls, so only it pays the clipping cost. */
+     the two-column state, and a field's error line under the last row must
+     not be cut at the table's foot. Only the expanded state actually
+     scrolls, so only it pays the clipping cost. */
   .firma2-project-measures__scroller[data-firma2-measure-years='hidden'] {
     overflow-x: visible;
   }
 
   /* THE CARD MUST NOT CLIP EITHER — esa-card ships overflow:hidden for its
-     rounded corners, and the ghost row's dropdown (position:absolute in the
-     lego) was being decapitated at the card's bottom edge; the card was the
-     ONLY clipping ancestor on the chain (measured). The clip exists for
+     rounded corners, and a dropdown near its foot (the Report view's
+     breakdown selects; position:absolute in the lego) was being decapitated
+     at the card's bottom edge; the card was the ONLY clipping ancestor on
+     the chain (measured). The clip exists for
      full-bleed children; everything in this card is padded, so releasing it
      costs nothing — the radius still paints, it just no longer clips a list
      that needs to fall past the card. */
@@ -659,13 +706,11 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   }
 
   .firma2-project-measures__entry-lede,
-  .firma2-project-measures__entry-autos,
   .firma2-project-measures__entry-log-title {
     margin: 0;
   }
 
-  .firma2-project-measures__entry-lede,
-  .firma2-project-measures__entry-autos {
+  .firma2-project-measures__entry-lede {
     color: var(--color-content-default-secondary, #646464);
   }
 
@@ -700,14 +745,13 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
      component's own hooks so it cannot touch the scroller's
      data-firma2-measure-years="hidden" ATTRIBUTE VALUE, which is unrelated. */
   .firma2-project-measures :global([data-entry-log-block][hidden]),
-  .firma2-project-measures :global([data-entry-autos][hidden]),
   .firma2-project-measures :global([data-entry-body][hidden]),
   .firma2-project-measures :global([data-entry-activity][hidden]),
   .firma2-project-measures :global([data-entry-lede][hidden]) {
     display: none !important;
   }
 
-  /* FOUR ACTIONS AND A THREE-WAY SWITCH no longer fit beside the title at
+  /* THE ACTIONS AND A THREE-WAY SWITCH no longer fit beside the title at
      this column width; they wrap to a second line, trailing-aligned, rather
      than running past the card's edge. */
   .firma2-project-measures :global(.esa-card__actions) {
@@ -726,11 +770,6 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   .firma2-project-measures[data-empty] .firma2-project-measures__scroller,
   .firma2-project-measures[data-empty] [data-pm-report] {
     display: none;
-  }
-  .firma2-project-measures__empty-action {
-    display: flex;
-    justify-content: center;
-    margin-block-start: var(--spacing-300);
   }
   .firma2-project-measures__report-progress {
     margin: 0;
@@ -787,16 +826,6 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   }
   .firma2-project-measures__entry-previous {
     margin: 0;
-    color: var(--color-content-default-secondary, #646464);
-  }
-  .firma2-project-measures__picker-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  :global(.firma2-project-measures__picker-meta) {
-    margin: var(--spacing-100) 0 0;
-    padding-inline-start: var(--spacing-700, 2rem);
     color: var(--color-content-default-secondary, #646464);
   }
   /* A breakdown row reads as part of its measure: indented, secondary ink. */
@@ -915,23 +944,27 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   // ---------------------------------------------------------------------------
   // THE REPORTING SURFACE. Two acts live here, both persisted browser-locally:
   //
-  //   ADD A MEASURE — a GHOST ROW at the table's foot, not a dialog: the row
-  //   being created is a row of this table, so it is authored where it will
-  //   live. The name cell is a search-as-you-type combobox over the tenant's
-  //   Active catalog (browser drafts included); picking one surfaces its
-  //   definition right there and puts its unit on the target field. Enter
-  //   commits and a fresh ghost appears — the self-extending pattern — and
-  //   Escape withdraws it.
+  //   SET A TARGET — every PUBLISHED catalog measure is a row on every
+  //   project (PM 2, reconciled 2026-10-09): the project's own seeded rows
+  //   first, in their authored order, then the measures it has a target on,
+  //   then the rest of the published catalog with no target yet. A target is
+  //   one number for the project's life; setting it commits the project,
+  //   clearing it is never refused, and the row stays. Draft and Retired
+  //   measures appear only where a target or entries already exist.
   //
   //   RECORD AN ENTRY — every row carries a quiet Record affordance opening
-  //   the entry sheet above: period, figure, the measure's own subcategory
+  //   the entry sheet above: period, figure, the measure's own breakdown
   //   questions. Entries are layered over each row's base figures (the
   //   data-* attributes the row component publishes) by ONE painter, so the
   //   total, the ring and the year cells always agree.
   //
-  // Aggregation is honest-for-a-prototype: sum-family rules add entries up;
-  // reading-family rules (latest/average per place) take the latest entry,
-  // because entries here carry no place to group by.
+  // Aggregation is honest-for-a-prototype: a measure that sums adds entries
+  // up; one that does not takes the latest entry, because entries here carry
+  // no place to group by.
+  //
+  // EVERY TARGET AND ENTRY WRITE IS LOGGED (src/lib/measure-changes.ts) —
+  // entries by the entry store itself, targets here, where the old value is
+  // known. Nothing reads the log yet, as on the branch.
   // ---------------------------------------------------------------------------
   import '@esa/ecology/esa-side-dialog';
   import '@esa/ecology/esa-select';
@@ -941,13 +974,14 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   import '@esa/ecology/esa-confirm-dialog';
   import '@esa/ecology/esa-button-toggle';
   import {
+    askedBreakdowns,
+    isSummable,
+    liveOptions,
     measures as catalogSeeds,
     measureDisplayName,
-    measureKind,
+    periodName,
   } from '../../data/firma2-performance-measures';
   import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
-  import { allSchemas } from '../../lib/schema-draft';
-  import { askedSchemaIds, liveOptions } from '../../data/firma2-performance-measures';
   import { draftedSlugs, isLocalMeasureSlug, withDraft } from '../../lib/measure-draft';
   import {
     addProjectMeasure,
@@ -956,7 +990,9 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     removeProjectMeasure,
     setTargetOverride,
   } from '../../lib/project-measure-draft';
-  import { addEntry, readEntries, removeEntry } from '../../lib/entry-draft';
+  import { addEntry, logEntry, readEntries, removeEntry } from '../../lib/entry-draft';
+  import { logChange } from '../../lib/measure-changes';
+  import { can } from '../../lib/workspace-permissions';
   import { fixSideDialog } from '../../lib/side-dialog-fix';
 
   type Control = HTMLElement & {
@@ -978,7 +1014,6 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       .map((slug) => withDraft(slug)),
   ];
 
-  const catalogActive = () => catalogAll().filter((m) => m.status === 'Active');
 
   /** Resolve a row's measure key back to its catalog record, if it has one.
    *  Seed rows key by name — the seam where a real backend keys by id. */
@@ -989,7 +1024,15 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         ) ?? null
       : catalogAll().find((m) => m.slug === key) ?? null;
 
-  const SUM_RULES = new Set(['sum', 'spatial-union', 'distinct-places']);
+  /** Whether a row's entries add up. A row with no catalog record is a count. */
+  const sumsFor = (key: string): boolean => {
+    const cat = catalogFor(key);
+    return cat ? isSummable(cat) : true;
+  };
+
+  /** The questions a new entry asks: the measure's live breakdowns, by question. */
+  const questionsOf = (cat: PerformanceMeasureDefinition | null): { name: string; options: string[] }[] =>
+    (cat ? askedBreakdowns(cat) : []).map((b) => ({ name: b.question, options: liveOptions(b) }));
 
   document.querySelectorAll<HTMLElement>('.firma2-project-measures').forEach((root) => {
     const body = root.querySelector<HTMLElement>('[data-firma2-pm-section]');
@@ -997,6 +1040,11 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     const tbody = root.querySelector<HTMLElement>('.firma2-project-measures__table tbody');
     const recordTemplate = root.querySelector<HTMLElement>('[data-firma2-pm-record-template]');
     const removeTemplate = root.querySelector<HTMLElement>('[data-firma2-pm-remove-template]');
+    const setTargetTemplate = root.querySelector<HTMLElement>('[data-firma2-pm-set-target-template]');
+    // WHO MAY COMMIT THE PROJECT: Security's "Set project targets" threshold
+    // (administrators by default). Without it, targets read but never edit.
+    const canSetTargets = can('perm-targets');
+    root.toggleAttribute('data-targets-locked', !canSetTargets);
     const sheet = root.querySelector<Sheet>('.firma2-project-measures__entry-sheet');
     if (!body || !slug || !tbody || !sheet) return;
     void fixSideDialog(sheet);
@@ -1009,7 +1057,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     if (!seedRow) return;
 
     const realRows = (): HTMLElement[] =>
-      [...tbody.querySelectorAll<HTMLElement>('tr:not([data-ghost]):not([data-breakdown-of])')];
+      [...tbody.querySelectorAll<HTMLElement>('tr:not([data-breakdown-of])')];
 
     const nameOf = (tr: HTMLElement): string =>
       (
@@ -1023,10 +1071,10 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
 
     const rowNames = (): string[] => realRows().map((tr) => nameOf(tr).toLowerCase());
 
-    /** The table's year axis, read off its own header. */
+    /** The table's year axis, read off its own header (the cells show period names). */
     const axisYears = (): number[] =>
-      [...root.querySelectorAll('thead .firma2-project-measures__year')]
-        .map((th) => Number(th.textContent?.trim()))
+      [...root.querySelectorAll<HTMLElement>('thead .firma2-project-measures__year')]
+        .map((th) => Number(th.dataset.year))
         .filter((y) => Number.isFinite(y));
 
     // ---- the one painter --------------------------------------------------
@@ -1043,24 +1091,72 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       // already current; seed rows read the override store.
       const expected = readTargetOverrides(slug)[key] ?? Number(total.dataset.expected || 0);
       const unit = total.dataset.unit ?? '';
-      const rule = catalogFor(key)?.countingRule ?? 'sum';
-      const summing = SUM_RULES.has(rule);
+      const summing = sumsFor(key);
+      // COMMITTED: a target, or anything reported. The rest fold away.
+      tr.toggleAttribute('data-uncommitted', !(expected > 0 || baseReported > 0 || entries.length > 0));
+      // RETIRED IN THE CATALOG (user, 2026-10-09): the row keeps its figures
+      // and target, says so, and takes nothing new — no Record, no target,
+      // and it leaves the report, Record work and the due count.
+      const retiredMeasure = catalogFor(key)?.status === 'Retired';
+      tr.toggleAttribute('data-retired-measure', retiredMeasure);
+      const nameCell = tr.querySelector<HTMLElement>('.firma2-project-measure-row__name');
+      let tag = tr.querySelector<HTMLElement>('.firma2-project-measures__retired-tag');
+      if (retiredMeasure && !tag && nameCell) {
+        tag = document.createElement('span');
+        tag.className = 'firma2-project-measures__retired-tag typography-body-sm';
+        tag.textContent = 'Retired';
+        nameCell.after(tag);
+      }
+      if (tag) tag.hidden = !retiredMeasure;
 
       const reported = summing
         ? baseReported + entries.reduce((sum, e) => sum + e.amount, 0)
         : entries.length > 0
           ? entries[entries.length - 1].amount
           : baseReported;
-      // A measure ticked in the picker arrives with no target yet; "of 0" would
-      // read as a target of zero, so it says so instead (click to set one).
-      total.textContent = expected > 0 ? `${fmtNum(reported)} of ${fmtNum(expected)} ${unit}`.trim() : `${fmtNum(reported)} ${unit} · no target yet`.trim();
+      // A published measure the project has set no target on: "of 0" would
+      // read as a target of zero, so it says so instead, with a Set target
+      // button while editing. A measure whose values do not add up has no
+      // total and no "X of Y" (PM 2's "Not a total"): it shows its latest
+      // reading, and the target beside it rather than under it.
+      const hasReading = entries.length > 0 || baseReported > 0;
+      const reading = summing
+        ? hasReading ? `${fmtNum(reported)} ${unit}`.trim() : ''
+        : hasReading ? `Latest ${fmtNum(reported)} ${unit}`.trim() : 'No reading yet';
+      if (expected > 0) {
+        total.textContent = summing
+          ? `${fmtNum(reported)} of ${fmtNum(expected)} ${unit}`.trim()
+          : `${reading} · target ${fmtNum(expected)} ${unit}`.trim();
+      } else {
+        // No target: the reading (if any), then "No target" while the record
+        // is read, or the Set target button while it is edited — never both,
+        // so the Progress column stays the width of a figure.
+        total.replaceChildren();
+        if (reading) total.append(reading);
+        const none = document.createElement('span');
+        none.className = 'firma2-project-measures__no-target';
+        none.textContent = reading ? ' · No target' : 'No target';
+        total.append(none);
+        const set = canSetTargets && !retiredMeasure ? (setTargetTemplate?.firstElementChild?.cloneNode(true) as HTMLElement | null) : null;
+        if (set) {
+          set.classList.add('firma2-project-measures__set-target');
+          set.dataset.editOnly = '';
+          set.querySelector('button')?.setAttribute('aria-label', `Set a target for ${nameOf(tr)}`);
+          total.append(set);
+        }
+      }
+      tr.toggleAttribute('data-no-target', !(expected > 0));
+      // Clear target is offered only where there is a target to clear.
+      const clear = tr.querySelector<HTMLElement>('.firma2-project-measures__remove');
+      if (clear) clear.style.display = expected > 0 ? '' : 'none';
 
       // The ring follows — same never-reads-full-until-it-is rule the row
       // component states: the fraction is clamped, not rounded up.
       const fill = tr.querySelector<SVGElement>('.bcn-progress-ring__fill');
       const dash = Number(fill?.getAttribute('stroke-dasharray'));
       if (fill && Number.isFinite(dash) && expected > 0) {
-        const p = Math.min(1, Math.max(0, reported / expected));
+        // No ring progress for a reading: a latest value is not part of a total.
+        const p = summing ? Math.min(1, Math.max(0, reported / expected)) : 0;
         fill.setAttribute('stroke-dashoffset', String(dash * (1 - p)));
       }
 
@@ -1085,8 +1181,31 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       });
     };
 
+    /** The rows this project has committed to and can still report — what the report, Record work and the due line ask about. */
+    const committedRows = (): HTMLElement[] =>
+      realRows().filter((tr) => !tr.hasAttribute('data-uncommitted') && !tr.hasAttribute('data-retired-measure'));
+
+    // The fold over uncommitted measures: one line, offered only to someone
+    // who may set targets (data-edit-only hides it while the record is read).
+    const othersBox = root.querySelector<HTMLElement>('[data-pm-others]');
+    const paintOthers = () => {
+      const n = realRows().filter((tr) => tr.hasAttribute('data-uncommitted')).length;
+      if (othersBox) othersBox.hidden = !canSetTargets || n === 0;
+      const label = othersBox?.querySelector<HTMLElement>('.esa-button__label');
+      if (label) {
+        label.textContent = root.hasAttribute('data-show-others')
+          ? 'Hide other measures'
+          : `Show ${n} other ${n === 1 ? 'measure' : 'measures'} you can commit to`;
+      }
+    };
+    othersBox?.querySelector('button')?.addEventListener('click', () => {
+      root.toggleAttribute('data-show-others');
+      paintOthers();
+    });
+
     const paintAllRows = () => {
       realRows().forEach(paintRow);
+      paintOthers();
       paintBreakdowns();
       syncEmpty();
       paintReport();
@@ -1099,7 +1218,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       const box = root.querySelector<HTMLElement>('[data-pm-empty]');
       if (box) box.hidden = !empty;
       root
-        .querySelectorAll<HTMLElement>('[data-firma2-pm-record-work], [data-open-report-import], [data-firma2-measure-view], [data-firma2-pm-choose]')
+        .querySelectorAll<HTMLElement>('[data-firma2-pm-record-work], [data-open-report-import], [data-firma2-measure-view]')
         .forEach((el) => {
           const host = (el.closest('.esa-button') as HTMLElement | null) ?? el;
           host.style.display = empty ? 'none' : '';
@@ -1139,14 +1258,18 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     const matches = (e: { answers: Record<string, string> }, fixed: Record<string, string>, pivot: string | null, option?: string) =>
       Object.entries(fixed).every(([k, v]) => (e.answers[k] ?? '') === v) && (pivot === null || option === undefined || (e.answers[pivot] ?? '') === option);
 
-    /** Replace whatever this block holds for one option with one figure (or none). */
+    /**
+     * Replace whatever this block holds for one option with one figure (or
+     * none). One act, so one change-log row: filed, corrected or cleared.
+     */
     const setAmount = (key: string, fixed: Record<string, string>, pivot: string | null, option: string, amount: number | null) => {
-      entriesFor(key, period)
-        .filter((e) => matches(e, fixed, pivot, pivot === null ? undefined : option))
-        .forEach((e) => removeEntry(slug, e.id));
-      if (amount !== null && amount > 0) {
-        addEntry(slug, { measureKey: key, year: period, amount, answers: pivot === null ? { ...fixed } : { ...fixed, [pivot]: option } });
+      const old = entriesFor(key, period).filter((e) => matches(e, fixed, pivot, pivot === null ? undefined : option));
+      old.forEach((e) => removeEntry(slug, e.id, { log: false }));
+      const next = amount !== null && amount > 0 ? amount : null;
+      if (next !== null) {
+        addEntry(slug, { measureKey: key, year: period, amount: next, answers: pivot === null ? { ...fixed } : { ...fixed, [pivot]: option } }, { log: false });
       }
+      logEntry(slug, { measureKey: key, year: period }, old.length ? old.reduce((t, e) => t + e.amount, 0) : null, next);
     };
 
     const field = (label: string, value: string, unit: string, fk: string) => {
@@ -1189,17 +1312,57 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       });
     };
 
+    // ---- what is due ------------------------------------------------------
+    const dueBox = root.querySelector<HTMLElement>('[data-pm-due]');
+    const dueText = root.querySelector<HTMLElement>('[data-pm-due-text]');
+    const dueButton = root.querySelector<HTMLElement>('[data-pm-due-report]');
+    let duePeriod: number | null = null;
+    const paintDue = () => {
+      if (!dueBox || !dueText) return;
+      const rows = committedRows();
+      const closed = axisYears().filter((y) => y < PRESENT);
+      duePeriod = closed.length ? closed[closed.length - 1] : null;
+      dueBox.hidden = rows.length === 0 || duePeriod === null;
+      if (dueBox.hidden || duePeriod === null) return;
+      const y = duePeriod;
+      const missing = rows.filter((tr) => baseValue(tr, y) === null && entriesFor(rowKey(tr), y).length === 0);
+      const n = rows.length;
+      const names = missing.map(nameOf);
+      const list = names.length > 3 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ').replace(/, ([^,]*)$/, ' and $1');
+      dueText.textContent =
+        missing.length === 0
+          ? `${periodName(y)}: all ${n} ${n === 1 ? 'measure' : 'measures'} reported.`
+          : `${periodName(y)}: ${n - missing.length} of ${n} ${n === 1 ? 'measure' : 'measures'} reported. Missing: ${list}.`;
+      const host = (dueButton?.closest('.esa-button') as HTMLElement | null) ?? dueButton;
+      if (host) host.style.display = missing.length === 0 ? 'none' : '';
+      const label = dueButton?.querySelector<HTMLElement>('.esa-button__label') ?? dueButton;
+      if (label) label.textContent = `Report ${periodName(y)}`;
+    };
+    // The way in: the Report view, on the period that is due.
+    dueButton?.addEventListener('click', () => {
+      if (duePeriod === null) return;
+      period = duePeriod;
+      const view = root.querySelector<HTMLElement & { value?: string }>('[data-firma2-measure-view]');
+      if (view) {
+        view.value = 'report';
+        view.dispatchEvent(new Event('change'));
+      }
+      paintReport();
+      root.querySelector<HTMLElement>('[data-pm-report]')?.scrollIntoView({ block: 'start' });
+    });
+
     const paintReport = () => {
+      paintDue();
       if (!reportList || !periodToggle || !progressLine) return;
       const periods = reportPeriods();
       if (!periods.includes(period)) period = periods[periods.length - 1];
-      periodToggle.options = periods.map((y) => ({ label: y === PRESENT ? `${y} (now)` : String(y), value: String(y) }));
+      periodToggle.options = periods.map((y) => ({ label: y === PRESENT ? `${periodName(y)} (now)` : periodName(y), value: String(y) }));
       periodToggle.value = String(period);
       if (root.dataset.view !== 'report') return;
 
       // Keep focus where the reader was going when a commit repaints.
       const focusKey = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[data-fk]')?.dataset.fk;
-      const rows = realRows();
+      const rows = committedRows();
       let reportedCount = 0;
 
       reportList.replaceChildren(
@@ -1208,7 +1371,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
           const name = nameOf(tr);
           const cat = catalogFor(key);
           const unit = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total')?.dataset.unit ?? cat?.unit ?? '';
-          const questions = reportedSchemasOf(cat).filter((sch) => sch.origin !== 'system');
+          const questions = questionsOf(cat);
           const pivot = questions.length ? questions[questions.length - 1] : null;
           const fixedQs = questions.slice(0, -1);
           const entries = entriesFor(key, period);
@@ -1235,9 +1398,9 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
             const prevBase = baseValue(tr, prevYear);
             const prevEntries = entriesFor(key, prevYear).reduce((t, e) => t + e.amount, 0);
             const prev = (prevBase ?? 0) + prevEntries;
-            if (prevBase !== null || prevEntries) meta(`Last period (${prevYear}): ${fmtNum(prev)} ${unit}`.trim());
+            if (prevBase !== null || prevEntries) meta(`Last period (${periodName(prevYear)}): ${fmtNum(prev)} ${unit}`.trim());
           }
-          if (base !== null) meta(`Filed for ${period}: ${fmtNum(base)} ${unit}${questions.length ? ', without a breakdown' : ''}. Amounts below are added to it.`);
+          if (base !== null) meta(`Filed for ${periodName(period)}: ${fmtNum(base)} ${unit}${questions.length ? ', without a breakdown' : ''}. Amounts below are added to it.`);
 
           // ---- the blocks ----
           const blocks: HTMLElement[] = [];
@@ -1252,10 +1415,11 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
               el.addEventListener('change', () => {
                 const next = { ...opts.fixed, [q.name]: String(el.value ?? '') };
                 if (opts.filed) {
-                  // Re-key every figure in the block to the new answer.
+                  // Re-key every figure in the block to the new answer. The
+                  // amounts do not change, so the change log has nothing to say.
                   entries.filter((e) => matches(e, opts.fixed, null)).forEach((e) => {
-                    removeEntry(slug, e.id);
-                    addEntry(slug, { measureKey: key, year: period, amount: e.amount, answers: { ...e.answers, [q.name]: next[q.name] } });
+                    removeEntry(slug, e.id, { log: false });
+                    addEntry(slug, { measureKey: key, year: period, amount: e.amount, answers: { ...e.answers, [q.name]: next[q.name] } }, { log: false });
                   });
                   paintAllRows();
                 } else {
@@ -1316,7 +1480,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
                 const doomed = entries.filter((e) => matches(e, opts.fixed, null));
                 pendingBin = () => doomed.forEach((e) => removeEntry(slug, e.id));
                 if (binDialog) {
-                  binDialog.message = `${doomed.length === 1 ? 'This figure is' : `These ${doomed.length} figures are`} deleted from ${period}. The measure stays on the project.`;
+                  binDialog.message = `${doomed.length === 1 ? 'This figure is' : `These ${doomed.length} figures are`} deleted from ${periodName(period)}. The measure stays on the project.`;
                   binDialog.show();
                 }
               });
@@ -1367,7 +1531,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
           return sec;
         }),
       );
-      progressLine.textContent = `${reportedCount} of ${rows.length} ${rows.length === 1 ? 'measure' : 'measures'} reported for ${period}`;
+      progressLine.textContent = `${reportedCount} of ${rows.length} ${rows.length === 1 ? 'measure' : 'measures'} reported for ${periodName(period)}`;
 
       if (focusKey) {
         const target = reportList.querySelector<HTMLElement>(`[data-fk="${CSS.escape(focusKey)}"]`);
@@ -1398,7 +1562,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     const splitOf = (key: string) => {
       const entries = readEntries(slug).filter((e) => e.measureKey === key && Object.keys(e.answers).length);
       if (!entries.length) return null;
-      const order = reportedSchemasOf(catalogFor(key)).map((sch) => sch.name);
+      const order = questionsOf(catalogFor(key)).map((q) => q.name);
       const answered = [...new Set(entries.flatMap((e) => Object.keys(e.answers)))];
       const schema = order.find((n) => answered.includes(n)) ?? answered[0];
       const options = [...new Set(entries.map((e) => e.answers[schema]).filter(Boolean))];
@@ -1426,13 +1590,14 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         toggle?.querySelector('button')?.setAttribute('aria-expanded', String(open));
         if (!open) return;
         const unit = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total')?.dataset.unit ?? '';
-        const summing = SUM_RULES.has(catalogFor(key)?.countingRule ?? 'sum');
+        const summing = sumsFor(key);
         let after: Element = tr;
         split.options.forEach((option) => {
           const mine = split.entries.filter((e) => e.answers[split.schema] === option);
           const row = tr.cloneNode(true) as HTMLElement;
           row.dataset.breakdownOf = key;
           delete row.dataset.addedMeasure;
+          delete row.dataset.kpi;
           row.querySelectorAll('.bcn-progress-ring, .firma2-project-measures__record, .firma2-project-measures__remove, .firma2-project-measures__divide').forEach((el) => el.remove());
           const name = row.querySelector<HTMLElement>('.firma2-project-measure-row__name');
           if (name) {
@@ -1483,11 +1648,13 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
           );
           if (record) dock.append(record);
         }
-        if (tr.dataset.addedMeasure && !tr.querySelector('.firma2-project-measures__remove')) {
+        // Every row can carry a target, so every row can clear one; the
+        // painter hides the control where there is none.
+        if (!tr.querySelector('.firma2-project-measures__remove')) {
           const remove = cloneButton(
             removeTemplate,
             'firma2-project-measures__remove',
-            `Remove ${nameOf(tr)} from this project`,
+            `Clear the target for ${nameOf(tr)}`,
           );
           // Hidden while the record is read (firma2-record-mode).
           if (remove) {
@@ -1498,16 +1665,28 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       });
     };
 
-    // ---- rows added in this browser --------------------------------------
+    // ---- catalog rows: targets, and every published measure ------------------
+    // Seeded rows are built data and stay first, in their authored order.
+    // After them: the catalog measures this project has a TARGET on, in the
+    // order the targets were set; then every other PUBLISHED measure, with no
+    // target yet. A Draft or Retired measure shows only where a target or
+    // entries already exist — what was committed or filed is never hidden.
+    // A catalog measure a seeded row already reports toward (its data-kpi, or
+    // the same name) is not offered a second time.
     const paintAdded = () => {
       tbody.querySelectorAll('[data-added-measure]').forEach((tr) => tr.remove());
-      const taken = rowNames();
-      for (const entry of readProjectMeasures(slug)) {
-        const m = withDraft(entry.measureSlug);
+      const takenNames = new Set(rowNames());
+      const takenSlugs = new Set(realRows().map((tr) => tr.dataset.kpi).filter(Boolean) as string[]);
+      const filed = new Set(readEntries(slug).map((e) => e.measureKey));
+
+      const addRow = (m: PerformanceMeasureDefinition, target: number) => {
         const name = measureDisplayName(m);
-        if (taken.includes(name.toLowerCase())) continue;
+        if (takenSlugs.has(m.slug) || takenNames.has(name.toLowerCase())) return;
+        takenSlugs.add(m.slug);
+        takenNames.add(name.toLowerCase());
         const tr = seedRow.cloneNode(true) as HTMLElement;
-        tr.dataset.addedMeasure = entry.measureSlug;
+        tr.dataset.addedMeasure = m.slug;
+        delete tr.dataset.kpi;
 
         const nameSpan = tr.querySelector<HTMLElement>('.firma2-project-measure-row__name');
         if (nameSpan) {
@@ -1521,187 +1700,77 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         const total = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total');
         if (total) {
           total.dataset.reported = '0';
-          total.dataset.expected = String(entry.target);
+          total.dataset.expected = String(target);
           total.dataset.unit = m.unit ?? '';
         }
         tr.querySelectorAll<HTMLElement>('.firma2-project-measure-row__year').forEach((td) => {
           td.dataset.value = '';
         });
         tbody.append(tr);
+      };
+
+      for (const entry of readProjectMeasures(slug).filter((e) => e.target > 0)) {
+        addRow(withDraft(entry.measureSlug), entry.target);
+      }
+      for (const m of catalogAll()) {
+        if (m.status === 'Published' || filed.has(m.slug)) addRow(m, 0);
       }
       ensureRowControls();
       paintAllRows();
-      refreshGhost();
     };
 
-    // ---- the ghost row ----------------------------------------------------
-    // PERMANENT AND QUIET — the original option-list grammar: the table's
-    // last row IS the add affordance, wearing placeholder ink until asked
-    // for. Clicking the invitation swaps the editor (catalog combobox +
-    // target) into the same cells; Enter commits and the editor stays,
-    // cleared, for the next commitment; Escape folds it back to the
-    // invitation. The row hides only when every Active measure is already
-    // attached, and it always stays last.
-    const ghostRow = (): HTMLElement | null => tbody.querySelector<HTMLElement>('tr[data-ghost]');
-
-    const ghostOptions = () => {
-      const taken = new Set(rowNames());
-      return catalogActive()
-        .filter((m) => !taken.has(measureDisplayName(m).toLowerCase()))
-        .map((m) => ({ label: measureDisplayName(m), value: m.slug }));
-    };
-
-    /** Keep the ghost current: options while editing, visibility, position. */
-    const refreshGhost = () => {
-      const tr = ghostRow();
-      if (!tr) return;
-      const options = ghostOptions();
-      const combo = tr.querySelector<Control>('esa-combobox');
-      if (combo) combo.options = options;
-      tr.hidden = options.length === 0;
-      tbody.append(tr);
-    };
-
-    /** The resting shape: one quiet invitation where the name would be. */
-    const foldGhost = () => {
-      const tr = ghostRow();
-      if (!tr) return;
-      const th = tr.querySelector('th');
-      if (th) {
-        const invite = document.createElement('button');
-        invite.type = 'button';
-        invite.className = 'firma2-project-measures__ghost-invite';
-        invite.textContent = 'Add a measure';
-        th.replaceChildren(invite);
-      }
-      tr.querySelector<HTMLElement>('.firma2-project-measure-row__total')?.replaceChildren();
-      refreshGhost();
-    };
-
-    /** Commit whatever the editing ghost holds; the editor stays for the next. */
-    const commitGhost = () => {
-      const tr = ghostRow();
-      const combo = tr?.querySelector<Control>('esa-combobox');
-      const target = tr?.querySelector<Control>('esa-text-field');
-      if (!tr || !combo || !target) return;
-      const picked = String(combo.value ?? '');
-      if (!picked) {
-        combo.errorText = 'Pick a measure.';
-        return;
-      }
-      const amount = Number(String(target.value ?? '').replace(/,/g, ''));
-      if (!Number.isFinite(amount) || amount <= 0) {
-        target.errorText = 'Enter the committed amount.';
-        return;
-      }
-      addProjectMeasure(slug, { measureSlug: picked, target: amount });
-      combo.value = '';
-      combo.helpText = '';
-      combo.errorText = '';
-      target.value = '';
-      target.errorText = '';
-      target.removeAttribute('suffix');
-      paintAdded();
-      requestAnimationFrame(() => {
-        (combo.shadowRoot?.querySelector<HTMLElement>('input') ?? combo).focus();
-      });
-    };
-
-    /** The editing shape: catalog combobox + target, in the same cells. */
-    const editGhost = () => {
-      const tr = ghostRow();
-      if (!tr || tr.querySelector('esa-combobox')) return;
-
-      const combo = document.createElement('esa-combobox') as Control;
-      combo.setAttribute('label', 'Measure');
-      combo.setAttribute('size', 'md');
-      combo.setAttribute('placeholder', 'Search the catalog');
-      tr.querySelector('th')?.replaceChildren(combo);
-
-      const target = document.createElement('esa-text-field') as Control;
-      target.setAttribute('label', 'Target');
-      target.setAttribute('size', 'md');
-      target.setAttribute('inputmode', 'decimal');
-      target.setAttribute('placeholder', 'e.g. 250');
-      tr.querySelector<HTMLElement>('.firma2-project-measure-row__total')?.replaceChildren(target);
-
-      // Picking a measure surfaces its definition where the choice is being
-      // made, and puts its unit on the target — the two facts the judgment
-      // needs, without leaving the row.
-      combo.addEventListener('change', () => {
-        const picked = catalogAll().find((m) => m.slug === String(combo.value ?? ''));
-        combo.helpText = picked?.definition ?? '';
-        if (picked?.unit) target.setAttribute('suffix', picked.unit);
-        else target.removeAttribute('suffix');
-        combo.errorText = '';
-      });
-
-      refreshGhost();
-      requestAnimationFrame(() => {
-        (combo.shadowRoot?.querySelector<HTMLElement>('input') ?? combo).focus();
-      });
-    };
-
-    /** Build the row once; state swaps happen inside its cells. */
-    const ensureGhost = () => {
-      if (ghostRow()) {
-        refreshGhost();
-        return;
-      }
-      const tr = seedRow.cloneNode(true) as HTMLElement;
-      tr.dataset.ghost = '';
-      // Adding a measure changes the record's makeup: edit mode only.
-      tr.dataset.editOnly = '';
-      delete tr.dataset.addedMeasure;
-      const totalCell = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total');
-      if (totalCell) {
-        delete totalCell.dataset.reported;
-        delete totalCell.dataset.expected;
-        delete totalCell.dataset.unit;
-        totalCell.replaceChildren();
-      }
-      tr.querySelectorAll<HTMLElement>('.firma2-project-measure-row__year').forEach((td) => {
-        td.classList.remove('firma2-project-measure-row__year--none');
-        td.replaceChildren();
-      });
-      tr.querySelectorAll('.firma2-project-measures__record, .firma2-project-measures__remove').forEach((b) => b.remove());
-
-      tr.addEventListener('click', (event) => {
-        if ((event.target as Element).closest('.firma2-project-measures__ghost-invite')) editGhost();
-      });
-      tr.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && tr.querySelector('esa-combobox')) {
-          event.preventDefault();
-          commitGhost();
-        } else if (event.key === 'Escape') {
-          event.preventDefault();
-          foldGhost();
+    // ---- setting and clearing a target ------------------------------------
+    /**
+     * The one write path for a target, so every set, change and clear is
+     * logged once with its old value. A catalog row keeps its target on its
+     * own record (removing the record IS clearing it — the row stays while
+     * the measure is published); a seeded row's edit is a browser-local
+     * override, and editing it back to the built value clears the override.
+     */
+    const writeTarget = (tr: HTMLElement, next: number | null) => {
+      const key = rowKey(tr);
+      const td = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total');
+      const built = Number(td?.dataset.expected || 0);
+      const before = tr.dataset.addedMeasure ? built : readTargetOverrides(slug)[key] ?? built;
+      if (tr.dataset.addedMeasure) {
+        if (next !== null && next > 0) {
+          addProjectMeasure(slug, { measureSlug: tr.dataset.addedMeasure, target: next });
+          if (td) td.dataset.expected = String(next);
+        } else {
+          removeProjectMeasure(slug, tr.dataset.addedMeasure);
+          if (td) td.dataset.expected = '0';
         }
+      } else {
+        const value = next !== null && next > 0 ? next : 0;
+        setTargetOverride(slug, key, value === built ? null : value);
+      }
+      logChange({
+        projectSlug: slug,
+        measureSlug: key,
+        periodName: null,
+        field: 'TargetValue',
+        oldValue: before > 0 ? before : null,
+        newValue: next !== null && next > 0 ? next : null,
       });
-
-      tbody.append(tr);
-      foldGhost();
     };
 
-    // Removal — only rows added in this browser carry the control.
+    // Clear target — never refused, and the row stays.
     tbody.addEventListener('click', (event) => {
       const btn = (event.target as Element).closest('.firma2-project-measures__remove');
-      const tr = btn?.closest<HTMLElement>('[data-added-measure]');
-      if (!tr?.dataset.addedMeasure) return;
-      removeProjectMeasure(slug, tr.dataset.addedMeasure);
-      paintAdded();
+      const tr = btn?.closest<HTMLElement>('tr');
+      if (!tr || tr.dataset.breakdownOf !== undefined) return;
+      writeTarget(tr, null);
+      paintAllRows(); // the due line and the fold count targets too
     });
 
     // ---- editing the GOAL where it lays -----------------------------------
     // Double-click the Progress cell (the catalog grid's own edit convention)
-    // and the target becomes a field in place — the same esa-text-field the
-    // ghost row uses, in the same cell the number lives in. Enter/blur
-    // commits, Escape restores. An added row's edit replaces its record; a
-    // seed row's edit is a browser-local override, and editing it back to
-    // the built value clears the override entirely.
+    // and the target becomes a field in place, in the same cell the number
+    // lives in. Enter/blur commits, Escape restores, and an emptied field (or
+    // 0) clears the target through writeTarget.
     const editTarget = (td: HTMLElement) => {
       const tr = td.closest<HTMLElement>('tr');
-      if (!tr || tr.dataset.ghost !== undefined || td.querySelector('esa-text-field')) return;
+      if (!tr || tr.dataset.breakdownOf !== undefined || tr.hasAttribute('data-retired-measure') || td.querySelector('esa-text-field')) return;
       const key = rowKey(tr);
       const unit = td.dataset.unit ?? '';
       const current = readTargetOverrides(slug)[key] ?? Number(td.dataset.expected || 0);
@@ -1711,7 +1780,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       field.setAttribute('size', 'md');
       field.setAttribute('inputmode', 'decimal');
       if (unit) field.setAttribute('suffix', unit);
-      field.value = String(current);
+      field.value = current > 0 ? String(current) : '';
       td.replaceChildren(field);
 
       let closed = false;
@@ -1719,18 +1788,13 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         if (closed) return;
         closed = true;
         if (commit) {
-          const next = Number(String(field.value ?? '').replace(/,/g, ''));
-          if (Number.isFinite(next) && next > 0) {
-            if (tr.dataset.addedMeasure) {
-              addProjectMeasure(slug, { measureSlug: tr.dataset.addedMeasure, target: next });
-              td.dataset.expected = String(next);
-            } else {
-              const base = Number(td.dataset.expected || 0);
-              setTargetOverride(slug, key, next === base ? null : next);
-            }
+          const raw = String(field.value ?? '').replace(/,/g, '').trim();
+          const next = raw === '' ? null : Number(raw);
+          if (next === null || (Number.isFinite(next) && next >= 0)) {
+            if ((next ?? 0) !== (current > 0 ? current : 0)) writeTarget(tr, next);
           }
         }
-        paintRow(tr);
+        paintAllRows(); // the due line and the fold count targets too
       };
 
       field.addEventListener('keydown', (event) => {
@@ -1754,8 +1818,14 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       });
     };
 
+    tbody.addEventListener('click', (event) => {
+      const set = (event.target as Element).closest('.firma2-project-measures__set-target');
+      const td = set?.closest<HTMLElement>('.firma2-project-measure-row__total');
+      if (td) editTarget(td);
+    });
+
     tbody.addEventListener('dblclick', (event) => {
-      if (isViewMode()) return;
+      if (isViewMode() || !canSetTargets) return;
       const td = (event.target as Element).closest<HTMLElement>('.firma2-project-measure-row__total');
       if (td) editTarget(td);
     });
@@ -1765,7 +1835,6 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     const yearField = root.querySelector<Control>('[data-entry-year]');
     const amountField = root.querySelector<Control>('[data-entry-amount]');
     const questions = root.querySelector<HTMLElement>('[data-entry-questions]');
-    const autos = root.querySelector<HTMLElement>('[data-entry-autos]');
     const logBlock = root.querySelector<HTMLElement>('[data-entry-log-block]');
     const log = root.querySelector<HTMLElement>('[data-entry-log]');
 
@@ -1776,29 +1845,23 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     let entryUnit = '';
     let activityMode = false;
 
-    /** The measure's hand-answered schemas, resolved through the live store. */
-    const reportedSchemasOf = (cat: PerformanceMeasureDefinition | null) =>
-      (cat ? askedSchemaIds(cat) : [])
-        .map((id) => allSchemas().find((sch) => sch.id === id))
-        .filter((sch): sch is NonNullable<typeof sch> => Boolean(sch));
-
     /**
      * THE COMBINED VOCABULARY this project can file work under: every
-     * subcategory option of every measure on the project, disambiguated by
+     * breakdown option of every measure on the project, disambiguated by
      * the measure it files into, plus the measure names themselves for the
      * reporter who does think in catalog terms. Alphabetical, so the list
      * reads the same way twice.
      */
     const activityOptions = (): { label: string; value: string }[] => {
       const opts: { label: string; value: string }[] = [];
-      for (const tr of realRows()) {
+      for (const tr of committedRows()) {
         const key = rowKey(tr);
         const name = nameOf(tr);
         opts.push({ label: name, value: `m|${key}` });
         const cat = catalogFor(key);
-        for (const schema of reportedSchemasOf(cat).filter((sch) => sch.origin !== 'system')) {
-          for (const option of liveOptions(schema)) {
-            opts.push({ label: `${option} — ${name}`, value: `o|${key}|${schema.name}|${option}` });
+        for (const q of questionsOf(cat)) {
+          for (const option of q.options) {
+            opts.push({ label: `${option} — ${name}`, value: `o|${key}|${q.name}|${option}` });
           }
         }
       }
@@ -1817,12 +1880,12 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         const text = document.createElement('span');
         text.className = 'typography-body-sm';
         const answers = Object.values(e.answers).join(' \u00b7 ');
-        text.textContent = `${e.year} \u00b7 ${fmtNum(e.amount)} ${entryUnit}${answers ? ` \u00b7 ${answers}` : ''}`;
+        text.textContent = `${periodName(e.year)} \u00b7 ${fmtNum(e.amount)} ${entryUnit}${answers ? ` \u00b7 ${answers}` : ''}`;
         li.append(text);
         const remove = cloneButton(
           removeTemplate,
           'firma2-project-measures__entry-remove',
-          `Remove the ${e.year} entry of ${fmtNum(e.amount)} ${entryUnit}`,
+          `Remove the ${periodName(e.year)} entry of ${fmtNum(e.amount)} ${entryUnit}`,
         );
         if (remove) li.append(remove);
         log.append(li);
@@ -1830,19 +1893,20 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     };
 
     const openEntryFor = (tr: HTMLElement, prefill?: { schemaName: string; option: string }) => {
-      if (!yearField || !amountField || !questions || !autos || !lede || !entryBody) return;
+      if (!yearField || !amountField || !questions || !lede || !entryBody) return;
       entryKey = rowKey(tr);
       const catalog = catalogFor(entryKey);
       const total = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total');
       entryUnit = total?.dataset.unit || catalog?.unit || '';
 
       sheet.heading = nameOf(tr);
-      lede.hidden = false;
+      // The lede belongs to the activity-first opening move; once a measure
+      // is resolved the sheet's heading names it, and nothing more is said.
+      lede.hidden = true;
       entryBody.hidden = false;
-      lede.textContent = `Filed by ${catalog ? measureKind(catalog.kind).reportedBy : 'the project'}.`;
 
       const years = axisYears();
-      yearField.options = [...years].reverse().map((y) => ({ label: String(y), value: String(y) }));
+      yearField.options = [...years].reverse().map((y) => ({ label: periodName(y), value: String(y) }));
       yearField.value = years.length > 0 ? String(years[years.length - 1]) : '';
 
       amountField.value = '';
@@ -1853,25 +1917,20 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       if (guidance) amountField.setAttribute('help-text', guidance);
       else amountField.removeAttribute('help-text');
 
-      // The measure's own questions — one optional dropdown per subcategory
-      // schema the reporter answers by hand; the system's are named, not
-      // asked. An activity pick arrives with its question ALREADY answered.
+      // The measure's own questions — one optional dropdown per breakdown
+      // still asked, retired options left out. An activity pick arrives with
+      // its question ALREADY answered.
       questions.replaceChildren();
-      const schemas = reportedSchemasOf(catalog);
-      for (const schema of schemas.filter((s) => s.origin !== 'system')) {
+      for (const q of questionsOf(catalog)) {
         const select = document.createElement('esa-select') as Control;
-        select.setAttribute('label', schema.name);
+        select.setAttribute('label', q.name);
         select.setAttribute('size', 'md');
         select.setAttribute('placeholder', 'Optional');
-        select.setAttribute('data-entry-question', schema.name);
-        select.options = liveOptions(schema).map((o) => ({ label: o, value: o }));
-        if (prefill && prefill.schemaName === schema.name) select.value = prefill.option;
+        select.setAttribute('data-entry-question', q.name);
+        select.options = q.options.map((o) => ({ label: o, value: o }));
+        if (prefill && prefill.schemaName === q.name) select.value = prefill.option;
         questions.append(select);
       }
-      const free = schemas.filter((s) => s.origin === 'system');
-      autos.hidden = free.length === 0;
-      autos.textContent =
-        free.length > 0 ? `Added automatically: ${free.map((s) => s.name).join(', ')}.` : '';
 
       // LAST PERIOD, read off the row as painted — the seeded history and
       // this browser's entries, through the same painter the table uses.
@@ -1881,7 +1940,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
           .reverse()
           .find((td) => !td.classList.contains('firma2-project-measure-row__year--none'));
         previous.hidden = !last;
-        if (last) previous.textContent = `Last period, ${last.dataset.year}: ${last.textContent?.trim()} ${entryUnit}`.trim();
+        if (last) previous.textContent = `Last period, ${periodName(Number(last.dataset.year))}: ${last.textContent?.trim()} ${entryUnit}`.trim();
       }
 
       // The FIRST question may take several answers; picking two or more
@@ -2074,66 +2133,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       paintLog();
     });
 
-    // ---- choose measures (team 6) ----------------------------------------
-    // Ticked: the project answers it every period. Seeded measures have a
-    // reporting history, and an added one with entries has some too — those
-    // stay ticked, and say why, because unticking would orphan what was filed.
-    const picker = root.querySelector<Sheet>('.firma2-project-measures__picker');
-    const pickerList = root.querySelector<HTMLElement>('[data-picker-list]');
-    if (picker) void fixSideDialog(picker);
-
-    const paintPicker = () => {
-      if (!pickerList) return;
-      const onProject = new Map(realRows().map((tr) => [nameOf(tr).toLowerCase(), tr]));
-      pickerList.replaceChildren(
-        ...[...catalogActive()]
-          .sort((a, b) => measureDisplayName(a).localeCompare(measureDisplayName(b)))
-          .map((m) => {
-            const name = measureDisplayName(m);
-            const tr = onProject.get(name.toLowerCase());
-            const seeded = Boolean(tr && !tr.dataset.addedMeasure);
-            const hasEntries = readEntries(slug).some((e) => e.measureKey === (tr ? rowKey(tr) : m.slug));
-            const locked = seeded || hasEntries;
-            const li = document.createElement('li');
-            const box = document.createElement('esa-checkbox') as Control & { checked?: boolean; disabled?: boolean };
-            box.setAttribute('label', name);
-            box.checked = Boolean(tr);
-            box.disabled = locked;
-            box.addEventListener('change', () => {
-              if (box.checked) addProjectMeasure(slug, { measureSlug: m.slug, target: 0 });
-              else removeProjectMeasure(slug, m.slug);
-              paintAdded();
-              paintPicker();
-            });
-            const meta = document.createElement('p');
-            meta.className = 'firma2-project-measures__picker-meta typography-body-sm';
-            meta.textContent = seeded
-              ? 'Already reported on, so it stays.'
-              : hasEntries
-                ? 'Has entries, so it stays. Remove its entries to take it off.'
-                : m.definition || 'No definition yet.';
-            li.append(box, meta);
-            return li;
-          }),
-      );
-    };
-
-    root.querySelector('[data-firma2-pm-choose-empty]')?.addEventListener('click', () => {
-      void customElements.whenDefined('esa-checkbox').then(() => {
-        paintPicker();
-        picker?.show();
-      });
-    });
-    root.querySelector('[data-firma2-pm-choose]')?.addEventListener('click', () => {
-      void customElements.whenDefined('esa-checkbox').then(() => {
-        paintPicker();
-        picker?.show();
-      });
-    });
-    root.querySelector('[data-picker-done]')?.addEventListener('click', () => picker?.close());
-
     // ---- boot -------------------------------------------------------------
     paintAdded();
-    ensureGhost();
   });
 </script>

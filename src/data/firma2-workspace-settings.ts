@@ -255,6 +255,9 @@ export const SECURITY_PERMISSIONS: SecurityPermission[] = [
   // Goals are the initiative's to set, so administrators by default; a
   // workspace that has its program staff set up goals opens it wider.
   { key: 'perm-classifications', label: 'Manage classifications', hint: 'Set up classification groups and classifications, with their performance measures and goal targets.', value: 'admins' },
+  // A target commits a project to an amount on a performance measure; PM 2
+  // keeps that with administrators, so it starts there (user, 2026-10-09).
+  { key: 'perm-targets', label: 'Set project targets', hint: 'Commit a project to an amount on a performance measure, or clear it. Anyone who can edit a project can still report against it.', value: 'admins' },
   { key: 'perm-import', label: 'Import data', hint: 'Bring in projects and records from a spreadsheet or GIS file.', value: 'admins' },
   { key: 'perm-export', label: 'Export data', hint: 'Download projects, funding and measures as a spreadsheet.', value: 'stewards' },
   { key: 'perm-api', label: 'Create API tokens', hint: 'Let another system read and change workspace data.', value: 'admins' },

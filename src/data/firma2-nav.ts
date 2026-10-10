@@ -62,11 +62,15 @@ export const navItems: Firma2NavItem[] = [
   { key: 'projects', label: 'Projects', href: '/prototypes/projects', icon: 'folder', group: 'Workspace', aliasable: true },
   // No index route yet — only one page per classification — so the row is inert.
   { key: 'classifications', label: 'Classifications', href: '/prototypes/classifications', icon: 'list', group: 'Workspace', aliasable: true },
+  // READ HERE, SET UP IN SETTINGS (user, 2026-10-09): the reading index of
+  // performance measures, beside Classifications — the same two-page split
+  // that entity has. The catalog stays in Workspace settings › Projects.
+  { key: 'performance-measures', label: 'Performance measures', href: '/prototypes/performance-measures', icon: 'trending-up', group: 'Workspace', aliasable: true },
   { key: 'progress-dashboard', label: 'Progress Dashboard', icon: 'layout-dashboard', group: 'Workspace' },
   // MORE: the workspace's less-visited lists, one expandable row so the
   // everyday rows above stay short. Members and Support Requests have no route
-  // yet, so they render dimmed (the navItems contract). Performance Measures left
-  // for Settings › Projects.
+  // yet, so they render dimmed (the navItems contract). Performance measures left
+  // More on 2026-10-08 and returned as a Workspace row on 2026-10-09 (above).
   {
     key: 'more',
     label: 'More',

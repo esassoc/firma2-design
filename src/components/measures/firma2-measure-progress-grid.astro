@@ -1,0 +1,265 @@
+---
+// firma2-measure-progress-grid — the Performance measures index body: every
+// published measure as one row of a sortable, searchable table, with how far
+// the portfolio has got on it. Replaces firma2-measure-board's cards (user,
+// 2026-10-09: cards are "a lot harder to analyze and look and find PM if
+// there's a large volume of them").
+//
+// A TABLE BECAUSE THE READER COMPARES AND FINDS. Forty measures as cards are
+// forty boxes to scan in a Z; as rows they are one column of names, sortable
+// by progress, searchable by name, unit or classification, and filterable by
+// the classifications they report toward — the Projects grid's filter and
+// wording (user, 2026-10-09: "Classification" is the system's word
+// everywhere; not every classification is a goal). The catalog in Workspace settings is the same grid
+// chrome (firma2-measure-table) — two pages for one entity, one grammar.
+//
+// THE RING STAYS. Each row leads its Progress cell with the same
+// bcn-progress-ring and "reported of planned" figure a goal's measures and a
+// project's rows draw (src/lib/kpi-row), so a reader moving between them
+// still reads one picture. The rings are server-rendered once per measure and
+// cloned into cells, as the settings table clones its status pills.
+//
+// PUBLISHED ONLY, ALPHABETICAL AT REST — drafts and retired measures are the
+// administrator's business, in settings. Sorting is the reader's.
+//
+// bcn-lego-checked: ecology has no table/grid lego (esa-grid is a docs-only
+// reference to Beacon's Angular AG Grid wrapper). AG Grid Community through
+// shared/grid-chrome + firma2-data-grid-chrome.css is this spoke's tabular
+// surface, reused verbatim. Controls are legos: esa-text-field (search),
+// esa-filter-container + esa-filter-dropdown (Classification), esa-filter-clear-button,
+// esa-button (CSV), esa-empty-state (no matches). The ring is
+// bcn-progress-ring. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
+import EsaFilterClearButton from '@esa/ecology/esa-filter-clear-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import BcnProgressRing from '../shared/bcn-progress-ring.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { measures, measureDisplayName } from '../../data/firma2-performance-measures';
+import { goalsOf, measurePortfolio } from '../../data/firma2-classification-rollup';
+import { kpiRowView } from '../../lib/kpi-row';
+import { withBase } from '../../lib/base';
+import { measurePageHref } from '../../lib/measure-pages';
+
+const rows = measures
+  .filter((m) => m.status === 'Published')
+  .sort((a, b) => measureDisplayName(a).localeCompare(measureDisplayName(b)))
+  .map((m) => {
+    const p = measurePortfolio(m);
+    const view = kpiRowView({
+      unit: p.unit,
+      decimals: m.decimalPlaces,
+      additive: p.additive,
+      reported: p.reported,
+      committed: p.committed,
+      from: [],
+    });
+    return {
+      slug: m.slug,
+      name: measureDisplayName(m),
+      href: withBase(measurePageHref(m.slug)),
+      definition: m.definition ?? '',
+      unit: m.unit ?? '',
+      // Null when there is nothing to measure against: sorts last, reads "—".
+      percent: view.expected > 0 && p.reported != null ? view.percent : null,
+      ringPercent: view.percent,
+      figure: view.totalText,
+      projects: p.contributions.length,
+      goals: goalsOf(m).map((g) => g.name),
+    };
+  });
+
+const goalOptions = [...new Set(rows.flatMap((r) => r.goals))]
+  .sort((a, b) => a.localeCompare(b))
+  .map((g) => ({ value: g, label: g }));
+---
+<section class="firma2-measure-progress-grid stack" data-gap="md">
+  <!-- Search, the Classification filter and Clear all are one row; Download CSV alone at
+       the right — the settings table's layout. size="md" throughout. -->
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__controls-filters cluster">
+      <div class="firma2-data-grid__search">
+        <esa-text-field label="Search measures" placeholder="Name, unit or classification" size="md" data-pm-search></esa-text-field>
+      </div>
+
+      {goalOptions.length > 0 && (
+        <EsaFilterContainer>
+          <esa-filter-dropdown
+            data-pm-goal-filter
+            name="classification"
+            label="Classification"
+            data-aliasable-attr="label"
+            size="md"
+            multiple
+            placeholder="Search classifications"
+            options={JSON.stringify(goalOptions)}
+          ></esa-filter-dropdown>
+        </EsaFilterContainer>
+      )}
+
+      <EsaFilterClearButton />
+    </div>
+
+    <EsaButton variant="chrome" iconOnly icon="download" label="Download CSV" size="sm" data-pm-csv />
+  </div>
+
+  <div class="firma2-data-grid__grid" data-pm-grid></div>
+
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-pm-count>{rows.length} measures</span>
+  </footer>
+
+  <!-- One ring per measure, server-rendered and cloned into its Progress cell,
+       so the cell IS bcn-progress-ring rather than a copy of it. -->
+  <div data-pm-rings hidden aria-hidden="true">
+    {rows.map((r) => (
+      <span data-slug={r.slug}><BcnProgressRing value={r.ringPercent} size="xs" /></span>
+    ))}
+  </div>
+
+  <div data-pm-empty hidden aria-hidden="true">
+    <EsaEmptyState size="sm" title="No matching measures" description="Try a different search, or clear the filters above." />
+  </div>
+
+  <script type="application/json" data-pm-data set:html={JSON.stringify(rows)}></script>
+</section>
+
+<style>
+  /* bcn-lego-checked: adjusts legos in place — the esa-filter-clear-button
+     height and hidden rules firma2-measure-table documents. */
+  .firma2-measure-progress-grid :global(.esa-filter-clear-button) {
+    height: 40px;
+  }
+
+  .firma2-measure-progress-grid :global(.esa-filter-clear-button[hidden]) {
+    display: none;
+  }
+
+  /* Wrapped cells need prose leading: AG Grid sets line-height to the row
+     height, which becomes the gap between wrapped lines (firma2-project-funding
+     measured it). */
+  .firma2-measure-progress-grid :global(.ag-cell-wrap-text) {
+    line-height: 1.45;
+    padding-block: var(--spacing-200, 0.5rem);
+  }
+
+  /* Ring and figure on one line inside the Progress cell. */
+  .firma2-measure-progress-grid :global(.firma2-pm-progress) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-200, 0.5rem);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-filter-dropdown';
+  import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import { label } from '../../lib/vocabulary';
+  import type { ColDef } from 'ag-grid-community';
+
+  type Row = {
+    slug: string;
+    name: string;
+    href: string;
+    definition: string;
+    unit: string;
+    percent: number | null;
+    figure: string;
+    projects: number;
+    goals: string[];
+  };
+
+  const UNSET = '—';
+
+  function init(root: HTMLElement) {
+    const emptyState = root.querySelector<HTMLElement>('[data-pm-empty] > *');
+    const goalFilter = root.querySelector<HTMLElement>('[data-pm-goal-filter]');
+    const clearButton = root.querySelector<HTMLElement>('[data-esa-filter-clear]');
+
+    const ringHTML = new Map<string, string>();
+    root.querySelectorAll<HTMLElement>('[data-pm-rings] [data-slug]').forEach((el) => ringHTML.set(el.dataset.slug ?? '', el.innerHTML));
+
+    let goalValues: string[] = [];
+
+    const handle = wireDataGrid<Row>({
+      root,
+      gridSelector: '[data-pm-grid]',
+      dataSelector: '[data-pm-data]',
+      searchSelector: '[data-pm-search]',
+      countSelector: '[data-pm-count]',
+      csvSelector: '[data-pm-csv]',
+      countNoun: 'measures',
+      csvFileName: 'projectfirma-performance-measure-progress.csv',
+      columnDefs: [
+        // The name is the door to the measure's page; full names wrap, never
+        // truncate. The tooltip is the definition — what counts.
+        {
+          headerName: 'Measure', field: 'name', colId: 'name',
+          flex: 1, minWidth: 260, cellClass: 'firma2-grid-name', tooltipField: 'definition',
+          wrapText: true, autoHeight: true,
+          // The Unit column went: the Progress figure already names the unit.
+          // Search still finds a measure by it.
+          getQuickFilterText: (p) => (p.data ? `${p.data.name} ${p.data.unit}` : ''),
+          cellRenderer: (p: { data?: Row }) =>
+            p.data ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>` : '',
+        },
+        // Sorts on the share; shows the ring and the figure that names its
+        // denominator ("14.5 of 30 miles planned").
+        {
+          headerName: 'Progress', field: 'percent', colId: 'progress', width: 300,
+          headerTooltip: 'What projects have reported, against what they planned.',
+          wrapText: true, autoHeight: true,
+          comparator: (a: number | null, b: number | null) => (a ?? -1) - (b ?? -1),
+          getQuickFilterText: () => '',
+          valueFormatter: (p) => p.data?.figure ?? '',
+          cellRenderer: (p: { data?: Row }) =>
+            p.data
+              ? `<span class="firma2-pm-progress">${ringHTML.get(p.data.slug) ?? ''}<span>${esc(p.data.figure)}</span></span>`
+              : '',
+        },
+        {
+          headerName: 'Projects', field: 'projects', colId: 'projects', width: 120, type: 'numericColumn',
+          headerTooltip: 'Projects reporting this measure.',
+          getQuickFilterText: () => '',
+        },
+        {
+          headerName: label('Classifications'), colId: 'goals', flex: 1, minWidth: 220,
+          wrapText: true, autoHeight: true,
+          valueGetter: (p) => (p.data?.goals ?? []).join(', '),
+          valueFormatter: (p) => p.value || UNSET,
+        },
+      ] satisfies ColDef[],
+      gridOptions: {
+        overlayNoRowsTemplate: emptyState?.outerHTML,
+        isExternalFilterPresent: () => goalValues.length > 0,
+        doesExternalFilterPass: (node) => goalValues.length === 0 || (node.data?.goals ?? []).some((g: string) => goalValues.includes(g)),
+      },
+    });
+    if (!handle) return;
+    const { gridApi } = handle;
+
+    const syncClear = () => {
+      if (clearButton) clearButton.hidden = goalValues.length === 0;
+    };
+    syncClear();
+
+    goalFilter?.addEventListener('selection-change', (event) => {
+      goalValues = (event as CustomEvent<{ value?: string[] }>).detail?.value ?? [];
+      gridApi.onFilterChanged();
+      syncClear();
+    });
+
+    // esa-filter-clear-button only announces; the owner of the filter state
+    // empties it (the lego has no public clear()).
+    root.addEventListener('esa-filter-clear', () => {
+      const dropdown = goalFilter as (HTMLElement & { _selected?: string[] }) | null;
+      if (dropdown) dropdown._selected = [];
+      goalValues = [];
+      gridApi.onFilterChanged();
+      syncClear();
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-progress-grid').forEach(init);
+</script>

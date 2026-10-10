@@ -1,58 +1,65 @@
-// The behaviour of firma2-schema-board: a measure's subcategories as group
+// The behaviour of firma2-schema-board: a measure's BREAKDOWNS as group
 // headings and their options as rows, built the way firma2-tag-board builds
 // tag groups and tags. See the component's header for the pattern.
 //
-// The board owns the DOM and writes user schemas to the local schema store
-// (src/lib/schema-draft.ts) once each is a real list — named, two options or
-// more. The measure editor that mounts it owns the measure: it reads `ids()`
-// for the record, `lists()` for the reporter preview, and saves on `onChange`.
+// THE MEASURE OWNS ITS BREAKDOWNS (PM 2 reconciliation, 2026-10-09). There is
+// no shared list store any more: the board edits the measure's own copies, and
+// the editor that mounts it saves them on the record (persistMeasure). The
+// board reads `breakdowns()` for the record, `lists()` for the reporter
+// preview, and calls `onChange` after every edit, add, move or removal.
+//
+// A breakdown reaches the record once it is a real list — a question, and two
+// options or more besides "Unspecified". Until then it says what it still
+// needs and stays off the record; a breakdown that falls short AFTER saving
+// keeps its last saved state on the record until it is whole again.
 
 import { announce } from '@esa/ecology/announcer';
-import { liveOptions } from '../data/firma2-performance-measures';
-import type { SubcategorySchema } from '../data/firma2-performance-measures';
+import { UNSPECIFIED, liveOptions, withUnspecified } from '../data/firma2-performance-measures';
+import type { Breakdown } from '../data/firma2-performance-measures';
 import { nameButton } from './name-button';
-import { allSchemas, emitSchemaChange, nextLocalSchemaId, writeLocalSchema } from './schema-draft';
 
-const ERR_NAME = 'Name this subcategory to save it.';
+const ERR_QUESTION = 'Add a question to save it.';
 const ERR_OPTIONS = 'Add at least two options to save it — one option splits nothing.';
 const ERR_OPTION_NAME = 'Name the option.';
-const ERR_OPTION_TAKEN = 'Already in this subcategory.';
+const ERR_OPTION_TAKEN = 'Already in this breakdown.';
+const NOTE_NEW = 'Saves once it has a question and two options.';
 
 type Field = HTMLElement & { value?: string; errorText?: string; focus: () => void };
 type MenuItem = { label: string; action: string; variant?: 'danger'; divider?: boolean };
 
 export interface SchemaBoardHooks {
-  /** The origin marker and the line under it, for a schema (null = a new one). */
-  marker: (schema: SubcategorySchema | null) => { label: string; note: string };
   /** Anything the measure records or previews changed. */
   onChange: () => void;
 }
 
+/** One question as a reporter meets it: the question and the options they may pick. */
 export interface SchemaList {
-  origin: SubcategorySchema['origin'];
   name: string;
   options: string[];
 }
 
 export interface SchemaBoard {
-  /** Attach a schema (retired, when the measure has retired it), or (null) open a new, empty subcategory with its name focused. */
-  add: (schema: SubcategorySchema | null, retired?: boolean) => void;
-  /** Ids of the subcategories retired on this measure, in order. */
-  retired: () => string[];
-  /** Ids of the saved subcategories, in order — a heading still short of a list is left out. */
-  ids: () => string[];
-  /** Every subcategory a reporter is still asked, as it stands on screen, saved or not. */
+  /** Show a breakdown, or (null) open a new, empty one with its question focused. */
+  add: (breakdown: Breakdown | null) => void;
+  /** The breakdowns as the record should store them, in order — retired ones included. */
+  breakdowns: () => Breakdown[];
+  /** Every breakdown a reporter is still asked, as it stands on screen, saved or not. */
   lists: () => SchemaList[];
   clear: () => void;
-  /** Published: no adding, renaming or removing — retiring instead. Repaints when it changes. */
+  /** Published: no adding or removing a breakdown — retiring instead. Repaints when it changes. */
   setLocked: (locked: boolean) => void;
+  /** Retired: nothing edits, moves or retires — the measure takes no new figures. Repaints when it changes. */
+  setFrozen: (frozen: boolean) => void;
 }
 
-/** What a retired subcategory says in place of its origin marker. */
-const RETIRED_MARKER = {
-  label: 'Retired',
-  note: 'Reporters are no longer asked this. Entries already filed keep their answers.',
-};
+/** What a retired breakdown says under its "Retired" pill. */
+const RETIRED_NOTE = 'Reporters are no longer asked this. Entries already filed keep their answers.';
+
+let idSeq = 0;
+/** An id for a breakdown made in this browser. Unique per page load and across reloads. */
+export const newBreakdownId = (): string => `bd-local-${Date.now().toString(36)}-${(idSeq += 1)}`;
+
+const isUnspecified = (o: string) => o.trim().toLowerCase() === UNSPECIFIED.toLowerCase();
 
 export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): SchemaBoard {
   const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
@@ -61,17 +68,18 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
     $<HTMLTemplateElement>(`[data-tpl-${name}]`).content.firstElementChild!.cloneNode(true) as HTMLElement;
   const button = (el: HTMLElement) => el.querySelector<HTMLElement>('button, a') ?? el;
   let locked = false;
+  // RETIRED MEASURE (user, 2026-10-09): every breakdown and option reads only.
+  let frozen = false;
   let seq = 0;
-
-  const schemaById = (id: string) => allSchemas().find((s) => s.id === id);
 
   // ---- shared parts (firma2-tag-board's, without colour) ----------------------
 
-  const textField = (label: string, value: string): Field => {
+  const textField = (label: string, value: string, placeholder = ''): Field => {
     const f = document.createElement('esa-text-field') as Field;
     f.className = 'firma2-schema-board__name';
     f.setAttribute('size', 'md');
     f.setAttribute('aria-label', label);
+    if (placeholder) f.setAttribute('placeholder', placeholder);
     // Set once the lego is defined: before, `value` would shadow its accessor.
     // Until then the value is read from `data-initial` (see fieldValue).
     f.dataset.initial = value;
@@ -87,6 +95,14 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
     p.className = `firma2-schema-board__name firma2-schema-board__static ${cls}`;
     p.textContent = text;
     return p;
+  };
+
+  /** A "Retired" pill, shown only while its owner carries data-retired. */
+  const retiredPill = (): HTMLElement => {
+    const tag = clone('marker');
+    const label = tag.querySelector<HTMLElement>('.esa-pill__label');
+    if (label) label.textContent = 'Retired';
+    return tag;
   };
 
   /** The row's "…" menu; `items` is asked again each time it opens. */
@@ -133,12 +149,12 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
 
   const fieldValue = (f: Field) => String(f.dataset.initial ?? f.value ?? '').trim();
 
-  // ---- reading a subcategory off the page ----------------------------------------
+  // ---- reading a breakdown off the page ------------------------------------------
 
-  const groups = () => [...groupsOl.querySelectorAll<HTMLLIElement>(':scope > li[data-origin]')];
+  const groups = () => [...groupsOl.querySelectorAll<HTMLLIElement>(':scope > li[data-breakdown-id]')];
   const groupOf = (el: Element) => el.closest<HTMLLIElement>('.firma2-schema-board__groups > li');
 
-  const groupName = (li: HTMLLIElement): string => {
+  const groupQuestion = (li: HTMLLIElement): string => {
     const name = li.querySelector<Field>('.firma2-schema-board__head > .firma2-schema-board__name');
     return (name?.matches('esa-text-field') ? fieldValue(name) : name?.textContent ?? '').trim();
   };
@@ -153,75 +169,116 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
   const groupRetired = (li: HTMLLIElement): string[] =>
     optionRows(li).filter((r) => 'retired' in r.dataset).map((r) => r.dataset.option!);
 
+  /** The breakdown as the page states it now — valid or not. */
+  const readGroup = (li: HTMLLIElement): Breakdown => {
+    const options = groupOptions(li);
+    const retiredOptions = groupRetired(li).filter((o) => options.includes(o));
+    return {
+      id: li.dataset.breakdownId!,
+      question: groupQuestion(li),
+      options,
+      ...(retiredOptions.length ? { retiredOptions } : {}),
+      ...('retired' in li.dataset ? { retired: true } : {}),
+    };
+  };
+
+  /** The last state of this breakdown that was whole enough to save, if any. */
+  const savedOf = (li: HTMLLIElement): Breakdown | null => {
+    try {
+      return li.dataset.saved ? (JSON.parse(li.dataset.saved) as Breakdown) : null;
+    } catch {
+      return null;
+    }
+  };
+
   const setError = (li: HTMLLIElement, message: string | null) => {
     const p = li.querySelector<HTMLElement>('.firma2-schema-board__error')!;
     p.hidden = !message;
     p.textContent = message ?? '';
   };
 
-  const paintMarker = (li: HTMLLIElement, schema: SubcategorySchema | null) => {
-    const m = 'retired' in li.dataset ? RETIRED_MARKER : hooks.marker(schema);
-    const label = li.querySelector<HTMLElement>('.firma2-schema-board__marker .esa-pill__label');
-    if (label) label.textContent = m.label;
-    li.querySelector<HTMLElement>('.firma2-schema-board__meta')!.textContent = m.note;
+  /** The line under a heading: what a new one needs, or why a retired one recedes. */
+  const paintMeta = (li: HTMLLIElement) => {
+    const meta = li.querySelector<HTMLElement>('.firma2-schema-board__meta')!;
+    const pill = li.querySelector<HTMLElement>('.firma2-schema-board__head > .firma2-schema-board__marker');
+    const retired = 'retired' in li.dataset;
+    if (pill) pill.hidden = !retired;
+    if (retired) {
+      meta.hidden = false;
+      meta.textContent = RETIRED_NOTE;
+    } else if (!li.dataset.saved) {
+      meta.hidden = false;
+      meta.textContent = NOTE_NEW;
+    } else if ('fresh' in li.dataset) {
+      // Made in this sitting: the line stays as a reserved, invisible line, so
+      // the rows under it do not jump between pressing "Add option" and
+      // releasing it (the click would miss).
+      meta.dataset.done = '';
+    } else {
+      meta.hidden = true;
+    }
+  };
+
+  /** Keep exactly one Unspecified row, last — added, never demanded. */
+  const ensureUnspecified = (li: HTMLLIElement) => {
+    const rows = optionRows(li);
+    const real = rows.filter((r) => !isUnspecified(r.dataset.option!));
+    if (real.length === 0) return;
+    if (rows.some((r) => isUnspecified(r.dataset.option!))) return;
+    const list = li.querySelector<HTMLElement>('.firma2-schema-board__options');
+    list?.append(optionRow(UNSPECIFIED, 'editable' in li.dataset));
   };
 
   /**
-   * Write a user subcategory once it is a real list. A blank new one is a
-   * change of mind, not an error; a half-made one says what it still needs
-   * and stays off the measure until it has it.
+   * Record a breakdown once it is a real list. A blank new one is a change of
+   * mind, not an error; a half-made one says what it still needs and stays off
+   * the record (or keeps its last saved state there) until it has it.
    */
   const commitGroup = (li: HTMLLIElement | null) => {
-    if (!li || li.dataset.origin !== 'user') return;
-    const name = groupName(li);
-    const options = groupOptions(li);
-    const retired = groupRetired(li).filter((o) => options.includes(o));
-    const live = options.length - retired.length;
-    const isNew = !li.dataset.schemaId;
+    if (!li || !('editable' in li.dataset)) return;
+    ensureUnspecified(li);
+    const b = readGroup(li);
+    const live = liveOptions(b).filter((o) => !isUnspecified(o)).length;
+    const isNew = !li.dataset.saved;
     // A new one says what it still needs in its meta line, which is always
     // on screen: an error line appearing on blur pushes "Add option" down
     // between press and release, and the click misses.
-    if (isNew && (!name || live < 2)) return setError(li, null);
-    if (!name) return setError(li, ERR_NAME);
+    if (isNew && (!b.question || live < 2)) return setError(li, null);
+    if (!b.question) return setError(li, ERR_QUESTION);
     if (live < 2) return setError(li, ERR_OPTIONS);
     setError(li, null);
-    const id = li.dataset.schemaId || nextLocalSchemaId(name);
-    const stored = schemaById(id);
-    const same = (a: string[] = [], b: string[] = []) => a.join('\u0000') === b.join('\u0000');
-    if (stored && stored.name === name && same(stored.options, options) && same(stored.retiredOptions, retired)) return;
-    writeLocalSchema({ id, name, origin: 'user', options, ...(retired.length ? { retiredOptions: retired } : {}) });
-    emitSchemaChange();
+    li.dataset.saved = JSON.stringify({ ...b, options: withUnspecified(b.options) });
     if (isNew) {
-      li.dataset.schemaId = id;
-      li.dataset.sortKey = id;
+      li.dataset.sortKey = b.id;
       li.removeAttribute('data-sort-locked');
       li.querySelector(':scope > [data-sort-spacer]')?.remove();
-      paintMarker(li, schemaById(id) ?? null);
-      announce(`${name} saved.`);
+      paintMeta(li);
+      announce(`${b.question} saved.`);
     }
   };
 
   // ---- an option row ---------------------------------------------------------------
 
   /**
-   * `editable`: a user schema's option — renamed, reordered, moved, removed.
-   * Removal depends on the measure: a draft's option is deleted; a published
-   * one's is RETIRED — no longer offered to reporters, still there for the
-   * entries that used it — and can be restored.
+   * `editable`: the option is renamed, reordered, moved, removed. Removal
+   * depends on the measure: a draft's option is deleted; a published one's is
+   * RETIRED — no longer offered to reporters, still there for the entries that
+   * used it — and can be restored.
+   *
+   * UNSPECIFIED is the board's, not the author's: it is appended to every
+   * breakdown, stays last, and has no field and no menu.
    */
   const optionRow = (option: string, editable: boolean, retired = false): HTMLLIElement => {
     const li = document.createElement('li');
     li.className = 'firma2-schema-board__row';
     li.dataset.option = option;
     if (retired) li.dataset.retired = '';
-    const tag = clone('marker');
-    const paintRetired = () => {
-      tag.hidden = !('retired' in li.dataset);
-      const label = tag.querySelector<HTMLElement>('.esa-pill__label');
-      if (label) label.textContent = 'Retired';
-    };
+    const tag = retiredPill();
+    const paintRetired = () => (tag.hidden = !('retired' in li.dataset));
     paintRetired();
-    if (!editable) {
+    if (!editable || isUnspecified(option)) {
+      // Locked in a sortable list: it cannot move, and nothing passes it.
+      if (editable) li.dataset.sortLocked = '';
       li.append(staticText(option, 'typography-body-md'), tag);
       return li;
     }
@@ -273,7 +330,7 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
     return li;
   };
 
-  /** An empty row for a new option: kept once named, dropped if left empty. */
+  /** An empty row for a new option, above Unspecified: kept once named, dropped if left empty. */
   const pendingOptionRow = (group: HTMLLIElement) => {
     const list = group.querySelector<HTMLElement>('.firma2-schema-board__options')!;
     const li = document.createElement('li');
@@ -281,13 +338,15 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
     // Locked: a row with no name cannot be moved; it gets the grip's width as
     // a spacer so its field lines up with the rest.
     li.dataset.sortLocked = '';
-    const name = textField(`New option in ${groupName(group) || 'the new subcategory'}`, '');
+    const name = textField(`New option in ${groupQuestion(group) || 'the new breakdown'}`, '');
     const discard = rowMenu('Actions for the new option', only('Discard'), () => {
       li.remove();
       focusLater(addButtonOf(group));
     });
     li.append(name, discard);
-    list.append(li);
+    const unspecified = optionRows(group).find((r) => isUnspecified(r.dataset.option!));
+    if (unspecified) unspecified.before(li);
+    else list.append(li);
 
     let done = false;
     const keep = (viaEnter: boolean) => {
@@ -318,88 +377,93 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
   const addButtonOf = (group: HTMLLIElement) =>
     group.querySelector<HTMLElement>('.firma2-schema-board__add button');
 
-  // ---- a subcategory ---------------------------------------------------------------
+  // ---- a breakdown -----------------------------------------------------------------
 
   /**
-   * One subcategory: a schema, or (null) a new one with no name yet.
+   * One breakdown: a saved one, or (null) a new one with no question yet.
    *
    * RETIRED (published measures only): no longer asked, still on the measure
    * for the entries that answered it. It renders read-only — its list is the
    * vocabulary those past answers were given in, and editing it would rewrite
-   * them — under a "Retired" marker, and its menu offers Restore.
+   * them — under a "Retired" pill, and its menu offers Restore.
    */
-  const groupItem = (schema: SubcategorySchema | null, retired = false): HTMLLIElement => {
-    // A user schema's options are editable on any measure; the subcategory
-    // itself is added or removed only while the measure is a draft, and
-    // retired or restored once it is published.
-    const editable = !retired && (!schema || schema.origin === 'user');
+  const groupItem = (b: Breakdown | null): HTMLLIElement => {
+    const retired = !!b?.retired;
+    const editable = !retired && !frozen;
+    const id = b?.id ?? newBreakdownId();
     const li = document.createElement('li');
+    li.dataset.breakdownId = id;
     if (retired) li.dataset.retired = '';
-    li.dataset.origin = schema?.origin ?? 'user';
-    li.dataset.schemaId = schema?.id ?? '';
-    li.dataset.sortLabel = schema?.name ?? 'New subcategory';
-    // Order is presentation, so subcategories reorder even when published.
-    if (schema) li.dataset.sortKey = schema.id;
+    if (editable) li.dataset.editable = '';
+    if (b) li.dataset.saved = JSON.stringify(b);
+    else li.dataset.fresh = '';
+    li.dataset.sortLabel = b?.question || 'New breakdown';
+    // Order is presentation, so breakdowns reorder even when published —
+    // but not once the measure is retired.
+    if (b && !frozen) li.dataset.sortKey = id;
     else li.dataset.sortLocked = '';
 
     const section = document.createElement('section');
-    section.setAttribute('aria-label', schema?.name ?? 'New subcategory');
+    section.setAttribute('aria-label', b?.question || 'New breakdown');
 
     const head = document.createElement('div');
     head.className = 'firma2-schema-board__head';
-    const marker = clone('marker');
     let name: HTMLElement;
     if (editable) {
-      const field = textField(schema ? `Name of ${schema.name}` : 'Name of the new subcategory', schema?.name ?? '');
+      const field = textField(b ? `Question: ${b.question}` : 'Question for the new breakdown', b?.question ?? '', 'e.g. Treatment type');
       onCommit(field, (viaEnter) => {
         const next = fieldValue(field);
-        const label = next || 'New subcategory';
+        const label = next || 'New breakdown';
         li.dataset.sortLabel = label;
         section.setAttribute('aria-label', label);
         sortable?.setAttribute('label', label);
-        field.setAttribute('aria-label', `Name of ${label}`);
+        field.setAttribute('aria-label', `Question: ${label}`);
         nameButton(menu, `Actions for ${label}`);
         commitGroup(li);
         hooks.onChange();
-        // Enter on a new subcategory's name goes straight on to its first option.
-        if (viaEnter && next && optionRows(li).length === 0) pendingOptionRow(li);
+        // Enter on a new breakdown's question goes straight on to its first option.
+        const real = optionRows(li).filter((r) => !isUnspecified(r.dataset.option!));
+        if (viaEnter && next && real.length === 0) pendingOptionRow(li);
       });
       name = field;
     } else {
-      name = staticText(schema!.name, 'typography-label-md');
+      name = staticText(b!.question, 'typography-label-md');
     }
 
     // Draft: Remove — nothing has been filed against it. Published: Retire or
     // Restore — entries have, so it stays on the measure either way.
     const menuItems = (): MenuItem[] =>
       !locked
-        ? [{ label: 'Remove from measure', action: 'remove', variant: 'danger' }]
+        ? [{ label: 'Remove breakdown', action: 'remove', variant: 'danger' }]
         : retired
-          ? [{ label: 'Restore subcategory', action: 'restore' }]
-          : [{ label: 'Retire subcategory', action: 'retire', variant: 'danger' }];
-    const menu = rowMenu(`Actions for ${schema?.name ?? 'the new subcategory'}`, menuItems, (action) => {
+          ? [{ label: 'Restore breakdown', action: 'restore' }]
+          : [{ label: 'Retire breakdown', action: 'retire', variant: 'danger' }];
+    const menu = rowMenu(`Actions for ${b?.question || 'the new breakdown'}`, menuItems, (action) => {
       const label = li.dataset.sortLabel;
       if (action === 'remove') {
         const next = (li.nextElementSibling ?? li.previousElementSibling) as HTMLLIElement | null;
         li.remove();
         relink();
         hooks.onChange();
-        announce(`${label} removed from this measure.`);
+        announce(`${label} removed.`);
         focusLater(next?.querySelector<HTMLElement>('.firma2-schema-board__menu button'));
         return;
       }
-      if (!schema) return;
-      // Rebuilt in place: a retired subcategory is a read-only one, and an
-      // editable one has fields and grips a read-only one does not.
-      const swapped = groupItem(schema, action === 'retire');
+      // Rebuilt in place from its saved state: a retired breakdown is a
+      // read-only one, and an editable one has fields and grips it does not.
+      const saved = savedOf(li);
+      if (!saved) return;
+      const swapped = groupItem({ ...saved, ...(action === 'retire' ? { retired: true } : { retired: undefined }) });
       li.replaceWith(swapped);
       relink();
       hooks.onChange();
       announce(action === 'retire' ? `${label} retired. Reporters are no longer asked it; past entries keep their answers.` : `${label} restored. Reporters are asked it again.`);
       focusLater(swapped.querySelector<HTMLElement>('.firma2-schema-board__menu button'));
     });
-    head.append(name, marker);
-    if (!locked || schema) head.append(menu);
+    const pill = retiredPill();
+    pill.hidden = !retired;
+    head.append(name, pill);
+    if (!frozen && (!locked || b)) head.append(menu);
 
     const meta = document.createElement('p');
     meta.className = 'firma2-schema-board__meta typography-meta';
@@ -409,14 +473,16 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
 
     const ol = document.createElement('ol');
     ol.className = 'firma2-schema-board__options';
-    const options = (schema?.options ?? []).map((o) => optionRow(o, editable, !!schema?.retiredOptions?.includes(o)));
+    // A new breakdown starts with Unspecified already in its list.
+    const startOptions = b ? withUnspecified(b.options) : [UNSPECIFIED];
+    const options = startOptions.map((o) => optionRow(o, editable, !!b?.retiredOptions?.includes(o)));
     let sortable: HTMLElement | null = null;
     section.append(head, meta, error);
     if (editable) {
-      // Linked to every other editable subcategory: options move between them.
+      // Linked to every other editable breakdown: options move between them.
       sortable = document.createElement('bcn-sortable-list');
       sortable.setAttribute('group', 'schema-options');
-      sortable.setAttribute('label', schema?.name ?? 'New subcategory');
+      sortable.setAttribute('label', b?.question || 'New breakdown');
       const handle = document.createElement('template');
       handle.setAttribute('data-sort-handle', '');
       handle.content.append(clone('grip'));
@@ -437,7 +503,7 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
     }
 
     li.append(section);
-    paintMarker(li, schema);
+    paintMeta(li);
     return li;
   };
 
@@ -454,17 +520,22 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
 
   // ---- moves -----------------------------------------------------------------------
 
-  // A subcategory reordered changes the measure; an option moved between two
-  // subcategories changes both lists. Nested lists bubble here alike.
+  // A breakdown reordered changes the measure; an option moved between two
+  // breakdowns changes both lists. Nested lists bubble here alike.
   root.addEventListener('sort-change', (e) => {
     const target = e.target as HTMLElement;
     if (target.closest('.firma2-schema-board__groups > li > section')) {
       const group = groupOf(target);
-      // An option moved into a subcategory that already has it merges into it.
-      const seen = new Set<string>();
-      if (group) for (const row of optionRows(group)) {
-        if (seen.has(row.dataset.option!)) row.remove();
-        else seen.add(row.dataset.option!);
+      if (group) {
+        // An option moved into a breakdown that already has it merges into it,
+        // and Unspecified goes back to the end.
+        const seen = new Set<string>();
+        for (const row of optionRows(group)) {
+          if (seen.has(row.dataset.option!)) row.remove();
+          else seen.add(row.dataset.option!);
+        }
+        const unspecified = optionRows(group).find((r) => isUnspecified(r.dataset.option!));
+        if (unspecified) unspecified.parentElement?.append(unspecified);
       }
       commitGroup(group);
       const from = (e as CustomEvent<{ from?: HTMLElement }>).detail?.from;
@@ -475,51 +546,63 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
 
   // ---- the API ---------------------------------------------------------------------
 
-  const add = (schema: SubcategorySchema | null, retired = false) => {
-    const item = groupItem(schema, retired);
+  const add = (b: Breakdown | null) => {
+    const item = groupItem(b);
     groupsOl.append(item);
     relink();
-    if (!schema) {
+    if (!b) {
       void customElements
         .whenDefined('esa-text-field')
         .then(() => requestAnimationFrame(() => item.querySelector<Field>('.firma2-schema-board__head esa-text-field')?.focus()));
-      // A new subcategory left with no name and no options is dropped.
+      // A new breakdown left with no question and no options of its own is dropped.
       item.addEventListener('focusout', (e) => {
         const to = (e as FocusEvent).relatedTarget as Node | null;
         if (to && item.contains(to)) return;
         setTimeout(() => {
-          if (item.matches(':focus-within') || item.dataset.schemaId) return;
-          if (!groupName(item) && optionRows(item).length === 0) item.remove();
+          if (item.matches(':focus-within') || item.dataset.saved) return;
+          const real = optionRows(item).filter((r) => !isUnspecified(r.dataset.option!));
+          if (!groupQuestion(item) && real.length === 0) item.remove();
         }, 0);
       });
     }
   };
 
-  const ids = () => groups().map((g) => g.dataset.schemaId ?? '').filter(Boolean);
-  const retiredIds = () => groups().filter((g) => 'retired' in g.dataset).map((g) => g.dataset.schemaId ?? '').filter(Boolean);
+  const breakdowns = (): Breakdown[] =>
+    groups().flatMap((g): Breakdown[] => {
+      const saved = savedOf(g);
+      if (!saved) return [];
+      // A retired breakdown is its saved state, flagged; an editable one is
+      // its current state whenever that is whole (commitGroup keeps `saved`
+      // current), else its last whole state.
+      const { retired: _retired, ...rest } = saved;
+      return ['retired' in g.dataset ? { ...rest, retired: true } : rest];
+    });
 
   return {
     add,
-    ids,
-    retired: retiredIds,
-    // What a reporter is offered: retired subcategories and options are left out.
+    breakdowns,
+    // What a reporter is offered: retired breakdowns and options are left out.
     lists: () =>
-      groups().filter((g) => !('retired' in g.dataset)).map((g) => ({
-        origin: g.dataset.origin as SchemaList['origin'],
-        name: groupName(g),
-        options: liveOptions({ options: groupOptions(g), retiredOptions: groupRetired(g) }),
-      })),
+      groups()
+        .filter((g) => !('retired' in g.dataset))
+        .map((g) => ({
+          name: groupQuestion(g),
+          options: liveOptions({ options: groupOptions(g), retiredOptions: groupRetired(g) }),
+        })),
     clear: () => groupsOl.replaceChildren(),
     setLocked: (next) => {
       if (next === locked) return;
-      const saved = ids();
-      const wasRetired = new Set(retiredIds());
+      const saved = breakdowns();
       locked = next;
       groupsOl.replaceChildren();
-      saved.forEach((id) => {
-        const schema = schemaById(id);
-        if (schema) add(schema, wasRetired.has(id));
-      });
+      saved.forEach(add);
+    },
+    setFrozen: (next) => {
+      if (next === frozen) return;
+      const saved = breakdowns();
+      frozen = next;
+      groupsOl.replaceChildren();
+      saved.forEach(add);
     },
   };
 }

@@ -1,22 +1,26 @@
 ---
 // firma2-measure-table — the Performance Measures index: the tenant's whole
-// catalog of measures as one scannable, searchable, filterable table, with the
-// Type/Classifications/Status filter dropdowns, quick search, Clear all,
-// record-count footer and CSV export this spoke's data grids share.
+// catalog of measures as one scannable, searchable table, with the Status
+// filter, quick search, Clear all, record-count footer and CSV export this
+// spoke's data grids share.
 //
-// THE COLUMNS ARE THE MEASURE'S ATTRIBUTE LIST — name, status, type,
-// classifications, unit, counting rule — read-only, the way every settings
-// list is. THE NAME IS A DOOR to the measure's own page (Workspace settings ›
-// Performance measures › <measure>), where everything is edited: the grid
-// used to edit cells in place and open a side sheet, and both went when setup
-// moved to settings (2026-10-08) — one editor per record, and publishing goes
-// through its confirm instead of a status cell. Status sits beside the name
-// rather than at the far edge; it is the first fact a reader wants about a
-// row ("is this collecting values?").
+// A PAGE FOR FINDING, NOT BROWSING (user, 2026-10-09). An admin opens this
+// settings page already meaning to change something: fix a measure they can
+// name, add one, or finish a draft. So the table is built to find a row and
+// go — full names that never truncate, Unit and Status for the quick
+// look-ups made on the way, and
+// DRAFTS FIRST, because setup is rarely finished in one sitting.
 //
-// Deliberately absent: definition, reporter guidance, decimal places. All real
-// fields, none SCANNABLE — a paragraph in a cell is a wall. Definition still
-// reaches the reader, as the Measure column's tooltip.
+// THREE COLUMNS: Measure, Unit, Status. PM 2's Theme, Sums, Breakdowns and
+// Entries were here briefly (reconciled 2026-10-09) and went the same day:
+// they describe a measure's definition or its health, which nobody opens a
+// settings page to survey. Each is one click away on the measure's page.
+// "Do we already measure this?" is asked where a duplicate would be made —
+// the New measure draft lists similar measures — not here.
+//
+// THE NAME IS A DOOR to the measure's own page (Workspace settings ›
+// Performance measures › <measure>), where everything is edited; the grid is
+// read-only. Definition reaches the reader as the Measure column's tooltip.
 //
 // Search and filters live INSIDE this component rather than beside it: both feed
 // the same AG Grid instance (quick filter and external filter), so splitting
@@ -31,7 +35,7 @@
 // surface across this spoke family, and shared/firma2-data-grid-chrome.css is
 // the reusable home for its frame — reused here verbatim, not forked. Every
 // other control IS a lego: esa-text-field for search, esa-filter-container +
-// esa-filter-dropdown for the Type, Classifications and Status filters,
+// esa-filter-dropdown for the Status filter,
 // esa-filter-clear-button for Clear all, esa-button for the CSV download,
 // esa-empty-state for the no-results overlay, and the Status cells clone real
 // server-rendered esa-pill markup rather than restyling a chip by hand.
@@ -41,7 +45,7 @@ import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaFilterClearButton from '@esa/ecology/esa-filter-clear-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
-import { measuresByName, MEASURE_KINDS, MEASURE_STATUS_TONE, CLASSIFICATION_NAMES } from '../../data/firma2-performance-measures';
+import { measuresByName, MEASURE_STATUS_TONE } from '../../data/firma2-performance-measures';
 import type { MeasureStatus, PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
 
 interface Props {
@@ -80,27 +84,9 @@ const statusOptions = STATUS_ORDER.filter((s) => measures.some((m) => m.status =
   color: TONE_DOT[MEASURE_STATUS_TONE[s]],
 }));
 
-// Classification options come from the portfolio's vocabulary (CLASSIFICATION_NAMES),
-// narrowed to the branches this catalog actually uses — same "never offer an
-// empty filter" convention as the status list. No dots: a classification is a
-// goal, not a status, and nothing else on the screen colours it.
-const classificationOptions = CLASSIFICATION_NAMES.filter((c) =>
-  measures.some((m) => m.classifications.includes(c)),
-).map((p) => ({
-  value: p,
-  label: p,
-}));
-
-// "Show me the outcomes" is a question about the whole catalog, and outcomes
-// are the minority of it. Values are the stored ids ('output'), labels the
-// module's own names ('Output'), order MEASURE_KINDS' declared one.
-const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === k.id)).map((k) => ({
-  value: k.id,
-  label: k.name,
-}));
 ---
 <section class="firma2-measure-table stack" data-gap="md">
-  <!-- Search, the three filters and Clear all are ONE row; Download CSV alone
+  <!-- Search, the Status filter and Clear all are ONE row; Download CSV alone
        at the right. See firma2-project-grid for the shared layout reasoning;
        size="md" everywhere because the sm rung is unfinished across the form
        family (filed as esassoc/ecology#31). -->
@@ -109,33 +95,13 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
       <div class="firma2-data-grid__search">
         <esa-text-field
           label="Search measures"
-          placeholder="Name, unit, or classification"
+          placeholder="Name or unit"
           size="md"
           data-measures-search
         ></esa-text-field>
       </div>
 
       <EsaFilterContainer>
-        <!-- Type leads the three, matching the column order: it is the
-             coarsest cut in the catalog. -->
-        <esa-filter-dropdown
-          data-measures-type-filter
-          name="type"
-          label="Type"
-          size="md"
-          multiple
-          placeholder="Search types"
-          options={JSON.stringify(typeOptions)}
-        ></esa-filter-dropdown>
-        <esa-filter-dropdown
-          data-measures-classification-filter
-          name="classifications"
-          label="Classifications"
-          size="md"
-          multiple
-          placeholder="Search classifications"
-          options={JSON.stringify(classificationOptions)}
-        ></esa-filter-dropdown>
         <esa-filter-dropdown
           data-measures-status-filter
           name="status"
@@ -213,17 +179,16 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-filter-dropdown';
   import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
-  import { label } from '../../lib/vocabulary';
   import { watchGridDefault } from '../../lib/grid-defaults';
   import { draftedSlugs, isLocalMeasureSlug, mergeDraft, readDraft, withDraft } from '../../lib/measure-draft';
   import { recordHref } from '../../lib/taxonomy-record';
   import {
-    COUNTING_RULES,
-    MEASURE_KINDS,
     MEASURE_STATUS_TONE,
     measureDisplayName,
   } from '../../data/firma2-performance-measures';
   import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+
+  type MeasureRow = PerformanceMeasureDefinition;
   import type { ColDef } from 'ag-grid-community';
 
   /** What an unanswered optional field shows. An em dash, not a blank cell. */
@@ -231,11 +196,8 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
 
   /**
    * Sort a closed vocabulary in the order the vocabulary itself declares, not
-   * alphabetically: Status is a lifecycle (Active → Draft → Retired), the
-   * counting rules run output rules then outcome rules, and Type only LOOKS
-   * alphabetical ('outcome' sorts before 'output' on a string compare, which
-   * would lead the catalog with its minority kind). Anything not in the list
-   * sorts last, which is also how an unset optional lands at the bottom.
+   * alphabetically: Status is a lifecycle — Draft, the work in progress, then
+   * Published, then Retired. Anything not in the list sorts last.
    */
   const rankBy = (order: readonly string[]) => (a: string, b: string) => {
     const at = order.indexOf(a);
@@ -243,18 +205,12 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
     return (at === -1 ? order.length : at) - (bt === -1 ? order.length : bt);
   };
 
-  const STATUS_ORDER = Object.keys(MEASURE_STATUS_TONE);
-  const COUNTING_RULE_ORDER = COUNTING_RULES.map((r) => r.id as string);
-  const COUNTING_RULE_NAME = new Map(COUNTING_RULES.map((r) => [r.id as string, r.name] as const));
-  const TYPE_ORDER = MEASURE_KINDS.map((k) => k.id as string);
+  const STATUS_ORDER = ['Draft', 'Published', 'Retired'];
   // Base-less; recordHref() adds the base and picks the seeded or draft route.
   const LIST_PATH = '/prototypes/workspace-settings/performance-measures';
-  const TYPE_NAME = new Map(MEASURE_KINDS.map((k) => [k.id as string, k.name] as const));
 
   function initMeasureTable(root: HTMLElement) {
     const emptyState = root.querySelector<HTMLElement>('[data-measures-empty] > *');
-    const typeFilter = root.querySelector<HTMLElement>('[data-measures-type-filter]');
-    const classificationFilter = root.querySelector<HTMLElement>('[data-measures-classification-filter]');
     const statusFilter = root.querySelector<HTMLElement>('[data-measures-status-filter]');
     const clearButton = root.querySelector<HTMLElement>('[data-esa-filter-clear]');
 
@@ -265,8 +221,6 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
       pillHTML.set(el.dataset.status ?? '', el.innerHTML);
     });
 
-    let typeValues: string[] = [];
-    let classificationValues: string[] = [];
     let statusValues: string[] = [];
 
     // THE ROWS ARE SEEDS + DRAFTS, recomputed as one list: every seed with its
@@ -281,18 +235,25 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
       // A malformed payload is a build bug; degrading to an empty catalog at
       // least renders the empty state instead of throwing.
     }
-    const currentRows = (): PerformanceMeasureDefinition[] => [
-      ...seeded.map((seed) => mergeDraft(seed, readDraft(seed.slug))),
-      ...draftedSlugs()
-        .filter(isLocalMeasureSlug)
-        .map((slug) => withDraft(slug)),
-    ];
+    // DRAFTS FIRST, then by name: the row order at rest, before anyone sorts.
+    // A draft is unfinished work its author is coming back to.
+    const currentRows = (): MeasureRow[] =>
+      [
+        ...seeded.map((seed) => mergeDraft(seed, readDraft(seed.slug))),
+        ...draftedSlugs()
+          .filter(isLocalMeasureSlug)
+          .map((slug) => withDraft(slug)),
+      ].sort(
+        (a, b) =>
+          Number(b.status === 'Draft') - Number(a.status === 'Draft') ||
+          measureDisplayName(a).localeCompare(measureDisplayName(b)),
+      );
 
     // The merged rows are written back into the payload BEFORE wireDataGrid
     // parses it — one data path, no second write racing the first.
     if (seedNode) seedNode.textContent = JSON.stringify(currentRows());
 
-    const handle = wireDataGrid<PerformanceMeasureDefinition>({
+    const handle = wireDataGrid<MeasureRow>({
       root,
       gridSelector: '[data-measures-grid]',
       dataSelector: '[data-measures-data]',
@@ -319,81 +280,38 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
         // the fact a reader is missing here.
         {
           headerName: 'Measure', field: 'name', colId: 'name',
-          flex: 2, minWidth: 220, cellClass: 'firma2-grid-name', tooltipField: 'definition',
+          // FULL NAMES, NEVER TRUNCATED: the name is what the admin scans
+          // for, so it wraps onto a second line rather than ending in "…".
+          flex: 1, minWidth: 260, cellClass: 'firma2-grid-name', tooltipField: 'definition',
+          wrapText: true, autoHeight: true,
           getQuickFilterText: (p) => (p.data ? measureDisplayName(p.data) : ''),
-          cellRenderer: (p: { data?: PerformanceMeasureDefinition }) =>
+          cellRenderer: (p: { data?: MeasureRow }) =>
             p.data
               ? `<a class="firma2-grid-link" href="${esc(recordHref(LIST_PATH, p.data.slug))}">${esc(measureDisplayName(p.data))}</a>`
               : '',
         },
-        // Status beside the name, not at the far edge: "is this collecting
-        // values?" is the first question about a row, and the measure's page
-        // leads with it too. The cloned esa-pill — a badge, never a coloured
-        // row edge. The tooltip explains the vocabulary, not any row.
-        {
-          headerName: 'Status', field: 'status', colId: 'status', width: 135,
-          headerTooltip: 'Draft: not collecting yet. Active: reporters file values. Retired: keeps past values, takes no new ones.',
-          comparator: rankBy(STATUS_ORDER),
-          cellRenderer: (p: { value: string }) =>
-            `<span class="firma2-grid-status">${pillHTML.get(p.value) ?? esc(p.value)}</span>`,
-        },
-        // Output or outcome. PLAIN TEXT, NOT A SECOND PILL: the Status pill is
-        // the only saturated thing in the grid, which is exactly why it reads
-        // at a glance, and two values distinguished by hue is unreadable to a
-        // colourblind reader anyway. The cell spends the module's name
-        // ("Output"), never the stored id; the Type filter dropdown and the
-        // declared-order sort are the answers to the shared-four-letters
-        // scanning cost.
-        {
-          headerName: 'Type', field: 'kind', colId: 'kind', width: 110,
-          headerTooltip: 'Outputs record work a project did. Outcomes record a condition a monitoring effort measured — so the two allow different counting rules.',
-          comparator: rankBy(TYPE_ORDER),
-          valueFormatter: (p) => (p.value ? TYPE_NAME.get(p.value) ?? p.value : UNSET),
-        },
-        // UNSET IS A REAL STATE, not a missing value: a measure minted from the
-        // blank page genuinely has not answered these yet, and the em dash
-        // says "not answered" where an empty cell would read as a fault.
-        // A SET IN A CELL, joined once in the valueGetter so the sort, the
-        // tooltip and the text all read the same string.
-        {
-          headerName: label('Classifications'), colId: 'classifications',
-          valueGetter: (p) => (p.data?.classifications ?? []).join(', '),
-          flex: 1, minWidth: 170,
-          getQuickFilterText: (p) => p.value ?? '',
-          tooltipValueGetter: (p) => p.value || undefined,
-          valueFormatter: (p) => p.value || UNSET,
-        },
         // Just the unit: the Measure column already says of what, because a
         // measure's name is its number's label.
         {
-          headerName: 'Unit', colId: 'unit', width: 130,
+          headerName: 'Unit', colId: 'unit', width: 180,
           valueGetter: (p) => p.data?.unit ?? '',
           getQuickFilterText: (p) => p.value ?? '',
           valueFormatter: (p) => p.value || UNSET,
         },
-        // The counting rule decides what a total MEANS, so the cell spends the
-        // rule's whole name rather than its stored id. Sorted in
-        // COUNTING_RULES' declared order, which clusters by type for free.
+        // The cloned esa-pill — a badge, never a coloured row edge. The
+        // tooltip explains the vocabulary, not any row.
         {
-          headerName: 'Counting rule', colId: 'countingRule', width: 180,
-          headerTooltip: 'How entries combine into a total. Outputs add up or merge on the map; outcome readings keep the latest or the average.',
-          valueGetter: (p) => p.data?.countingRule ?? '',
-          comparator: rankBy(COUNTING_RULE_ORDER),
-          valueFormatter: (p) => (p.value ? COUNTING_RULE_NAME.get(p.value) ?? p.value : UNSET),
+          headerName: 'Status', field: 'status', colId: 'status', width: 135,
+          headerTooltip: 'Draft: not collecting yet. Published: reporters file values. Retired: keeps past values, takes no new ones.',
+          comparator: rankBy(STATUS_ORDER),
+          cellRenderer: (p: { value: string }) =>
+            `<span class="firma2-grid-status">${pillHTML.get(p.value) ?? esc(p.value)}</span>`,
         },
       ] satisfies ColDef[],
       gridOptions: {
         overlayNoRowsTemplate: emptyState?.outerHTML,
-        isExternalFilterPresent: () =>
-          typeValues.length > 0 || classificationValues.length > 0 || statusValues.length > 0,
-        doesExternalFilterPass: (node) =>
-          (typeValues.length === 0 || typeValues.includes(node.data?.kind ?? '')) &&
-          // A ROW MATCHES IF IT CARRIES ANY SELECTED CLASSIFICATION — `some`,
-          // not equality: selecting two classifications widens the result,
-          // which is what every other filter on this bar already means.
-          (classificationValues.length === 0 ||
-            (node.data?.classifications ?? []).some((c) => classificationValues.includes(c))) &&
-          (statusValues.length === 0 || statusValues.includes(node.data?.status ?? '')),
+        isExternalFilterPresent: () => statusValues.length > 0,
+        doesExternalFilterPass: (node) => statusValues.length === 0 || statusValues.includes(node.data?.status ?? ''),
       },
     });
     if (!handle) return;
@@ -404,8 +322,7 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
     // Clear all is only in the row when there is something to clear.
     const syncClearVisibility = () => {
       if (clearButton) {
-        clearButton.hidden =
-          typeValues.length === 0 && classificationValues.length === 0 && statusValues.length === 0;
+        clearButton.hidden = statusValues.length === 0;
       }
     };
     syncClearVisibility();
@@ -415,8 +332,6 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
       gridApi.onFilterChanged();
       syncClearVisibility();
     };
-    typeFilter?.addEventListener('selection-change', onSelection((v) => { typeValues = v; }));
-    classificationFilter?.addEventListener('selection-change', onSelection((v) => { classificationValues = v; }));
     statusFilter?.addEventListener('selection-change', onSelection((v) => { statusValues = v; }));
 
     // esa-filter-clear-button is presentational: it emits a bubbling
@@ -425,12 +340,8 @@ const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === 
     // lego has no public clear(); writing the reactive property re-renders but
     // does NOT emit selection-change, so the local arrays reset here too.
     root.addEventListener('esa-filter-clear', () => {
-      [typeFilter, classificationFilter, statusFilter].forEach((el) => {
-        const dropdown = el as (HTMLElement & { _selected?: string[] }) | null;
-        if (dropdown) dropdown._selected = [];
-      });
-      typeValues = [];
-      classificationValues = [];
+      const dropdown = statusFilter as (HTMLElement & { _selected?: string[] }) | null;
+      if (dropdown) dropdown._selected = [];
       statusValues = [];
       gridApi.onFilterChanged();
       syncClearVisibility();

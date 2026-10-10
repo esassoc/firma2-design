@@ -1,0 +1,134 @@
+---
+// firma2-measure-portfolio — one performance measure's reading page body: what
+// it counts, how far the portfolio has got, which goals it serves, and the
+// projects whose reports make up the figure. The measure-shaped twin of a
+// classification's page (firma2-classification-summary + -measures): same
+// esa-stat figures, same ring and "reported of planned" per project.
+//
+// WHAT IT COUNTS COMES FIRST: the definition, as the classification page
+// leads with its description. A reader sent here by a funder needs to know
+// what an acre "restored" means before the number means anything.
+//
+// THE FIGURES FOLLOW THE COUNTING RULE ([[measure-counting-rule-framing]]): a
+// measure that sums shows a total against what projects planned; one that
+// does not shows the average of the latest readings and never a total.
+//
+// THE PROJECTS ARE A LIST OF RINGS, most reported first — each a door to its
+// project. A project that set a target and has reported nothing is listed
+// (its absence would hide the gap); one with neither is not.
+//
+// bcn-lego-checked: esa-stat for the figures, esa-empty-state for no
+// projects, firma2-kpi-progress per project, firma2-rail-section for the
+// sections, the hub .grid primitive. CSS is layout and ink only. Beacon is
+// not cloned on this machine.
+import EsaStat from '@esa/ecology/esa-stat.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import Firma2KpiProgress from '../classifications/firma2-kpi-progress.astro';
+import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+import { classificationHref, goalsOf, measurePortfolio } from '../../data/firma2-classification-rollup';
+import { projects as portfolio, projectHref } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  measure: PerformanceMeasureDefinition;
+}
+
+const { measure } = Astro.props;
+const progress = measurePortfolio(measure);
+const goals = goalsOf(measure);
+const unit = progress.unit;
+const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: measure.decimalPlaces });
+const contributions = [...progress.contributions].sort((a, b) => b.reported - a.reported || a.project.projectName.localeCompare(b.project.projectName));
+const reportingCount = contributions.filter((c) => c.reported > 0).length;
+
+const reportedStat = progress.additive
+  ? { value: progress.reported == null ? '—' : `${fmt(progress.reported)} ${unit}`, label: 'Reported', sub: progress.committed ? `of ${fmt(progress.committed)} ${unit} planned` : 'No project has set a target' }
+  : { value: progress.reported == null ? '—' : `${fmt(progress.reported)} ${unit}`, label: 'Average latest reading', sub: 'These values do not add up, so there is no total' };
+---
+<div class="firma2-measure-portfolio stack" data-gap="2xl" data-measure-slug={measure.slug}>
+  <!-- A RETIRED MEASURE says so before its figures (user, 2026-10-09):
+       they are history, not progress still being made. Shown by the build
+       for a seeded retired measure, and by the script for one retired in
+       this browser. -->
+  <div data-retired-note hidden={measure.status !== 'Retired'}>
+    <EsaAlertBox variant="info" title="Retired">This measure takes no new figures. What projects reported before it was retired is below.</EsaAlertBox>
+  </div>
+  <div class="stack" data-gap="lg">
+    {measure.definition && <p class="firma2-measure-portfolio__lede typography-body-lg">{measure.definition}</p>}
+    <div class="firma2-measure-portfolio__figures grid" data-gap="md">
+      <EsaStat value={reportedStat.value} label={reportedStat.label} sub={reportedStat.sub} />
+      <EsaStat value={contributions.length} label="Projects" sub={`of ${portfolio.length} in the portfolio`} />
+      <EsaStat
+        value={reportingCount}
+        label="Reporting"
+        sub={contributions.length === 0 ? 'No projects yet' : reportingCount === contributions.length ? 'Every project has reported' : `${contributions.length - reportingCount} not yet`}
+      />
+    </div>
+    {goals.length > 0 && (
+      <p class="typography-body-md firma2-measure-portfolio__goals">
+        <span class="firma2-measure-portfolio__quiet">Reports toward </span>
+        <Fragment set:html={goals.map((g) => `<a href="${withBase(classificationHref(g.slug))}">${g.name.replace(/&/g, '&amp;')}</a>`).join(', ')} />
+      </p>
+    )}
+  </div>
+
+  <Firma2RailSection title="Projects">
+    {contributions.length === 0 ? (
+      <EsaEmptyState size="sm" title="No project reports this yet" description="Projects commit by setting a target on their Performance measures card." />
+    ) : (
+      <ul class="firma2-measure-portfolio__projects stack" data-gap="lg">
+        {contributions.map((c) => (
+          <li>
+            <Firma2KpiProgress
+              name={c.project.projectName}
+              href={withBase(projectHref(c.project))}
+              unit={unit}
+              decimals={measure.decimalPlaces}
+              additive={progress.additive}
+              reported={c.reported > 0 ? c.reported : null}
+              committed={progress.additive && c.committed > 0 ? c.committed : null}
+              goalNote={false}
+              from={[]}
+            />
+          </li>
+        ))}
+      </ul>
+    )}
+  </Firma2RailSection>
+</div>
+
+<script>
+  import { withDraft } from '../../lib/measure-draft';
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-portfolio[data-measure-slug]').forEach((root) => {
+    const note = root.querySelector<HTMLElement>('[data-retired-note]');
+    if (note) note.hidden = withDraft(root.dataset.measureSlug!).status !== 'Retired';
+  });
+</script>
+
+<style>
+  .firma2-measure-portfolio [data-retired-note][hidden] {
+    display: none;
+  }
+
+  .firma2-measure-portfolio__lede,
+  .firma2-measure-portfolio__goals {
+    margin: 0;
+  }
+
+  .firma2-measure-portfolio__figures {
+    --grid-min: 13rem;
+  }
+
+  .firma2-measure-portfolio__quiet {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-measure-portfolio__projects {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>
