@@ -1,16 +1,21 @@
 ---
-// firma2-org-map — where one organization's work is: the work areas of every
-// project it leads or funds, on one map, framed on that work.
+// firma2-project-set-map — where a SET of projects works: their work areas on
+// one map, framed on that work. An organization's Home passes the projects it
+// leads or funds; a performance measure's page passes the projects reporting
+// it. Born as firma2-org-map (2026-10-09) and lifted here when the measure
+// page needed the same picture.
 //
 // WHY NOT THE PORTFOLIO MAP. firma2-portfolio-map is a page — color-by,
 // tags, coverage, charts, export — and it reads every project in the
-// workspace. An organization's Home needs one picture of its own projects,
-// so this is the same canvas (src/lib/leaflet), the same shapes, the same
-// dots-when-zoomed-out rule and the same popup doors, scoped by a prop.
+// workspace. A page about one organization or one measure needs one picture
+// of its own projects, so this is the same canvas (src/lib/leaflet), the same
+// shapes, the same dots-when-zoomed-out rule and the same popup doors, scoped
+// by a prop.
 //
-// COLOUR IS THE ORGANIZATION'S ROLE, the one split the summary above already
-// makes ("3 led, 2 funded"). The key appears only when both roles do; one
-// colour needs no key.
+// COLOUR IS OPTIONAL. A page that splits its set (an organization's led vs
+// funded) passes `groups`, each project names its group, and the categorical
+// slots follow the groups' order; a key appears only when two or more groups
+// do. With no groups, every project wears slot 1 and there is no key.
 //
 // THE GAP IS NAMED, because a map cannot show it: a project with no work area
 // is invisible here by construction, so the ones missing are listed under the
@@ -24,33 +29,45 @@
 // button is the cloned firma2-project-peek-button (src/lib/project-peek). The
 // key is a plain list with swatches — the portfolio map's shading key, not a
 // control. Beacon is not cloned on this machine.
-import type { OrganizationProject } from '../../data/firma2-organization-pages';
+import type { Project } from '../../data/firma2-projects';
 import { projectHref, projectSlug } from '../../data/firma2-projects';
 import { seedWorkAreas } from '../../data/firma2-geography';
 import { withBase } from '../../lib/base';
 
 interface Props {
-  rows: OrganizationProject[];
+  /** The section heading. */
+  title: string;
+  /** The canvas's accessible name. */
+  label: string;
+  items: { project: Project; group?: string }[];
+  /** The colour split, in slot order. Omit for one colour. */
+  groups?: { key: string; label: string }[];
 }
 
-const { rows } = Astro.props;
-const config = rows.map(({ project, leads }) => ({
+const { title, label, items, groups = [] } = Astro.props;
+const slotOf = (group?: string) => Math.max(0, groups.findIndex((g) => g.key === group)) + 1;
+const config = items.map(({ project, group }) => ({
   slug: projectSlug(project),
   name: project.projectName,
   href: withBase(projectHref(project)),
-  leads,
+  slot: slotOf(group),
   seed: seedWorkAreas(project),
 }));
-const bothRoles = rows.some((r) => r.leads) && rows.some((r) => !r.leads);
+const shownGroups = groups.filter((g) => items.some((i) => i.group === g.key));
+const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 ---
-{rows.length > 0 && (
-  <section class="firma2-org-map stack" data-gap="md" aria-labelledby="firma2-org-map-title" data-config={JSON.stringify(config)}>
-    <h2 id="firma2-org-map-title" class="typography-title-sm-strong">Where the work is</h2>
-    <div class="firma2-org-map__canvas" role="application" aria-label="Map of this organization's projects" data-canvas></div>
-    {bothRoles && (
-      <ul class="firma2-org-map__key typography-body-sm" aria-label="Key">
-        <li><span class="firma2-org-map__swatch" data-role="led"></span>Led</li>
-        <li><span class="firma2-org-map__swatch" data-role="funded"></span>Funded</li>
+{items.length > 0 && (
+  <section class="firma2-project-set-map stack" data-gap="md" aria-labelledby={headingId} data-config={JSON.stringify(config)}>
+    <h2 id={headingId} class="typography-title-sm-strong">{title}</h2>
+    <div class="firma2-project-set-map__canvas" role="application" aria-label={label} data-canvas></div>
+    {shownGroups.length > 1 && (
+      <ul class="firma2-project-set-map__key typography-body-sm" aria-label="Key">
+        {shownGroups.map((g) => (
+          <li>
+            <span class="firma2-project-set-map__swatch" style={`--swatch: var(--color-background-dataviz-categorical-${slotOf(g.key)})`}></span>
+            {g.label}
+          </li>
+        ))}
       </ul>
     )}
     <p class="typography-body-md" data-unmapped hidden></p>
@@ -58,7 +75,7 @@ const bothRoles = rows.some((r) => r.leads) && rows.some((r) => !r.leads);
 )}
 
 <style>
-  .firma2-org-map__canvas {
+  .firma2-project-set-map__canvas {
     block-size: clamp(18rem, 45vh, 28rem);
     border: 1px solid var(--color-border-default, #cecece);
     border-radius: var(--radius-md, 0.5rem);
@@ -67,11 +84,11 @@ const bothRoles = rows.some((r) => r.leads) && rows.some((r) => !r.leads);
     isolation: isolate;
   }
 
-  .firma2-org-map [data-unmapped][hidden] {
+  .firma2-project-set-map [data-unmapped][hidden] {
     display: none;
   }
 
-  .firma2-org-map__key {
+  .firma2-project-set-map__key {
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-200) var(--spacing-400);
@@ -80,57 +97,50 @@ const bothRoles = rows.some((r) => r.leads) && rows.some((r) => !r.leads);
     list-style: none;
   }
 
-  .firma2-org-map__key li {
+  .firma2-project-set-map__key li {
     display: inline-flex;
     align-items: center;
     gap: var(--spacing-100);
   }
 
-  .firma2-org-map__swatch {
+  .firma2-project-set-map__swatch {
     inline-size: 0.75rem;
     block-size: 0.75rem;
     border-radius: 50%;
+    background: var(--swatch);
   }
 
-  .firma2-org-map__swatch[data-role='led'] {
-    background: var(--color-background-dataviz-categorical-1, #3e9b4f);
-  }
-
-  .firma2-org-map__swatch[data-role='funded'] {
-    background: var(--color-background-dataviz-categorical-2, #3e63dd);
-  }
-
-  .firma2-org-map :global(.firma2-org-map__doors) {
+  .firma2-project-set-map :global(.firma2-project-set-map__doors) {
     display: inline-flex;
     align-items: center;
     gap: var(--spacing-100, 0.25rem);
   }
 
-  .firma2-org-map :global(.leaflet-bar) {
+  .firma2-project-set-map :global(.leaflet-bar) {
     border: 1px solid var(--color-border-default, #cecece);
     border-radius: var(--radius-sm, 0.25rem);
     box-shadow: var(--elevation-1, 0 1px 4px rgba(0, 0, 0, 0.06));
   }
 
-  .firma2-org-map :global(.leaflet-bar a) {
+  .firma2-project-set-map :global(.leaflet-bar a) {
     background-color: var(--color-background-elevation-raised, #fcfcfc);
     color: var(--color-content-default, #202020);
   }
 
-  .firma2-org-map :global(.leaflet-popup-content-wrapper),
-  .firma2-org-map :global(.leaflet-popup-tip) {
+  .firma2-project-set-map :global(.leaflet-popup-content-wrapper),
+  .firma2-project-set-map :global(.leaflet-popup-tip) {
     background: var(--color-background-elevation-floating, #fcfcfc);
     color: var(--color-content-default, #202020);
     box-shadow: var(--elevation-2, 0 2px 12px 0 rgba(0, 0, 0, 0.08));
   }
 
-  .firma2-org-map :global(.leaflet-popup-content) {
+  .firma2-project-set-map :global(.leaflet-popup-content) {
     margin: var(--spacing-300) var(--spacing-400);
     font: inherit;
   }
 
-  .firma2-org-map :global(.leaflet-popup-content a),
-  .firma2-org-map [data-unmapped] :global(a) {
+  .firma2-project-set-map :global(.leaflet-popup-content a),
+  .firma2-project-set-map [data-unmapped] :global(a) {
     color: var(--color-content-link, #2a7e3b);
   }
 
@@ -147,17 +157,17 @@ const bothRoles = rows.some((r) => r.leads) && rows.some((r) => !r.leads);
 <script>
   import type { MapWorkArea } from '../../data/firma2-geography';
   import { centroid, formatExtent } from '../../lib/geo';
-  import { createMap, kindColor, loadLeaflet, shapeStyle, token } from '../../lib/leaflet';
+  import { createMap, loadLeaflet, shapeStyle, token } from '../../lib/leaflet';
   import type { Leaflet } from '../../lib/leaflet';
   import { onGeoChange, readWorkAreas } from '../../lib/work-areas';
   import { label as vocab } from '../../lib/vocabulary';
   import { projectPeekButtonHTML } from '../../lib/project-peek';
 
-  type Row = { slug: string; name: string; href: string; leads: boolean; seed: MapWorkArea[] };
+  type Row = { slug: string; name: string; href: string; slot: number; seed: MapWorkArea[] };
 
   const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-  document.querySelectorAll<HTMLElement>('.firma2-org-map').forEach(async (root) => {
+  document.querySelectorAll<HTMLElement>('.firma2-project-set-map').forEach(async (root) => {
     const rows: Row[] = JSON.parse(root.dataset.config ?? '[]');
     const canvas = root.querySelector<HTMLElement>('[data-canvas]')!;
     const unmapped = root.querySelector<HTMLElement>('[data-unmapped]')!;
@@ -168,8 +178,7 @@ const bothRoles = rows.some((r) => r.leads) && rows.some((r) => !r.leads);
       return;
     }
 
-    // Led is categorical slot 1, funded slot 2 — the most separable pair.
-    const roleColor = (row: Row) => kindColor(row.leads ? 'area' : 'reach');
+    const colorOf = (row: Row) => token(`--color-background-dataviz-categorical-${row.slot}`, '#3e9b4f');
 
     const shapes = L.featureGroup();
     const dots = L.featureGroup();
@@ -196,7 +205,7 @@ const bothRoles = rows.some((r) => r.leads) && rows.some((r) => !r.leads);
       rows.forEach((row) => {
         const areas = readWorkAreas(row.slug, row.seed);
         if (!areas.length) return missing.push(row);
-        const color = roleColor(row);
+        const color = colorOf(row);
         const path = areas.flatMap((a) => a.path);
         all.push(...path);
 
@@ -224,7 +233,7 @@ const bothRoles = rows.some((r) => r.leads) && rows.some((r) => !r.leads);
           shape
             .bindTooltip(`${esc(row.name)}<br>${line}`, { sticky: true, className: 'firma2-map-tip' })
             .bindPopup(
-              `<strong>${esc(row.name)}</strong><br>${line}<br><span class="firma2-org-map__doors"><a href="${row.href}">${esc(vocab('Open project'))}</a>${projectPeekButtonHTML(row.slug, row.name)}</span>`,
+              `<strong>${esc(row.name)}</strong><br>${line}<br><span class="firma2-project-set-map__doors"><a href="${row.href}">${esc(vocab('Open project'))}</a>${projectPeekButtonHTML(row.slug, row.name)}</span>`,
             )
             .addTo(shapes);
         });

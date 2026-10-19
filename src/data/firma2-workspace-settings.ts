@@ -258,6 +258,10 @@ export const SECURITY_PERMISSIONS: SecurityPermission[] = [
   // A target commits a project to an amount on a performance measure; PM 2
   // keeps that with administrators, so it starts there (user, 2026-10-09).
   { key: 'perm-targets', label: 'Set project targets', hint: 'Commit a project to an amount on a performance measure, or clear it. Anyone who can edit a project can still report against it.', value: 'admins' },
+  // QA/QC happens at publish (user, 2026-10-09): editors change their records
+  // freely, and the public sees a project only once someone trusted to check it
+  // has published it. Stewards and administrators by default.
+  { key: 'perm-publish', label: 'Publish projects', hint: 'Review what changed on a project and update its public page.', value: 'stewards' },
   { key: 'perm-import', label: 'Import data', hint: 'Bring in projects and records from a spreadsheet or GIS file.', value: 'admins' },
   { key: 'perm-export', label: 'Export data', hint: 'Download projects, funding and measures as a spreadsheet.', value: 'stewards' },
   { key: 'perm-api', label: 'Create API tokens', hint: 'Let another system read and change workspace data.', value: 'admins' },

@@ -67,6 +67,11 @@ export const navItems: Firma2NavItem[] = [
   // that entity has. The catalog stays in Workspace settings › Projects.
   { key: 'performance-measures', label: 'Performance measures', href: '/prototypes/performance-measures', icon: 'trending-up', group: 'Workspace', aliasable: true },
   { key: 'progress-dashboard', label: 'Progress Dashboard', icon: 'layout-dashboard', group: 'Workspace' },
+  // THE ADMINISTRATOR'S SWEEP (user, 2026-10-09): every change on every
+  // project, and the queue of public pages that are behind. The same two
+  // pages each organization has, at workspace scope.
+  { key: 'updates', label: 'Updates', href: '/prototypes/updates', icon: 'activity', group: 'Workspace' },
+  { key: 'review', label: 'Review', href: '/prototypes/review', icon: 'circle-check', group: 'Workspace' },
   // MORE: the workspace's less-visited lists, one expandable row so the
   // everyday rows above stay short. Members and Support Requests have no route
   // yet, so they render dimmed (the navItems contract). Performance measures left
@@ -105,7 +110,7 @@ export const YOUR_ORGANIZATIONS_GROUP =
   CURRENT_USER_ORGANIZATIONS.length === 1 ? 'Your organization' : 'Your organizations';
 
 // YOUR ORGANIZATIONS: one expandable row per organization the reader belongs
-// to, each holding the same five pages scoped to it
+// to, each holding the same six pages scoped to it
 // (src/pages/prototypes/organizations/[organization]/). Keys carry the slug, and
 // each page marks itself with organizationNavKey() so its row shows current.
 export const organizationNavItems: Firma2NavItem[] = CURRENT_USER_ORGANIZATIONS.map((name) => {
@@ -119,6 +124,7 @@ export const organizationNavItems: Firma2NavItem[] = CURRENT_USER_ORGANIZATIONS.
       { key: organizationNavKey(slug, 'home'), label: 'Home', href: organizationPageHref(slug, 'home'), icon: 'home' },
       { key: organizationNavKey(slug, 'projects'), label: 'Projects', href: organizationPageHref(slug, 'projects'), icon: 'folder', aliasable: true },
       { key: organizationNavKey(slug, 'updates'), label: 'Updates', href: organizationPageHref(slug, 'updates'), icon: 'activity' },
+      { key: organizationNavKey(slug, 'review'), label: 'Review', href: organizationPageHref(slug, 'review'), icon: 'circle-check' },
       { key: organizationNavKey(slug, 'views'), label: 'Views', href: organizationPageHref(slug, 'views'), icon: 'eye' },
       { key: organizationNavKey(slug, 'reports'), label: 'Reports', href: organizationPageHref(slug, 'reports'), icon: 'file-text' },
     ],
@@ -211,6 +217,7 @@ export const organizationSettingsPages = [
   { label: 'Members', href: '/prototypes/workspace-settings/organization-settings/members' },
   { label: 'Access and permissions', href: '/prototypes/workspace-settings/organization-settings/access' },
   { label: 'Notifications', href: '/prototypes/workspace-settings/organization-settings/notifications' },
+  { label: 'Review schedule', href: '/prototypes/workspace-settings/organization-settings/review' },
 ];
 
 export interface Firma2SearchEntry {

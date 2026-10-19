@@ -1,0 +1,65 @@
+---
+// firma2-page-tabs — a page's top-level views as tabs: esa-tab-layout under
+// the page header, one panel per view. Born on Organization Home (user,
+// 2026-10-09) to put the map-based explorer beside the overview.
+//
+// The caller passes the views and one named slot per view, keyed by the
+// view's `key` (<div slot="map">…</div>). The chosen view rides in the URL
+// (?view=<key>), so a copied link opens the view it was copied from; the
+// first view is the default and leaves the URL clean.
+//
+// bcn-lego-checked: esa-tab-layout IS the control; this only maps named
+// slots onto its panel-N slots, sets its `tabs` array property (not
+// expressible in markup) and keeps the URL in step. Beacon is not cloned here.
+interface Props {
+  /** The views, in tab order. The first is the default. */
+  views: { key: string; label: string }[];
+}
+
+const { views } = Astro.props;
+const panels = await Promise.all(views.map((v) => Astro.slots.render(v.key)));
+---
+<esa-tab-layout
+  class="firma2-page-tabs"
+  size="md"
+  appearance="underline"
+  data-page-tabs
+  data-views={JSON.stringify(views)}
+>
+  {/* Written into the HTML: Astro strips a computed slot attribute from an
+       element, so <div slot={…}> would reach the browser unassigned. */}
+  {panels.map((html, i) => <Fragment set:html={`<div slot="panel-${i}">${html}</div>`} />)}
+</esa-tab-layout>
+
+<style>
+  /* Before the element upgrades there is no panel switching, so every panel
+     would show at once; only the first does until :defined takes over. */
+  .firma2-page-tabs:not(:defined) > [slot^='panel-']:not([slot='panel-0']) {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-tab-layout';
+
+  type TabsEl = HTMLElement & { tabs: unknown; activeIndex: number };
+
+  customElements.whenDefined('esa-tab-layout').then(() => {
+    document.querySelectorAll<TabsEl>('esa-tab-layout[data-page-tabs]').forEach((el) => {
+      const views: { key: string; label: string }[] = JSON.parse(el.dataset.views ?? '[]');
+      el.tabs = views.map((v) => ({ label: v.label }));
+      const fromUrl = new URL(location.href).searchParams.get('view') ?? '';
+      el.activeIndex = Math.max(0, views.findIndex((v) => v.key === fromUrl));
+
+      el.addEventListener('tabchange', (event) => {
+        // tabchange bubbles: a tab layout nested in a panel is not this one.
+        if (event.target !== el) return;
+        const index = (event as CustomEvent<{ index: number }>).detail.index;
+        const url = new URL(location.href);
+        if (index === 0) url.searchParams.delete('view');
+        else url.searchParams.set('view', views[index].key);
+        history.replaceState(history.state, '', url);
+      });
+    });
+  });
+</script>

@@ -1,0 +1,85 @@
+---
+// firma2-organization-review — how often an organization's stewards review
+// their projects' public pages, and whether they are reminded.
+//
+// OPTIONAL BY DEFAULT IN THE PRODUCT (user, 2026-10-09: "in whatever cadence
+// the admin or steward feels like it should happen"). With no schedule the
+// Review page shows how long each project has waited and nothing reads as
+// overdue. A schedule turns a wait longer than its period into Overdue on the
+// organization's Review page and the workspace's.
+//
+// THE HELP LINE FOLLOWS THE ANSWER, the Access page's convention: a closed
+// select shows only the option it holds, so the line under it states what
+// THAT option does.
+//
+// No Save: each control commits on change. Persists in this browser
+// (src/lib/publish-store.ts) because the Review pages read it.
+//
+// bcn-lego-checked: firma2-rail-section is each section, esa-select and
+// esa-switch-toggle the controls — legos, composed unchanged. `.stack`
+// spaces them; no bespoke flex and no <style> block.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { REVIEW_CADENCES, reviewCadence } from '../../data/firma2-publishing';
+import type { Organization } from '../../data/firma2-directory';
+
+interface Props {
+  organization: Organization;
+}
+
+const { organization } = Astro.props;
+const hint = (days: number | null) =>
+  days === null
+    ? 'Nothing shows as overdue. Publish whenever you get to it.'
+    : `A change waiting more than ${days} days shows as overdue.`;
+const hints = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, hint(c.days)]));
+const seed = reviewCadence(organization.name);
+---
+<div class="stack" data-gap="2xl" data-review-settings data-organization={organization.name} data-seed={seed}>
+  <Firma2RailSection title="Schedule">
+    <esa-select
+      name="cadence"
+      label="How often stewards review projects"
+      size="md"
+      options={JSON.stringify(REVIEW_CADENCES.map(({ value, label }) => ({ value, label })))}
+      help-text={hints[seed]}
+      data-hints={JSON.stringify(hints)}
+    ></esa-select>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Reminders">
+    <esa-switch-toggle name="reminders" label="Email stewards once a week while a project is overdue"></esa-switch-toggle>
+  </Firma2RailSection>
+</div>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-switch-toggle';
+  import { readPublishing, writeCadence, writeReminders } from '../../lib/publish-store';
+  import type { ReviewCadence } from '../../data/firma2-review-cadence';
+
+  type SelectEl = HTMLElement & { value: string; helpText: string };
+  type SwitchEl = HTMLElement & { checked: boolean };
+
+  const root = document.querySelector<HTMLElement>('[data-review-settings]');
+  if (root) {
+    const organization = root.dataset.organization!;
+    const state = readPublishing();
+    // Assigned only after define — a `.value` set on a not-yet-upgraded
+    // element becomes an own property that shadows the lego's setter.
+    customElements.whenDefined('esa-select').then(() => {
+      const select = root.querySelector<SelectEl>('esa-select[name="cadence"]')!;
+      const hints: Record<string, string> = JSON.parse(select.dataset.hints ?? '{}');
+      select.value = state.cadence[organization] ?? root.dataset.seed ?? 'none';
+      select.helpText = hints[select.value] ?? '';
+      select.addEventListener('change', () => {
+        writeCadence(organization, select.value as ReviewCadence);
+        select.helpText = hints[select.value] ?? '';
+      });
+    });
+    customElements.whenDefined('esa-switch-toggle').then(() => {
+      const toggle = root.querySelector<SwitchEl>('esa-switch-toggle[name="reminders"]')!;
+      toggle.checked = state.reminders[organization] ?? true;
+      toggle.addEventListener('change', () => writeReminders(organization, toggle.checked));
+    });
+  }
+</script>

@@ -1,0 +1,339 @@
+---
+// firma2-measure-history — one performance measure across the portfolio, year
+// by year: what projects reported against what they planned (user,
+// 2026-10-09: "when planning you can set yearly goals").
+//
+// ONE BAR PER YEAR, THE PLAN BEHIND IT (user, 2026-10-09, over paired bars).
+// Paired bars made the reader subtract two neighbours, doubled the mark count
+// (66 slivers across a 33-year measure) and drew a plan-only future year as a
+// lone bar that read as missing data. Here the plan is a wide pale bar and
+// what was reported a solid bar of the same width over it — the year filled
+// to its report: short of plan is the pale part left above, over plan is
+// solid standing past it, and a year still ahead is the pale plan alone.
+// Solid for reported, pale for planned is the progress ring's own two greens
+// (bcn-progress-ring). The pale fill has no outline (a first pass had one,
+// and a narrow bar inside a wide one — stripes, user: "horrible looking");
+// the table under "View as data" is the relief the pale step needs.
+//
+// CUMULATIVE, FOR A MEASURE THAT SUMS. A single year is noisy; the question
+// a program answers to a funder is "are we on schedule overall?". The switch
+// draws running totals — reported through the last closed year, planned
+// through the end of every window — as two lines, the plan dashed. Legal only
+// because the values add up ([[measure-counting-rule-framing]]); a measure
+// that does not sum keeps its two lines (average reading, average target) and
+// gets no switch.
+//
+// The table is the chart's text alternative and its exact figures, behind
+// "View as data" — the classification funding chart's pattern. Its columns
+// follow the view.
+//
+// bcn-lego-checked: esa-chart for the plot, esa-button-toggle for the view
+// switch (firma2-classification-measures' Simple/Detailed seam),
+// esa-collapsible for the data view, AG Grid through grid-chrome's
+// createCardGrid. Beacon is not cloned on this machine.
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+import { periodName } from '../../data/firma2-performance-measures';
+import { measurePortfolio } from '../../data/firma2-classification-rollup';
+import { measureByYear } from '../../lib/measure-reading';
+
+interface Props {
+  measure: PerformanceMeasureDefinition;
+}
+
+const { measure } = Astro.props;
+const progress = measurePortfolio(measure);
+const years = measureByYear(progress).map((y) => ({ ...y, period: periodName(y.year) }));
+const title = progress.additive ? 'Reported vs planned' : 'Average reading vs target by year';
+const payload = { additive: progress.additive, unit: progress.unit, decimals: measure.decimalPlaces, title, years };
+---
+{years.length > 0 && (
+  <section class="firma2-measure-history stack" data-gap="md" aria-labelledby="firma2-measure-history-title" data-payload={JSON.stringify(payload)}>
+    <div class="repel" data-gap="sm">
+      <h2 id="firma2-measure-history-title" class="typography-title-sm-strong">{title}</h2>
+      {progress.additive && <esa-button-toggle size="md" data-history-view></esa-button-toggle>}
+    </div>
+    <div data-chart></div>
+    <EsaCollapsible title="View as data" flush>
+      <div data-grid></div>
+    </EsaCollapsible>
+  </section>
+)}
+
+<script>
+  import '@esa/ecology/esa-chart';
+  import '@esa/ecology/esa-button-toggle';
+
+  type ChartElement = HTMLElement & Record<string, unknown>;
+  type Toggle = HTMLElement & { options?: unknown; value?: string };
+  type View = 'year' | 'cumulative';
+  interface Year {
+    year: number;
+    period: string;
+    value: number | null;
+    planned: number | null;
+    closed: boolean;
+    owed: number;
+    filed: number;
+  }
+  interface Row extends Year {
+    /** Running totals; reported stops at the last closed year. */
+    reportedToDate: number | null;
+    plannedToDate: number | null;
+  }
+  interface Payload {
+    additive: boolean;
+    unit: string;
+    decimals: number;
+    title: string;
+    years: Year[];
+  }
+
+  const token = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-history').forEach((root) => {
+    const data: Payload = JSON.parse(root.dataset.payload ?? '{}');
+    const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: data.decimals });
+    const withUnit = (n: number) =>
+      data.unit === 'percent' ? `${nf.format(n)}%` : data.unit === 'each' || !data.unit ? nf.format(n) : `${nf.format(n)} ${data.unit}`;
+    const filedText = (y: Year) => (y.closed ? `${y.filed} of ${y.owed} ${y.owed === 1 ? 'project' : 'projects'}` : 'Not due yet');
+    const reportedText = (y: Year) => (y.value != null ? withUnit(y.value) : y.closed ? 'Nothing filed' : 'Not due yet');
+    const plannedText = (y: Year) => (y.planned != null ? withUnit(y.planned) : 'No plan');
+    const reportedName = data.additive ? 'Reported' : 'Average reading';
+    const plannedName = data.additive ? 'Planned' : 'Target';
+
+    // RUNNING TOTALS. Reported runs through the last closed year and stops —
+    // a line carried flat into the future would claim nothing will be done.
+    const lastClosed = Math.max(...data.years.filter((y) => y.closed).map((y) => y.year), -Infinity);
+    let r = 0;
+    let p = 0;
+    const rows: Row[] = data.years.map((y) => {
+      r += y.value ?? 0;
+      p += y.planned ?? 0;
+      return { ...y, reportedToDate: y.year <= lastClosed ? Number(r.toFixed(4)) : null, plannedToDate: Number(p.toFixed(4)) };
+    });
+    const gapText = (row: Row) => {
+      if (row.reportedToDate == null || row.plannedToDate == null) return 'Not due yet';
+      const gap = Number((row.reportedToDate - row.plannedToDate).toFixed(4));
+      return gap === 0 ? 'On plan' : gap < 0 ? `Behind by ${withUnit(-gap)}` : `Ahead by ${withUnit(gap)}`;
+    };
+
+    /**
+     * The tooltip's title: how a figure stands against its plan, in words —
+     * the answer the reader hovered for. The share is left off for a measure
+     * that does not sum: "5% above target (6%)" reads as two percentages.
+     */
+    const verdict = (actual: number | null, plan: number | null, due: boolean, over: string, under: string, share: boolean): string | undefined => {
+      if (!due) return 'Not due yet';
+      if (actual == null) return 'Nothing filed';
+      if (plan == null) return undefined;
+      const diff = Number((actual - plan).toFixed(4));
+      if (diff === 0) return 'On plan';
+      const pct = share && plan > 0 ? ` (${Math.round((Math.abs(diff) / plan) * 100)}%)` : '';
+      return `${diff > 0 ? over : under} by ${withUnit(Math.abs(diff))}${pct}`;
+    };
+
+    let view: View = 'year';
+    let chart: ChartElement | null = null;
+    const slot = root.querySelector<HTMLElement>('[data-chart]')!;
+
+    const paint = () => {
+      if (!chart) return;
+      const color = token('--color-background-dataviz-categorical-1', '#3e9b4f');
+      // THE SAME TWO GREENS AS THE BARS, on lines: the plan pale and dashed,
+      // what was reported solid. NO MARKERS — one on each of thirty-odd years
+      // was clutter (user, 2026-10-09: "horrible looking"); the dash carries
+      // identity, and hover still finds the nearest year. Disabled explicitly,
+      // because esa-chart otherwise adds palette-coloured markers of its own.
+      const planLine = () => ({ stroke: color, strokeOpacity: 0.5, strokeWidth: 2, lineDash: [6, 4], marker: { enabled: false } });
+      const reportedLine = () => ({ stroke: color, strokeWidth: 2.5, marker: { enabled: false } });
+      const axes = {
+        x: { type: 'category', position: 'bottom' },
+        y: { type: 'number', position: 'left', label: { formatter: (q: { value: unknown }) => nf.format(Number(q.value)) } },
+      };
+
+      // ONE TOOLTIP, LEADING WITH THE ANSWER (user, 2026-10-09: the tooltip
+      // was "straight up confusing"). It had repeated the same block once per
+      // series — pale bar, solid bar, tick — each under its own year heading,
+      // and faded the whole chart. Now: `mode: 'single'`, only the bars (or
+      // lines) carry it, the year is the heading, the verdict is the title —
+      // "Over plan by 20.6 acres (19%)" — and only the rows that apply follow.
+      // Hover no longer dims everything else.
+      const options = { legend: { position: 'top' }, tooltip: { mode: 'single' }, axes };
+      const quiet = { highlight: { unhighlightedItem: { opacity: 1 }, unhighlightedSeries: { opacity: 1 } } };
+      // NO SYMBOL beside the verdict. AG draws the hovered series' marker
+      // there, and the tick's marker is sized to the bar — wide enough to
+      // strike through the text (user's screenshot, 2026-10-09) — and it
+      // changed with whichever layer the pointer was over. The verdict is
+      // words; it needs no swatch.
+      const noSymbol = { marker: { enabled: false }, line: { enabled: false } };
+      const tip = (render: (y: Row) => { heading: string; title?: string; data: { label: string; value: string }[] }) => ({
+        renderer: (q: { datum: { y: Row } }) => ({ ...render(q.datum.y), symbol: noSymbol }),
+      });
+
+      if (!data.additive) {
+        const tooltip = tip((y) => ({
+          heading: y.period,
+          title: verdict(y.value, y.planned, y.closed, 'Above target', 'Below target', false),
+          data: y.closed
+            ? [
+                { label: reportedName, value: reportedText(y) },
+                { label: plannedName, value: plannedText(y) },
+                { label: 'Filed', value: filedText(y) },
+              ]
+            : [{ label: plannedName, value: plannedText(y) }],
+        }));
+        chart.data = rows.map((y) => ({ period: y.period, value: y.value ?? undefined, planned: y.planned ?? undefined, y }));
+        chart.series = [
+          { type: 'line', xKey: 'period', yKey: 'planned', yName: plannedName, ...planLine(), ...quiet, tooltip },
+          { type: 'line', xKey: 'period', yKey: 'value', yName: reportedName, ...reportedLine(), ...quiet, tooltip },
+        ];
+        chart.options = options;
+        return;
+      }
+
+      if (view === 'cumulative') {
+        const tooltip = tip((y) => ({
+          heading: `Through ${y.period}`,
+          title: verdict(y.reportedToDate, y.plannedToDate, y.reportedToDate != null, 'Ahead of plan', 'Behind plan', true),
+          data: [
+            ...(y.reportedToDate != null ? [{ label: 'Reported to date', value: withUnit(y.reportedToDate) }] : []),
+            { label: 'Planned to date', value: y.plannedToDate == null ? 'No plan' : withUnit(y.plannedToDate) },
+          ],
+        }));
+        chart.data = rows.map((y) => ({ period: y.period, reported: y.reportedToDate ?? undefined, planned: y.plannedToDate ?? undefined, y }));
+        // The plan first, so the reported line draws ON it — they run close
+        // when a program keeps to plan, and the solid line must stay legible.
+        chart.series = [
+          { type: 'line', xKey: 'period', yKey: 'planned', yName: 'Planned to date', ...planLine(), ...quiet, tooltip },
+          { type: 'line', xKey: 'period', yKey: 'reported', yName: 'Reported to date', ...reportedLine(), ...quiet, tooltip },
+        ];
+        chart.options = options;
+        return;
+      }
+
+      // BY YEAR: the plan first so it draws behind; `grouped: false` lays the
+      // two series over each other instead of side by side. Widths are ratios
+      // of the year's band, never fixed pixels — a fixed width past the band
+      // made AG Charts drop the trailing years (measured: 2022–2025 lost).
+      const tooltip = tip((y) => ({
+        heading: y.period,
+        title: verdict(y.value, y.planned, y.closed, 'Over plan', 'Short of plan', true),
+        data: y.closed
+          ? [
+              { label: reportedName, value: reportedText(y) },
+              { label: plannedName, value: plannedText(y) },
+              { label: 'Filed', value: filedText(y) },
+            ]
+          : [{ label: plannedName, value: plannedText(y) }],
+      }));
+      chart.data = rows.map((y) => ({ period: y.period, value: y.value ?? undefined, planned: y.planned ?? undefined, y }));
+      // THE PLAN IS A TICK ON TOP, not only the pale bar behind (user,
+      // 2026-10-09: "if something was exceeded how do I know if it was by a
+      // lot or a little?"). With the plan only behind, a year over plan hid
+      // the plan entirely under its solid bar. The tick is drawn last, across
+      // the bar at the planned value, in default ink so it reads on both the
+      // pale and the solid green: the solid standing above it is the
+      // overshoot, the pale left above the solid is the shortfall. The tick is
+      // a custom marker on a line series with no line, sized to the bar —
+      // the chart has no target mark of its own. EVERY MARK CARRIES THE SAME
+      // TOOLTIP and `mode: 'single'` shows one: the bar under the pointer, or
+      // the year's tick at range 'nearest' anywhere else in its column — a
+      // future year's pale bar included, which the tick otherwise swallowed.
+      // Highlighting is off on the bars: its default style blanked the
+      // hovered solid bar.
+      const plotWidth = Math.max(0, slot.getBoundingClientRect().width - 80);
+      const barWidth = Math.max(4, (plotWidth / Math.max(1, rows.length)) * 0.7);
+      const ink = token('--color-content-default', '#202020');
+      const tick = ({ path, x, y }: { path: { rect: (x: number, y: number, w: number, h: number) => void }; x: number; y: number }) =>
+        path.rect(x - barWidth / 2, y - 1, barWidth, 2);
+      chart.series = [
+        // ONE BAR PER YEAR, FILLED TO WHAT WAS REPORTED: the plan and the
+        // report share a width and overlap, so each year is a pale container
+        // with its solid fill — no outline, no bar-inside-a-bar (both read as
+        // stripes across thirty years; user, 2026-10-09).
+        { type: 'bar', xKey: 'period', yKey: 'planned', yName: plannedName, showInLegend: false, grouped: false, widthRatio: 0.7, cornerRadius: 3, fill: color, fillOpacity: 0.25, strokeWidth: 0, highlight: { enabled: false }, tooltip },
+        { type: 'bar', xKey: 'period', yKey: 'value', yName: reportedName, grouped: false, widthRatio: 0.7, cornerRadius: 3, fill: color, strokeWidth: 0, highlight: { enabled: false }, tooltip },
+        { type: 'line', xKey: 'period', yKey: 'planned', yName: plannedName, strokeWidth: 0, strokeOpacity: 0, marker: { enabled: true, shape: tick, size: barWidth, fill: ink, stroke: ink, strokeWidth: 0 }, highlight: { enabled: false }, tooltip: { ...tooltip, range: 'nearest' } },
+      ];
+      chart.options = options;
+    };
+
+    void customElements.whenDefined('esa-chart').then(() => {
+      chart = document.createElement('esa-chart') as ChartElement;
+      chart.setAttribute('label', data.title);
+      chart.setAttribute('height', '320px');
+      paint();
+      slot.replaceChildren(chart);
+    });
+    // The plan's colour is read from a token; repaint when the scheme flips.
+    new MutationObserver(paint).observe(document.documentElement, { attributeFilter: ['data-scheme'] });
+    // The tick is sized in pixels to the bar, so a resize repaints it.
+    let lastWidth = 0;
+    let frame = 0;
+    new ResizeObserver(() => {
+      const w = Math.round(slot.getBoundingClientRect().width);
+      if (w === lastWidth || frame) return;
+      lastWidth = w;
+      frame = requestAnimationFrame(() => { frame = 0; paint(); });
+    }).observe(slot);
+
+    // BY YEAR / CUMULATIVE — only for a measure that sums. Options and value
+    // are assigned after the element is defined ([[custom-element-upgrade-shadow]]).
+    const toggle = root.querySelector<Toggle>('[data-history-view]');
+    if (toggle) {
+      void customElements.whenDefined('esa-button-toggle').then(() => {
+        toggle.options = [
+          { label: 'By year', value: 'year' },
+          { label: 'Cumulative', value: 'cumulative' },
+        ];
+        toggle.value = 'year';
+        // The lego names its radiogroup only from a visible label; a visible
+        // one here would be an ornamental micro-label.
+        requestAnimationFrame(() => toggle.shadowRoot?.querySelector('[role="radiogroup"]')?.setAttribute('aria-label', 'Chart view'));
+      });
+      toggle.addEventListener('change', () => {
+        view = toggle.value === 'cumulative' ? 'cumulative' : 'year';
+        paint();
+        syncColumns();
+      });
+    }
+
+    // Mounted on first open: a grid built inside a closed <details> measures
+    // zero width and commits to it.
+    const gridHost = root.querySelector<HTMLElement>('[data-grid]');
+    const details = gridHost?.closest('details');
+    let gridApi: { setColumnsVisible: (keys: string[], visible: boolean) => void } | null = null;
+    function syncColumns() {
+      if (!gridApi || !data.additive) return;
+      const cumulative = view === 'cumulative';
+      gridApi.setColumnsVisible(['value', 'planned', 'filed'], !cumulative);
+      gridApi.setColumnsVisible(['reportedToDate', 'plannedToDate', 'gap'], cumulative);
+    }
+    const build = async () => {
+      if (!gridHost || gridApi) return;
+      const { createCardGrid } = await import('../shared/grid-chrome');
+      const right = { flex: 1, minWidth: 140, type: 'rightAligned' };
+      gridApi = createCardGrid<Row>(gridHost, {
+        rowData: [...rows].reverse(),
+        suppressHorizontalScroll: true,
+        defaultColDef: { sortable: true, resizable: false, suppressHeaderMenuButton: true, suppressMovable: true },
+        columnDefs: [
+          { headerName: 'Year', field: 'period', flex: 1, minWidth: 110, comparator: (_a: unknown, _b: unknown, x: { data: Row }, y: { data: Row }) => x.data.year - y.data.year },
+          { headerName: reportedName, colId: 'value', ...right, valueGetter: (q: { data: Row }) => q.data.value, valueFormatter: (q: { data: Row }) => reportedText(q.data) },
+          { headerName: plannedName, colId: 'planned', ...right, valueGetter: (q: { data: Row }) => q.data.planned, valueFormatter: (q: { data: Row }) => plannedText(q.data) },
+          { headerName: 'Filed', colId: 'filed', flex: 1, minWidth: 150, valueGetter: (q: { data: Row }) => filedText(q.data) },
+          { headerName: 'Reported to date', colId: 'reportedToDate', hide: true, ...right, valueGetter: (q: { data: Row }) => q.data.reportedToDate, valueFormatter: (q: { data: Row }) => (q.data.reportedToDate == null ? 'Not due yet' : withUnit(q.data.reportedToDate)) },
+          { headerName: 'Planned to date', colId: 'plannedToDate', hide: true, ...right, valueGetter: (q: { data: Row }) => q.data.plannedToDate, valueFormatter: (q: { data: Row }) => (q.data.plannedToDate == null ? 'No plan' : withUnit(q.data.plannedToDate)) },
+          { headerName: 'Against plan', colId: 'gap', hide: true, flex: 1, minWidth: 160, valueGetter: (q: { data: Row }) => gapText(q.data) },
+        ],
+      }) as unknown as typeof gridApi;
+      syncColumns();
+    };
+    if (details) {
+      details.addEventListener('toggle', () => { if (details.open) void build(); });
+      if (details.open) void build();
+    }
+  });
+</script>

@@ -30,6 +30,8 @@ import Firma2ProjectTimeline from '../projects/firma2-project-timeline.astro';
 import Firma2ProjectGallery from '../projects/firma2-project-gallery.astro';
 import Firma2ProjectMap from '../projects/firma2-project-map.astro';
 import type { ProjectDetail } from '../../data/firma2-project-detail';
+import type { PublishedSnapshot } from '../../data/firma2-publish-history';
+import { projectSlug } from '../../data/firma2-projects';
 import { latestReport } from '../../data/firma2-project-detail';
 import {
   FIELD_DEFINITIONS,
@@ -44,13 +46,55 @@ import { currencyFormatter } from '../../lib/format';
 
 interface Props {
   detail: ProjectDetail;
+  /**
+   * The public page's own route passes this: the page shows the last PUBLISHED
+   * state of the record, not the record (the review-and-publish workflow,
+   * user 2026-10-09). Where the two differ, the element carries the change's
+   * key and its current value, and the script swaps the value in once this
+   * browser has published that change. The project-type studio's preview
+   * omits it — the preview shows the record as it is.
+   */
+  published?: PublishedSnapshot;
 }
 
-const { detail } = Astro.props;
+const { detail, published } = Astro.props;
 const { project } = detail;
 const projectType = projectTypeFor(project);
 const years = `${project.implementationStartYear}–${project.completionYear}`;
 const fmt = (n: number) => n.toLocaleString('en-US');
+
+// What the public sees, and what each differing value becomes after a publish.
+const shown = {
+  cost: currencyFormatter.format(published?.estimatedTotalCost ?? project.estimatedTotalCost),
+  years: published ? `${published.implementationStartYear}–${published.completionYear}` : years,
+  county: published?.county ?? project.county,
+  stage: published?.stage ?? project.stage,
+  description: published?.description ?? detail.projectDescription,
+};
+const current = {
+  cost: currencyFormatter.format(project.estimatedTotalCost),
+  years,
+  county: project.county,
+  stage: project.stage,
+  description: detail.projectDescription,
+};
+/** data-publish-key + data-current where the public value is behind the record. */
+const pending = (key: string, publicValue: string, currentValue: string) =>
+  publicValue === currentValue ? {} : { 'data-publish-key': key, 'data-current': currentValue };
+const withheldReport = (name: string, year: number) =>
+  Boolean(published?.withheldReports.some((r) => r.measure === name && r.year === year));
+/** A measure's row as published: a withheld filing is not in its total or its last year. */
+const measureRow = (m: ProjectDetail['measures'][number]) => {
+  const visible = m.series.filter((p) => !withheldReport(m.name, p.year));
+  const withheld = m.series.find((p) => withheldReport(m.name, p.year));
+  return {
+    delivered: `${fmt(m.reported - (withheld?.value ?? 0))} of ${fmt(m.expected)} ${m.unit}`,
+    deliveredNow: `${fmt(m.reported)} of ${fmt(m.expected)} ${m.unit}`,
+    last: String(latestReport(visible)?.year ?? '—'),
+    lastNow: String(latestReport(m.series)?.year ?? '—'),
+    key: withheld ? `report:${m.name}:${withheld.year}` : '',
+  };
+};
 
 const rows = (placement: 'rail' | 'details'): FieldRow[] =>
   fieldRows(projectType, project, FIELD_DEFINITIONS, placement);
@@ -78,6 +122,7 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
 <article
   class="firma2-public-project"
   data-project-type-slug={projectType.slug}
+  data-publish-slug={published ? projectSlug(project) : undefined}
   data-project={JSON.stringify({ projectName: project.projectName, implementationStartYear: project.implementationStartYear })}
 >
   <header class="firma2-public-project__hero">
@@ -90,7 +135,7 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
         </p>
       )}
       <h1 class="typography-display-sm">{project.projectName}</h1>
-      <p class="typography-body-lg">{project.stage} · {years} · {project.leadOrganization}</p>
+      <p class="typography-body-lg"><span {...pending('stage', shown.stage, current.stage)}>{shown.stage}</span> · <span {...pending('timeline', shown.years, current.years)}>{shown.years}</span> · {project.leadOrganization}</p>
     </div>
   </header>
 
@@ -99,9 +144,9 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
       <EsaCard title="Key facts">
         <dl class="firma2-public-project__facts">
           <div><dt>Lead organization</dt><dd>{project.leadOrganization}</dd></div>
-          <div><dt>County</dt><dd>{project.county} County</dd></div>
-          <div><dt>Timeline</dt><dd>{years}</dd></div>
-          <div><dt>Estimated cost</dt><dd>{currencyFormatter.format(project.estimatedTotalCost)}</dd></div>
+          <div><dt>County</dt><dd><span {...pending('county', shown.county, current.county)}>{shown.county}</span> County</dd></div>
+          <div><dt>Timeline</dt><dd {...pending('timeline', shown.years, current.years)}>{shown.years}</dd></div>
+          <div><dt>Estimated cost</dt><dd {...pending('estimatedTotalCost', shown.cost, current.cost)}>{shown.cost}</dd></div>
         </dl>
         <!-- The tenant's own questions, placed in the rail by the project type. -->
         <dl class="firma2-public-project__facts firma2-public-project__facts--custom" data-fields="rail" set:html={rowsHtml(rows('rail'))}></dl>
@@ -112,7 +157,7 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
       <div data-section="details" data-aliasable-title style={`order:${orderIndex.get('details')}`} hidden={hiddenAtBuild.has('details')}>
         <EsaCard title={label('details')}>
           <div class="stack" data-gap="md">
-            <p class="typography-body-md">{detail.projectDescription}</p>
+            <p class="typography-body-md" {...pending('description', shown.description, current.description)}>{shown.description}</p>
             <dl class="firma2-public-project__facts" data-fields="details" set:html={rowsHtml(rows('details'))}></dl>
           </div>
         </EsaCard>
@@ -123,13 +168,16 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
           <table class="firma2-public-project__table">
             <thead><tr><th scope="col">Measure</th><th scope="col">Delivered</th><th scope="col">Last reported</th></tr></thead>
             <tbody>
-              {detail.measures.map((m) => (
-                <tr>
-                  <th scope="row">{m.name}</th>
-                  <td>{fmt(m.reported)} of {fmt(m.expected)} {m.unit}</td>
-                  <td>{latestReport(m.series)?.year ?? '—'}</td>
-                </tr>
-              ))}
+              {detail.measures.map((m) => {
+                const row = measureRow(m);
+                return (
+                  <tr>
+                    <th scope="row">{m.name}</th>
+                    <td {...(row.key ? { 'data-publish-key': row.key, 'data-current': row.deliveredNow } : {})}>{row.delivered}</td>
+                    <td {...(row.key ? { 'data-publish-key': row.key, 'data-current': row.lastNow } : {})}>{row.last}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </EsaCard>
@@ -140,9 +188,14 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
           <table class="firma2-public-project__table">
             <thead><tr><th scope="col">Source</th><th scope="col">From</th><th scope="col">Amount</th></tr></thead>
             <tbody>
-              {detail.funding.map((f) => (
-                <tr><th scope="row">{f.name}</th><td>{f.organization}</td><td>{currencyFormatter.format(f.amount)}</td></tr>
-              ))}
+              {detail.funding.map((f) => {
+                const withheld = published?.withheldFunding.includes(f.name);
+                return (
+                  <tr hidden={withheld} {...(withheld ? { 'data-publish-key': `funding:${f.name}`, 'data-reveal': '' } : {})}>
+                    <th scope="row">{f.name}</th><td>{f.organization}</td><td>{currencyFormatter.format(f.amount)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </EsaCard>
@@ -328,6 +381,23 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
     window.addEventListener('storage', (event) => {
       if (isProjectTypeKey(event.key)) resolve();
       if (event.key === TENANT_BRAND_KEY) applyBrand(readBrand());
+    });
+  });
+</script>
+
+<script>
+  // A publish made in this browser brings the page up to the record: each
+  // value the publish covered swaps to its current text, and each row it
+  // added appears. Reverted changes never do — the public value IS the record.
+  import { readPublishing } from '../../lib/publish-store';
+
+  document.querySelectorAll<HTMLElement>('.firma2-public-project[data-publish-slug]').forEach((root) => {
+    const done = new Set(readPublishing().published[root.dataset.publishSlug!]?.keys ?? []);
+    if (!done.size) return;
+    root.querySelectorAll<HTMLElement>('[data-publish-key]').forEach((el) => {
+      if (!done.has(el.dataset.publishKey!)) return;
+      if (el.hasAttribute('data-reveal')) el.hidden = false;
+      else if (el.dataset.current !== undefined) el.textContent = el.dataset.current;
     });
   });
 </script>

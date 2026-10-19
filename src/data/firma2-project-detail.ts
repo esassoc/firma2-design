@@ -51,6 +51,7 @@ import {
   type Project,
   type ProjectStage,
 } from './firma2-projects';
+import { applyPublishing, type Publishing } from './firma2-publish-history';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,6 +101,15 @@ export interface MeasureYear {
    */
   value: number | null;
   status: 'complete' | 'current' | 'upcoming';
+  /**
+   * What the project planned for this period — its YEARLY TARGET (user,
+   * 2026-10-09: "when planning you can set yearly goals"). Set for every
+   * period in the window, open ones included, because a plan is made ahead.
+   * Seeded by spreading `expected` over the window on the accrual curve, so
+   * the yearly targets sum to the lifetime target. Optional only so a series
+   * built elsewhere need not invent one.
+   */
+  planned?: number;
 }
 
 /** A ProjectFirma performance measure: what was promised, and what has been reported. */
@@ -310,7 +320,7 @@ export interface ProjectPhoto {
 export interface AuditEntry {
   /** Rendered label — "12 August 2026". Stored formatted; see determinism above. */
   date: string;
-  /** Who made the change. Always one of the record's own contacts. */
+  /** Who made the change — one of the record's own contacts, or for a publish the steward or administrator who ran it. */
   user: string;
   /** What changed, named by the record's own field vocabulary. One sentence. */
   change: string;
@@ -341,6 +351,8 @@ export interface ProjectDetail {
   photos: ProjectPhoto[];
   /** The record's change log, newest first. Never empty — creation is a change. */
   audit: AuditEntry[];
+  /** When the public page was last brought up to date, and what has changed since. */
+  publishing: Publishing;
 }
 
 // ---------------------------------------------------------------------------
@@ -761,10 +773,18 @@ const buildMeasures = (
     // period's share of a count measure down to 0, that is a report that was
     // filed and said zero — exactly the state `value: number | null` exists to
     // express, and distinct from the null beside it.
+    // THE PLAN BY YEAR: the lifetime target over every year of the window, so
+    // the yearly targets add back up to `expected`. On the accrual curve
+    // pulled ONE YEAR EARLIER, because plans run ahead of delivery — on the
+    // reports' own curve every year read "On plan" and the comparison the
+    // measure page draws had nothing to show.
+    const planWeights = weights.map((_, wi) => weights[Math.min(wi + 1, weights.length - 1)]);
+    const plan = spreadAcrossIndices(expected, planWeights, years.map((_, yi) => yi), round);
     const series: MeasureYear[] = years.map((year, yi) => ({
       year,
       value: filed.has(yi) ? spread[yi] : null,
       status: statuses[yi],
+      planned: plan[yi],
     }));
 
     return {
@@ -1887,7 +1907,12 @@ const buildDetail = (project: Project): ProjectDetail => {
     contacts,
     comments: buildComments(project, contacts),
     photos: buildPhotos(project),
-    audit: buildAudit(project, contacts, funding, measures, authored.areas[0].label),
+    ...applyPublishing(project, buildAudit(project, contacts, funding, measures, authored.areas[0].label), {
+      description: authored.description,
+      measures,
+      funding,
+      people: { lead: contacts[0].name, grant: contacts[1].name, field: contacts[2].name },
+    }),
   };
 };
 

@@ -1,0 +1,198 @@
+---
+// firma2-review-changes — what is different between a project's public page
+// and its record: one row per thing changed, the published value beside the
+// current one, and who changed it.
+//
+// A NET DIFF, NOT A HISTORY. The log entries since the last publish fold into
+// one row per field (firma2-publish-history): two cost edits read as one line
+// from the published figure to today's, and a field changed and changed back
+// is not here at all. The row says how many edits it folds, and the project's
+// History sheet keeps every one — the evidence behind the review.
+//
+// GROUPED BY WHERE IT SITS ON THE PAGE — key facts, performance measures,
+// funding sources, work areas — so a steward checks each change against the
+// section it will appear in.
+//
+// REVERT IS PER FIELD, and only where a field holds the value. A steward who
+// finds one bad change puts that field back and publishes the rest; a filed
+// report or a redrawn boundary has no single value to restore, so its row has
+// no Revert — the fix for those is on the record. A revert writes the
+// published value back to the record (src/lib/publish-store.ts; the project
+// page applies it on load) and the row leaves the diff.
+//
+// bcn-lego-checked: Revert is esa-button, "New" is esa-badge, the first-publish
+// note esa-alert-box — legos, unchanged. The rows are a definition list on
+// the layout primitives; no esa- lego compares two values of one field
+// (esa-card and esa-stat are single-value). Beacon is not cloned on this
+// machine. firma2-review-changes is the reusable home for a publish diff.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import type { ChangeGroup, UnpublishedChange } from '../../data/firma2-publish-history';
+import { labelOfIso } from '../../data/firma2-publish-history';
+
+interface Props {
+  slug: string;
+  changes: UnpublishedChange[];
+  /** null: never published — every row is new to the public. */
+  publishedIso: string | null;
+  publishedBy: string | null;
+}
+
+const { slug, changes, publishedIso, publishedBy } = Astro.props;
+const ORDER: ChangeGroup[] = ['Key facts', 'Performance measures', 'Funding sources', 'Work areas'];
+const groups = ORDER.map((group) => ({ group, rows: changes.filter((c) => c.group === group) })).filter((g) => g.rows.length);
+const meta = (c: UnpublishedChange) =>
+  [c.editors.join(', '), c.edits > 1 ? `${c.edits} edits` : null, labelOfIso(c.lastIso)].filter(Boolean).join(' · ');
+const isAdd = (c: UnpublishedChange) => c.from === undefined;
+---
+<section class="firma2-review-changes stack" data-gap="xl" data-slug={slug} aria-label="Unpublished changes">
+  {publishedIso ? (
+    <dl class="firma2-review-changes__last cluster" data-gap="xs">
+      <dt class="typography-label-md-strong">Last published</dt>
+      <dd class="typography-body-md">{labelOfIso(publishedIso)}, {publishedBy}</dd>
+    </dl>
+  ) : (
+    <EsaAlertBox variant="info" title="Not public yet">
+      Publishing creates this project's public page with everything below.
+    </EsaAlertBox>
+  )}
+
+  {groups.map(({ group, rows }) => (
+    <section class="stack" data-gap="sm" data-group>
+      <h2 class="typography-title-sm-strong">{group}</h2>
+      <ol class="firma2-review-changes__list" role="list">
+        {rows.map((c) => (
+          <li class="firma2-review-changes__row" data-change={c.key} data-revert={c.revert ? JSON.stringify(c.revert) : undefined}>
+            <div class="repel" data-gap="md">
+              <div class="stack" data-gap="xs">
+                <p class="typography-label-md-strong firma2-review-changes__label">
+                  <span>{c.label}</span>
+                  {isAdd(c) && publishedIso && <EsaBadge value="New" variant="info" size="sm" />}
+                </p>
+                {/* A first publish's rows all share the record's creation; saying so on each is noise. */}
+                {publishedIso && <p class="typography-body-sm firma2-review-changes__meta">{meta(c)}</p>}
+              </div>
+              {c.revert && (
+                <EsaButton variant="secondary" appearance="outline" size="md" data-revert-button aria-label={`Revert ${c.label}`}>Revert</EsaButton>
+              )}
+            </div>
+            {c.added ? (
+              <dl class="firma2-review-changes__values">
+                <div><dt class="typography-label-md">Added</dt><dd class="typography-body-md">“{c.added}”</dd></div>
+              </dl>
+            ) : isAdd(c) ? (
+              c.to && (
+                <dl class="firma2-review-changes__values">
+                  <div><dt class="typography-label-md">Record</dt><dd class="typography-body-md">{c.to}</dd></div>
+                </dl>
+              )
+            ) : (
+              <dl class="firma2-review-changes__values">
+                <div><dt class="typography-label-md">Public page</dt><dd class="typography-body-md">{c.from}</dd></div>
+                <div><dt class="typography-label-md">Record</dt><dd class="typography-body-md">{c.to}</dd></div>
+              </dl>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
+  ))}
+</section>
+
+<style>
+  .firma2-review-changes [hidden] {
+    display: none !important;
+  }
+
+  .firma2-review-changes__last {
+    margin: 0;
+  }
+  .firma2-review-changes__last dd {
+    margin: 0;
+  }
+
+  .firma2-review-changes__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Ruled like firma2-settings-table: a hairline between rows, no card. */
+  .firma2-review-changes__row {
+    display: grid;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-review-changes__row:last-child {
+    border-block-end: 0;
+  }
+
+  .firma2-review-changes__label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200);
+    margin: 0;
+  }
+  .firma2-review-changes__meta {
+    margin: 0;
+    color: var(--color-content-default-secondary);
+  }
+
+  /* Published and current side by side, so the eye reads across one line; the
+     description's added sentence takes the full width. */
+  .firma2-review-changes__values {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--spacing-300) var(--spacing-600);
+    margin: 0;
+  }
+  .firma2-review-changes__values dt {
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-review-changes__values dd {
+    margin: var(--spacing-100) 0 0;
+    max-inline-size: 72ch;
+  }
+</style>
+
+<script>
+  import { pendingKeys, readPublishing, revert } from '../../lib/publish-store';
+
+  // The rows this browser has already published or reverted leave the diff;
+  // a group with nothing left goes with them. The actions component listens
+  // for the count so Publish knows what is still in front of the steward.
+  document.querySelectorAll<HTMLElement>('.firma2-review-changes').forEach((root) => {
+    const slug = root.dataset.slug!;
+    const rows = () => [...root.querySelectorAll<HTMLElement>('[data-change]')];
+
+    const paint = () => {
+      const keys = rows().map((r) => r.dataset.change!);
+      const left = new Set(pendingKeys(slug, keys));
+      rows().forEach((r) => (r.hidden = !left.has(r.dataset.change!)));
+      root.querySelectorAll<HTMLElement>('[data-group]').forEach((g) => {
+        g.hidden = !g.querySelector('[data-change]:not([hidden])');
+      });
+      document.dispatchEvent(new CustomEvent('firma2:review-pending', { detail: { slug, keys: [...left] } }));
+    };
+
+    root.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest('[data-revert-button]');
+      const row = button?.closest<HTMLElement>('[data-change]');
+      if (!row) return;
+      const label = row.querySelector('.firma2-review-changes__label span')?.textContent ?? '';
+      // Focus would fall to <body> with the row it was on; hand it to the next
+      // change still waiting, or to the page's heading when none is left.
+      const after = rows().slice(rows().indexOf(row) + 1).concat(rows().slice(0, rows().indexOf(row)));
+      revert(slug, row.dataset.change!);
+      paint();
+      const target = after.find((r) => !r.hidden)?.querySelector<HTMLElement>('button, a') ?? document.querySelector<HTMLElement>('h1');
+      if (target && target.tagName === 'H1') target.setAttribute('tabindex', '-1');
+      target?.focus();
+      document.dispatchEvent(new CustomEvent('firma2:review-toast', { detail: { message: `Reverted ${label} to the published value` } }));
+    });
+
+    paint();
+  });
+</script>

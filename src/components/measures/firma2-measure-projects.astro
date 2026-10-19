@@ -1,0 +1,173 @@
+---
+// firma2-measure-projects — the projects whose reports make up one
+// performance measure's figure, as a sortable table: each project's progress,
+// whether it filed for the last closed year, and who leads it.
+//
+// A TABLE, NOT A LIST OF RINGS (user, 2026-10-09: indexes that can grow are
+// tables). A busy measure has dozens of projects; the reader sorts by
+// progress to find the laggards, or by filing to find who to chase.
+//
+// THE RING STAYS in the Progress cell — the same bcn-progress-ring and
+// "reported of planned" figure the index and a project's own row draw —
+// server-rendered per project and cloned in, as firma2-measure-progress-grid
+// does. Filing is a cloned esa-pill: Filed, Missing, Not due.
+//
+// A project that set a target and has reported nothing is listed (its
+// absence would hide the gap); one with neither never reaches this list.
+// Most reported first at rest.
+//
+// The page must use firma2-project-peek-layout: each name carries the
+// side-panel button.
+//
+// bcn-lego-checked: AG Grid through shared/grid-chrome +
+// firma2-data-grid-chrome.css (ecology has no table lego), esa-pill cloned
+// into cells, bcn-progress-ring cloned into cells, esa-empty-state when no
+// project reports. Beacon is not cloned on this machine.
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import BcnProgressRing from '../shared/bcn-progress-ring.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+import { measurePortfolio } from '../../data/firma2-classification-rollup';
+import { projectHref, projectSlug } from '../../data/firma2-projects';
+import { LAST_CLOSED_YEAR } from '../../data/firma2-organization-pages';
+import { kpiRowView } from '../../lib/kpi-row';
+import { filingFor } from '../../lib/measure-reading';
+import type { FilingState } from '../../lib/measure-reading';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  measure: PerformanceMeasureDefinition;
+}
+
+const { measure } = Astro.props;
+const progress = measurePortfolio(measure);
+const FILING: Record<FilingState, { label: string; variant: 'success' | 'warning' | 'default'; rank: number }> = {
+  missing: { label: 'Missing', variant: 'warning', rank: 0 },
+  filed: { label: 'Filed', variant: 'success', rank: 1 },
+  'not-due': { label: 'Not due', variant: 'default', rank: 2 },
+};
+
+const rows = [...progress.contributions]
+  .sort((a, b) => b.reported - a.reported || a.project.projectName.localeCompare(b.project.projectName))
+  .map((c) => {
+    const view = kpiRowView({
+      unit: progress.unit,
+      decimals: measure.decimalPlaces,
+      additive: progress.additive,
+      reported: c.reported > 0 ? c.reported : null,
+      committed: progress.additive && c.committed > 0 ? c.committed : null,
+      from: [],
+    });
+    return {
+      slug: projectSlug(c.project),
+      name: c.project.projectName,
+      href: withBase(projectHref(c.project)),
+      lead: c.project.leadOrganization,
+      percent: view.expected > 0 && c.reported > 0 ? view.percent : null,
+      ringPercent: view.percent,
+      figure: view.totalText,
+      filing: filingFor(c.series, LAST_CLOSED_YEAR),
+    };
+  });
+const filingHeader = `Filed for ${LAST_CLOSED_YEAR}`;
+---
+<section class="firma2-measure-projects stack" data-gap="md" aria-labelledby="firma2-measure-projects-title" data-filing-header={filingHeader}>
+  <h2 id="firma2-measure-projects-title" class="typography-title-sm-strong">Projects</h2>
+  {rows.length === 0 ? (
+    <EsaEmptyState size="sm" title="No project reports this yet" description="A project starts reporting by setting a target on its Performance measures card." />
+  ) : (
+    <>
+      <div class="firma2-data-grid__grid" data-mp-grid></div>
+      <div data-mp-rings hidden aria-hidden="true">
+        {rows.map((r) => (
+          <span data-slug={r.slug}><BcnProgressRing value={r.ringPercent} size="xs" /></span>
+        ))}
+      </div>
+      <div data-mp-pills hidden aria-hidden="true">
+        {Object.entries(FILING).map(([key, f]) => (
+          <span data-filing={key} data-rank={f.rank}><EsaPill label={f.label} variant={f.variant} size="sm" removable={false} /></span>
+        ))}
+      </div>
+      <script type="application/json" data-mp-data set:html={JSON.stringify(rows)}></script>
+    </>
+  )}
+</section>
+
+<style>
+  /* Wrapped cells need prose leading: AG Grid sets line-height to the row
+     height (firma2-project-funding measured it). */
+  .firma2-measure-projects :global(.ag-cell-wrap-text) {
+    line-height: 1.45;
+    padding-block: var(--spacing-200, 0.5rem);
+  }
+
+  .firma2-measure-projects :global(.firma2-mp-progress),
+  .firma2-measure-projects :global(.firma2-mp-name) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-200, 0.5rem);
+  }
+</style>
+
+<script>
+  import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import { projectPeekButtonHTML } from '../../lib/project-peek';
+  import type { ColDef } from 'ag-grid-community';
+
+  type Row = {
+    slug: string;
+    name: string;
+    href: string;
+    lead: string;
+    percent: number | null;
+    figure: string;
+    filing: string;
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-measure-projects').forEach((root) => {
+    if (!root.querySelector('[data-mp-grid]')) return;
+    const ringHTML = new Map<string, string>();
+    root.querySelectorAll<HTMLElement>('[data-mp-rings] [data-slug]').forEach((el) => ringHTML.set(el.dataset.slug ?? '', el.innerHTML));
+    const pillHTML = new Map<string, string>();
+    const rank = new Map<string, number>();
+    root.querySelectorAll<HTMLElement>('[data-mp-pills] [data-filing]').forEach((el) => {
+      pillHTML.set(el.dataset.filing ?? '', el.innerHTML);
+      rank.set(el.dataset.filing ?? '', Number(el.dataset.rank));
+    });
+
+    wireDataGrid<Row>({
+      root,
+      gridSelector: '[data-mp-grid]',
+      dataSelector: '[data-mp-data]',
+      countNoun: 'projects',
+      csvFileName: 'projectfirma-measure-projects.csv',
+      columnDefs: [
+        {
+          headerName: 'Project', field: 'name', colId: 'name',
+          flex: 1, minWidth: 240, cellClass: 'firma2-grid-name', wrapText: true, autoHeight: true,
+          cellRenderer: (p: { data?: Row }) =>
+            p.data
+              ? `<span class="firma2-mp-name"><a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>${projectPeekButtonHTML(p.data.slug, p.data.name)}</span>`
+              : '',
+        },
+        {
+          headerName: 'Progress', field: 'percent', colId: 'progress', width: 280,
+          wrapText: true, autoHeight: true,
+          comparator: (a: number | null, b: number | null) => (a ?? -1) - (b ?? -1),
+          valueFormatter: (p) => p.data?.figure ?? '',
+          cellRenderer: (p: { data?: Row }) =>
+            p.data ? `<span class="firma2-mp-progress">${ringHTML.get(p.data.slug) ?? ''}<span>${esc(p.data.figure)}</span></span>` : '',
+        },
+        {
+          headerName: root.dataset.filingHeader ?? 'Filed', field: 'filing', colId: 'filing', width: 150,
+          comparator: (a: string, b: string) => (rank.get(a) ?? 9) - (rank.get(b) ?? 9),
+          cellRenderer: (p: { value: string }) => `<span class="firma2-grid-status">${pillHTML.get(p.value) ?? esc(p.value)}</span>`,
+        },
+        {
+          headerName: 'Lead organization', field: 'lead', colId: 'lead', flex: 1, minWidth: 200, wrapText: true, autoHeight: true,
+        },
+      ] satisfies ColDef[],
+    });
+  });
+</script>

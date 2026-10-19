@@ -63,6 +63,13 @@
 // layout primitives and <dl>s. The map is Leaflet — no map lego exists;
 // firma2-portfolio-map is the precedent for every project on one canvas.
 // Beacon is not cloned here.
+//
+// SCOPED BY PROP (2026-10-09): an organization's Map tab is this same
+// explorer over the projects it leads or funds. `projects` narrows the set
+// (every project when omitted); the labels say whose projects they are; and
+// `flush` false keeps the map below whatever sits above it on the page (the
+// tab row) instead of lifting it flush under the header.
+import type { Project } from '../../data/firma2-projects';
 import EsaCard from '@esa/ecology/esa-card.astro';
 import Firma2ProjectPeekButton from './firma2-project-peek-button.astro';
 import EsaPill from '@esa/ecology/esa-pill.astro';
@@ -88,7 +95,28 @@ const updatedLabel = (label: string | undefined): string => {
   return `Updated ${d ? relativeDays(d, TODAY) : label}`;
 };
 
-const cards = [...projects]
+interface Props {
+  /** The projects to explore. Every project when omitted. */
+  projects?: Project[];
+  /** The search field's accessible name. */
+  searchLabel?: string;
+  /** The map canvas's accessible name. */
+  mapLabel?: string;
+  /** The empty state's line, when the filters match nothing. */
+  emptyDescription?: string;
+  /** Lift the map flush under the header (true) or start it where it rests. */
+  flush?: boolean;
+}
+
+const {
+  projects: scoped = projects,
+  searchLabel = 'Search your projects',
+  mapLabel = 'Map of your projects',
+  emptyDescription = 'Try a different name or clear the stage filter — every project you can edit is on this page.',
+  flush = true,
+} = Astro.props;
+
+const cards = [...scoped]
   .sort((a, b) => a.projectName.localeCompare(b.projectName))
   .map((p) => {
     const detail = projectDetails.get(p.projectName)!;
@@ -111,7 +139,7 @@ const cards = [...projects]
 
 const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s) => ({ value: s, label: s }))];
 ---
-<div class="firma2-my-projects-map" data-stage-options={JSON.stringify(stageOptions)}>
+<div class="firma2-my-projects-map" data-flush={flush ? undefined : 'false'} data-stage-options={JSON.stringify(stageOptions)}>
   <div class="firma2-my-projects-map__list stack" data-gap="xl">
     <EsaCard variant="elevated" padding="compact">
       <div class="firma2-my-projects-map__controls">
@@ -120,7 +148,7 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
           data-search
           type="search"
           size="md"
-          aria-label="Search your projects"
+          aria-label={searchLabel}
           data-aliasable-attr="aria-label,placeholder"
           placeholder="Search by name, lead organization or place"
           autocomplete="off"
@@ -204,7 +232,7 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
       <EsaCard variant="elevated">
         <EsaEmptyState
           title="No projects match that"
-          description="Try a different name or clear the stage filter — every project you can edit is on this page."
+          description={emptyDescription}
           headingLevel={2}
         />
         <div class="firma2-my-projects-map__center">
@@ -215,7 +243,7 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
   </div>
 
   <div class="firma2-my-projects-map__surface">
-    <div class="firma2-my-projects-map__canvas" role="application" aria-label="Map of your projects" data-canvas></div>
+    <div class="firma2-my-projects-map__canvas" role="application" aria-label={mapLabel} data-canvas></div>
   </div>
 </div>
 
@@ -847,7 +875,7 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
     // view resizes — including the first time it is shown, when the page
     // opened on the other version.
     const pin = () => {
-      if (!root.offsetParent) return;
+      if (!root.offsetParent || root.dataset.flush === 'false') return;
       const band = document.querySelector('.firma2-page-header')?.getBoundingClientRect().height ?? 0;
       const lift = Math.max(0, Math.round(root.getBoundingClientRect().top + window.scrollY - band));
       root.style.setProperty('--_lift', `${lift}px`);
@@ -861,6 +889,10 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
         // Repainting on a scheme change picks up the dark ramp's colours.
         // Zoom on the trailing side — the leading side is under the list.
         map = createMap(L, $('[data-canvas]'), { zoomControl: false }, paint);
+        // Created inside a tab panel not yet shown, the canvas has no computed
+        // style, so Leaflet writes position: relative inline — which collapses
+        // the absolutely-placed canvas to nothing. The stylesheet decides.
+        $('[data-canvas]').style.removeProperty('position');
         L.control.zoom({ position: 'topright' }).addTo(map);
         // THE WHEEL ZOOMS THE MAP where the map is the page. Once it stacks
         // into a box in the page's flow, a wheel over it would trap the
@@ -873,7 +905,19 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
         dots.layer = L.featureGroup();
         map.on('zoomend', syncDots);
         draw();
-        frame();
+        // A view that opens hidden (a tab not yet chosen) has no size to
+        // frame in; it frames the first time it is shown.
+        const canvas = $('[data-canvas]');
+        if (canvas.clientWidth) frame();
+        else {
+          const first = new ResizeObserver(() => {
+            if (!canvas.clientWidth) return;
+            first.disconnect();
+            map.invalidateSize();
+            frame();
+          });
+          first.observe(canvas);
+        }
         // The list moves off the map, or back over it: frame the work again.
         window.matchMedia('(max-width: 64rem)').addEventListener('change', () => requestAnimationFrame(frame));
       })

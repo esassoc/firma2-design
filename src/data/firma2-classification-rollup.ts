@@ -58,6 +58,9 @@ export interface KpiContribution {
   committed: number;
   /** What it reported in each CLOSED period, oldest first; null where nothing was filed. */
   series: KpiYear[];
+  /** Its yearly targets over its whole window, open years included, oldest
+   *  first — what it planned for each year (MeasureYear.planned). */
+  plan: { year: number; planned: number }[];
 }
 
 export interface KpiYear {
@@ -78,6 +81,13 @@ const seriesOf = (rows: PerformanceMeasure[]): KpiYear[] =>
       .filter((v): v is number => v !== null);
     return { year, value: values.length ? round(values.reduce((a, b) => a + b, 0)) : null };
   });
+
+/** One project's rows toward a KPI, their yearly targets summed per period. */
+const planOf = (rows: PerformanceMeasure[]): { year: number; planned: number }[] =>
+  (rows[0]?.series ?? []).map(({ year }) => ({
+    year,
+    planned: round(rows.reduce((sum, r) => sum + (r.series.find((p) => p.year === year)?.planned ?? 0), 0)),
+  }));
 
 export interface KpiProgress {
   measure: PerformanceMeasureDefinition;
@@ -194,6 +204,7 @@ const progressOver = (
       reported: round(rows.reduce((s, r) => s + r.reported, 0)),
       committed: round(rows.reduce((s, r) => s + r.expected, 0)),
       series: seriesOf(rows),
+      plan: planOf(rows),
     });
   }
   const reporting = contributions.filter((c) => c.reported > 0);

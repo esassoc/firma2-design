@@ -1,0 +1,87 @@
+---
+// Review a project — what is different between its public page and its
+// record, and Publish. One page per project, reached from a Review queue
+// (the organization's or the workspace's) or the project page's "Review
+// changes".
+//
+// The brief's five (docs/product-brief.md §5):
+//
+// 1. ONE QUESTION: "Is what changed since the last publish right, so the
+//    public can see it?"
+// 2. READERS: a steward or administrator in the middle of a sweep. Hardest:
+//    the one reviewing a year of changes at once — which is why the page is
+//    a NET diff (one row per field, published beside current) and not the
+//    log. WHO IS NOT HERE: the editor; a change that needs their fix gets a
+//    comment on the project, and the steward skips on.
+// 3. SERIES/SCALAR: scalars only — each row is one field's two values.
+// 4. IRREVERSIBLE: Publish puts the record in front of the public and
+//    funders. It is the primary act, beside the title, and it publishes what
+//    the page showed — nothing that changed after it was opened.
+// 5. CUT: editing here (the record is the project page's; Revert is the one
+//    write, and only back to the published value), bulk publish, a
+//    "send back" state (a comment on the record says it, and the project
+//    stays unpublished), and re-certifying projects with no changes.
+//
+// Zero page CSS.
+import AppLayout from '../../../layouts/AppLayout.astro';
+import Firma2PageHeader from '../../../components/shared/firma2-page-header.astro';
+import Firma2ReviewActions from '../../../components/review/firma2-review-actions.astro';
+import Firma2ReviewStatus from '../../../components/review/firma2-review-status.astro';
+import Firma2ReviewChanges from '../../../components/review/firma2-review-changes.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { projects, projectSlug } from '../../../data/firma2-projects';
+import type { Project } from '../../../data/firma2-projects';
+import { WORKSPACE_REVIEW_HREF, organizationQueue, publicHref, reviewItem, workspaceQueue } from '../../../data/firma2-publishing';
+import { organizationPageHref, readerOrganizations } from '../../../data/firma2-organization-pages';
+import { projectHref } from '../../../data/firma2-projects';
+import { withBase } from '../../../lib/base';
+
+export function getStaticPaths() {
+  return projects.map((project) => ({ params: { project: projectSlug(project) }, props: { project } }));
+}
+
+interface Props {
+  project: Project;
+}
+
+const { project } = Astro.props;
+const item = reviewItem(project);
+const pendingSlugs = (list: { slug: string }[]) => list.map((i) => i.slug);
+const queues = {
+  workspace: pendingSlugs(workspaceQueue().pending),
+  organizations: Object.fromEntries(readerOrganizations().map((o) => [o.slug, pendingSlugs(organizationQueue(o.name).pending)])),
+};
+const others = Object.fromEntries(
+  projects.map((p) => {
+    const i = reviewItem(p);
+    return [i.slug, { keys: i.changes.map((c) => c.key), name: p.projectName }];
+  }),
+);
+const organizationQueues = Object.fromEntries(readerOrganizations().map((o) => [o.slug, organizationPageHref(o.slug, 'review')]));
+---
+<!-- manifest:
+  layout: stack(xl)
+  sections:
+    - page header -> firma2-page-header
+      - publish     -> firma2-review-actions (Publish and next · Skip)
+      - links       -> esa-button            (Open project · Public page, in the crumb row)
+    - status      -> firma2-review-status  (who can publish · changed in another tab · nothing to publish)
+    - diff        -> firma2-review-changes (one row per field, published beside current)
+-->
+<AppLayout title={`Review ${project.projectName} — ProjectFirma 2.0`} active="review" width="reading">
+  <div class="stack" data-gap="xl">
+    <Firma2PageHeader
+      title={project.projectName}
+      crumbs={[
+        { label: 'Review', href: withBase(WORKSPACE_REVIEW_HREF) },
+        { label: project.projectName },
+      ]}
+    >
+      <Firma2ReviewActions slot="actions" slug={item.slug} name={project.projectName} keys={item.changes.map((c) => c.key)} queues={queues} others={others} />
+      <EsaButton slot="toolbar" variant="secondary" appearance="outline" size="sm" tag="a" href={withBase(projectHref(project))}>Open project</EsaButton>
+      {item.publishedIso && <EsaButton slot="toolbar" variant="secondary" appearance="outline" size="sm" tag="a" href={withBase(publicHref(project))}>Public page</EsaButton>}
+    </Firma2PageHeader>
+    <Firma2ReviewStatus queueHref={WORKSPACE_REVIEW_HREF} organizationQueues={organizationQueues} />
+    <Firma2ReviewChanges slug={item.slug} changes={item.changes} publishedIso={item.publishedIso} publishedBy={item.publishedBy} />
+  </div>
+</AppLayout>

@@ -1,0 +1,320 @@
+---
+// firma2-review-queue — a sweep: every project in scope, whether its public
+// page is up to date, and the ones waiting to publish, oldest first.
+//
+// WHO READS THIS: a steward (one organization's projects) or an administrator
+// (every project), running a review on whatever rhythm they keep. Their
+// question is "did we get to all of them?", so the top of the queue states
+// the WHOLE set — how many public pages are up to date — and only then lists
+// what is waiting. A list of pending rows alone cannot say whether you are
+// done.
+//
+// OLDEST WAITING FIRST. The page that has been behind longest is the one a
+// funder is most likely to have read wrong. Overdue appears only when the
+// scope keeps a schedule (Organization settings › Review schedule); with none,
+// how long each has waited is the whole story.
+//
+// TWO SCOPES, ONE COMPONENT. The organization's Review page and the
+// workspace's are the same sweep at different sizes. The workspace adds one
+// table — each organization's backlog — because an administrator answers for
+// every schedule at once and needs to see whose has slipped. It sits above
+// Up to date: at workspace scope that list runs long, and it is the one the
+// administrator reads least.
+//
+// THIS BROWSER'S PUBLISHES COUNT. A steward publishing from the review page
+// comes back here; the script folds src/lib/publish-store.ts over the
+// server-rendered rows so the counts, the rows and the overdue marks agree
+// with what they just did. Rows for every project are rendered in both
+// tables, and the script decides which one each belongs in.
+//
+// bcn-lego-checked: the figures are esa-stat, the overdue mark esa-badge, the
+// empty state esa-empty-state, the links esa-button — all legos, composed
+// unchanged. The tables are firma2-settings-table's ruled, card-less rows
+// (its shared CSS, imported): no esa- table lego exists, and AG Grid's chrome
+// is priced for searchable portfolio grids, not a sweep of a few dozen rows.
+// Beacon is not cloned on this machine. firma2-review-queue is the reusable
+// home for any review scope.
+import EsaStat from '@esa/ecology/esa-stat.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../settings/firma2-settings-table.css';
+import type { OrganizationBacklog, ReviewItem, ReviewQueue } from '../../data/firma2-publishing';
+import { REVIEW_CADENCES, cadenceLabel, reviewCadence, waitingLabel } from '../../data/firma2-publishing';
+import { labelOfIso } from '../../data/firma2-publish-history';
+import { organizationPageHref, readerOrganizations } from '../../data/firma2-organization-pages';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  queue: ReviewQueue;
+  /** The organization whose sweep this is. Omit for the workspace's. */
+  organization?: string;
+  /** Workspace only: the organizations each pending project is overdue for. */
+  overdueFor?: Map<string, string[]>;
+  /** Workspace only: each organization's backlog. */
+  backlogs?: OrganizationBacklog[];
+  /** The organizations each project belongs to — the workspace's overdue test reads all of them. */
+  organizationsOf?: Map<string, string[]>;
+}
+
+const { queue, organization, overdueFor, backlogs, organizationsOf } = Astro.props;
+const scope = organization ? 'organization' : 'workspace';
+const fromParam = organization ? `?from=${readerOrganizations().find((o) => o.name === organization)?.slug ?? ''}` : '';
+const readerOrgs = new Map(readerOrganizations().map((o) => [o.name, o.slug]));
+
+const changesLabel = (n: number) => `${n} change${n === 1 ? '' : 's'}`;
+const isOverdue = (item: ReviewItem) =>
+  organization ? queue.overdue.includes(item) : Boolean(overdueFor?.has(item.slug));
+const oldest = queue.pending[0];
+const published = queue.total - queue.pending.length;
+const cadence = organization ? reviewCadence(organization) : null;
+
+// Everything the script needs to recount after this browser's publishes.
+const cadenceSeeds = Object.fromEntries(
+  [...new Set([...(organization ? [organization] : []), ...[...(organizationsOf?.values() ?? [])].flat()])].map((o) => [o, reviewCadence(o)]),
+);
+const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.days]));
+---
+<section
+  class="firma2-review-queue stack"
+  data-gap="xl"
+  data-scope={scope}
+  data-organization={organization}
+  data-cadence-seeds={JSON.stringify(cadenceSeeds)}
+  data-cadence-days={JSON.stringify(cadenceDays)}
+  data-cadence-labels={JSON.stringify(Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.label])))}
+>
+  <div class="firma2-review-queue__summary grid" data-gap="md" aria-label="Summary">
+    <div data-stat="published">
+      <EsaStat value={`${published} of ${queue.total}`} label="Public pages up to date" sub={queue.pending.length ? `${queue.pending.length} waiting to publish` : 'Nothing waiting'} />
+    </div>
+    <div data-stat="oldest">
+      <EsaStat value={oldest ? waitingLabel(oldest.waitingDays) : 'None'} label="Longest wait" sub={oldest?.project.projectName} />
+    </div>
+    {organization ? (
+      <div data-stat="schedule">
+        <EsaStat value={cadenceLabel(cadence!)} label="Review schedule" sub={cadence === 'none' ? undefined : queue.overdue.length ? `${queue.overdue.length} overdue` : 'None overdue'} />
+      </div>
+    ) : (
+      <div data-stat="schedule">
+        <EsaStat value={String(queue.overdue.length)} label="Overdue" sub="On any organization's schedule" />
+      </div>
+    )}
+  </div>
+
+  <section class="stack" data-gap="md" aria-labelledby={`firma2-review-pending-${scope}`} data-pending-section>
+    <h2 id={`firma2-review-pending-${scope}`} class="typography-title-sm-strong">Waiting to publish</h2>
+    <div data-empty hidden={queue.pending.length > 0}>
+      <EsaEmptyState title="Every public page is up to date" description="Nothing has changed on these projects since each was last published." size="sm" />
+    </div>
+    <table class="firma2-settings-table" aria-label="Waiting to publish" hidden={queue.pending.length === 0} data-pending-table>
+      <thead>
+        <tr>
+          <th scope="col">Project</th>
+          <th scope="col">Changes</th>
+          <th scope="col">Edited by</th>
+          <th scope="col">Waiting</th>
+          <th scope="col">Last published</th>
+        </tr>
+      </thead>
+      <tbody>
+        {queue.pending.map((item) => (
+          <tr
+            data-review-item={item.slug}
+            data-keys={JSON.stringify(item.changes.map((c) => c.key))}
+            data-waiting={item.waitingDays}
+            data-orgs={JSON.stringify(organization ? [organization] : organizationsOf?.get(item.slug) ?? [])}
+          >
+            <th scope="row">
+              <a class="firma2-settings-table__name" href={withBase(item.reviewHref) + fromParam}>{item.project.projectName}</a>
+              <span class="firma2-settings-table__meta typography-body-sm">{item.project.leadOrganization}</span>
+            </th>
+            <td>
+              <span data-change-count>{item.publishedIso ? changesLabel(item.changes.length) : 'First publish'}</span>
+              {item.publishedIso && item.edits > item.changes.length && (
+                <span class="firma2-settings-table__meta typography-body-sm" data-edit-count>From {item.edits} edits</span>
+              )}
+            </td>
+            <td>{item.editors.join(', ')}</td>
+            <td class="firma2-review-queue__waiting">
+              <span class="cluster" data-gap="xs">
+                <span>{waitingLabel(item.waitingDays)}</span>
+                <span data-overdue hidden={!isOverdue(item)}><EsaBadge value="Overdue" variant="warning" size="sm" /></span>
+              </span>
+            </td>
+            <td>{item.publishedIso ? labelOfIso(item.publishedIso) : 'Never'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  {backlogs && backlogs.length > 0 && (
+    <section class="stack" data-gap="md" aria-labelledby="firma2-review-orgs">
+      <h2 id="firma2-review-orgs" class="typography-title-sm-strong">By organization</h2>
+      <table class="firma2-settings-table" aria-label="By organization">
+        <thead>
+          <tr>
+            <th scope="col">Organization</th>
+            <th scope="col">Schedule</th>
+            <th scope="col" class="firma2-settings-table__num">Waiting</th>
+            <th scope="col">Longest wait</th>
+            <th scope="col" class="firma2-settings-table__num">Overdue</th>
+          </tr>
+        </thead>
+        <tbody>
+          {backlogs.map((b) => (
+            <tr
+              data-backlog={b.organization}
+              data-slugs={JSON.stringify(queue.pending.filter((i) => organizationsOf?.get(i.slug)?.includes(b.organization)).map((i) => i.slug))}
+            >
+              <th scope="row">
+                {readerOrgs.has(b.organization) ? (
+                  <a class="firma2-settings-table__name" href={withBase(organizationPageHref(readerOrgs.get(b.organization)!, 'review'))}>{b.organization}</a>
+                ) : (
+                  <span class="firma2-settings-table__name">{b.organization}</span>
+                )}
+              </th>
+              <td data-backlog-cadence>{cadenceLabel(b.cadence)}</td>
+              <td class="firma2-settings-table__num" data-backlog-pending>{b.pending} of {b.total}</td>
+              <td data-backlog-oldest>{waitingLabel(b.oldestDays)}</td>
+              <td class="firma2-settings-table__num" data-backlog-overdue>{b.cadence === 'none' ? '—' : b.overdue}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  )}
+  <section class="stack" data-gap="md" aria-labelledby={`firma2-review-done-${scope}`} data-done-section hidden={published === 0}>
+    <h2 id={`firma2-review-done-${scope}`} class="typography-title-sm-strong">Up to date</h2>
+    <table class="firma2-settings-table" aria-label="Up to date">
+      <thead>
+        <tr>
+          <th scope="col">Project</th>
+          <th scope="col">Last published</th>
+          <th scope="col">Published by</th>
+        </tr>
+      </thead>
+      <tbody>
+        {queue.items.map((item) => (
+          <tr data-done-item={item.slug} hidden={item.changes.length > 0}>
+            <th scope="row">
+              <a class="firma2-settings-table__name" href={withBase(item.projectHref)}>{item.project.projectName}</a>
+              <span class="firma2-settings-table__meta typography-body-sm">{item.project.leadOrganization}</span>
+            </th>
+            <td data-done-date>{item.publishedIso ? labelOfIso(item.publishedIso) : 'Never'}</td>
+            <td data-done-by>{item.publishedBy ?? '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+</section>
+
+<style>
+  /* Three tiles, three-up at the reading width and stacking below it. */
+  .firma2-review-queue__summary {
+    --grid-min: 12rem;
+  }
+  .firma2-review-queue__waiting {
+    white-space: nowrap;
+  }
+  /* Author display rules beat the UA's [hidden]; restate it for what this
+     component toggles. */
+  .firma2-review-queue [hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import { pendingKeys, readPublishing } from '../../lib/publish-store';
+
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const label = (iso: string) => {
+    const [y, m, d] = iso.split('-');
+    return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+  };
+  const waiting = (days: number) =>
+    days < 1 ? 'Today' : days < 45 ? `${days} day${days === 1 ? '' : 's'}` : Math.round(days / 30.4) < 24 ? `${Math.round(days / 30.4)} months` : `${Math.floor(days / 365)} years`;
+
+  document.querySelectorAll<HTMLElement>('.firma2-review-queue').forEach((root) => {
+    const state = readPublishing();
+    const seeds: Record<string, string> = JSON.parse(root.dataset.cadenceSeeds ?? '{}');
+    const days: Record<string, number | null> = JSON.parse(root.dataset.cadenceDays ?? '{}');
+    const labels: Record<string, string> = JSON.parse(root.dataset.cadenceLabels ?? '{}');
+    const cadenceOf = (org: string) => state.cadence[org] ?? seeds[org] ?? 'none';
+    const lateFor = (orgs: string[], waited: number) =>
+      orgs.filter((o) => {
+        const d = days[cadenceOf(o)];
+        return d !== null && d !== undefined && waited > d;
+      });
+
+    const live = new Map<string, { pending: number; waited: number; late: string[] }>();
+    root.querySelectorAll<HTMLElement>('[data-review-item]').forEach((row) => {
+      const slug = row.dataset.reviewItem!;
+      const keys: string[] = JSON.parse(row.dataset.keys ?? '[]');
+      const left = pendingKeys(slug, keys, state).length;
+      const waited = Number(row.dataset.waiting ?? 0);
+      const late = left ? lateFor(JSON.parse(row.dataset.orgs ?? '[]'), waited) : [];
+      live.set(slug, { pending: left, waited, late });
+
+      row.hidden = left === 0;
+      const count = row.querySelector('[data-change-count]');
+      if (count && left && left < keys.length && count.textContent !== 'First publish') count.textContent = `${left} change${left === 1 ? '' : 's'}`;
+      row.querySelector<HTMLElement>('[data-overdue]')!.hidden = late.length === 0;
+
+      const done = root.querySelector<HTMLElement>(`[data-done-item="${CSS.escape(slug)}"]`);
+      const local = state.published[slug];
+      if (done) {
+        done.hidden = left > 0;
+        if (!left && local) {
+          done.querySelector('[data-done-date]')!.textContent = label(local.iso);
+          done.querySelector('[data-done-by]')!.textContent = local.by;
+        }
+      }
+    });
+
+    // The figures, recounted.
+    const rows = [...live.values()];
+    const waitingRows = [...live.entries()].filter(([, v]) => v.pending > 0).sort((a, b) => b[1].waited - a[1].waited);
+    const total = root.querySelectorAll('[data-done-item]').length;
+    const setStat = (name: string, value: string, sub?: string) => {
+      const stat = root.querySelector(`[data-stat="${name}"]`);
+      if (!stat) return;
+      stat.querySelector('.esa-stat__value')!.textContent = value;
+      const subEl = stat.querySelector('.esa-stat__sub');
+      if (subEl && sub !== undefined) subEl.textContent = sub;
+    };
+    setStat('published', `${total - waitingRows.length} of ${total}`, waitingRows.length ? `${waitingRows.length} waiting to publish` : 'Nothing waiting');
+    const first = waitingRows[0];
+    const firstName = first ? root.querySelector(`[data-review-item="${CSS.escape(first[0])}"] .firma2-settings-table__name`)?.textContent ?? '' : '';
+    setStat('oldest', first ? waiting(first[1].waited) : 'None', firstName);
+    const overdue = rows.filter((r) => r.late.length > 0).length;
+    if (root.dataset.scope === 'organization') {
+      const cadence = cadenceOf(root.dataset.organization ?? '');
+      setStat('schedule', labels[cadence] ?? '', cadence === 'none' ? '' : overdue ? `${overdue} overdue` : 'None overdue');
+    } else {
+      setStat('schedule', String(overdue));
+    }
+
+    root.querySelector<HTMLElement>('[data-empty]')!.hidden = waitingRows.length > 0;
+    root.querySelector<HTMLElement>('[data-pending-table]')!.hidden = waitingRows.length === 0;
+    root.querySelector<HTMLElement>('[data-done-section]')!.hidden = total === waitingRows.length;
+
+    // Each organization's backlog, recounted from the same rows.
+    root.querySelectorAll<HTMLElement>('[data-backlog]').forEach((row) => {
+      const org = row.dataset.backlog!;
+      const slugs: string[] = JSON.parse(row.dataset.slugs ?? '[]');
+      const mine = slugs.map((s) => live.get(s)).filter((v): v is NonNullable<typeof v> => Boolean(v && v.pending));
+      const totalText = row.querySelector('[data-backlog-pending]')!.textContent ?? '';
+      const of = totalText.split(' of ')[1] ?? '';
+      row.querySelector('[data-backlog-pending]')!.textContent = `${mine.length} of ${of}`;
+      row.querySelector('[data-backlog-oldest]')!.textContent = mine.length ? waiting(Math.max(...mine.map((m) => m.waited))) : '—';
+      const cadence = cadenceOf(org);
+      row.querySelector('[data-backlog-cadence]')!.textContent = labels[cadence] ?? '';
+      row.querySelector('[data-backlog-overdue]')!.textContent = cadence === 'none' ? '—' : String(mine.filter((m) => m.late.includes(org)).length);
+      row.hidden = mine.length === 0;
+    });
+
+  });
+</script>

@@ -1,0 +1,79 @@
+---
+// firma2-project-publish-state — whether this project's public page is behind
+// its record, under the title beside the stage pill.
+//
+// THE RECORD IS LIVE; THE PUBLIC PAGE IS A SNAPSHOT (user, 2026-10-09).
+// Editors change the record freely and it saves as they go; the public sees
+// it only once a steward or administrator has reviewed and published. So the
+// record says when the two differ — "3 unpublished changes", or "Not public
+// yet" for a project that has never been published — and the crumb row's
+// Review changes (firma2-project-actions) is the way to the diff. With
+// nothing waiting, neither renders.
+//
+// IT ALSO OWNS THE TWO THINGS THIS BROWSER'S REVIEW DID TO THE RECORD.
+// A Publish clears the badge and the Review button; a Revert on the review
+// page put a field back to its published value, so on load this writes that
+// value into the field through firma2-editable-field's own set path
+// (firma2:field-set) — the record shows what the review left it as.
+//
+// bcn-lego-checked: the mark is esa-badge — a status marker, not a removable
+// token. The <style> only restates [hidden].
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import type { Publishing } from '../../data/firma2-publish-history';
+
+interface Props {
+  slug: string;
+  publishing: Publishing;
+}
+
+const { slug, publishing } = Astro.props;
+const count = publishing.changes.length;
+const label = publishing.publishedIso ? `${count} unpublished change${count === 1 ? '' : 's'}` : 'Not public yet';
+const reverts = Object.fromEntries(publishing.changes.filter((c) => c.revert).map((c) => [c.key, c.revert]));
+---
+<span
+  class="firma2-project-publish-state"
+  data-slug={slug}
+  data-keys={JSON.stringify(publishing.changes.map((c) => c.key))}
+  data-reverts={JSON.stringify(reverts)}
+  data-first={publishing.publishedIso ? undefined : ''}
+  hidden={count === 0}
+>
+  <EsaBadge value={label} variant="info" size="md" />
+</span>
+
+<style>
+  .firma2-project-publish-state[hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import { pendingKeys, readPublishing } from '../../lib/publish-store';
+
+  const root = document.querySelector<HTMLElement>('.firma2-project-publish-state');
+  if (root) {
+    const slug = root.dataset.slug!;
+    const keys: string[] = JSON.parse(root.dataset.keys ?? '[]');
+    const state = readPublishing();
+    const left = pendingKeys(slug, keys, state);
+
+    root.hidden = left.length === 0;
+    const text = root.querySelector('.esa-badge__text');
+    if (text && left.length && root.dataset.first === undefined) {
+      text.textContent = `${left.length} unpublished change${left.length === 1 ? '' : 's'}`;
+    }
+    // The crumb row's way to the diff goes with the badge.
+    document.querySelector('[data-project-review]')?.closest<HTMLElement>('.esa-button')?.toggleAttribute('hidden', left.length === 0);
+
+    // Reverted fields read their published value.
+    const reverts: Record<string, { field: string; raw: string }> = JSON.parse(root.dataset.reverts ?? '{}');
+    const apply = () =>
+      (state.reverted[slug] ?? []).forEach((key) => {
+        const target = reverts[key];
+        if (target) document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: target }));
+      });
+    if (document.readyState === 'complete') apply();
+    else window.addEventListener('load', apply, { once: true });
+  }
+</script>

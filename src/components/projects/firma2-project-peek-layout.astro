@@ -22,6 +22,16 @@
 // moves any module script out of the page's templates and runs it once, and
 // takes it out of the template so a cloned record never carries a copy.
 //
+// A RAIL SLOT, AND THE PEEK TAKES ITS PLACE (user, 2026-10-09). A record
+// page that lists projects — a classification, an organization — also has a
+// rail of its own (Connections, firma2-entity-connections). Pass it in
+// `slot="rail"`, wrapped in firma2-record-rail, and the two share ONE track:
+// the rail by default, the peek while one is open, the rail again when it
+// closes. No script — the peek's own [hidden] is the state, and a :has() rule
+// reads it. They size independently: the peek keeps --sidebar-width (its
+// 46rem), the rail writes --firma2-record-rail-width (its 25rem), so a reader
+// who widens one never finds the other widened.
+//
 // --sidebar-content-min is small on purpose: content scrolls inside its own
 // frame when the panel takes the room, which beats wrapping a 100dvh panel
 // below it (projects.astro's note).
@@ -39,9 +49,15 @@ interface Props {
 }
 
 const { max = CONTENT_MAX, panelWidth = '46rem' } = Astro.props;
+const hasRail = Astro.slots.has('rail');
 ---
-<div class="sidebar" data-side="end" style={`--sidebar-width: ${panelWidth}; --sidebar-content-min: 20rem`}>
+<div
+  class:list={['sidebar', 'firma2-project-peek-layout', { 'firma2-project-peek-layout--rail': hasRail }]}
+  data-side="end"
+  style={`--sidebar-width: ${panelWidth}; --sidebar-content-min: 20rem${hasRail ? '; --firma2-record-rail-width: 25rem' : ''}`}
+>
   <Firma2ProjectPeek />
+  <slot name="rail" />
   {max === false ? <div><slot /></div> : <EsaContainer maxWidth={max}><slot /></EsaContainer>}
 </div>
 <template data-project-peek-button>
@@ -59,3 +75,25 @@ const { max = CONTENT_MAX, panelWidth = '46rem' } = Astro.props;
     });
   });
 </script>
+
+<style>
+  /* The rail is the track's SECOND aside. `.sidebar` orders only its first
+     child (the peek) to the trailing edge, so the rail is sent there too. */
+  .firma2-project-peek-layout--rail > :global(.firma2-record-rail) {
+    order: 2;
+  }
+  /* One track, one occupant: while the peek is open, the rail steps out.
+     Global whole: Astro does not rewrite a :global() nested inside :has(),
+     and ships it as an invalid selector. */
+  :global(.firma2-project-peek-layout--rail:has(> .firma2-project-peek:not([hidden])) > .firma2-record-rail) {
+    display: none;
+  }
+  /* Both asides make this element their query container, and `container`
+     takes ONE name per declaration — the later rule would silently erase the
+     other's. Named together here, so both container queries keep matching;
+     the doubled class outranks either aside's own (0,2,0) :has() rule. */
+  .sidebar.firma2-project-peek-layout--rail {
+    container-type: inline-size;
+    container-name: firma2-project-peek-track firma2-record-rail-track;
+  }
+</style>

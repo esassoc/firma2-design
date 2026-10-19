@@ -209,6 +209,15 @@ decision gets written down where it was made.
    while reading — filing a year's numbers is not editing the record. See
    `components/shared/firma2-record-mode.astro`.
 
+   **The public sees a published snapshot, decided 2026-10-09 (user-directed).**
+   Always-saved is true of the RECORD, not of what the public reads. Editors
+   change their projects freely and every change saves; the public page shows
+   what a steward or administrator last reviewed and published. QA/QC happens
+   at publish, on whatever schedule the organization keeps (none by default) —
+   between publishes, editors are trusted. There is no re-certification: a
+   project with nothing new since its last publish needs nothing. See
+   "Review the net diff, not the history" in §4.
+
    **The challenge we set ourselves: see something you want to change, and change
    it with the least friction possible.** Count the steps between noticing and
    fixing — a mode to enter, a pencil to find, a dialog to open, a button to
@@ -651,6 +660,41 @@ Full reference — every default, who manages members, the invitation rule:
 firma2-organization-members (Make steward), firma2-organization-access,
 firma2-administrators-note (Account, Security and access).*
 
+### Review the net diff, not the history
+
+Publishing is a sweep (user, 2026-10-09): every so often a steward goes through
+all their projects and brings each public page up to date. Three things follow.
+
+- **The unit of review is the difference between the public page and the
+  record**, one row per field — published value beside current, who touched
+  it, how many edits it folds. Two cost edits read as one line; a county
+  changed and changed back reads as nothing. A year between sweeps still
+  yields at most a row per field, where a year of activity feed would be
+  unreviewable. The change log keeps every entry; it is the evidence behind
+  the review, and the Updates feed is where a steward checks the trust given
+  to editors between publishes.
+- **A sweep has to be completable.** The queue states the whole set ("15 of
+  24 public pages up to date"), lists what waits oldest first, and the review
+  page's primary act is **Publish and next**. A list of only the pending rows
+  cannot say whether you are done.
+- **Schedules are optional.** With none, the queue and the waits are the whole
+  story; an organization that sets one (Organization settings › Review
+  schedule) gets Overdue marks and a weekly reminder. Who may publish is a
+  Security threshold ("Publish projects", stewards and administrators by
+  default), not a role.
+
+Publish records the changes that were on screen, not "the record as of now",
+so an edit made while the steward was reading does not go out unreviewed.
+Revert is per field and only back to the published value; a filed report or a
+redrawn boundary has no single value to restore, so its fix is on the record.
+The Updates feed folds one person's edits on one project in one day into a
+single row; reports, stage changes and publishes never fold.
+
+*Applies to: firma2-publish-history (the diff, built with each record),
+firma2-review-queue, firma2-review-changes, firma2-review-actions,
+firma2-project-publish-state, firma2-public-project (`published`),
+firma2-org-updates (folded sessions).*
+
 ---
 
 ## 5. How to open a new screen
@@ -702,8 +746,10 @@ a styling problem.
 | Manage | Users, Manage Organizations, Manage Funding Sources, Custom Pages | not built |
 | Workspace settings › Administration | **Workspace**, **Organizations**, **Users**, **Security**, **Custom pages**, **Import & export** | built |
 | Workspace settings › Organizations | **Organization record** (each organization's page from the list, your own included) | built |
-| Workspace settings › Your organization | **Settings** (General, Members, Access, Notifications) | built |
-| Your organizations (app rail) | **Home**, **Projects**, **Updates**, **Views** (+ one page per saved view), **Reports** — each scoped to one of the reader's organizations | built — reports list and price their coverage; the report itself is still unbuilt |
+| Workspace settings › Your organization | **Settings** (General, Members, Access, Notifications, Review schedule) | built |
+| Your organizations (app rail) | **Home**, **Projects**, **Updates**, **Review**, **Views** (+ one page per saved view), **Reports** — each scoped to one of the reader's organizations | built — reports list and price their coverage; the report itself is still unbuilt |
+| Workspace (app rail) | **Updates** (every project's feed), **Review** (every project's public page, and each organization's backlog) | built |
+| Review | **Review a project** (one per project: the net diff, Revert, Publish and next) | built |
 
 The two built areas are deliberately different exercises: the project pages are
 about **reading a record**, the measure pages about **setting one up**. Most
@@ -768,13 +814,20 @@ funder X"), not ask-first.
   nobody has specified.
 - **What is the real breakpoint floor?** Everything is currently reasoned about
   and verified at desktop widths.
-- **What does undo look like when nothing is ever "saved"?** This is the open
-  debt of optimization #4 and the one thing we have taken away without replacing.
-  Escape abandons a field mid-edit; there is no way to take back a change already
-  committed, and no history of who changed what. Candidates: a per-field revert on
-  the row, an undo toast on commit, a record-level change log. Worth asking
-  authors which failure they actually fear — the typo, or the decision they want
-  back a week later — because those want different answers.
+- **What does undo look like when nothing is ever "saved"?** Partly answered
+  (2026-10-09): the record has a change log (History), and a steward can revert
+  any field to its PUBLISHED value from the review page. Still open: undo for
+  the editor, before anyone reviews — the typo caught a second later. An undo
+  toast on commit is the candidate.
+- **Who sees unpublished values?** Today every signed-in reader sees the live
+  record and the public sees the published snapshot. If funders read project
+  pages signed in, they are reading values nobody has checked. Candidate:
+  Contributors and stewards see the live record; Viewers see what is published.
+- **Do reported values pass the publish gate?** The prototype says yes — a
+  filing shows on the review page and stays off the public page until
+  published. The cost is a busier queue every reporting season; the
+  alternative lets unchecked numbers reach the reports §0 says the product
+  exists for.
 
 ---
 

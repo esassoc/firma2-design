@@ -1,0 +1,147 @@
+---
+// firma2-review-actions — Publish, beside the project's name on its review
+// page, and the way on to the next project in the sweep.
+//
+// A SWEEP IS DONE IN ONE SITTING, so the primary act is "Publish and next":
+// publish what is on screen and open the next project still waiting, without
+// a trip back to the list. Skip moves on without publishing — a steward who
+// left a comment and wants the editor to fix something first. On the last
+// project, the primary is plain Publish.
+//
+// WHICH SWEEP. The page is reached from an organization's Review page
+// (?from=<organization slug>) or the workspace's (no parameter), and "next"
+// follows that queue's order — oldest waiting first — skipping anything this
+// browser has already published.
+//
+// PUBLISH WHAT WAS REVIEWED. The publish records the change keys the diff was
+// showing (src/lib/publish-store.ts), not "the record as of now". If another
+// tab publishes or reverts on this project while the page is open, Publish
+// stops and firma2-review-status asks for a reload, so a page nobody checked
+// cannot slip out under the steward's name.
+//
+// WHO CAN. Publishing follows the Security threshold "Publish projects"
+// (stewards and administrators by default). Below it the buttons do not
+// render, and firma2-review-status says who can.
+//
+// bcn-lego-checked: both actions are esa-button; this component is their
+// wiring. No bespoke markup; the <style> only restates [hidden].
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  slug: string;
+  name: string;
+  /** Every change key the diff renders. */
+  keys: string[];
+  /** Queue orders, pending slugs oldest first: the workspace's, and each reader organization's. */
+  queues: { workspace: string[]; organizations: Record<string, string[]> };
+  /** Each queued project's change keys and name, so "next" can skip what this browser published. */
+  others: Record<string, { keys: string[]; name: string }>;
+}
+
+const { slug, name, keys, queues, others } = Astro.props;
+---
+<span
+  class="firma2-review-actions cluster"
+  data-gap="sm"
+  data-slug={slug}
+  data-name={name}
+  data-keys={JSON.stringify(keys)}
+  data-queues={JSON.stringify(queues)}
+  data-others={JSON.stringify(others)}
+  data-review-base={withBase('/prototypes/review/')}
+  hidden
+>
+  <EsaButton variant="primary" size="md" data-publish>Publish and next</EsaButton>
+  <EsaButton variant="secondary" appearance="outline" size="md" data-skip>Skip</EsaButton>
+</span>
+
+<style>
+  .firma2-review-actions[hidden],
+  .firma2-review-actions [hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import { PUBLISHING_KEY, pendingKeys, publish, readPublishing } from '../../lib/publish-store';
+  import { can } from '../../lib/workspace-permissions';
+  import { CURRENT_USER } from '../../data/firma2-directory';
+  import { TODAY_ISO } from '../../data/firma2-publish-history';
+
+  const root = document.querySelector<HTMLElement>('.firma2-review-actions');
+  if (root) {
+    const slug = root.dataset.slug!;
+    const name = root.dataset.name!;
+    const queues: { workspace: string[]; organizations: Record<string, string[]> } = JSON.parse(root.dataset.queues ?? '{}');
+    const others: Record<string, { keys: string[]; name: string }> = JSON.parse(root.dataset.others ?? '{}');
+    const from = new URLSearchParams(window.location.search).get('from') ?? '';
+    const order = (from && queues.organizations[from]) || queues.workspace;
+    const suffix = from ? `?from=${encodeURIComponent(from)}` : '';
+
+    // The next project still waiting, after this one in the queue's order —
+    // then any earlier one the steward skipped past.
+    const nextSlug = (): string | null => {
+      const state = readPublishing();
+      const at = order.indexOf(slug);
+      const rest = [...order.slice(at + 1), ...order.slice(0, Math.max(at, 0))];
+      return rest.find((s) => s !== slug && others[s] && pendingKeys(s, others[s].keys, state).length > 0) ?? null;
+    };
+    const hrefOf = (s: string) => `${root.dataset.reviewBase}${s}${suffix}`;
+
+    let pending: string[] = pendingKeys(slug, JSON.parse(root.dataset.keys ?? '[]'));
+    let stale = false;
+    const publishButton = root.querySelector<HTMLElement>('[data-publish]')!;
+    const skipButton = root.querySelector<HTMLElement>('[data-skip]')!;
+
+    const paint = () => {
+      const next = nextSlug();
+      const allowed = can('perm-publish');
+      root.hidden = pending.length === 0 || !allowed;
+      // data-* lands on the lego's native <button>; the label is its own span,
+      // and the outer span is what takes the row's space.
+      publishButton.querySelector('.esa-button__label')!.textContent = next ? 'Publish and next' : 'Publish';
+      skipButton.closest<HTMLElement>('.esa-button')!.hidden = !next;
+      document.dispatchEvent(new CustomEvent('firma2:review-state', {
+        detail: { slug, pending: pending.length, allowed, next: next ? { href: hrefOf(next), name: others[next].name } : null },
+      }));
+    };
+
+    // Whichever script runs first, the status panel gets the state: it asks on
+    // load, and this answers on load too.
+    document.addEventListener('firma2:review-request', paint);
+    document.addEventListener('firma2:review-pending', (event) => {
+      const detail = (event as CustomEvent<{ slug: string; keys: string[] }>).detail;
+      if (detail.slug !== slug) return;
+      pending = detail.keys;
+      paint();
+    });
+
+    // Another tab changed this project's publishing: what is on screen may no
+    // longer be what Publish would publish.
+    window.addEventListener('storage', (event) => {
+      if (event.key !== PUBLISHING_KEY) return;
+      stale = true;
+      document.dispatchEvent(new CustomEvent('firma2:review-stale'));
+    });
+
+    publishButton.addEventListener('click', () => {
+      if (stale) {
+        document.dispatchEvent(new CustomEvent('firma2:review-stale'));
+        return;
+      }
+      const next = nextSlug();
+      publish(slug, { iso: TODAY_ISO, by: CURRENT_USER.name, keys: pending });
+      sessionStorage.setItem('firma2:review-toast', `Published ${name}`);
+      if (next) window.location.assign(hrefOf(next));
+      else window.location.reload();
+    });
+
+    skipButton.addEventListener('click', () => {
+      const next = nextSlug();
+      if (next) window.location.assign(hrefOf(next));
+    });
+
+    paint();
+  }
+</script>

@@ -1,5 +1,6 @@
-// An organization's own pages — Home, Projects, Updates, Views, Reports — the
-// five rows under each of the reader's organizations in the app rail. One
+// An organization's own pages — Home, Projects, Updates, Review, Views,
+// Reports — the six rows under each of the reader's organizations in the app
+// rail. One
 // module for the routes and everything those pages derive, so the rail, the
 // pages and their links cannot disagree about where a page lives or what an
 // organization's projects are.
@@ -17,6 +18,7 @@
 import { projectHref, projectSlug } from './firma2-projects';
 import type { Project } from './firma2-projects';
 import { getProjectDetail, isClosedPeriod } from './firma2-project-detail';
+import { PUBLISHED_CHANGE } from './firma2-publish-history';
 import { CURRENT_USER, CURRENT_USER_ORGANIZATIONS, TODAY, getOrganization, membersOf, organizationSlug, projectsOf } from './firma2-directory';
 import type { Organization } from './firma2-directory';
 
@@ -24,7 +26,7 @@ import type { Organization } from './firma2-directory';
 // Routes
 // ---------------------------------------------------------------------------
 
-export type OrganizationPage = 'home' | 'projects' | 'updates' | 'views' | 'reports';
+export type OrganizationPage = 'home' | 'projects' | 'updates' | 'review' | 'views' | 'reports';
 
 /** Root-relative and BASE-LESS, like every route in this spoke — wrap with withBase() at render. */
 export const organizationPageHref = (slug: string, page: OrganizationPage = 'home'): string =>
@@ -102,12 +104,13 @@ export const coverage = (list: Project[], year: number): Coverage => {
 // Updates — the organization's projects' change logs and comments, as one feed
 // ---------------------------------------------------------------------------
 
-export type UpdateKind = 'report' | 'stage' | 'comment' | 'edit';
+export type UpdateKind = 'report' | 'stage' | 'publish' | 'comment' | 'edit';
 
 /** The filter's choices, in the order a reader looks for them. */
 export const UPDATE_KINDS: { value: UpdateKind; label: string }[] = [
   { value: 'report', label: 'Reports filed' },
   { value: 'stage', label: 'Stage changes' },
+  { value: 'publish', label: 'Publishes' },
   { value: 'comment', label: 'Comments' },
   { value: 'edit', label: 'Record edits' },
 ];
@@ -122,6 +125,13 @@ export interface OrganizationUpdate {
   author: string;
   /** The change in the record's vocabulary, or the comment's text. */
   text: string;
+  /**
+   * A SESSION of record edits — one person, one project, one day — folds into
+   * one update, and these are its log sentences, oldest first. Absent for a
+   * single entry. Reports filed, stage changes and publishes never fold: they
+   * are what the feed's readers are watching for.
+   */
+  lines?: string[];
   projectName: string;
   projectSlug: string;
   /** Base-less route to the project's page. */
@@ -134,23 +144,40 @@ const isoOf = (label: string): string => {
 };
 
 const kindOf = (change: string): UpdateKind =>
-  change.startsWith('Reported value filed') ? 'report' : change.startsWith('Stage set to') ? 'stage' : 'edit';
+  change.startsWith('Reported value filed')
+    ? 'report'
+    : change.startsWith('Stage set to')
+      ? 'stage'
+      : change === PUBLISHED_CHANGE
+        ? 'publish'
+        : 'edit';
 
-/** Every update on the organization's projects, newest first. */
-export const organizationUpdates = (organization: string): OrganizationUpdate[] =>
-  organizationProjects(organization)
-    .flatMap(({ project }) => {
+/** Every update on a set of projects, newest first, edit sessions folded. */
+export const projectUpdates = (list: Project[]): OrganizationUpdate[] =>
+  list
+    .flatMap((project) => {
       const detail = getProjectDetail(project);
       const about = { projectName: project.projectName, projectSlug: projectSlug(project), projectHref: projectHref(project) };
+      const log: OrganizationUpdate[] = [];
+      // The log is newest first, so a session's entries arrive newest first;
+      // `lines` is reversed at the end to read in the order they were made.
+      for (const entry of detail.audit) {
+        const kind = kindOf(entry.change);
+        const iso = isoOf(entry.date);
+        const last = log.at(-1);
+        if (kind === 'edit' && last?.kind === 'edit' && last.author === entry.user && last.iso === iso) {
+          last.lines = [...(last.lines ?? [last.text]), entry.change];
+          continue;
+        }
+        log.push({ kind, iso, date: entry.date, author: entry.user, text: entry.change, ...about });
+      }
+      for (const u of log) {
+        if (!u.lines) continue;
+        u.lines.reverse();
+        u.text = `${u.lines.length} record edits`;
+      }
       return [
-        ...detail.audit.map((entry) => ({
-          kind: kindOf(entry.change),
-          iso: isoOf(entry.date),
-          date: entry.date,
-          author: entry.user,
-          text: entry.change,
-          ...about,
-        })),
+        ...log,
         ...detail.comments.map((comment) => ({
           kind: 'comment' as const,
           iso: isoOf(comment.date),
@@ -162,6 +189,10 @@ export const organizationUpdates = (organization: string): OrganizationUpdate[] 
       ];
     })
     .sort((a, b) => b.iso.localeCompare(a.iso) || a.projectName.localeCompare(b.projectName));
+
+/** Every update on the organization's projects, newest first. */
+export const organizationUpdates = (organization: string): OrganizationUpdate[] =>
+  projectUpdates(organizationProjects(organization).map(({ project }) => project));
 
 // ---------------------------------------------------------------------------
 // Views — saved slices of the organization's projects

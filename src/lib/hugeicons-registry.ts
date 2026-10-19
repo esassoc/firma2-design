@@ -108,6 +108,9 @@ import {
   UserIcon,
   UserMultipleIcon,
   ViewIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+  CenterFocusIcon,
 } from '@hugeicons/core-free-icons';
 import { toMarkup } from './hugeicon-markup';
 import type { IconNode } from './hugeicon-markup';
@@ -207,6 +210,10 @@ const MAP: Record<string, unknown> = {
   'file-plus': FileAddIcon,
   'text-cursor-input': InputTextIcon,
   'folder-input': FolderInputIcon,
+  // The Connections graph's view controls (firma2-entity-connections).
+  'zoom-in': ZoomInIcon,
+  'zoom-out': ZoomOutIcon,
+  scan: CenterFocusIcon,
 };
 
 // Hugeicons ships React-style nodes ([tag, {strokeWidth, …, key}]); emit SVG markup.
