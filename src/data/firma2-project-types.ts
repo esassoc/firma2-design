@@ -79,17 +79,24 @@ export const resolveSections = (delta: SectionsDelta = {}): { section: PageSecti
 // Fields — tenant-wide definitions
 // ---------------------------------------------------------------------------
 
-export type FieldKind = 'choice' | 'number' | 'date' | 'text';
+export type FieldKind = 'choice' | 'multi-choice' | 'yes-no' | 'number' | 'money' | 'date' | 'text' | 'long-text';
+
+/** Kinds answered from the field's own closed list. */
+export const hasOptions = (kind: FieldKind): boolean => kind === 'choice' || kind === 'multi-choice';
 
 export const FIELD_KINDS: { id: FieldKind; name: string; note: string }[] = [
-  { id: 'choice', name: 'Choice', note: 'Picked from a list you control. Rolls up across projects.' },
+  { id: 'choice', name: 'Single select', note: 'Picked from a list you control. Rolls up across projects.' },
+  { id: 'multi-choice', name: 'Multi-select', note: 'Any number picked from a list you control. Rolls up across projects.' },
+  { id: 'yes-no', name: 'Yes or no', note: 'One of two answers. Counts across projects.' },
   { id: 'number', name: 'Number', note: 'A quantity in a fixed unit. Totals across projects.' },
+  { id: 'money', name: 'Money', note: 'An amount in dollars. Totals across projects.' },
   { id: 'date', name: 'Date', note: 'A single day.' },
   {
     id: 'text',
-    name: 'Text',
+    name: 'Short text',
     note: 'Free text. You can’t total or filter by it — use it for references, never for categories.',
   },
+  { id: 'long-text', name: 'Long text', note: 'A paragraph or more. You can’t total or filter by it.' },
 ];
 
 export const kindName = (id: FieldKind): string => FIELD_KINDS.find((k) => k.id === id)?.name ?? id;
@@ -295,6 +302,8 @@ export const fieldValue = (
       return field.id === 'lead-permit'
         ? `1600-${project.implementationStartYear}-0${100 + (h % 800)}-R2`
         : '';
+    default:
+      return '';
   }
 };
 

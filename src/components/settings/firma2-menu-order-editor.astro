@@ -1,0 +1,166 @@
+---
+// firma2-menu-order-editor — the workspace's default order for the app menu:
+// where everyone's menu starts. Each person can still rearrange their own in
+// the rail (firma2-nav-arrange); that order is theirs and is not undone here.
+//
+// THREE LINKED LISTS, one per place a row can sit — the unheaded rows at the
+// top, Workspace, and More — so a row is moved between them exactly as a tag is
+// moved between tag groups (bcn-sortable-list, linked by `group`): drag by the
+// grip, or the grip's menu for Move up/down and Move to <list>. More can move
+// but not into itself: the More list refuses it, so it is never offered there.
+//
+// The reader's organizations are not here: each person's are different, so
+// only that person can order them.
+//
+// Changes save as they are made, to this browser (src/lib/nav-order.ts).
+// Reset to standard order shows once the order differs from the product's.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { MORE_KEY } from '../../lib/nav-order';
+
+const LISTS = [
+  { section: 'top', title: 'Top of the menu' },
+  { section: 'workspace', title: 'Workspace' },
+  { section: 'more', title: 'More' },
+];
+---
+<!-- bcn-lego-checked: every control is a lego (esa-button, esa-snackbar-
+     container) or the spoke's own bcn-sortable-list (reorders and moves rows
+     between linked lists, as on the Tags board); the classes only lay out the
+     icon-and-label rows and the empty list's drop line, which no esa-
+     component does. Beacon is not cloned on this machine. -->
+<div class="firma2-menu-order stack" data-gap="2xl">
+  <p class="typography-body-md">Everyone starts with this order. Each person can rearrange their own menu.</p>
+  {LISTS.map(({ section, title }) => (
+    <Firma2RailSection title={title}>
+      <bcn-sortable-list group="menu-order" label={title} refuse={section === 'more' ? MORE_KEY : undefined} data-menu-section={section}>
+        <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+        <ol class="firma2-menu-order__rows" aria-label={title} data-menu-rows></ol>
+      </bcn-sortable-list>
+    </Firma2RailSection>
+  ))}
+  <span data-menu-reset-wrap hidden>
+    <EsaButton variant="ghost" size="md" icon="rotate-ccw" data-menu-reset>Reset to standard order</EsaButton>
+  </span>
+  <esa-snackbar-container data-menu-toasts></esa-snackbar-container>
+</div>
+
+<style>
+  .firma2-menu-order [hidden] {
+    display: none !important;
+  }
+
+  .firma2-menu-order__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-menu-order__rows :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-100);
+    border-block-end: 1px solid var(--color-border-default-subtle);
+  }
+  .firma2-menu-order__rows :global(li:last-child) { border-block-end: 0; }
+
+  .firma2-menu-order__rows :global(.firma2-menu-order__icon) {
+    display: inline-flex;
+    flex: none;
+    color: var(--color-content-default-secondary);
+  }
+
+  /* An emptied list keeps a drop line, so a row can be dragged back into it. */
+  .firma2-menu-order__rows :global(li[data-sort-placeholder]) {
+    padding: var(--spacing-300);
+    border: 1px dashed var(--color-border-default);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-snackbar-container';
+  import { iconSvg } from '@esa/ecology/icon-registry';
+  import '../shared/bcn-sortable-list';
+  import { navItems } from '../../data/firma2-nav';
+  import type { Firma2NavItem } from '../../data/firma2-nav';
+  import {
+    isStandardWorkspace, readWorkspaceLayout, resetWorkspaceLayout, writeWorkspaceLayout,
+  } from '../../lib/nav-order';
+  import type { NavSection } from '../../lib/nav-order';
+
+  type Toasts = HTMLElement & { show(o: { message: string; variant: string }): void };
+
+  const root = document.querySelector<HTMLElement>('.firma2-menu-order');
+  const lists = Array.from(root?.querySelectorAll<HTMLElement>('[data-menu-section]') ?? []);
+  const resetWrap = root?.querySelector<HTMLElement>('[data-menu-reset-wrap]');
+
+  const byKey = new Map<string, Firma2NavItem>();
+  for (const item of navItems) {
+    byKey.set(item.key, item);
+    for (const child of item.children ?? []) byKey.set(child.key, child);
+  }
+
+  const toast = (message: string, variant = 'success'): void => {
+    customElements.whenDefined('esa-snackbar-container').then(() => {
+      root?.querySelector<Toasts>('[data-menu-toasts]')?.show({ message, variant });
+    });
+  };
+
+  const row = (key: string): HTMLLIElement => {
+    const item = byKey.get(key);
+    const li = document.createElement('li');
+    li.dataset.sortKey = key;
+    li.dataset.sortLabel = item?.label ?? key;
+    const icon = document.createElement('span');
+    icon.className = 'firma2-menu-order__icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = (item?.icon && iconSvg(item.icon, 18)) ?? '';
+    const label = document.createElement('span');
+    label.className = 'typography-body-md';
+    label.textContent = item?.label ?? key;
+    li.append(icon, label);
+    return li;
+  };
+
+  const placeholder = (): HTMLLIElement => {
+    const li = document.createElement('li');
+    li.dataset.sortPlaceholder = '';
+    li.className = 'typography-body-sm';
+    li.textContent = 'Drag a row here';
+    return li;
+  };
+
+  const paint = (): void => {
+    const layout = readWorkspaceLayout();
+    for (const list of lists) {
+      const section = list.dataset.menuSection as NavSection;
+      list.querySelector('[data-menu-rows]')?.replaceChildren(placeholder(), ...layout[section].map(row));
+    }
+    if (resetWrap) resetWrap.hidden = isStandardWorkspace();
+  };
+
+  // The lists' DOM has already moved for a drag; read every list back, save,
+  // and repaint from the model.
+  const orderOf = (list: HTMLElement): string[] =>
+    Array.from(list.querySelectorAll<HTMLElement>('[data-menu-rows] > li[data-sort-key]')).map((li) => li.dataset.sortKey!);
+
+  root?.addEventListener('sort-change', () => {
+    const layout = readWorkspaceLayout();
+    for (const list of lists) layout[list.dataset.menuSection as NavSection] = orderOf(list);
+    writeWorkspaceLayout(layout);
+    paint();
+  });
+
+  root?.querySelector('[data-menu-reset]')?.addEventListener('click', () => {
+    resetWorkspaceLayout();
+    paint();
+    toast('Standard order restored.');
+    // The button is gone; focus goes to the first list's first grip.
+    requestAnimationFrame(() => lists[0]?.querySelector<HTMLElement>('[data-sort-grip] button')?.focus());
+  });
+
+  paint();
+</script>

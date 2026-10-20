@@ -121,6 +121,11 @@ const ZOOM_MIN = 1;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 1.5;
 
+/** d3-force's own cooling rate: alpha 1 → 0.001 in 300 ticks. */
+const HEAT_DECAY = 1 - Math.pow(0.001, 1 / 300);
+/** Cooling after a drag: alpha 0.3 → 0.001 in ~100 ticks, not ~250. */
+const SETTLE_DECAY = 0.055;
+
 const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const truncate = (text: string): string => (text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1).trimEnd()}…` : text);
@@ -155,16 +160,25 @@ class BcnEntityGraph extends HTMLElement {
   // Public — the caller's view controls
   // -------------------------------------------------------------------------
 
+  // A SCALE TO HEAD FOR, NOT A FACTOR. scaleBy on a transition reads the
+  // transform when it starts — mid-flight, after a quick second click — so
+  // three fast clicks landed near 1.6× instead of 3.4× (measured). Steps
+  // compound on the goal instead; a pinch or ctrl-wheel resets it.
+  private zoomGoal = ZOOM_MIN;
+
   zoomIn(): void {
-    this.zoomTo((z) => z.scaleBy(this.target(), ZOOM_STEP));
+    this.zoomGoal = Math.min(ZOOM_MAX, this.zoomGoal * ZOOM_STEP);
+    this.zoomTo((z) => z.scaleTo(this.target(), this.zoomGoal));
   }
 
   zoomOut(): void {
-    this.zoomTo((z) => z.scaleBy(this.target(), 1 / ZOOM_STEP));
+    this.zoomGoal = Math.max(ZOOM_MIN, this.zoomGoal / ZOOM_STEP);
+    this.zoomTo((z) => z.scaleTo(this.target(), this.zoomGoal));
   }
 
   /** Back to the fitted rest view. */
   fit(): void {
+    this.zoomGoal = ZOOM_MIN;
     this.zoomTo((z) => z.transform(this.target(), zoomIdentity));
   }
 
@@ -311,7 +325,10 @@ class BcnEntityGraph extends HTMLElement {
       // The disc is as small as 9px; the target is never under 24px (SC 2.5.8).
       const hit = document.createElementNS(SVG, 'circle');
       hit.setAttribute('class', 'bcn-entity-graph__hit');
-      hit.setAttribute('r', String(Math.max(12, node.r + 3)));
+      // A coarse pointer gets a 44px circle; a mouse keeps the tight one, so a
+      // dense neighbourhood stays precise.
+      const minHit = window.matchMedia('(pointer: coarse)').matches ? 22 : 12;
+      hit.setAttribute('r', String(Math.max(minHit, node.r + 3)));
       const disc = document.createElementNS(SVG, 'circle');
       disc.setAttribute('class', 'bcn-entity-graph__disc');
       disc.setAttribute('r', String(node.r));
@@ -399,11 +416,25 @@ class BcnEntityGraph extends HTMLElement {
       return el ? this.nodes.find((n) => n.el === el) : undefined;
     };
 
+    // Clearing waits a beat, so crossing the gap between two nodes does not
+    // flash the whole graph; lighting a node is immediate and cancels it.
+    let clearTimer = 0;
+    const clearSoon = () => {
+      window.clearTimeout(clearTimer);
+      clearTimer = window.setTimeout(() => this.highlight(null), 80);
+    };
     svg.addEventListener('pointerover', (e) => {
-      if (!this.dragging) this.highlight(nodeOf(e.target)?.id ?? null);
+      if (this.dragging) return;
+      const node = nodeOf(e.target);
+      if (node) {
+        window.clearTimeout(clearTimer);
+        this.highlight(node.id);
+      } else clearSoon();
     });
     svg.addEventListener('pointerleave', () => {
-      if (!this.dragging) this.highlight(null);
+      if (this.dragging) return;
+      window.clearTimeout(clearTimer);
+      this.highlight(null);
     });
     svg.addEventListener('focusin', (e) => this.highlight(nodeOf(e.target)?.id ?? null));
     svg.addEventListener('focusout', () => this.highlight(null));
@@ -421,7 +452,7 @@ class BcnEntityGraph extends HTMLElement {
         this.dragging = true;
         svg.dataset.dragging = '';
         this.highlight(d.id);
-        if (!event.active && !reducedMotion()) sim.alphaTarget(0.3).restart();
+        if (!event.active && !reducedMotion()) sim.alphaDecay(HEAT_DECAY).alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
       })
@@ -438,7 +469,9 @@ class BcnEntityGraph extends HTMLElement {
       .on('end', (event, d) => {
         this.dragging = false;
         delete svg.dataset.dragging;
-        if (!event.active) sim.alphaTarget(0);
+        // Let go and the neighbours settle in about a second instead of
+        // drifting for four.
+        if (!event.active) sim.alphaTarget(0).alphaDecay(SETTLE_DECAY);
         d.fx = null;
         d.fy = null;
       });
@@ -460,7 +493,9 @@ class BcnEntityGraph extends HTMLElement {
         // Pan from empty space only; a press on a node belongs to the drag.
         return !nodeOf(event.target) && !(event as MouseEvent).button;
       })
-      .on('zoom', (event: { transform: ZoomTransform }) => {
+      .on('zoom', (event: { transform: ZoomTransform; sourceEvent: Event | null }) => {
+        // A reader's own gesture (not a button's transition) moves the goal.
+        if (event.sourceEvent) this.zoomGoal = event.transform.k;
         this.viewport!.setAttribute('transform', event.transform.toString());
         svg.toggleAttribute('data-zoomed', event.transform.k >= LABEL_ZOOM);
       });

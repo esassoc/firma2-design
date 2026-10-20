@@ -263,7 +263,7 @@ export const groupRemovalBlock = (groupSlug: string): string | null => {
   if (held > 0) {
     return `${held} ${held === 1 ? 'classification is' : 'classifications are'} in this group. Move ${held === 1 ? 'it' : 'them'} to another group first.`;
   }
-  if (entries('classificationGroup').length <= 1) return 'Every classification needs a group, so the last one stays.';
+  if (entries('classificationGroup').length <= 1) return 'This is the only group, and every classification needs one.';
   return null;
 };
 

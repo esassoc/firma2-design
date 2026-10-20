@@ -1,7 +1,8 @@
 ---
 // AppLayout — the application chrome every ProjectFirma 2.0 prototype renders
-// inside: top bar with the omnibox and account menu, collapsible sidenav, and a
-// scrolling content region. A thin wrapper over esa-app-shell, the hub's
+// inside: a collapsible sidenav that owns the omnibox and account menu, a thin
+// pinned top bar over the content column (firma2-top-bar: crumbs and the page's
+// actions), and the content region. A thin wrapper over esa-app-shell, the hub's
 // CANONICAL house chrome — this layout contributes the nav model, the search
 // index, and the fixed-height frame the shell needs, and no visual primitives
 // of its own.
@@ -17,6 +18,8 @@ import type { Firma2NavItem } from '../data/firma2-nav';
 import { withBase } from '../lib/base';
 import { CONTENT_MAX, CONTENT_READING } from '../lib/content-width';
 import Firma2PagesNav from '../components/shared/firma2-pages-nav.astro';
+import Firma2NavArrange from '../components/shared/firma2-nav-arrange.astro';
+import Firma2TopBar from '../components/shared/firma2-top-bar.astro';
 import { seedEntries } from '../data/firma2-pages';
 import { pagesNavItems } from '../lib/custom-pages';
 
@@ -107,10 +110,14 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
       userMenu={userMenu}
       brandHref={withBase('/')}
     >
+      {/* The root-only bar. A page's firma2-page-header swaps its own (crumbs,
+          status, actions) in for this one during parse — see firma2-top-bar. */}
+      <Firma2TopBar />
       {width === 'full' ? <slot /> : <EsaContainer maxWidth={width === 'reading' ? CONTENT_READING : CONTENT_MAX}><slot /></EsaContainer>}
     </EsaAppShell>
   </div>
   {nav === 'app' && <Firma2PagesNav />}
+  {nav === 'app' && <Firma2NavArrange />}
 </BaseLayout>
 
 <script>
@@ -267,13 +274,49 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
   //
   // Per-tag registration is also what makes CONTROL_PINS safe to grow: adding a
   // lego here can never affect a page that does not use it.
+  const defined = new Set<string>();
   for (const [tag, css] of Object.entries(CONTROL_PINS)) {
     customElements.whenDefined(tag).then(() => {
+      defined.add(tag);
       requestAnimationFrame(() => pinControl(tag, css));
     });
   }
 
-  // THE RAIL OWNS THE APP'S CHROME. THERE IS NO TOP BAR.
+  // CONTROLS BUILT AFTER LOAD GET THE PIN TOO. A canvas that repaints (the
+  // intake builder, its inline field and condition rows) creates fresh md
+  // fields long after the pass above, and each came back at the lego's own
+  // 46px beside its 40px neighbours. One frame after any insertion, every
+  // defined tag is pinned again; pinControl skips roots it has already done.
+  let repin = 0;
+  new MutationObserver(() => {
+    if (repin) return;
+    repin = requestAnimationFrame(() => {
+      repin = 0;
+      defined.forEach((tag) => pinControl(tag, CONTROL_PINS[tag]));
+    });
+  }).observe(document.body, { childList: true, subtree: true });
+
+  // "/" TYPED INTO A FIELD STAYS IN THE FIELD. esa-entity-search's "/ to
+  // search" hotkey listens on document and asks whether event.target is an
+  // input — but a lego's input sits in a shadow root, so the target it sees is
+  // the esa-text-field host, and a web address typed into a link dialog lost
+  // its first "/" to the search box (focus jumped there). Hub bug, due
+  // upstream; until then the keystroke is stopped on <html>, one step before
+  // document, whenever the element really receiving it is editable.
+  document.documentElement.addEventListener('keydown', (event) => {
+    if (event.key !== '/') return;
+    const origin = event.composedPath()[0] as HTMLElement | undefined;
+    if (origin && (['INPUT', 'TEXTAREA', 'SELECT'].includes(origin.tagName) || origin.isContentEditable)) event.stopPropagation();
+  });
+
+  // THE RAIL OWNS THE APP'S CHROME; THE TOP BAR OWNS THE PAGE'S.
+  //
+  // Since 2026-10-19 there IS a top bar again — firma2-top-bar, thin (48px) and
+  // pinned over the content column, holding the breadcrumb trail and the page's
+  // status and actions, Tally-style. It is not the shell's bar: that one stays
+  // hidden (below), because everything it held is app chrome and still lives in
+  // the rail, for the reason that follows. The split is: rail = who you are and
+  // where you can go; top bar = where you are and what you can do here.
   //
   // esa-app-shell's house arrangement is a bar across the top holding the
   // collapse toggle, the omnibox and the profile menu, above a rail that holds
@@ -556,6 +599,124 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
       openActiveParents();
     });
   });
+
+  // ---- A SHUT RAIL PEEKS FROM ITS TOGGLE ----
+  //
+  // Hovering the expand toggle of a collapsed rail slides the full navigation out
+  // OVER the page, and it stays while the pointer is anywhere on it — links,
+  // workspace menu, account menu, all live. Leaving shuts it again; clicking the
+  // toggle while it is out pins it open instead of shutting it. Linear and
+  // Notion's convention for a collapsed sidebar: reach a destination without
+  // giving the content its width back.
+  //
+  // THE PEEK REUSES THE RAIL'S OWN OPEN STATE. `collapsed` is lifted for the
+  // length of the peek, so every label, badge and group the lego renders comes
+  // back exactly as it does when opened for real, and the lego's own width
+  // transition is the slide. `data-nav-peek` on the frame is what makes it an
+  // overlay: it holds the grid track at the collapsed width, so the rail
+  // overflows across the content instead of pushing it (see the stylesheet).
+  // Nothing is persisted — bcn-edge-handle stores state only on its own drags.
+  //
+  // MOUSE ONLY. A touch "hover" arrives a beat before the tap's click, which
+  // would open a peek and then pin it; on a finger the toggle stays a toggle.
+  // Keyboard users get the toggle as it was — a peek they cannot point at would
+  // only shut under them.
+  const PEEK_OPEN_DELAY = 100; // intent: a pointer crossing the toggle on its way elsewhere does not open it
+  const PEEK_CLOSE_DELAY = 250; // grace: an overshoot past the panel edge does not shut it
+
+  function mountRailPeek(): void {
+    document.querySelectorAll<HTMLElement>('.firma2-app-frame').forEach((frame) => {
+      const nav = frame.querySelector<HTMLElement & { collapsed: boolean }>('esa-sidebar-nav');
+      const foot = frame.querySelector<HTMLElement>('.firma2-app-frame__account');
+      const toggle = foot?.querySelector<HTMLElement>('.esa-app-shell__toggle');
+      if (!nav || !foot || !toggle) return;
+
+      let openTimer = 0;
+      let closeTimer = 0;
+      let settleTimer = 0;
+      const peeking = () => frame.getAttribute('data-nav-peek') === 'open';
+      const inside = () => nav.matches(':hover') || foot.matches(':hover');
+      // HELD OPEN by an open menu (its light-DOM trigger reports aria-expanded) or
+      // by keyboard focus inside. Not by any focus: the toggle keeps focus after
+      // the click that shut the rail, and that would hold every later peek open.
+      const focusInside = () => {
+        const el = document.activeElement;
+        const menuOpen = !!(nav.querySelector('[aria-expanded="true"]') || foot.querySelector('[aria-expanded="true"]'));
+        const keyboard = !!el && (nav.contains(el) || foot.contains(el)) && el.matches(':focus-visible');
+        return menuOpen || keyboard;
+      };
+
+      const open = () => {
+        if (!nav.collapsed || peeking()) return;
+        window.clearTimeout(settleTimer);
+        const width = getComputedStyle(nav).getPropertyValue('--sidenav-width').trim() || '280px';
+        frame.style.setProperty('--firma2-peek-width', width);
+        // Two steps, so the foot strip has a computed 72px to slide FROM: its
+        // resting width is the track's stretch (`auto`), which does not transition.
+        frame.setAttribute('data-nav-peek', 'enter');
+        void foot.offsetWidth;
+        frame.setAttribute('data-nav-peek', 'open');
+        nav.collapsed = false;
+      };
+
+      // The track stays held at the collapsed width until the rail has finished
+      // sliding back; releasing it sooner would let the content ride the shrink.
+      const close = () => {
+        if (!peeking()) return;
+        frame.setAttribute('data-nav-peek', 'closing');
+        nav.collapsed = true;
+        const ms = parseFloat(getComputedStyle(nav).transitionDuration) * 1000 || 0;
+        settleTimer = window.setTimeout(() => frame.removeAttribute('data-nav-peek'), ms + 20);
+      };
+
+      const closeSoon = () => {
+        window.clearTimeout(closeTimer);
+        closeTimer = window.setTimeout(() => {
+          if (!inside() && !focusInside()) close();
+        }, PEEK_CLOSE_DELAY);
+      };
+
+      toggle.addEventListener('pointerenter', (e) => {
+        if (e.pointerType !== 'mouse' || !nav.collapsed) return;
+        window.clearTimeout(openTimer);
+        openTimer = window.setTimeout(open, PEEK_OPEN_DELAY);
+      });
+      toggle.addEventListener('pointerleave', () => window.clearTimeout(openTimer));
+
+      for (const region of [nav, foot]) {
+        region.addEventListener('pointerenter', () => window.clearTimeout(closeTimer));
+        region.addEventListener('pointerleave', () => { if (peeking()) closeSoon(); });
+        // A menu opened from the peek holds focus inside it; when focus leaves
+        // to the page, the peek follows unless the pointer is still on it.
+        region.addEventListener('focusout', () => { if (peeking()) closeSoon(); });
+      }
+
+      // PIN. A capture listener on the target runs before the shell's own click
+      // handler, which would otherwise read the peek's lifted `collapsed` as
+      // "open" and shut the rail. Stopping it here leaves the rail open; dropping
+      // the overlay hands the column its width.
+      toggle.addEventListener('click', (e) => {
+        window.clearTimeout(openTimer);
+        if (!peeking()) return;
+        e.stopImmediatePropagation();
+        window.clearTimeout(closeTimer);
+        frame.removeAttribute('data-nav-peek');
+        toggle.classList.remove('is-collapsed');
+      }, { capture: true });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && peeking()) close();
+      });
+      // A peek held open by a menu has no pointerleave left to shut it once the
+      // menu goes; a press out on the page does.
+      document.addEventListener('pointerdown', (e) => {
+        const path = e.composedPath();
+        if (peeking() && !path.includes(nav) && !path.includes(foot)) close();
+      });
+    });
+  }
+
+  customElements.whenDefined('esa-sidebar-nav').then(mountRailPeek);
 
   // THE CONTENT PANE IS NOT A SCROLL REGION HERE, so it must not be a tab stop.
   //
@@ -884,16 +1045,20 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
      a second copy of it could only disagree. Every target here is LIGHT DOM —
      esa-button and the shell's own search/toggle buttons — so none of it needs
      shadow-root injection. */
-  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) {
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]),
+  .firma2-app-frame[data-nav-peek] {
     --firma2-account-height: 96px;
   }
-  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account) {
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account),
+  .firma2-app-frame[data-nav-peek] :global(.firma2-app-frame__account) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
   }
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account .esa-button__label),
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account .esa-button__native > .esa-icon:last-child),
+  .firma2-app-frame[data-nav-peek] :global(.firma2-app-frame__account .esa-button__label),
+  .firma2-app-frame[data-nav-peek] :global(.firma2-app-frame__account .esa-button__native > .esa-icon:last-child),
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search-label),
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search-kbd) {
     display: none;
@@ -901,6 +1066,43 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search) {
     justify-content: center;
     padding-inline: 0;
+  }
+
+  /* ---- THE PEEK: A SHUT RAIL SHOWN OVER THE PAGE ----
+     bcn-lego-checked: no esa- overlay fits — this is esa-sidebar-nav's own open
+     state laid over the content, not a new surface (esa-side-dialog is modal and
+     a second nav); Beacon has no hover-peek. The script (mountRailPeek) lifts
+     `collapsed` and sets `data-nav-peek`; these rules make that an overlay.
+
+     The track holds at the collapsed width, so the rail's 280px overflows across
+     the content rather than pushing it, and lifts above the page's sticky
+     header band (the record rail sits at --z-header + 1). The foot keeps its
+     collapsed stack — the toggle under the pointer must not move — inside a
+     strip that widens with the panel: the inline-end padding holds the stack in
+     the leftmost 72px exactly where it was. The width rides the same token as the
+     lego's own slide, so strip and rail travel as one. */
+  .firma2-app-frame[data-nav-peek] :global(.esa-app-shell) {
+    grid-template-columns: var(--sidenav-width-collapsed, 72px) minmax(0, 1fr);
+  }
+  .firma2-app-frame[data-nav-peek] :global(.esa-app-shell__nav) {
+    z-index: calc(var(--z-header, 200) + 2);
+    box-shadow: var(--elevation-3);
+  }
+  .firma2-app-frame[data-nav-peek] :global(.firma2-app-frame__account) {
+    z-index: calc(var(--z-header, 200) + 3);
+    justify-self: start;
+    width: var(--sidenav-width-collapsed, 72px);
+    transition:
+      width var(--transition-base, 200ms ease),
+      padding-inline-end var(--transition-base, 200ms ease);
+  }
+  .firma2-app-frame[data-nav-peek='open'] :global(.firma2-app-frame__account) {
+    width: var(--firma2-peek-width, 280px);
+    padding-inline-end: calc(var(--firma2-peek-width, 280px) - var(--sidenav-width-collapsed, 72px) + var(--spacing-200, 8px));
+  }
+  /* The width grip belongs to a rail that is open for real. */
+  .firma2-app-frame[data-nav-peek] :global(.esa-app-shell > bcn-edge-handle) {
+    display: none;
   }
 
   /* Omnibox icon: stop the placeholder from eating it.
@@ -955,19 +1157,12 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
   }
 
   /* ---- SETTINGS PAGES START LOWER ----
-     A record page puts its title against the top edge because the record is
-     dense and the band is working chrome. A settings page is short and read
-     top-down, and the title hugging the edge read as cramped. --spacing-800
-     (64px) from the top of the window to the title.
-
-     Added ABOVE the band, not inside it: firma2-page-header is sticky, so
-     padding inside it would make the band that stays pinned while you scroll
-     48px taller. The band normally pulls itself up through the pane's
-     --spacing-500 gutter with a negative margin; replacing that margin with
-     a positive one puts the band's top at 24 + 24 = 48px, and its own
-     --spacing-400 padding puts the title text at 64. */
+     A record page's title sits one gutter under the top bar because the record
+     is dense. A settings page is short and read top-down, and the title hugging
+     the bar read as cramped, so it takes one more step of air: 48px bar + 24px
+     gutter + this 16px = the title at 88px from the window top. */
   .firma2-app-frame[data-nav='workspace-settings'] :global(.firma2-page-header) {
-    margin-block-start: calc(var(--spacing-800, 4rem) - var(--spacing-500, 1.5rem) - var(--spacing-400, 1rem));
+    margin-block-start: var(--spacing-400, 1rem);
   }
 
   /* ---- THE WORKSPACE MENU ----

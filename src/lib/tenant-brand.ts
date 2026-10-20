@@ -139,9 +139,9 @@ export interface ContrastRow {
 /** The combinations a brand colour is actually used in, graded at AA. */
 export const contrastRows = (hex: string): ContrastRow[] => {
   const rows: [string, string, string, number][] = [
-    ['Button text on the brand colour', onBrand(hex), hex, 4.5],
+    ['Button text on the brand color', onBrand(hex), hex, 4.5],
     ['Links and brand text on the page', brandTextColor(hex), WHITE, 4.5],
-    ['The brand colour against the page', hex, WHITE, 3],
+    ['Brand color on a white page', hex, WHITE, 3],
   ];
   return rows.map(([label, fg, bg, min]) => {
     const ratio = contrast(fg, bg);

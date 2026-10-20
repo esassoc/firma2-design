@@ -269,14 +269,18 @@ const payload = { additive: progress.additive, unit: progress.unit, decimals: me
     });
     // The plan's colour is read from a token; repaint when the scheme flips.
     new MutationObserver(paint).observe(document.documentElement, { attributeFilter: ['data-scheme'] });
-    // The tick is sized in pixels to the bar, so a resize repaints it.
+    // The tick is sized in pixels to the bar, so a resize repaints it — once,
+    // after the width stops changing. Repainting every frame of a rail's 200ms
+    // collapse dropped frames on a throttled CPU (measured); the tick is briefly
+    // mis-sized while the rail moves instead.
     let lastWidth = 0;
-    let frame = 0;
+    let settle = 0;
     new ResizeObserver(() => {
       const w = Math.round(slot.getBoundingClientRect().width);
-      if (w === lastWidth || frame) return;
+      if (w === lastWidth) return;
       lastWidth = w;
-      frame = requestAnimationFrame(() => { frame = 0; paint(); });
+      window.clearTimeout(settle);
+      settle = window.setTimeout(paint, 120);
     }).observe(slot);
 
     // BY YEAR / CUMULATIVE — only for a measure that sums. Options and value

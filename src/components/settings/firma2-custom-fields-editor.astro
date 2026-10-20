@@ -136,6 +136,7 @@ const config = {
   import '@esa/ecology/esa-textarea';
   import '@esa/ecology/esa-confirm-dialog';
   import type { FieldDefinition, FieldKind } from '../../data/firma2-project-types';
+  import { hasOptions } from '../../data/firma2-project-types';
   import { allFields, deleteField, isProjectTypeKey, nextLocalFieldId, updateField, withProjectTypeDraft } from '../../lib/project-type-draft';
   import { fixSideDialog } from '../../lib/side-dialog-fix';
 
@@ -158,7 +159,7 @@ const config = {
     const answeredBy = (id: string) => usersOf(id).reduce((n, t) => n + t.projects, 0);
 
     const describe = (f: FieldDefinition) =>
-      f.kind === 'choice' ? `${kindName(f.kind)} · ${(f.options ?? []).filter((o) => o !== 'Unspecified').length} choices` : f.kind === 'number' && f.unit ? `${kindName(f.kind)} · ${f.unit}` : kindName(f.kind);
+      hasOptions(f.kind) ? `${kindName(f.kind)} · ${(f.options ?? []).filter((o) => o !== 'Unspecified').length} choices` : f.kind === 'number' && f.unit ? `${kindName(f.kind)} · ${f.unit}` : kindName(f.kind);
 
     // ---- the table ------------------------------------------------------------------
     const paint = () => {
@@ -206,12 +207,12 @@ const config = {
 
     const syncKind = () => {
       const k = String(kind.value ?? 'choice') as FieldKind;
-      options.hidden = k !== 'choice';
+      options.hidden = !hasOptions(k);
       unit.hidden = k !== 'number';
       const used = editingId ? usersOf(editingId).length > 0 : false;
       kind.disabled = used;
       kind.helpText = used
-        ? `Fixed while a project type uses it: changing a ${kindName(k).toLowerCase()} field into another kind would orphan the answers projects have given.`
+        ? `Locked while a project type asks this field. Changing its kind would lose the answers projects have already given.`
         : config.kinds.find((x) => x.value === k)?.note ?? '';
     };
 
@@ -222,7 +223,7 @@ const config = {
       const users = id ? usersOf(id) : [];
       $('[data-usage]').textContent = id
         ? users.length
-          ? `On ${users.map((t) => t.name).join(', ')}: ${answeredBy(id)} projects answer it, plus any added under them later.`
+          ? `Asked on ${users.map((t) => t.name).join(', ')}: ${answeredBy(id)} projects today, and every new project of ${users.length === 1 ? 'that type' : 'those types'}.`
           : 'No project type uses this field yet. Add it from a project type’s page.'
         : 'Defined once for the workspace. Each project type then chooses whether to ask it.';
       $('[data-add-wrap]').hidden = Boolean(id);
@@ -277,13 +278,13 @@ const config = {
       const name = String(label.value ?? '').trim();
       const list = (Array.isArray(options.value) ? options.value : []).map(String).filter(Boolean);
       label.errorText = name ? '' : 'Name the field.';
-      options.errorText = draft.kind === 'choice' && list.length < 2 ? 'A choice field needs at least two choices.' : '';
+      options.errorText = hasOptions(draft.kind) && list.length < 2 ? 'A choice field needs at least two choices.' : '';
       if (!name || options.errorText) return;
       updateField({
         ...draft,
         id: nextLocalFieldId(name),
         label: name,
-        options: draft.kind === 'choice' ? list : undefined,
+        options: hasOptions(draft.kind) ? list : undefined,
         unit: draft.kind === 'number' ? draft.unit : undefined,
       });
       paint();
@@ -294,7 +295,7 @@ const config = {
 
     const confirm = $<Control>('.firma2-custom-fields__confirm');
     $('[data-delete]').addEventListener('click', () => {
-      confirm.message = `“${draft.label}” leaves the workspace. No project type uses it, so no project loses an answer.`;
+      confirm.message = `“${draft.label}” will be removed from the workspace. No project type asks it, so no answers are lost.`;
       confirm.show?.();
     });
     confirm.addEventListener('resolved', (e) => {

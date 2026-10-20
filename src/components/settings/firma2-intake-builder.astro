@@ -1,0 +1,1718 @@
+---
+// firma2-intake-builder — the workspace's project intake form, built the way
+// Tally builds a form and the way a custom page is written: one document,
+// edited where it stands, with nothing docked beside it. The grammar is shared
+// with the custom-page editor — docs/adr/0001-one-editing-grammar-for-builder-
+// canvases.md. Spec: .scratch/form-canvas/spec.md (supersedes the builder
+// parts of .scratch/project-intake/spec.md); rules: src/lib/intake-form.ts.
+//
+// THE CANVAS IS THE FORM, AT THE FORM'S WIDTH. Members fill it in a reading
+// column, so the canvas is capped at the same CONTENT_READING: a question drawn
+// wider here than members will ever see it would misstate what they get. Every
+// question is drawn with the member page's renderer (src/lib/intake-render.ts),
+// inert here, so what you see is what they get. Wording, help text and choices
+// are typed straight onto the question.
+//
+// ADD FROM ANY BLANK LINE. Enter at the end of a question, its help or its last
+// choice opens a blank line beneath it; the canvas always ends on one. Type `/`
+// there, or press the + beside any block, and pick from one list
+// (bcn-insert-menu). Typing words instead of `/` and pressing Enter makes a text
+// block of them.
+//
+// ACT FROM THE GRIP. One flat bcn-sortable-list holds every block AND every
+// screen break, so a screen is moved the way a question is. The grip drags, and
+// clicking it opens Duplicate / Required / Add condition / Remove above the moves
+// (`data-sort-actions`). ⌘D duplicates, ⌥↑ ⌥↓ move, Backspace on an empty new
+// block removes it.
+//
+// SETTINGS SIT ON THE BLOCK. The `*` beside a label toggles Required. A selected
+// custom question shows "Saves to <field>", which opens the field, its name and
+// its unit right there. A condition is a "Show only when … is any of …" row under
+// the block it governs. A locked standard question says why, and where its
+// choices live.
+//
+// SCREENS ARE BREAKS. One screen shows no screen chrome at all. A second screen
+// adds a break, and screen 1 gets a title line too; the break carries the title
+// of the screen after it. The message after submitting is the last, fixed break.
+//
+// SAVED AS YOU GO, LIVE WHEN PUBLISHED. Every edit writes the working copy;
+// members fill the published copy until Publish.
+//
+// THE FREE TIER CUSTOMIZES NOTHING. The page stays — a tease and a call to
+// action, not a removal: the standard form, read-only, under one alert that
+// leads to Workspace settings › Plan.
+//
+// FORMATTING IN LABELS AND HELP. Select text in a question's label or help and
+// Bold / Italic / Link appear above it (⌘B ⌘I ⌘K too) — what the member's form
+// can show there; it draws formatted copy itself (src/lib/intake-render.ts).
+// Choices, screen titles and the fixed standard names stay plain. The surface
+// takes esa-popover's tokens, as firma2-rich-text's toolbar does; the link
+// field is esa-text-field in esa-dialog.
+//
+// bcn-lego-checked: no esa- form builder, block editor, slash-command menu or
+// stepper exists (walked `ls node_modules/@esa/ecology/src/components/`).
+// Beacon is not cloned here. Composed from: bcn-sortable-list (grips that drag
+// and carry each block's actions), bcn-insert-menu (the `/` and + list),
+// firma2-rich-text (text blocks and the after-submit message), esa-button
+// (cloned from templates for runtime rows), esa-icon + esa-tooltip (the lock),
+// esa-select, esa-checkbox-group, esa-text-field, esa-alert-box. Bespoke: the
+// block frame, the contenteditable add line, and the `*` Required switch — a
+// text glyph you click on the label it marks, the in-place sibling of the
+// contenteditable label beside it (no esa- lego is a glyph-sized switch;
+// flagged as an Ecology deviation, .scratch/form-canvas/spec.md #6).
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaContainer from '@esa/ecology/esa-container.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import Firma2RichText from '../shared/firma2-rich-text.astro';
+import Firma2PlanLock from '../shared/firma2-plan-lock.astro';
+import { BUILTINS } from '../../data/firma2-intake';
+import { CONTENT_READING } from '../../lib/content-width';
+
+// What can be added — the `/` list and the + list both read this.
+const CUSTOM = [
+  { id: 'field:text', label: 'Short text' },
+  { id: 'field:long-text', label: 'Long text' },
+  { id: 'field:number', label: 'Number' },
+  { id: 'field:money', label: 'Money' },
+  { id: 'field:date', label: 'Date' },
+  { id: 'field:yes-no', label: 'Yes or no' },
+  { id: 'field:choice', label: 'Single select' },
+  { id: 'field:multi-choice', label: 'Multi-select' },
+];
+const LAYOUT = [
+  { id: 'layout:text', label: 'Text' },
+  { id: 'layout:screen', label: 'New screen' },
+];
+const GROUPS = [
+  { name: 'Standard questions', items: BUILTINS.map((b) => ({ id: `builtin:${b.key}`, label: b.label })) },
+  { name: 'Custom questions', items: CUSTOM },
+  { name: 'Layout', items: LAYOUT },
+];
+// The gutter each block carries on its left: grip (40px) + gap (4px) + the
+// add button (40px) + gap (4px) + the block's padding (16px).
+// The canvas is the reading width PLUS this, so a question's fields come out
+// exactly as wide as members see them.
+const GUTTER = '104px';
+const canvasMax = `calc(${CONTENT_READING} + ${GUTTER})`;
+const config = { groups: GROUPS };
+---
+<div class="firma2-intake-builder" data-config={JSON.stringify(config)}>
+  <EsaContainer maxWidth={canvasMax}>
+    <div class="stack" data-gap="xl">
+      <!-- The page's own title, the tease and the form's name start where the
+           blocks' text does, past the grip-and-+ gutter, as a page's title
+           lines up with its text. -->
+      <div class="firma2-intake-builder__lead stack" data-gap="xl">
+      <slot name="header" />
+
+      <!-- Below Agency: the tease, above the standard form drawn read-only. -->
+      <Firma2PlanLock needs="agency" message="Members fill this standard form. Upgrade to Agency to add your own questions, screens and conditions." />
+
+      <!-- The form's name, typed in place as Tally's is: the title members see on every page of it. -->
+      <p class="firma2-intake-builder__form-title typography-heading-lg" role="textbox" aria-label="Form name" data-placeholder="Form name" spellcheck="true" data-form-title></p>
+      </div>
+      <div class="firma2-intake-builder__canvas" data-canvas></div>
+
+      <!-- The last, fixed break: what members read once they submit. -->
+      <section class="firma2-intake-builder__after stack" data-gap="md" aria-labelledby="intake-after-title">
+        <h2 class="typography-heading-md firma2-intake-builder__break-title" id="intake-after-title">After submitting</h2>
+        <Firma2RichText label="Message after submitting" placeholder="What happens next" />
+      </section>
+
+      <bcn-insert-menu aria-label="Add to the form" data-menu></bcn-insert-menu>
+
+      <!-- Formatting for a selection in a question's label or help: what the
+           member's form can show there (src/lib/inline-format.ts). The page
+           editor's selection toolbar, cut to the three that fit one line. -->
+      <div class="firma2-intake-builder__format cluster" data-gap="xs" role="toolbar" aria-label="Formatting" hidden data-format-bar>
+        <EsaButton variant="chrome" size="sm" iconOnly icon="bold" label="Bold" data-format="bold" aria-pressed="false" />
+        <EsaButton variant="chrome" size="sm" iconOnly icon="italic" label="Italic" data-format="italic" aria-pressed="false" />
+        <EsaButton variant="chrome" size="sm" iconOnly icon="link" label="Link" data-format="link" aria-pressed="false" />
+      </div>
+      <esa-dialog heading="Link" size="sm" show-close-button data-label-link-dialog>
+        <esa-text-field label="Web address" size="md" type="url" inputmode="url" placeholder="https://" data-label-link-url></esa-text-field>
+        <div class="cluster" data-gap="xs" slot="footer">
+          <EsaButton variant="primary" size="md" data-label-link-save>Save</EsaButton>
+          <EsaButton variant="ghost" size="md" data-label-link-remove>Remove</EsaButton>
+          <EsaButton variant="ghost" size="md" data-label-link-cancel>Cancel</EsaButton>
+        </div>
+      </esa-dialog>
+
+      <!-- Runtime rows clone their legos from these. -->
+      <template data-tpl="grip"><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+      <template data-tpl="add-below"><EsaButton variant="chrome" size="md" iconOnly icon="plus" aria-label="Add below" data-insert-trigger>Add below</EsaButton></template>
+      <template data-tpl="remove-choice"><EsaButton variant="chrome" size="md" iconOnly icon="x" aria-label="Remove choice">Remove choice</EsaButton></template>
+      <template data-tpl="remove-condition"><EsaButton variant="chrome" size="md" iconOnly icon="x" aria-label="Remove condition">Remove condition</EsaButton></template>
+      <template data-tpl="add-choice"><EsaButton variant="ghost" size="md" icon="plus">Add choice</EsaButton></template>
+      <template data-tpl="saves-to"><EsaButton variant="ghost" size="md">Saves to</EsaButton></template>
+      <template data-tpl="lock"><esa-tooltip text="Every project needs this"><EsaIcon name="lock" size="sm" /></esa-tooltip></template>
+      <template data-tpl="text-block"><Firma2RichText label="Text" placeholder="Write something for this screen" /></template>
+    </div>
+  </EsaContainer>
+</div>
+
+<style>
+  .firma2-intake-builder :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-intake-builder__lead,
+  .firma2-intake-builder__after {
+    padding-inline-start: calc(2 * var(--control-height-md, 2.5rem) + 2 * var(--spacing-100) + var(--spacing-400));
+  }
+
+  /* Lined up with the blocks' text below it. */
+  .firma2-intake-builder__form-title {
+    margin: 0;
+    padding: var(--spacing-200) var(--spacing-300);
+    margin-inline: calc(var(--spacing-300) * -1);
+    border-radius: var(--radius-md);
+    outline-offset: 2px;
+  }
+
+  .firma2-intake-builder__form-title[contenteditable]:hover {
+    background: var(--color-background-elevation-sunken);
+  }
+
+  .firma2-intake-builder__form-title:empty::before {
+    content: attr(data-placeholder);
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-blocks) {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-200);
+  }
+
+  /* The grip bcn-sortable-list puts first in each row, the +, then the block. */
+  .firma2-intake-builder :global(.firma2-intake-blocks > li) {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-100);
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block) {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-200);
+    padding: var(--spacing-400);
+    border-radius: var(--radius-md);
+  }
+
+  /* Selection is the hover tint, held: the focused text shows its own ring. */
+  .firma2-intake-builder :global(.firma2-intake-blocks > li:is(:hover, [data-selected]) .firma2-intake-block) {
+    background: var(--color-background-elevation-sunken);
+  }
+
+  /* The + and the grip appear with the row, so the canvas reads as the form at rest. */
+  .firma2-intake-builder :global(.firma2-intake-blocks > li > :is([data-add-below], [data-sort-grip])) {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-blocks > li:is(:hover, :focus-within, [data-selected]) > :is([data-add-below], [data-sort-grip])) {
+    opacity: 1;
+  }
+
+  /* A screen break: a rule, the step, the screen's title. */
+  .firma2-intake-builder :global(.firma2-intake-block[data-kind='break']) {
+    padding-block-start: var(--spacing-600);
+    border-block-start: 1px solid var(--color-border-default);
+    border-radius: 0;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-blocks > li:first-child .firma2-intake-block[data-kind='break']) {
+    padding-block-start: var(--spacing-400);
+    border-block-start: 0;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-break__step),
+  .firma2-intake-builder :global(.firma2-intake-block__meta),
+  .firma2-intake-builder :global(.firma2-intake-block__lock) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-break__title),
+  .firma2-intake-builder__break-title {
+    margin: 0;
+    min-width: 8ch;
+    outline-offset: 2px;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block__head) {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--spacing-200);
+  }
+
+  /* The legos' own label and help roles, so the canvas reads as their fields do. */
+  .firma2-intake-builder :global(.firma2-intake-block__label) {
+    color: var(--form-label-color, var(--color-text-secondary));
+    outline-offset: 2px;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block__required) {
+    color: var(--color-content-utility-danger);
+    outline-offset: 2px;
+  }
+
+  /* The Required switch: the member's red `*` when on; a faint `*` to click
+     while the row is pointed at, selected or focused when off. */
+  .firma2-intake-builder :global([role='switch'].firma2-intake-block__required) {
+    cursor: pointer;
+  }
+
+  .firma2-intake-builder :global([role='switch'].firma2-intake-block__required[aria-checked='false']) {
+    color: var(--color-text-secondary);
+    opacity: 0;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-blocks > li:is(:hover, :focus-within, [data-selected]) [role='switch'].firma2-intake-block__required[aria-checked='false']) {
+    opacity: 1;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block__lock) {
+    align-self: center;
+    opacity: 0;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-blocks > li:is(:hover, :focus-within, [data-selected]) .firma2-intake-block__lock) {
+    opacity: 1;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block__meta) {
+    margin: 0;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block__meta a) {
+    color: var(--color-content-brand);
+  }
+
+  /* "Saves to" and the locked note belong to the selected block only. */
+  .firma2-intake-builder :global(.firma2-intake-blocks > li:not([data-selected]) [data-selected-only]) {
+    display: none;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block__saves-to .esa-button__native) {
+    justify-content: flex-start;
+    padding-inline: 0;
+  }
+
+  /* Formatting in a label or help line, as the member's form shows it. */
+  .firma2-intake-builder :global([data-inline-format] a) {
+    color: var(--color-content-brand);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* esa-popover's surface, token for token — firma2-rich-text's toolbar. */
+  .firma2-intake-builder__format {
+    position: fixed;
+    z-index: var(--z-popover, 1000);
+    padding: var(--spacing-100);
+    background: var(--color-background-elevation-raised);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-4, 0 6px 24px -6px rgba(0, 0, 0, 0.07));
+  }
+
+  .firma2-intake-builder__format :global([data-format][aria-pressed='true']) {
+    background: var(--color-background-elevation-sunken);
+    color: var(--color-content-brand);
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block__help) {
+    color: var(--color-text-secondary);
+    margin: 0;
+    outline-offset: 2px;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-block__help:empty:not(:focus)) {
+    display: none;
+  }
+
+  .firma2-intake-builder :global([data-selected] .firma2-intake-block__help:empty:not(:focus)) {
+    display: block;
+  }
+
+  .firma2-intake-builder :global([contenteditable]:empty::before) {
+    content: attr(data-placeholder);
+    color: var(--color-text-tertiary, var(--color-text-secondary));
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-choices) {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-100);
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-choices > li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+  }
+
+  /* The glyph a member will see beside each choice: a ring for one, a box for several. */
+  .firma2-intake-builder :global(.firma2-intake-choices__glyph) {
+    flex: none;
+    width: 1.125rem;
+    height: 1.125rem;
+    border: 1.5px solid var(--color-border-strong, var(--color-border-default));
+    border-radius: var(--radius-sm);
+  }
+
+  .firma2-intake-builder :global([data-input='choice'] .firma2-intake-choices__glyph) {
+    border-radius: 50%;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-choices__text) {
+    flex: 1;
+    min-width: 0;
+    outline-offset: 2px;
+  }
+
+  /* The condition row: its two legos side by side, the × at the end. */
+  .firma2-intake-builder :global(.firma2-intake-when) {
+    align-items: flex-end;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-when > esa-select) {
+    flex: 1 1 14rem;
+  }
+
+  /* A text block is as tall as its text; the writing room an empty page
+     editor keeps would open a gap in the form. */
+  .firma2-intake-builder :global(.firma2-intake-block .firma2-rich-text__content) {
+    min-block-size: 1.5em;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-preview) {
+    pointer-events: none;
+  }
+
+  /* A free-text box with its placeholder typed straight into it: the text sits
+     on the lego's own text area (positioned by the script), in the
+     placeholder's ink, so it reads exactly as members will see it. */
+  .firma2-intake-builder :global(.firma2-intake-box) {
+    position: relative;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-box__placeholder) {
+    position: absolute;
+    display: flex;
+    box-sizing: border-box;
+    overflow: hidden;
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+    cursor: text;
+    outline-offset: -2px;
+  }
+
+  /* Its own prompt only on the row being edited; at rest an empty box is empty. */
+  .firma2-intake-builder :global(.firma2-intake-blocks > li:not([data-selected]) .firma2-intake-box__placeholder:empty:not(:focus)::before) {
+    content: none;
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-location__map) {
+    height: 14rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-default);
+  }
+
+  /* A blank line: where `/` opens the list and typed words become text. It
+     sits in the block column, after the same gutter every block has. */
+  .firma2-intake-builder :global(.firma2-intake-add) {
+    flex: 1;
+    min-width: 0;
+    padding: var(--spacing-300) var(--spacing-400);
+    border-radius: var(--radius-md);
+    color: var(--color-text-primary);
+    outline-offset: 2px;
+  }
+
+  /* Read-only (free tier): no grip or +, so each row keeps their room empty
+     and the questions stay where the title says they start. */
+  .firma2-intake-builder :global(.firma2-intake-blocks[data-locked] > li),
+  .firma2-intake-builder :global(.firma2-intake-blocks > li.firma2-intake-add-row) {
+    padding-inline-start: calc(2 * var(--control-height-md, 2.5rem) + 2 * var(--spacing-100));
+  }
+
+  .firma2-intake-builder :global(.firma2-intake-add:empty::before) {
+    content: attr(data-placeholder);
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-builder__after {
+    padding-block: var(--spacing-600) var(--spacing-1000, 5rem);
+    border-block-start: 1px solid var(--color-border-default);
+  }
+
+  /* A block or screen just added settles in from 4px above; a removed one fades
+     where it stood. transform and opacity only. --animation-enter carries the
+     theme's arrival curve and is 0ms under reduced motion. */
+  @keyframes firma2-intake-builder-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  @keyframes firma2-intake-builder-leave {
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+
+  .firma2-intake-builder :global([data-arriving]) {
+    animation: firma2-intake-builder-arrive var(--animation-enter, 150ms cubic-bezier(0.23, 1, 0.32, 1));
+  }
+
+  .firma2-intake-builder :global([data-leaving]) {
+    animation: firma2-intake-builder-leave var(--animation-enter, 150ms cubic-bezier(0.23, 1, 0.32, 1)) forwards;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-intake-builder :global(.firma2-intake-blocks > li > *) {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-checkbox-group';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-radio-group';
+  import '@esa/ecology/esa-combobox';
+  import '@esa/ecology/esa-date-picker';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-tooltip';
+  import '@esa/ecology/esa-dialog';
+  import { isFormatted, sanitizeInline } from '../../lib/inline-format';
+  import '../shared/bcn-sortable-list';
+  import '../shared/bcn-insert-menu';
+  import type { BcnInsertMenu, InsertItem } from '../shared/bcn-insert-menu';
+  import { announce } from '@esa/ecology/announcer';
+  import { DEFAULT_FORM_TITLE, STANDARD_FORM, builtin } from '../../data/firma2-intake';
+  import type { Block, BuiltinKey, Condition, IntakeForm, QuestionBlock, Screen } from '../../data/firma2-intake';
+  import type { FieldDefinition, FieldKind } from '../../data/firma2-project-types';
+  import { hasOptions } from '../../data/firma2-project-types';
+  import {
+    builtinsInForm,
+    conditionOptions,
+    conditionSources,
+    duplicateBlock,
+    findBlock,
+    formFields,
+    insertBlock,
+    isLocked,
+    isNewField,
+    isQuestion,
+    newId,
+    nextFieldId,
+    publish,
+    readFormStore,
+    relayout,
+    removeBlock,
+    removeScreen,
+    saveWorking,
+    splitScreen,
+    stageField,
+    unstageField,
+    updateBlock,
+    updateScreen,
+  } from '../../lib/intake-form';
+  import { planIncludes } from '../../lib/workspace-plan';
+  import { withBase } from '../../lib/base';
+  import { PLACEHOLDER_INPUTS, controlMarkup, hydrateQuestions, inputOf } from '../../lib/intake-render';
+
+  type Control = HTMLElement & { value: unknown; options?: unknown; label?: string; size?: string; helpText?: string; placeholder?: string };
+  type Row = { kind: 'head' | 'break'; screen: Screen; i: number } | { kind: 'block'; block: Block; screen: Screen };
+  type Target = { afterId?: string; screenId?: string; index?: number };
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-intake-builder').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const { groups }: { groups: { name: string; items: { id: string; label: string }[] }[] } = JSON.parse(root.dataset.config ?? '{}');
+    const canvas = $('[data-canvas]');
+    const menu = $<BcnInsertMenu>('[data-menu]');
+    const locked = !planIncludes('agency');
+
+    let form: IntakeForm = locked ? structuredClone(STANDARD_FORM) : readFormStore().working;
+    /** The selected row: a block id or a screen id. */
+    let selected: string | null = null;
+    /** The row a blank line is open under, besides the one that ends the canvas. */
+    let lineAfter: string | null = null;
+    /** Blocks and screens whose condition row is open before a question is picked. */
+    const conditionOpen = new Set<string>();
+    /** The question whose "Saves to" settings are open. */
+    let fieldOpen: string | null = null;
+
+    // FIELD CHANGES ARE STAGED, NOT SAVED. A new question's field, a renamed
+    // field and edited choices all live in the working copy (form.fields) and
+    // reach Custom fields — and every project — only at Publish.
+    const fields = () => formFields(form);
+    const getField = (id: string) => fields().find((f) => f.id === id);
+    const updateField = (f: FieldDefinition) => {
+      form = stageField(form, f);
+    };
+    // A field this form created and nothing else on it uses goes with its
+    // question. An existing field is never deleted from here.
+    const dropNewField = (id: string, exceptBlock: string) => {
+      if (!isNewField(id)) return;
+      const used = form.screens.some((s) => s.blocks.some((b) => b.id !== exceptBlock && b.type === 'field' && b.fieldId === id));
+      if (!used) form = unstageField(form, id);
+    };
+    // A new field follows its question's wording until it is named by hand.
+    const followsWording = (blockId: string) => {
+      const b = findBlock(form, blockId);
+      return b?.type === 'field' && isNewField(b.fieldId) && !b.fieldNamed;
+    };
+    // Text blocks keep their editor across repaints: a ProseMirror view moved
+    // in the DOM keeps working, and rebuilding it would lose the caret.
+    const textEditors = new Map<string, HTMLElement>();
+
+    // firma2-rich-text's script may run after this one; an editor not yet
+    // mounted is asked again on the next frame until it is.
+    const withEditor = (editor: HTMLElement, fn: () => void) => {
+      if (editor.hasAttribute('data-mounted')) return fn();
+      editor.dispatchEvent(new CustomEvent('firma2:rich-text-mount', { bubbles: true }));
+      if (editor.hasAttribute('data-mounted')) return fn();
+      requestAnimationFrame(() => withEditor(editor, fn));
+    };
+
+    const tpl = (name: string) => $<HTMLTemplateElement>(`template[data-tpl="${name}"]`).content.cloneNode(true) as DocumentFragment;
+    const firstEl = (name: string) => tpl(name).firstElementChild as HTMLElement;
+    const setButtonText = (button: HTMLElement, text: string) => ((button.querySelector('.esa-button__label') ?? button).textContent = text);
+
+    // A runtime lego, its properties set once it is defined — a value set on a
+    // not-yet-upgraded element shadows the lego's own accessor.
+    const lego = <T extends Control>(tag: string, props: Partial<T>, attrs: Record<string, string> = {}) => {
+      const el = document.createElement(tag) as T;
+      Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+      void customElements.whenDefined(tag).then(() => Object.assign(el, props));
+      return el;
+    };
+
+    // ---- the menu's list -----------------------------------------------------
+    const items = (): InsertItem[] => {
+      const placed = builtinsInForm(form);
+      return groups.flatMap((g) =>
+        g.items.map((i) => {
+          const inForm = i.id.startsWith('builtin:') && placed.has(i.id.slice(8) as BuiltinKey);
+          return { ...i, group: g.name, disabled: inForm, note: inForm ? 'In form' : undefined };
+        }),
+      );
+    };
+
+    // ---- saving --------------------------------------------------------------
+    const commit = (next: IntakeForm, repaint = true) => {
+      form = next;
+      saveWorking(form);
+      root.dispatchEvent(new CustomEvent('firma2:intake-saved', { bubbles: true }));
+      if (repaint) render();
+    };
+
+    // ---- labels --------------------------------------------------------------
+    const questionName = (b: QuestionBlock) => b.label || 'Untitled question';
+    const rowName = (key: string) => {
+      const b = findBlock(form, key);
+      if (b) return b.type === 'text' ? 'Text' : questionName(b);
+      const i = form.screens.findIndex((s) => s.id === key);
+      return form.screens[i]?.title || `Screen ${i + 1}`;
+    };
+
+    // ---- the rows ------------------------------------------------------------
+    const rows = (): Row[] => {
+      const out: Row[] = [];
+      form.screens.forEach((screen, i) => {
+        if (i > 0 || form.screens.length > 1) out.push({ kind: i === 0 ? 'head' : 'break', screen, i });
+        screen.blocks.forEach((block) => out.push({ kind: 'block', block, screen }));
+      });
+      return out;
+    };
+    const keyOf = (r: Row) => (r.kind === 'block' ? r.block.id : r.screen.id);
+
+    /** Where something added below a row goes. */
+    const below = (key: string | null): Target => {
+      if (!key) return { screenId: form.screens[form.screens.length - 1].id };
+      if (form.screens.some((s) => s.id === key)) return { screenId: key, index: 0 };
+      return { afterId: key };
+    };
+
+    // Lay the form out again from a flat order of row keys: a break starts its
+    // screen; everything else joins the screen above it.
+    const layoutFrom = (keys: string[]) => {
+      const screenIds = new Set(form.screens.map((s) => s.id));
+      const order: { screenId: string; blockIds: string[] }[] = [{ screenId: form.screens[0].id, blockIds: [] }];
+      keys.forEach((k) => {
+        if (k === form.screens[0].id) return;
+        if (screenIds.has(k)) order.push({ screenId: k, blockIds: [] });
+        else order[order.length - 1].blockIds.push(k);
+      });
+      commit(relayout(form, order));
+    };
+    const flatKeys = () => rows().filter((r) => r.kind !== 'head').map(keyOf);
+
+    // ---- editable text -------------------------------------------------------
+    const editable = (tag: string, cls: string, text: string, attrs: Record<string, string>) => {
+      const el = document.createElement(tag);
+      el.className = cls;
+      if (!locked) {
+        el.contentEditable = 'plaintext-only';
+        el.spellcheck = true;
+        el.setAttribute('role', 'textbox');
+      }
+      el.textContent = text;
+      Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+      return el;
+    };
+    // One line of copy that takes bold, italic and links: a question's label or
+    // help. Pasting brings the text only; the formatting is what you add here.
+    const richEditable = (tag: string, cls: string, html: string | undefined, text: string, attrs: Record<string, string>) => {
+      const el = editable(tag, cls, text, attrs);
+      if (html && isFormatted(html)) el.innerHTML = sanitizeInline(html).html;
+      if (locked) return el;
+      el.contentEditable = 'true';
+      el.dataset.inlineFormat = '';
+      el.addEventListener('paste', (e) => {
+        e.preventDefault();
+        document.execCommand('insertText', false, (e.clipboardData?.getData('text/plain') ?? '').replace(/\s+/g, ' '));
+      });
+      el.addEventListener('keydown', (e) => {
+        if (!(e.metaKey || e.ctrlKey)) return;
+        const k = e.key.toLowerCase();
+        if (k === 'b' || k === 'i') {
+          e.preventDefault();
+          document.execCommand(k === 'b' ? 'bold' : 'italic');
+        } else if (k === 'k') {
+          e.preventDefault();
+          openLink();
+        }
+      });
+      return el;
+    };
+    /** The copy in a formattable line: its plain text, and its HTML when formatted. */
+    const readRich = (el: HTMLElement) => {
+      const { html, text } = sanitizeInline(el.innerHTML);
+      // Emptied, a contenteditable keeps a <br>; clear it so the prompt shows again.
+      if (!text && el.innerHTML) el.innerHTML = '';
+      return { text, html: isFormatted(html) ? html : undefined };
+    };
+
+    // Enter at the end of a single-line field opens a blank line under its block.
+    const enterOpensLine = (el: HTMLElement, key: string) =>
+      el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        openLine(key);
+      });
+
+    // ---- choices -------------------------------------------------------------
+    const choicesEditor = (block: QuestionBlock, field: FieldDefinition) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'stack';
+      wrap.dataset.gap = 'xs';
+      wrap.dataset.input = field.kind === 'choice' ? 'choice' : 'multi';
+      const list = document.createElement('ul');
+      list.className = 'firma2-intake-choices';
+      list.setAttribute('aria-label', `Choices for ${questionName(block)}`);
+      const options = field.options ?? [];
+      options.forEach((opt, i) => {
+        const li = document.createElement('li');
+        const glyph = document.createElement('span');
+        glyph.className = 'firma2-intake-choices__glyph';
+        glyph.setAttribute('aria-hidden', 'true');
+        const text = editable('span', 'firma2-intake-choices__text typography-body-md', opt, {
+          'aria-label': `Choice ${i + 1}`,
+          'data-placeholder': `Choice ${i + 1}`,
+          'data-fk': `choice:${block.id}:${i}`,
+        });
+        text.addEventListener('input', () => {
+          const f = getField(field.id);
+          if (!f) return;
+          const next = [...(f.options ?? [])];
+          next[i] = text.textContent ?? '';
+          updateField({ ...f, options: next });
+          commit(form, false);
+        });
+        text.addEventListener('keydown', (e) => {
+          const empty = !(text.textContent ?? '').trim();
+          const count = getField(field.id)?.options?.length ?? 0;
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            // Enter on an empty last choice leaves the list, the way a list
+            // in a document ends: the choice goes and a blank line opens.
+            if (empty && i === count - 1 && count > 2) {
+              removeChoice(field.id, i);
+              return openLine(block.id);
+            }
+            return addChoice(field.id, block.id, i + 1);
+          }
+          if (e.key === 'Backspace' && empty && count > 2) {
+            e.preventDefault();
+            removeChoice(field.id, i);
+            focusKey(`choice:${block.id}:${Math.max(0, i - 1)}`);
+          }
+        });
+        // A pasted list becomes one choice per line.
+        text.addEventListener('paste', (e) => {
+          const lines = (e.clipboardData?.getData('text/plain') ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+          if (lines.length < 2) return;
+          e.preventDefault();
+          const f = getField(field.id);
+          if (!f) return;
+          const next = [...(f.options ?? [])];
+          const replace = !(next[i] ?? '').trim();
+          next.splice(replace ? i : i + 1, replace ? 1 : 0, ...lines);
+          updateField({ ...f, options: next });
+          commit(form);
+          focusKey(`choice:${block.id}:${(replace ? i : i + 1) + lines.length - 1}`);
+          announce(`${lines.length} choices added.`);
+        });
+        li.append(glyph, text);
+        if (options.length > 2 && !locked) {
+          const remove = firstEl('remove-choice');
+          remove.addEventListener('click', () => removeChoice(field.id, i));
+          li.append(remove);
+        }
+        list.append(li);
+      });
+      wrap.append(list);
+      if (!locked) {
+        const add = firstEl('add-choice');
+        add.addEventListener('click', () => addChoice(field.id, block.id, (getField(field.id)?.options ?? []).length));
+        const addWrap = document.createElement('div');
+        addWrap.append(add);
+        wrap.append(addWrap);
+      }
+      return wrap;
+    };
+
+    const addChoice = (fieldId: string, blockId: string, at: number) => {
+      const f = getField(fieldId);
+      if (!f) return;
+      const options = [...(f.options ?? [])];
+      options.splice(at, 0, '');
+      updateField({ ...f, options });
+      commit(form);
+      focusKey(`choice:${blockId}:${at}`);
+    };
+
+    const removeChoice = (fieldId: string, at: number) => {
+      const f = getField(fieldId);
+      if (!f) return;
+      updateField({ ...f, options: (f.options ?? []).filter((_, j) => j !== at) });
+      commit(form);
+    };
+
+    // ---- settings on the block -----------------------------------------------
+    const requiredSwitch = (block: QuestionBlock) => {
+      const star = document.createElement('span');
+      star.className = 'firma2-intake-block__required typography-label-md';
+      star.textContent = '*';
+      if (locked || isLocked(block)) {
+        star.setAttribute('aria-hidden', 'true');
+        star.hidden = !block.required;
+        return star;
+      }
+      star.setAttribute('role', 'switch');
+      star.setAttribute('aria-checked', String(block.required));
+      star.setAttribute('aria-label', 'Required');
+      star.title = block.required ? 'Required — click to make optional' : 'Optional — click to make required';
+      star.tabIndex = 0;
+      const toggle = () => setRequired(block.id);
+      star.addEventListener('click', toggle);
+      star.addEventListener('keydown', (e) => {
+        if (e.key !== ' ' && e.key !== 'Enter') return;
+        e.preventDefault();
+        toggle();
+      });
+      star.dataset.fk = `required:${block.id}`;
+      return star;
+    };
+
+    const setRequired = (id: string) => {
+      const b = findBlock(form, id);
+      if (!b || !isQuestion(b) || isLocked(b)) return;
+      commit(updateBlock(form, id, { required: !b.required }));
+      announce(b.required ? 'Optional.' : 'Required.');
+    };
+
+    // "Saves to <field>": the custom field this question's answer is kept in,
+    // and — opened — which field, its name and its unit, right here.
+    const savesTo = (block: Extract<Block, { type: 'field' }>) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'stack';
+      wrap.dataset.gap = 'sm';
+      wrap.dataset.selectedOnly = '';
+      const field = getField(block.fieldId);
+      const button = firstEl('saves-to');
+      button.classList.add('firma2-intake-block__saves-to');
+      setButtonText(button, `Saves to ${field?.label ?? 'a custom field'}`);
+      const native = button.querySelector('button') ?? button;
+      native.setAttribute('aria-expanded', String(fieldOpen === block.id));
+      native.dataset.fk = `saves:${block.id}`;
+      native.addEventListener('click', () => {
+        fieldOpen = fieldOpen === block.id ? null : block.id;
+        render();
+      });
+      wrap.append(button);
+      if (fieldOpen !== block.id || !field) return wrap;
+
+      const group = document.createElement('div');
+      group.className = 'stack';
+      group.dataset.gap = 'md';
+      const same = fields().filter((f) => f.kind === field.kind);
+      const pick = lego('esa-select', { label: 'Saves to', size: 'md', helpText: 'A custom field. Pick an existing one to reuse its answers.', options: same.map((f) => ({ label: f.label, value: f.id })), value: block.fieldId });
+      pick.addEventListener('change', (e) => {
+        const next = String((e as CustomEvent<{ value: string }>).detail.value);
+        if (next === block.fieldId) return;
+        // A new field this question made and nothing else uses goes with the switch.
+        dropNewField(block.fieldId, block.id);
+        const f = getField(next);
+        commit(updateBlock(form, block.id, { fieldId: next, fieldNamed: undefined, label: block.label || f?.label || '' }));
+      });
+      const name = lego('esa-text-field', { label: 'Field name', size: 'md', helpText: 'Its name in Custom fields and on project pages.', value: field.label });
+      name.addEventListener('change', (e) => {
+        const f = getField(block.fieldId);
+        if (!f) return;
+        const label = String((e as CustomEvent<{ value: string }>).detail.value) || f.label;
+        updateField({ ...f, label });
+        // Named by hand: a new field stops following the question's wording.
+        commit(updateBlock(form, block.id, { fieldNamed: true }), false);
+        setButtonText(button, `Saves to ${label}`);
+      });
+      group.append(pick, name);
+      if (field.kind === 'number') {
+        const unit = lego('esa-text-field', { label: 'Unit', size: 'md', placeholder: 'acres', value: field.unit ?? '' });
+        unit.addEventListener('change', (e) => {
+          const f = getField(block.fieldId);
+          if (f) updateField({ ...f, unit: String((e as CustomEvent<{ value: string }>).detail.value) || undefined });
+          commit(form, false);
+        });
+        group.append(unit);
+      }
+      // An existing custom field: editing it here edits it everywhere.
+      if (!isNewField(block.fieldId)) {
+        const note = document.createElement('p');
+        note.className = 'firma2-intake-block__meta typography-body-sm';
+        note.textContent = `When you publish, a new name${hasOptions(field.kind) ? ' or edited choices' : ''} will change “${field.label}” on every project that uses it.`;
+        group.append(note);
+      }
+      wrap.append(group);
+      // Closes when focus leaves it — the way an inline editor ends.
+      wrap.addEventListener('focusout', (e) => {
+        const to = e.relatedTarget as Node | null;
+        if (to && wrap.contains(to)) return;
+        // esa-select's listbox lives in its shadow; a click inside keeps focus within the host.
+        requestAnimationFrame(() => {
+          if (wrap.contains(document.activeElement) || fieldOpen !== block.id) return;
+          fieldOpen = null;
+          render();
+        });
+      });
+      return wrap;
+    };
+
+    // A standard question: why a locked one stays, and where its choices live.
+    const builtinNote = (block: Extract<Block, { type: 'builtin' }>) => {
+      const from = builtin(block.key).choicesFrom;
+      const why = isLocked(block) ? 'Every project needs this.' : '';
+      if (!why && !from) return null;
+      const p = document.createElement('p');
+      p.className = 'firma2-intake-block__meta typography-body-sm';
+      p.dataset.selectedOnly = '';
+      p.innerHTML = [why, from ? `Change its choices in <a href="${esc(withBase(from.href))}">${esc(from.page)}</a>.` : ''].filter(Boolean).join(' ');
+      return p;
+    };
+
+    // The condition row: Show only when <earlier question> — the answer is any of <…>.
+    const conditionRow = (targetId: string, when: Condition | undefined) => {
+      const row = document.createElement('div');
+      row.className = 'firma2-intake-when cluster';
+      row.dataset.gap = 'sm';
+      const sources = conditionSources(form, targetId);
+      const source = lego('esa-select', {
+        label: 'Show only when',
+        size: 'md',
+        placeholder: 'Pick a question',
+        options: sources.map((s) => ({ label: questionName(s), value: s.id })),
+        value: when?.source ?? '',
+        helpText: sources.length ? '' : 'Add a yes-or-no or choice question above this one first.',
+      });
+      source.dataset.fk = `when:${targetId}`;
+      source.addEventListener('change', (e) => {
+        const id = String((e as CustomEvent<{ value: string }>).detail.value);
+        if (!id) return;
+        const opts = conditionOptions(findBlock(form, id)!, fields()) ?? [];
+        conditionOpen.delete(targetId);
+        // Start from the first answer, so the rule is complete the moment it exists.
+        setWhen(targetId, { source: id, op: 'is', values: opts.slice(0, 1) });
+      });
+      row.append(source);
+      if (when) {
+        const opts = conditionOptions(findBlock(form, when.source)!, fields()) ?? [];
+        const values = lego('esa-checkbox-group', { label: 'The answer is any of', size: 'md', options: opts.map((o) => ({ label: o, value: o })), value: when.values });
+        values.addEventListener('change', (e) => {
+          const picked = ((e as CustomEvent<{ value: string[] }>).detail.value ?? []).map(String);
+          if (!picked.length) return; // a rule must name at least one answer
+          setWhen(targetId, { ...when, op: picked.length > 1 ? 'is-any-of' : 'is', values: picked });
+        });
+        row.append(values);
+      }
+      const remove = firstEl('remove-condition');
+      remove.addEventListener('click', () => {
+        conditionOpen.delete(targetId);
+        setWhen(targetId, undefined);
+        announce('Condition removed.');
+      });
+      row.append(remove);
+      return row;
+    };
+
+    const setWhen = (targetId: string, when: Condition | undefined) => {
+      if (form.screens.some((s) => s.id === targetId)) commit(updateScreen(form, targetId, { when }));
+      else commit(updateBlock(form, targetId, { when }));
+    };
+
+    // ---- block bodies ----------------------------------------------------------
+    const questionNode = (block: QuestionBlock) => {
+      const body = document.createElement('div');
+      body.className = 'firma2-intake-block';
+      body.dataset.blockId = block.id;
+      const head = document.createElement('div');
+      head.className = 'firma2-intake-block__head';
+      // A standard question keeps its own name everywhere, so on the canvas it
+      // is shown, not edited. Focusable all the same, so a keyboard can select it.
+      if (block.type === 'builtin') {
+        const fixed = document.createElement('span');
+        fixed.className = 'firma2-intake-block__label typography-label-md';
+        fixed.textContent = builtin(block.key).label;
+        fixed.tabIndex = locked ? -1 : 0;
+        fixed.dataset.fk = `label:${block.id}`;
+        if (!locked) enterOpensLine(fixed, block.id);
+        head.append(fixed, requiredSwitch(block));
+        if (isLocked(block) && !locked) {
+          const lock = firstEl('lock');
+          lock.classList.add('firma2-intake-block__lock');
+          head.append(lock);
+        }
+      } else {
+        const label = richEditable('span', 'firma2-intake-block__label typography-label-md', block.labelHtml, block.label, {
+          'aria-label': 'Question',
+          'data-placeholder': 'Type a question',
+          'data-fk': `label:${block.id}`,
+        });
+        enterOpensLine(label, block.id);
+        label.addEventListener('keydown', (e) => {
+          // Backspace on a question nobody has started removes it, as an empty line goes.
+          if (e.key !== 'Backspace' || (label.textContent ?? '') !== '' || !isUntouched(block.id)) return;
+          e.preventDefault();
+          removeRow(block.id, { quiet: true });
+        });
+        label.addEventListener('input', () => {
+          const { text, html } = readRich(label);
+          // A new field follows its question's wording until it is named.
+          if (block.type === 'field' && followsWording(block.id)) {
+            const f = getField(block.fieldId);
+            if (f) updateField({ ...f, label: text || 'Untitled question' });
+          }
+          commit(updateBlock(form, block.id, { label: text, labelHtml: html }), false);
+        });
+        head.append(label, requiredSwitch(block));
+      }
+      body.append(head);
+
+      const field = block.type === 'field' ? getField(block.fieldId) : undefined;
+      if (field && hasOptions(field.kind)) {
+        body.append(choicesEditor(block, field));
+      } else {
+        const preview = document.createElement('div');
+        preview.className = 'firma2-intake-preview';
+        preview.inert = true;
+        // The box is drawn without its placeholder: on the canvas the
+        // placeholder is the text typed over it, below.
+        preview.innerHTML = controlMarkup({ ...block, placeholder: undefined }, fields(), { labelled: false });
+        // CLICK INTO THE BOX AND TYPE, as in Tally: what you type there is
+        // the example text members see in the empty box. Laid exactly over
+        // the lego's own text area (placeOverlays) so it reads as the box's.
+        if (!locked && PLACEHOLDER_INPUTS.has(inputOf(block, fields()))) {
+          const wrap = document.createElement('div');
+          wrap.className = 'firma2-intake-box';
+          const ph = editable('span', 'firma2-intake-box__placeholder typography-body-md', block.placeholder ?? '', {
+            'aria-label': 'Placeholder',
+            'data-placeholder': 'Add a placeholder',
+            'data-fk': `ph:${block.id}`,
+          });
+          enterOpensLine(ph, block.id);
+          ph.addEventListener('input', () => commit(updateBlock(form, block.id, { placeholder: ph.textContent || undefined }), false));
+          wrap.append(preview, ph);
+          body.append(wrap);
+        } else body.append(preview);
+      }
+
+      const help = richEditable('p', 'firma2-intake-block__help typography-body-sm', block.helpHtml, block.help ?? '', {
+        'aria-label': 'Help text',
+        'data-placeholder': 'Add help text',
+        'data-fk': `help:${block.id}`,
+      });
+      if (locked && !block.help) help.hidden = true;
+      enterOpensLine(help, block.id);
+      help.addEventListener('input', () => {
+        const { text, html } = readRich(help);
+        commit(updateBlock(form, block.id, { help: text || undefined, helpHtml: html }), false);
+      });
+      body.append(help);
+
+      if (!locked) {
+        if (block.type === 'field') body.append(savesTo(block));
+        const note = block.type === 'builtin' ? builtinNote(block) : null;
+        if (note) body.append(note);
+        if (block.when || conditionOpen.has(block.id)) body.append(conditionRow(block.id, block.when));
+      }
+      return body;
+    };
+
+    const textNode = (block: Extract<Block, { type: 'text' }>) => {
+      const body = document.createElement('div');
+      body.className = 'firma2-intake-block';
+      body.dataset.blockId = block.id;
+      let editor = textEditors.get(block.id);
+      if (!editor) {
+        editor = firstEl('text-block');
+        textEditors.set(block.id, editor);
+        const el = editor;
+        // Mounted once it is in the document — the next frame, after render.
+        requestAnimationFrame(() =>
+          withEditor(el, () => {
+            el.dispatchEvent(new CustomEvent('firma2:rich-text-set', { detail: { html: block.html } }));
+            if (locked) el.dispatchEvent(new CustomEvent('firma2:rich-text-editable', { detail: { editable: false } }));
+          }),
+        );
+        editor.addEventListener('firma2:rich-text-change', (e) => {
+          commit(updateBlock(form, block.id, { html: (e as CustomEvent<{ html: string }>).detail.html }), false);
+        });
+        // Backspace in an empty text block removes it.
+        editor.addEventListener(
+          'keydown',
+          (e) => {
+            if (e.key !== 'Backspace' || (editor!.querySelector('.ProseMirror')?.textContent ?? 'x') !== '' || editor!.querySelector('img, [data-file-embed]')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            removeRow(block.id, { quiet: true });
+          },
+          true,
+        );
+      }
+      body.append(editor);
+      if (!locked && (block.when || conditionOpen.has(block.id))) body.append(conditionRow(block.id, block.when));
+      return body;
+    };
+
+    const breakNode = (screen: Screen, i: number) => {
+      const body = document.createElement('div');
+      body.className = 'firma2-intake-block stack';
+      body.dataset.gap = 'xs';
+      body.dataset.kind = 'break';
+      const step = document.createElement('span');
+      step.className = 'firma2-intake-break__step typography-body-md';
+      step.textContent = `Screen ${i + 1} of ${form.screens.length}`;
+      const title = editable('h2', 'firma2-intake-break__title typography-heading-md', screen.title, {
+        'aria-label': `Title of screen ${i + 1}`,
+        'data-placeholder': 'Screen title',
+        'data-fk': `screen:${screen.id}`,
+      });
+      enterOpensLine(title, screen.id);
+      title.addEventListener('input', () => commit(updateScreen(form, screen.id, { title: title.textContent ?? '' }), false));
+      body.append(step, title);
+      if (!locked && i > 0 && (screen.when || conditionOpen.has(screen.id))) body.append(conditionRow(screen.id, screen.when));
+      return body;
+    };
+
+    // ---- the grip's actions ---------------------------------------------------
+    const actionsFor = (r: Row) => {
+      const act: { label: string; action: string; variant?: 'danger' }[] = [];
+      if (r.kind === 'break') {
+        act.push({ label: r.screen.when ? 'Remove condition' : 'Add condition', action: r.screen.when ? 'uncondition' : 'condition' });
+        act.push({ label: 'Remove screen', action: 'remove', variant: 'danger' });
+        return act;
+      }
+      if (r.kind !== 'block') return act;
+      const b = r.block;
+      if (isLocked(b)) return act;
+      if (b.type !== 'builtin') act.push({ label: 'Duplicate', action: 'duplicate' });
+      if (isQuestion(b)) act.push({ label: b.required ? 'Make optional' : 'Make required', action: 'required' });
+      act.push({ label: b.when ? 'Remove condition' : 'Add condition', action: b.when ? 'uncondition' : 'condition' });
+      act.push({ label: b.type === 'text' ? 'Remove text' : 'Remove question', action: 'remove', variant: 'danger' });
+      return act;
+    };
+
+    canvas.addEventListener('menu-action', (e) => {
+      const action = (e as CustomEvent<string>).detail;
+      const key = (e.target as HTMLElement).closest<HTMLElement>('li[data-sort-key]')?.dataset.sortKey;
+      if (!key) return;
+      if (action === 'duplicate') duplicate(key);
+      if (action === 'required') setRequired(key);
+      if (action === 'remove') removeRow(key);
+      if (action === 'uncondition') {
+        setWhen(key, undefined);
+        announce('Condition removed.');
+      }
+      if (action === 'condition') {
+        conditionOpen.add(key);
+        select(key);
+        render();
+        requestAnimationFrame(() => canvas.querySelector<HTMLElement>(`[data-fk="when:${CSS.escape(key)}"]`)?.focus());
+      }
+    });
+
+    // ---- rows --------------------------------------------------------------------
+    const rowNode = (r: Row) => {
+      const li = document.createElement('li');
+      const key = keyOf(r);
+      li.dataset.sortKey = key;
+      li.dataset.sortLabel = rowName(key);
+      if (selected === key) li.dataset.selected = '';
+      if (r.kind === 'head') li.dataset.sortLocked = '';
+      const own = actionsFor(r);
+      if (own.length) li.dataset.sortActions = JSON.stringify(own);
+      if (!locked) {
+        const add = firstEl('add-below');
+        add.dataset.addBelow = '';
+        add.addEventListener('click', (e) => {
+          e.stopPropagation();
+          menuTarget = below(key);
+          menu.items = items();
+          menu.open(add);
+        });
+        li.append(add);
+      }
+      li.append(r.kind === 'block' ? (r.block.type === 'text' ? textNode(r.block) : questionNode(r.block)) : breakNode(r.screen, r.i));
+      return li;
+    };
+
+    // A blank line: `/` opens the list; typed words and Enter make a text block.
+    const addLine = (after: string | null) => {
+      const li = document.createElement('li');
+      li.className = 'firma2-intake-add-row';
+      const line = document.createElement('div');
+      line.className = 'firma2-intake-add typography-body-md';
+      line.contentEditable = 'plaintext-only';
+      line.dataset.placeholder = 'Type / to add a question';
+      line.dataset.fk = `add:${after ?? 'end'}`;
+      line.setAttribute('role', 'combobox');
+      line.setAttribute('aria-label', 'Add to the form');
+      line.setAttribute('aria-expanded', 'false');
+      line.setAttribute('aria-autocomplete', 'list');
+      line.addEventListener('input', () => {
+        const text = line.textContent ?? '';
+        if (!text.startsWith('/')) return menu.owner === line && menu.close();
+        menuTarget = below(after);
+        if (menu.owner !== line) {
+          menu.items = items();
+          menu.open(line, { owner: line, query: text.slice(1) });
+        } else menu.filter(text.slice(1));
+      });
+      line.addEventListener('keydown', (e) => {
+        if (menu.owner === line && menu.handleKey(e)) {
+          if (e.key === 'Escape') line.textContent = '';
+          return;
+        }
+        const text = (line.textContent ?? '').trim();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (text && !text.startsWith('/')) {
+            line.textContent = '';
+            add('layout:text', below(after), `<p>${esc(text)}</p>`);
+          }
+          return;
+        }
+        if ((e.key === 'Backspace' && !text) || e.key === 'Escape') {
+          if (after === null) return;
+          e.preventDefault();
+          lineAfter = null;
+          render();
+          focusKey(`label:${after}`) || focusKey(`screen:${after}`);
+        }
+      });
+      line.addEventListener('blur', () => {
+        if (menu.owner === line) return;
+        if (!(line.textContent ?? '').startsWith('/')) line.textContent = '';
+        // A line opened under a block goes when it is left empty.
+        if (after !== null && lineAfter === after && !(line.textContent ?? '')) {
+          requestAnimationFrame(() => {
+            if (lineAfter !== after || canvas.contains(document.activeElement) && document.activeElement === line) return;
+            lineAfter = null;
+            render();
+          });
+        }
+      });
+      li.append(line);
+      return li;
+    };
+
+    const openLine = (key: string) => {
+      lineAfter = key;
+      render();
+      focusKey(`add:${key}`);
+    };
+
+    // ---- the canvas ----------------------------------------------------------
+    const render = () => {
+      const focusedKey = (document.activeElement as HTMLElement | null)?.dataset?.fk;
+      const ol = document.createElement('ol');
+      ol.className = 'firma2-intake-blocks';
+      rows().forEach((r) => {
+        ol.append(rowNode(r));
+        if (!locked && lineAfter === keyOf(r)) ol.append(addLine(lineAfter));
+      });
+      if (!locked) ol.append(addLine(null));
+      if (locked) {
+        ol.dataset.locked = '';
+        canvas.replaceChildren(ol);
+      } else {
+        const list = document.createElement('bcn-sortable-list');
+        list.setAttribute('label', 'Form');
+        const handle = document.createElement('template');
+        handle.setAttribute('data-sort-handle', '');
+        handle.content.append(tpl('grip'));
+        list.append(handle, ol);
+        canvas.replaceChildren(list);
+      }
+      // Drop editors of text blocks that left the form.
+      const ids = new Set(form.screens.flatMap((s) => s.blocks.map((b) => b.id)));
+      [...textEditors.keys()].filter((id) => !ids.has(id)).forEach((id) => textEditors.delete(id));
+      void hydrateQuestions(canvas, form.screens.flatMap((s) => s.blocks.filter(isQuestion)), {}, fields(), false).then(() => requestAnimationFrame(placeOverlays));
+      if (focusedKey) focusKey(focusedKey);
+    };
+
+    // Each placeholder sits on its box's own text area — measured inside the
+    // lego, so a `$` prefix or a unit suffix keeps its room.
+    const placeOverlays = () => {
+      canvas.querySelectorAll<HTMLElement>('.firma2-intake-box').forEach((wrap) => {
+        const ph = wrap.querySelector<HTMLElement>('.firma2-intake-box__placeholder');
+        const native = wrap.querySelector<HTMLElement>('[data-answer]')?.shadowRoot?.querySelector<HTMLElement>('input, textarea');
+        if (!ph || !native) return;
+        const box = wrap.getBoundingClientRect();
+        const r = native.getBoundingClientRect();
+        const cs = getComputedStyle(native);
+        Object.assign(ph.style, {
+          left: `${r.left - box.left}px`,
+          top: `${r.top - box.top}px`,
+          width: `${r.width}px`,
+          height: `${r.height}px`,
+          paddingInline: `${cs.paddingLeft} ${cs.paddingRight}`,
+          paddingBlock: native.tagName === 'TEXTAREA' ? cs.paddingTop : '0',
+          alignItems: native.tagName === 'TEXTAREA' ? 'flex-start' : 'center',
+        });
+      });
+    };
+    window.addEventListener('resize', () => requestAnimationFrame(placeOverlays));
+
+    // CLICK ANYWHERE AND TYPE. A click that lands on no control puts the caret
+    // in the text nearest it, where it was clicked: beside a label is the end
+    // of that label, under the last block is the blank line, the room around
+    // the message after submitting is that message. Controls keep their clicks.
+    const caretAt = (el: HTMLElement, x: number, y: number) => {
+      el.focus({ preventScroll: true });
+      const r = el.getBoundingClientRect();
+      const cx = Math.min(Math.max(x, r.left + 1), r.right - 1);
+      const cy = Math.min(Math.max(y, r.top + 1), r.bottom - 1);
+      const doc = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null };
+      const hit = doc.caretPositionFromPoint?.(cx, cy);
+      const range = document.createRange();
+      if (hit && el.contains(hit.offsetNode)) {
+        range.setStart(hit.offsetNode, hit.offset);
+        range.collapse(true);
+      } else {
+        range.selectNodeContents(el);
+        range.collapse(false);
+      }
+      const sel = getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    };
+    const CONTROLS = 'button, a, input, textarea, select, [role="switch"], esa-select, esa-checkbox-group, esa-text-field, esa-dropdown-menu, bcn-insert-menu, .firma2-intake-when, [contenteditable="plaintext-only"], [data-inline-format], .ProseMirror';
+    const TYPEABLE = '[contenteditable="plaintext-only"], [data-inline-format][contenteditable="true"], .ProseMirror[contenteditable="true"]';
+    const visible = (el: HTMLElement) => el.getBoundingClientRect().height > 0;
+    const nearest = (els: HTMLElement[], y: number) =>
+      els.reduce<{ el: HTMLElement; d: number } | null>((best, el) => {
+        const r = el.getBoundingClientRect();
+        const d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+        return !best || d < best.d ? { el, d } : best;
+      }, null)?.el ?? null;
+    root.addEventListener('click', (e) => {
+      if (locked || e.defaultPrevented || (e.target as HTMLElement).closest(CONTROLS)) return;
+      if ((e.target as HTMLElement).closest('.firma2-intake-builder__lead')) return;
+      const { clientX: x, clientY: y } = e;
+      // The message after submitting: its editor, from anywhere in its section.
+      if ((e.target as HTMLElement).closest('.firma2-intake-builder__after')) {
+        const pm = root.querySelector<HTMLElement>('.firma2-intake-builder__after .ProseMirror');
+        if (pm) caretAt(pm, x, y);
+        return;
+      }
+      const rows = [...canvas.querySelectorAll<HTMLElement>('.firma2-intake-blocks > li')];
+      if (!rows.length) return;
+      // Past the last block: the blank line that ends the form.
+      const last = rows[rows.length - 1].getBoundingClientRect();
+      const row = y > last.bottom ? rows[rows.length - 1] : nearest(rows, y);
+      if (!row) return;
+      if (row.dataset.sortKey) select(row.dataset.sortKey);
+      // Measured after selecting: a selected row shows its help line.
+      const target = nearest([...row.querySelectorAll<HTMLElement>(TYPEABLE)].filter(visible), y);
+      if (target) caretAt(target, x, y);
+    });
+
+    const focusKey = (key: string): boolean => {
+      const el = canvas.querySelector<HTMLElement>(`[data-fk="${CSS.escape(key)}"]`);
+      if (!el) return false;
+      el.focus();
+      if (el.isContentEditable) {
+        // Caret to the end of what is already typed.
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        const sel = getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+      return true;
+    };
+
+    // ---- selection -----------------------------------------------------------
+    const select = (key: string | null) => {
+      if (key === selected) return;
+      selected = key;
+      canvas.querySelectorAll('[data-selected]').forEach((el) => el.removeAttribute('data-selected'));
+      if (key) canvas.querySelector(`li[data-sort-key="${CSS.escape(key)}"]`)?.setAttribute('data-selected', '');
+      if (fieldOpen && fieldOpen !== key) {
+        fieldOpen = null;
+        render();
+      }
+    };
+    const rowKeyOf = (t: EventTarget | null) => (t as HTMLElement | null)?.closest?.<HTMLElement>('.firma2-intake-blocks > li[data-sort-key]')?.dataset.sortKey ?? null;
+    // A press selects on its click, not on the focus its mousedown moves:
+    // selecting reveals the new row's help and settings and folds the old
+    // row's away, and doing that between press and release moved the page
+    // under the pointer (scrolled to the bottom, a shorter page scrolls) so
+    // the click landed on something else. The keyboard still selects on focus.
+    let pressing = false;
+    canvas.addEventListener('pointerdown', () => (pressing = true));
+    window.addEventListener('pointerup', () => setTimeout(() => (pressing = false)));
+    canvas.addEventListener('focusin', (e) => {
+      const key = rowKeyOf(e.target);
+      if (key && !pressing) select(key);
+    });
+    canvas.addEventListener('click', (e) => {
+      const key = rowKeyOf(e.target);
+      if (key) select(key);
+    });
+
+    // ---- keys: Escape, ⌘D, ⌥↑ ⌥↓ ------------------------------------------------
+    root.addEventListener('keydown', (e) => {
+      if (locked || menu.isOpen) return;
+      if (e.key === 'Escape' && selected) {
+        (document.activeElement as HTMLElement | null)?.blur();
+        select(null);
+        return;
+      }
+      if (!selected) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        duplicate(selected);
+        return;
+      }
+      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        move(selected, e.key === 'ArrowUp' ? -1 : 1);
+      }
+    });
+
+    const move = (key: string, by: -1 | 1) => {
+      const keys = flatKeys();
+      const i = keys.indexOf(key);
+      const j = i + by;
+      if (i === -1 || j < 0 || j >= keys.length) return;
+      [keys[i], keys[j]] = [keys[j], keys[i]];
+      const focusedKey = (document.activeElement as HTMLElement | null)?.dataset?.fk;
+      layoutFrom(keys);
+      if (focusedKey) focusKey(focusedKey);
+      announce(`${rowName(key)} moved to ${j + 1} of ${keys.length}.`);
+    };
+
+    // ---- duplicating and removing --------------------------------------------
+    const duplicate = (key: string) => {
+      const { form: next, block } = duplicateBlock(form, key);
+      if (!block) return;
+      selected = block.id;
+      commit(next);
+      arrive(canvas.querySelector(`li[data-sort-key="${CSS.escape(block.id)}"]`));
+      focusKey(`label:${block.id}`);
+      announce(`${block.type === 'text' ? 'Text' : 'Question'} duplicated.`);
+    };
+
+    // A block nobody has started: no wording, no help, no choices typed.
+    const isUntouched = (id: string) => {
+      const b = findBlock(form, id);
+      if (!b || b.type !== 'field' || b.label || b.help || b.when) return false;
+      return !(getField(b.fieldId)?.options ?? []).some((o) => o.trim());
+    };
+
+    const previousKey = (key: string) => {
+      const keys = rows().map(keyOf);
+      return keys[keys.indexOf(key) - 1] ?? null;
+    };
+
+    const removeRow = (key: string, { quiet = false } = {}) => {
+      const isScreen = form.screens.some((s) => s.id === key);
+      const block = isScreen ? undefined : findBlock(form, key);
+      if (!isScreen && (!block || isLocked(block))) return;
+      const back = previousKey(key);
+      const finish = () => {
+        if (isScreen) {
+          commit(removeScreen(form, key));
+          announce('Screen removed. Its questions joined the screen before it.');
+        } else {
+          if (block!.type === 'field') dropNewField(block!.fieldId, block!.id);
+          if (selected === key) selected = null;
+          commit(removeBlock(form, key));
+          announce(`${block!.type === 'text' ? 'Text' : 'Question'} removed.`);
+        }
+        // Backspace carries on where it came from: the line above.
+        if (quiet && back) focusKey(`label:${back}`) || focusKey(`screen:${back}`) || openLine(back);
+      };
+      // The row fades where it stood before its neighbours close the gap, so
+      // it is clear which block went. The timeout covers a 0ms (reduced-motion)
+      // animation that never fires its end.
+      const row = canvas.querySelector<HTMLElement>(`li[data-sort-key="${CSS.escape(key)}"]`);
+      if (quiet || !row || row.dataset.leaving != null) return finish();
+      row.dataset.leaving = '';
+      let done = false;
+      const once = () => {
+        if (done) return;
+        done = true;
+        finish();
+      };
+      row.addEventListener('animationend', once, { once: true });
+      window.setTimeout(once, 250);
+    };
+
+    // ---- adding --------------------------------------------------------------
+    const FIELD_DEFAULTS: Record<string, Partial<FieldDefinition>> = {
+      choice: { options: ['', ''] },
+      'multi-choice': { options: ['', ''] },
+    };
+    let menuTarget: Target = {};
+    menu.addEventListener('insert-choose', (e) => {
+      const owner = canvas.querySelector<HTMLElement>('.firma2-intake-add[aria-expanded="true"]');
+      if (owner) owner.textContent = '';
+      add((e as CustomEvent<{ id: string }>).detail.id, menuTarget);
+    });
+    menu.addEventListener('insert-close', () => {
+      canvas.querySelectorAll<HTMLElement>('.firma2-intake-add').forEach((l) => {
+        if (document.activeElement !== l) l.textContent = '';
+      });
+    });
+
+    // WHERE IT LANDED. A block can land below the fold, and nothing else says
+    // where it went: the new row is brought into view and settles in from 4px
+    // above (motion tokens, so reduced motion is 0ms).
+    const arrive = (el: Element | null) => {
+      if (!(el instanceof HTMLElement)) return;
+      el.scrollIntoView({ block: 'nearest' });
+      el.dataset.arriving = '';
+      el.addEventListener('animationend', () => delete el.dataset.arriving, { once: true });
+    };
+
+    const add = (id: string, at: Target, html = '') => {
+      const [kind, what] = id.split(':') as [string, string];
+      lineAfter = null;
+      if (kind === 'layout' && what === 'screen') {
+        const { form: next, screen } = splitScreen(form, at);
+        selected = screen.id;
+        commit(next);
+        arrive(canvas.querySelector(`li[data-sort-key="${CSS.escape(screen.id)}"]`));
+        focusKey(`screen:${screen.id}`);
+        announce('Screen added.');
+        return;
+      }
+      let block: Block;
+      if (kind === 'builtin') {
+        const b = builtin(what as BuiltinKey);
+        block = { id: newId('q'), type: 'builtin', key: b.key, label: b.label, required: b.locked };
+      } else if (kind === 'field') {
+        const fieldKind = what as FieldKind;
+        const fieldId = nextFieldId(form, 'question');
+        updateField({ id: fieldId, label: 'Untitled question', kind: fieldKind, ...FIELD_DEFAULTS[fieldKind] });
+        block = { id: newId('q'), type: 'field', fieldId, label: '', required: false };
+      } else {
+        block = { id: newId('t'), type: 'text', html };
+      }
+      const next = insertBlock(form, block, at);
+      if (next === form) return;
+      selected = block.id;
+      commit(next);
+      arrive(canvas.querySelector(`li[data-sort-key="${CSS.escape(block.id)}"]`));
+      const editor = block.type === 'text' ? textEditors.get(block.id) : undefined;
+      if (editor) requestAnimationFrame(() => withEditor(editor, () => editor.dispatchEvent(new CustomEvent('firma2:rich-text-focus'))));
+      if (block.type !== 'text') focusKey(`label:${block.id}`);
+      announce(`${block.type === 'text' ? 'Text' : items().find((i) => i.id === id)?.label ?? 'Question'} added.`);
+    };
+
+    // ---- reordering: bcn-sortable-list has already moved the DOM --------------
+    canvas.addEventListener('sort-change', () => {
+      layoutFrom([...canvas.querySelectorAll<HTMLElement>('.firma2-intake-blocks > li[data-sort-key]:not([data-sort-locked])')].map((li) => li.dataset.sortKey!));
+    });
+
+    // ---- formatting a label or help line ---------------------------------------
+    // The toolbar shows over a selection inside one formattable line and goes
+    // when the selection does. Its buttons keep the selection (mousedown is
+    // eaten) and run the browser's own commands; the line's input handler
+    // then sanitizes and saves what they made.
+    const bar = $('[data-format-bar]');
+    const linkDialog = $<HTMLElement & { show(): void; close(): void }>('[data-label-link-dialog]');
+    const linkUrl = $<HTMLElement & { value: string; errorText: string }>('[data-label-link-url]');
+    let linkRange: Range | null = null;
+    let linkHost: HTMLElement | null = null;
+    const elementOf = (n: Node | null | undefined) => (n instanceof Element ? n : n?.parentElement ?? null);
+    const inlineHost = (n: Node | null | undefined) => elementOf(n)?.closest<HTMLElement>('[data-inline-format]') ?? null;
+    const syncBar = () => {
+      const sel = getSelection();
+      const host = sel && sel.rangeCount && !sel.isCollapsed ? inlineHost(sel.anchorNode) : null;
+      if (!sel || !host || host !== inlineHost(sel.focusNode) || !canvas.contains(host)) {
+        if (!bar.contains(document.activeElement)) bar.hidden = true;
+        return;
+      }
+      bar.hidden = false;
+      const r = sel.getRangeAt(0).getBoundingClientRect();
+      bar.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - bar.offsetWidth / 2, window.innerWidth - bar.offsetWidth - 8))}px`;
+      bar.style.top = `${Math.max(8, r.top - bar.offsetHeight - 8)}px`;
+      bar.querySelectorAll<HTMLElement>('[data-format]').forEach((b) => {
+        const f = b.dataset.format!;
+        b.setAttribute('aria-pressed', String(f === 'link' ? !!elementOf(sel.anchorNode)?.closest('a') : document.queryCommandState(f)));
+      });
+    };
+    if (!locked) {
+      document.addEventListener('selectionchange', syncBar);
+      window.addEventListener('scroll', () => !bar.hidden && syncBar(), { passive: true });
+    }
+    bar.addEventListener('mousedown', (e) => e.preventDefault());
+    bar.addEventListener('click', (e) => {
+      const f = (e.target as HTMLElement).closest<HTMLElement>('[data-format]')?.dataset.format;
+      if (!f) return;
+      if (f === 'link') return openLink();
+      document.execCommand(f);
+      syncBar();
+    });
+
+    function openLink() {
+      const sel = getSelection();
+      if (!sel?.rangeCount) return;
+      linkHost = inlineHost(sel.anchorNode);
+      if (!linkHost) return;
+      linkRange = sel.getRangeAt(0).cloneRange();
+      const current = elementOf(sel.anchorNode)?.closest('a')?.getAttribute('href') ?? '';
+      bar.hidden = true;
+      void customElements.whenDefined('esa-dialog').then(async () => {
+        linkUrl.value = current;
+        linkUrl.errorText = '';
+        linkDialog.show();
+        // esa-dialog calls showModal() in its own render, which puts focus on
+        // the dialog — so the field is focused after that render, not before
+        // (one frame was too early: typing then went to the page's shortcuts).
+        // And the input itself: the lego's host is not focusable, so .focus()
+        // on it did nothing and focus stayed on the dialog's close button.
+        await (linkDialog as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete;
+        requestAnimationFrame(() => (linkUrl.shadowRoot?.querySelector<HTMLElement>('input') ?? linkUrl).focus());
+      });
+    }
+    // Back to the text, the selection as it was, so the command lands on it —
+    // once the dialog has really closed: until its render runs close(), the
+    // page under it is still inert and the text cannot take focus.
+    const closeLink = async () => {
+      linkDialog.close();
+      await (linkDialog as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete;
+      return restore();
+    };
+    const restore = () => {
+      if (!linkHost || !linkRange) return false;
+      linkHost.focus();
+      const sel = getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(linkRange);
+      return true;
+    };
+    const saveLink = () => {
+      const raw = (linkUrl.value ?? '').trim();
+      if (!raw) {
+        linkUrl.errorText = 'Enter a web address.';
+        linkUrl.focus();
+        return;
+      }
+      const href = /^(https?:|mailto:)/i.test(raw) ? raw : `https://${raw}`;
+      void closeLink().then((ok) => ok && document.execCommand('createLink', false, href));
+    };
+    $('[data-label-link-save]').addEventListener('click', saveLink);
+    // Enter saves, and is spent here: left to run on, it landed in the
+    // restored text and replaced the linked words with a line break.
+    linkUrl.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key !== 'Enter') return;
+      e.preventDefault();
+      saveLink();
+    });
+    $('[data-label-link-remove]').addEventListener('click', () => void closeLink().then((ok) => ok && document.execCommand('unlink')));
+    $('[data-label-link-cancel]').addEventListener('click', () => void closeLink());
+
+    // ---- the form's name ----------------------------------------------------------
+    const formTitle = $('[data-form-title]');
+    formTitle.textContent = form.title;
+    if (!locked) {
+      formTitle.contentEditable = 'plaintext-only';
+      formTitle.addEventListener('keydown', (e) => e.key === 'Enter' && e.preventDefault());
+      formTitle.addEventListener('input', () => commit({ ...form, title: formTitle.textContent ?? '' }, false));
+      // An empty name would leave members a page with no title.
+      formTitle.addEventListener('blur', () => {
+        if ((formTitle.textContent ?? '').trim()) return;
+        formTitle.textContent = DEFAULT_FORM_TITLE;
+        commit({ ...form, title: DEFAULT_FORM_TITLE }, false);
+      });
+    } else {
+      formTitle.removeAttribute('role');
+      formTitle.removeAttribute('aria-label');
+    }
+
+    // ---- the message after submitting -----------------------------------------
+    const after = root.querySelector<HTMLElement>('.firma2-intake-builder__after [data-rich-text]');
+    if (after) {
+      withEditor(after, () => {
+        after.dispatchEvent(new CustomEvent('firma2:rich-text-set', { detail: { html: form.afterSubmit } }));
+        if (locked) after.dispatchEvent(new CustomEvent('firma2:rich-text-editable', { detail: { editable: false } }));
+      });
+      after.addEventListener('firma2:rich-text-change', (e) => commit({ ...form, afterSubmit: (e as CustomEvent<{ html: string }>).detail.html }, false));
+    }
+
+    // ---- publishing: the header's actions talk to this through events ---------
+    document.addEventListener('firma2:intake-publish', () => {
+      publish();
+      root.dispatchEvent(new CustomEvent('firma2:intake-saved', { bubbles: true }));
+      announce('Published. Members see the new form now.');
+    });
+
+    render();
+  });
+</script>

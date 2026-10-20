@@ -1,0 +1,406 @@
+---
+// firma2-top-bar — the thin, pinned strip across the top of the content column:
+// the way out on its leading edge (home glyph › breadcrumb trail), the things you
+// do with the page on its trailing edge (status · toolbar · actions). Modelled on
+// Tally's editor bar (Mobbin, 2026-10-19): one 48px row, the page's name only as
+// its last crumb, the big title left to the page body to scroll away.
+//
+// ONE BAR PER PAGE, OWNED BY THE LAYOUT. AppLayout renders a root-only bar as
+// the first child of the content pane, so a page with no header still gets the
+// strip. firma2-page-header renders a FULL bar (its crumbs and slots) and an
+// inline script swaps it in for the layout's during parse, before first paint —
+// the bar has to be a direct child of the pane to span the whole column and to
+// stay pinned for the whole page (sticky is bounded by its parent), and the page
+// is the only place its contents are known. Nothing is authored in JS: the swap
+// moves one server-rendered node.
+//
+// Slots: "status" (badges — what state the record is in), "toolbar" (record
+// utilities), "actions" (the page's workflow; the primary goes last, rightmost).
+//
+// bcn-lego-checked: esa-app-bar is the strip and esa-breadcrumbs the trail;
+// esa-dropdown-menu + EsaButton chrome/iconOnly are the two "…" menus (the
+// collapsed middle of a long trail, and the folded toolbar under 45rem). What is
+// added is the band behaviour neither lego has — sticky, 48px, hairline, the
+// pane-gutter bleed — the same gap firma2-page-header documented (no sticky /
+// page-top primitive in the catalog; esa-page-header is the page's title block,
+// not its chrome). Beacon is not cloned in this checkout.
+//
+// ECOLOGY DEVIATION, flagged to the user 2026-10-19: esa-app-bar has no compact
+// density (its private padding is 16px/32px, which makes a 72px bar around a
+// 40px control) and no tier-3 hooks by design. This component re-points the
+// private --_bar-* steps on its own instance to reach 48px. Worth a /request-lego
+// for a `density="compact"` variant, which would retire the override.
+//
+// SECOND DEVIATION, user-chosen 2026-10-19: the bar's buttons are a compact md —
+// md's label and icon, re-pinned from AppLayout's 40px control line to 32px.
+// esa-button's sm rung would be the obvious reach, but its label is
+// microcopy-xs (12px, under the 13px floor) and it saves only 4px. Retire this
+// with the same /request-lego: a compact density on esa-button, or an sm with a
+// readable label.
+import EsaAppBar from '@esa/ecology/esa-app-bar.astro';
+import EsaBreadcrumbs from '@esa/ecology/esa-breadcrumbs.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { iconSvg } from '@esa/ecology/icon-registry';
+import { withBase } from '../../lib/base';
+import { HOME_HREF } from '../../data/firma2-nav';
+
+/** One step of the trail. The LAST crumb is the current page and takes no href. */
+export interface TopBarCrumb {
+  label: string;
+  href?: string;
+  /** The label names a renameable noun ("Projects") — see src/lib/vocabulary.ts. */
+  aliasable?: boolean;
+}
+
+interface Props {
+  /** The trail AFTER the home glyph. Omit for the layout's root-only bar. */
+  crumbs?: TopBarCrumb[];
+  /** "app" is the bar in the pane; "page" is a header's bar waiting to replace it. */
+  role?: 'app' | 'page';
+}
+
+const { crumbs = [], role = 'app' } = Astro.props;
+
+// THE ROOT IS A GLYPH, not a word. The rail already names the workspace and its
+// home row, so a text crumb would say it a third time; the glyph is the way out
+// and the visually-hidden word is its name. No ProjectFirma glyph exists yet
+// (AppLayout refuses to invent one), so it is the registry's `home`.
+const homeIcon = `${iconSvg('home', 16) ?? ''}<span class="visually-hidden">Home</span>`;
+const items = [
+  { label: '', href: withBase(HOME_HREF), icon: homeIcon },
+  ...crumbs.map((c, i) => ({ label: c.label, href: i === crumbs.length - 1 ? undefined : c.href })),
+];
+const aliasableCrumbs = crumbs.filter((c) => c.aliasable).map((c) => c.label);
+const hasStatus = Astro.slots.has('status');
+const hasToolbar = Astro.slots.has('toolbar');
+const hasActions = Astro.slots.has('actions');
+---
+<div class="firma2-top-bar" data-firma2-top-bar={role}>
+  <EsaAppBar as="div" tone="surface" class="firma2-top-bar__bar">
+    <div slot="start" class="firma2-top-bar__trail" data-aliasable-crumbs={aliasableCrumbs.length ? JSON.stringify(aliasableCrumbs) : undefined}>
+      <EsaBreadcrumbs items={items} size="md" />
+    </div>
+    {(hasStatus || hasToolbar || hasActions) && (
+      <div slot="end" class="firma2-top-bar__end cluster" data-gap="sm">
+        {hasStatus && (
+          <div class="firma2-top-bar__status cluster" data-gap="xs">
+            <slot name="status" />
+          </div>
+        )}
+        {hasToolbar && (
+          <div class="firma2-top-bar__toolbar cluster" data-gap="xs" data-top-bar-toolbar>
+            <slot name="toolbar" />
+          </div>
+        )}
+        {hasToolbar && (
+          <esa-dropdown-menu class="firma2-top-bar__fold" position="below-end" data-top-bar-fold>
+            <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="More actions" />
+          </esa-dropdown-menu>
+        )}
+        {hasActions && (
+          <div class="firma2-top-bar__actions cluster" data-gap="xs">
+            <slot name="actions" />
+          </div>
+        )}
+      </div>
+    )}
+  </EsaAppBar>
+
+  {/* The collapsed middle of a long trail. Server-rendered and cloned, because
+      EsaButton is compile-time and a runtime-built trigger would be a raw button. */}
+  <template data-top-bar-ellipsis>
+    <li class="esa-breadcrumbs__item firma2-top-bar__ellipsis">
+      <esa-dropdown-menu position="below-start">
+        <EsaButton variant="chrome" size="sm" iconOnly icon="ellipsis" label="Show full path" />
+      </esa-dropdown-menu>
+    </li>
+  </template>
+</div>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import type { EsaMenuItem } from '@esa/ecology/esa-dropdown-menu';
+
+  type Menu = HTMLElement & { items: EsaMenuItem[] };
+
+  // THE BAR'S HEIGHT IS PUBLISHED, for the same two consumers the old sticky
+  // header band served: scroll-padding (WCAG 2.4.11 — focus and anchors must not
+  // land under a pinned region) and --firma2-band-height, which every fold-sized
+  // section subtracts. Measured, not restated, so a future density change cannot
+  // leave either one stale.
+  function publishHeight(bar: HTMLElement): void {
+    const sync = (): void => {
+      const h = Math.round(bar.getBoundingClientRect().height);
+      document.documentElement.style.scrollPaddingBlockStart = `${h}px`;
+      document.documentElement.style.setProperty('--firma2-band-height', `${h}px`);
+    };
+    sync();
+    new ResizeObserver(sync).observe(bar);
+  }
+
+  // A LONG TRAIL COLLAPSES ITS MIDDLE. Home, the parent and the current page are
+  // always on screen; anything between them goes into one "…" menu when the
+  // trail would otherwise push the actions or wrap. The current crumb then
+  // ellipsizes in CSS, with its full text as a tooltip.
+  function collapseTrail(bar: HTMLElement): void {
+    const trail = bar.querySelector<HTMLElement>('.firma2-top-bar__trail');
+    const list = trail?.querySelector<HTMLOListElement>('.esa-breadcrumbs__list');
+    const tpl = bar.querySelector<HTMLTemplateElement>('template[data-top-bar-ellipsis]');
+    if (!trail || !list || !tpl) return;
+
+    const current = list.querySelector<HTMLElement>('.esa-breadcrumbs__current');
+    if (current?.textContent?.trim()) current.title = current.textContent.trim();
+
+    const crumbs = [...list.children].filter((li): li is HTMLLIElement => li instanceof HTMLLIElement);
+    // home + ≥1 hidden + parent + current
+    if (crumbs.length < 4) return;
+    const middle = crumbs.slice(1, -2);
+
+    const node = tpl.content.firstElementChild!.cloneNode(true) as HTMLLIElement;
+    // The separator after the ellipsis is the first middle crumb's own, so it
+    // borrows it rather than drawing one.
+    const sep = middle[0].querySelector('.esa-breadcrumbs__separator');
+    if (sep) node.append(sep.cloneNode(true));
+    middle[0].before(node);
+    const menu = node.querySelector<Menu>('esa-dropdown-menu')!;
+    menu.items = middle.map((li) => {
+      const a = li.querySelector<HTMLAnchorElement>('a');
+      return { label: a?.textContent?.trim() ?? '', action: a?.href ?? '' };
+    });
+    menu.addEventListener('menu-action', (e) => {
+      const href = (e as CustomEvent<string>).detail;
+      if (href) location.href = href;
+    });
+
+    // The current crumb shrinks before the trail overflows, so "fits" means it
+    // is not being ellipsized either.
+    const fits = (): boolean =>
+      trail.scrollWidth <= trail.clientWidth + 1 &&
+      (!current || current.scrollWidth <= current.clientWidth + 1);
+    const sync = (): void => {
+      node.hidden = true;
+      middle.forEach((li) => (li.hidden = false));
+      if (fits()) return;
+      node.hidden = false;
+      middle.forEach((li) => (li.hidden = true));
+    };
+    sync();
+    new ResizeObserver(sync).observe(trail);
+  }
+
+  // UNDER 45rem THE TOOLBAR FOLDS INTO "…". The menu is a mirror, not a copy:
+  // each item is one of the toolbar's own buttons, and choosing it clicks that
+  // button, so whatever the toolbar's component wired (share sheet, history
+  // drawer, a link) runs unchanged. The toolbar is hidden in CSS at that width;
+  // the items are rebuilt on open so a button that appeared later is included.
+  function wireFold(bar: HTMLElement): void {
+    const toolbar = bar.querySelector<HTMLElement>('[data-top-bar-toolbar]');
+    const menu = bar.querySelector<Menu>('[data-top-bar-fold]');
+    if (!toolbar || !menu) return;
+    const controls = (): HTMLElement[] =>
+      [...toolbar.querySelectorAll<HTMLElement>('a[href], button')].filter(
+        (el) => !el.closest('esa-dropdown-menu') && el.textContent?.trim(),
+      );
+    const build = (): void => {
+      const list = controls();
+      menu.toggleAttribute('data-empty', list.length === 0);
+      menu.items = list.map((el, i) => ({ label: el.textContent!.trim(), action: String(i) }));
+    };
+    build();
+    menu.addEventListener('click', build, true);
+    menu.addEventListener('menu-action', (e) => {
+      controls()[Number((e as CustomEvent<string>).detail)]?.click();
+    });
+  }
+
+  customElements.whenDefined('esa-dropdown-menu').then(() => {
+    const bar = document.querySelector<HTMLElement>('[data-firma2-top-bar="app"]');
+    if (!bar) return;
+    publishHeight(bar);
+    collapseTrail(bar);
+    wireFold(bar);
+  });
+</script>
+
+<style>
+  /* The bar's height before the script measures it, so the rails and maps that
+     subtract it are right on first paint. The measured inline value wins. */
+  :global(:root) {
+    --firma2-band-height: 48px;
+  }
+
+  .firma2-top-bar {
+    /* esa-app-shell's content padding, reached through so the bar runs rail
+       edge to window edge — the same literal firma2-page-header and the maps
+       restate (no hook exposes it; /request-lego for --app-shell-content-padding
+       is filed). */
+    --_bleed: var(--spacing-500, 1.5rem);
+
+    position: sticky;
+    top: 0;
+    /* The header role from the z scale. It outranks ordinary content and the
+       layers the two embedded libraries paint — the grid's rows and Leaflet
+       (zoom control at 800) both clip under it because each scopes its stack in
+       a container of its own. If one ever leaks, the fix is `isolation: isolate`
+       on that container, not a higher bid here. */
+    z-index: var(--z-header, 200);
+    margin-block: calc(var(--_bleed) * -1) var(--_bleed);
+    margin-inline: calc(var(--_bleed) * -1);
+  }
+
+  /* 48px, hairline included: a 32px compact button with ~8px above and below
+     (user, 2026-10-19 — at 40px the bar sat cramped on its buttons). The
+     height is the box's, not padding around the content, so the 1px rule cannot push it to
+     49. The surface is the canvas, not a raised plate — the bar is the page's
+     own top, and the hairline alone marks where content passes under it. */
+  .firma2-top-bar :global(.esa-app-bar.firma2-top-bar__bar) {
+    --_bar-pad-x: var(--spacing-500, 1.5rem);
+    --_bar-pad-y: 0px;
+    --_bar-gap: var(--spacing-400, 1rem);
+    box-sizing: border-box;
+    min-block-size: 48px;
+    display: flex;
+    align-items: center;
+    background: var(--color-background-default, #fcfcfc);
+    border-block-end: 1px solid var(--color-border-default, #e0e0e0);
+  }
+  .firma2-top-bar :global(.firma2-top-bar__bar > .esa-app-bar__row) {
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  /* COMPACT BUTTONS. AppLayout pins every md button to the 40px control line;
+     in the bar that line is the bar itself, so its buttons step down to 32px —
+     tighter top and bottom, md's label and icon unchanged. Icon-only buttons
+     stay squares, the trail's sm "…" included (its padding alone made it 36). */
+  .firma2-top-bar :global(.firma2-top-bar__bar .esa-button--md > .esa-button__native) {
+    block-size: 32px;
+    padding-block: 0;
+  }
+  .firma2-top-bar :global(.firma2-top-bar__bar.esa-app-bar .esa-button--icon-only > .esa-button__native) {
+    block-size: 32px;
+    inline-size: 32px;
+    padding: 0;
+  }
+  /* A segmented switch (firma2-variant-switch) rides the actions slot on My
+     Projects. At md it is 46px — taller than the bar — and it is Lit, so the
+     light-DOM pin above cannot reach it; its private --_pad-y is set on the
+     host, where an outer rule outranks :host(). Same deviation as the bar's.
+     5.5px is not a step: it is what lands the switch on the buttons' 32px
+     (21px of border, track inset and leading, measured 2026-10-19) — the 4px
+     step made it 29, the 6px one 33. */
+  .firma2-top-bar :global(.firma2-top-bar__bar esa-button-toggle) {
+    --_pad-y: 5.5px;
+  }
+
+  /* The trail takes the slack and is the part that gives: it never wraps, and
+     its current crumb ellipsizes before the actions are pushed. The start slot
+     ships `flex: none`, which is right for a logo and wrong for a trail. */
+  .firma2-top-bar :global(.esa-app-bar__start) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+  .firma2-top-bar__trail {
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+  .firma2-top-bar__trail :global(.esa-breadcrumbs__list) {
+    flex-wrap: nowrap;
+  }
+  .firma2-top-bar__trail :global(.esa-breadcrumbs__item) {
+    flex: none;
+    white-space: nowrap;
+  }
+  .firma2-top-bar__trail :global(.esa-breadcrumbs__item:last-child) {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+  }
+  .firma2-top-bar__trail :global(.esa-breadcrumbs__current) {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* The glyph crumb has no text, so its link's 4px icon gap would offset it. */
+  .firma2-top-bar__trail :global(.esa-breadcrumbs__item:first-child .esa-breadcrumbs__link) {
+    gap: 0;
+  }
+  .firma2-top-bar__trail :global(.esa-breadcrumbs__item[hidden]) {
+    display: none;
+  }
+  /* The cloned "…" item carries this component's scope, not esa-breadcrumbs',
+     so it restates the item's own row: flex, centred, the 8px crumb gap. */
+  .firma2-top-bar__ellipsis {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--spacing-200, 8px);
+  }
+  .firma2-top-bar__ellipsis[hidden] {
+    display: none;
+  }
+
+  .firma2-top-bar__end {
+    flex-wrap: nowrap;
+    min-inline-size: 0;
+  }
+
+  /* THE PAGE'S NAME OUTRANKS ITS STATUS. A status can be a sentence (a saved
+     view's filter reads "Owed a 2025 report and left a measure unfiled"), and
+     left at full width it ellipsized the current crumb instead. So the current
+     crumb keeps a floor and the badges ellipsize first. The end slot ships
+     `flex: none`, which is right for buttons and wrong for a sentence, so it is
+     let shrink; the buttons inside still never do. */
+  .firma2-top-bar__trail :global(.esa-breadcrumbs__item:last-child) {
+    min-inline-size: min(12rem, 40vw);
+  }
+  .firma2-top-bar :global(.esa-app-bar__end) {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+  }
+  .firma2-top-bar__status {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+  .firma2-top-bar__status :global(.esa-badge) {
+    display: block;
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .firma2-top-bar__toolbar,
+  .firma2-top-bar__actions,
+  .firma2-top-bar__fold {
+    flex: none;
+  }
+  /* A page header forwards its slots unconditionally (Astro counts a forwarded
+     slot as filled), so an empty cluster must not hold a gap open. */
+  .firma2-top-bar__status:empty,
+  .firma2-top-bar__toolbar:empty,
+  .firma2-top-bar__actions:empty,
+  .firma2-top-bar__end:not(:has(> :not(:empty, .firma2-top-bar__fold))) {
+    display: none;
+  }
+  .firma2-top-bar__fold {
+    display: none;
+  }
+  /* [hidden] loses to the author display rule below, so emptiness is its own
+     attribute (see esa-hidden-attribute-trap). */
+  .firma2-top-bar__fold[data-empty] {
+    display: none !important;
+  }
+
+  @media (max-width: 45rem) {
+    /* Parent as the way back, then the current page. */
+    .firma2-top-bar__trail :global(.esa-breadcrumbs__item:not(:nth-last-child(-n + 2))) {
+      display: none;
+    }
+    .firma2-top-bar__toolbar {
+      display: none;
+    }
+    .firma2-top-bar__fold {
+      display: inline-flex;
+    }
+  }
+</style>

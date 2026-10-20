@@ -1,0 +1,116 @@
+---
+// firma2-proposal-list — intake projects as a short list of links. Two
+// readers, one list:
+//
+//   scope="mine"    My projects: the proposals you started — drafts you can
+//                   pick up, ones waiting, ones sent back. Drafts live here and
+//                   nowhere else until they are submitted.
+//   scope="review"  Review: proposals waiting for you to approve — the lead
+//                   organization's steward, or an administrator.
+//
+// EMPTY IS ABSENT. With nothing to list the section leaves the page; an
+// empty heading would be a sentence about nothing.
+//
+// bcn-lego-checked: esa-badge (status, cloned per row from templates) and a
+// typography-composite link per row; no esa- list or table fits five rows of
+// links (esa-link-column is a footer column; an AG Grid is for indexes that
+// grow, and these clear as they are decided).
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  scope: 'mine' | 'review';
+}
+const { scope } = Astro.props;
+const title = scope === 'mine' ? 'Your proposals' : 'Proposals to approve';
+const config = { scope, intakeHref: withBase('/prototypes/projects/intake') };
+---
+<section class="firma2-proposal-list stack" data-gap="sm" data-config={JSON.stringify(config)} aria-labelledby={`proposals-${scope}`} hidden>
+  <h2 class="typography-title-strong firma2-proposal-list__title" id={`proposals-${scope}`}>{title}</h2>
+  <ul class="firma2-proposal-list__rows" role="list" data-rows></ul>
+  <template data-status="draft"><EsaBadge variant="secondary" size="sm" value="Draft" /></template>
+  <template data-status="returned"><EsaBadge variant="warning" size="sm" value="Returned" /></template>
+  <template data-status="submitted"><EsaBadge variant="info" size="sm" value="Waiting for approval" /></template>
+  <template data-status="approved"><EsaBadge variant="success" size="sm" value="Approved" /></template>
+  <template data-status="deferred"><EsaBadge variant="warning" size="sm" value="Deferred" /></template>
+</section>
+
+<style>
+  .firma2-proposal-list[hidden] {
+    display: none !important;
+  }
+
+  .firma2-proposal-list__title {
+    margin: 0;
+  }
+
+  .firma2-proposal-list__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .firma2-proposal-list :global(.firma2-proposal-list__row) {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--spacing-100) var(--spacing-300);
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+
+  .firma2-proposal-list :global(.firma2-proposal-list__meta) {
+    color: var(--color-text-secondary);
+    flex-basis: 100%;
+    margin: 0;
+  }
+</style>
+
+<script>
+  import { CURRENT_USER, CURRENT_USER_ORGANIZATIONS } from '../../data/firma2-directory';
+  import type { IntakeProject } from '../../data/firma2-intake';
+  import { projectName, readIntakeProjects } from '../../lib/intake-form';
+  import { currentActor } from '../../lib/workspace-permissions';
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const day = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : '');
+
+  document.querySelectorAll<HTMLElement>('.firma2-proposal-list').forEach((root) => {
+    const { scope, intakeHref }: { scope: 'mine' | 'review'; intakeHref: string } = JSON.parse(root.dataset.config ?? '{}');
+    const actor = currentActor();
+    const all = readIntakeProjects();
+    const mayApprove = (p: IntakeProject) =>
+      actor.role === 'Administrator' || (actor.steward && CURRENT_USER_ORGANIZATIONS.includes(String(p.answers.leadOrganization ?? '')));
+    const rows =
+      scope === 'mine'
+        ? all.filter((p) => p.createdBy === CURRENT_USER.name && p.status !== 'approved')
+        : all.filter((p) => p.status === 'submitted' && mayApprove(p));
+    if (!rows.length) return;
+
+    const meta = (p: IntakeProject) => {
+      const lead = p.answers.leadOrganization ? String(p.answers.leadOrganization) : '';
+      if (scope === 'review') return [lead, `submitted by ${p.createdBy} on ${day(p.submittedAt)}`].filter(Boolean).join(' · ');
+      if (p.status === 'returned') return `Sent back on ${day(p.decidedAt)}`;
+      if (p.status === 'submitted') return `Submitted ${day(p.submittedAt)}`;
+      return [lead, `started ${day(p.createdAt)}`].filter(Boolean).join(' · ');
+    };
+
+    const list = root.querySelector<HTMLElement>('[data-rows]')!;
+    list.replaceChildren(
+      ...rows.map((p) => {
+        const li = document.createElement('li');
+        li.className = 'firma2-proposal-list__row';
+        li.innerHTML = `<a class="typography-label-md-strong" href="${intakeHref}?id=${encodeURIComponent(p.id)}">${esc(projectName(p))}</a>`;
+        // In the review list every row is waiting; the heading already says so.
+        const badge = scope === 'mine' ? root.querySelector<HTMLTemplateElement>(`template[data-status="${p.status}"]`)?.content.firstElementChild?.cloneNode(true) : null;
+        if (badge) li.append(badge);
+        const m = document.createElement('p');
+        m.className = 'firma2-proposal-list__meta typography-body-sm';
+        m.textContent = meta(p);
+        li.append(m);
+        return li;
+      }),
+    );
+    root.hidden = false;
+  });
+</script>

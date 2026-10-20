@@ -1,0 +1,628 @@
+---
+// firma2-intake-flow — a new project, from its first screen to its approval.
+// The member's side of the intake form (spec: .scratch/project-intake/spec.md):
+// New project, the draft's steps, its review, and — once submitted — the
+// read-only proposal a steward approves or returns.
+//
+// IT IS NOT A ONE-SITTING WIZARD (product brief, "Setup is not a wizard").
+// Continue on the first screen creates a draft project with its own link;
+// from then on every answer saves as it is given, the steps can be visited in
+// any order, and leaving costs nothing. Submit waits for every required
+// question that is shown.
+//
+// THE FORM DECIDES WHAT IS ASKED, this decides nothing: screens, questions,
+// conditions and the after-submit message come from the published form
+// (src/lib/intake-form.ts), and each question is drawn by the same renderer
+// the builder's canvas uses (src/lib/intake-render.ts). `?preview=1` fills the
+// builder's unpublished copy instead and saves nothing.
+//
+// FOUR STATES, ONE PAGE: draft and returned are the steps; submitted, approved
+// and deferred are the proposal read back, with the steward's Approve and
+// Return on a submitted one.
+//
+// bcn-lego-checked: firma2-page-header (title, crumbs, status, actions),
+// esa-alert-box (returned, preview, submitted, still missing), esa-button
+// (cloned from templates for the step list and the review's Edit links),
+// esa-badge (status), esa-dialog + esa-textarea (Return), esa-dropdown-menu
+// (Move to Deferred), esa-snackbar-container (confirmations), every question
+// a runtime esa-* field. No esa- stepper exists; the step list follows the GIS
+// subscription wizard's data-step precedent with steps reachable in any order.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2PageHeader from '../shared/firma2-page-header.astro';
+import { withBase } from '../../lib/base';
+import { DEFAULT_FORM_TITLE } from '../../data/firma2-intake';
+
+interface Props {
+  mode: 'new' | 'draft';
+}
+const { mode } = Astro.props;
+const config = {
+  mode,
+  intakeHref: withBase('/prototypes/projects/intake'),
+  myProjectsHref: withBase('/prototypes/my-projects'),
+  reviewHref: withBase('/prototypes/review'),
+};
+---
+<div class="firma2-intake-flow stack" data-gap="xl" data-config={JSON.stringify(config)}>
+  <Firma2PageHeader title={DEFAULT_FORM_TITLE} crumbs={[{ label: 'Projects', href: withBase('/prototypes/projects') }, { label: 'New project' }]}>
+    <span slot="status" class="cluster" data-gap="xs">
+      <span data-status="draft" hidden><EsaBadge variant="secondary" size="md" value="Draft" /></span>
+      <span data-status="returned" hidden><EsaBadge variant="warning" size="md" value="Returned" /></span>
+      <span data-status="submitted" hidden><EsaBadge variant="info" size="md" value="Waiting for approval" /></span>
+      <span data-status="approved" hidden><EsaBadge variant="success" size="md" value="Approved" /></span>
+      <span data-status="deferred" hidden><EsaBadge variant="warning" size="md" value="Deferred" /></span>
+    </span>
+    <span slot="actions" class="cluster" data-gap="xs" data-decide hidden>
+      <EsaButton variant="primary" size="md" data-approve>Approve</EsaButton>
+      <EsaButton variant="secondary" size="md" data-return>Return</EsaButton>
+      <esa-dropdown-menu position="below-end" data-more>
+        <EsaButton variant="secondary" size="md" iconOnly icon="ellipsis" aria-label="More actions">More actions</EsaButton>
+      </esa-dropdown-menu>
+    </span>
+  </Firma2PageHeader>
+
+  <div data-banner="preview" hidden>
+    <EsaAlertBox variant="info" title="Preview of unpublished changes">
+      <p class="typography-body-md">This is the form as you’ve built it. Nothing you enter here is saved.</p>
+    </EsaAlertBox>
+  </div>
+  <div data-banner="returned" hidden>
+    <EsaAlertBox variant="warning" title="Sent back for changes">
+      <p class="typography-body-md" data-return-comment></p>
+    </EsaAlertBox>
+  </div>
+  <div data-banner="submitted" hidden>
+    <EsaAlertBox variant="success" title="Proposal submitted">
+      <div data-after-submit></div>
+    </EsaAlertBox>
+  </div>
+  <div data-banner="missing-draft" hidden>
+    <EsaAlertBox variant="warning" title="This proposal isn’t in this browser">
+      <p class="typography-body-md">Drafts are kept in the browser they were started in. Start a new project instead.</p>
+    </EsaAlertBox>
+  </div>
+
+  <!-- THE STEPS -->
+  <div class="stack" data-gap="xl" data-steps hidden>
+    <nav aria-label="Steps">
+      <ol class="firma2-intake-flow__steps cluster" data-gap="xs" data-step-list></ol>
+    </nav>
+    <section class="stack" data-gap="lg" aria-labelledby="intake-step-title">
+      <div class="stack" data-gap="2xs">
+        <p class="typography-body-md firma2-intake-flow__count" data-step-count></p>
+        <h2 class="typography-heading-md firma2-intake-flow__title" id="intake-step-title" data-step-title></h2>
+      </div>
+      <div class="stack" data-gap="lg" data-step-body></div>
+    </section>
+    <!-- Windows wizard order: Back, then the step's primary. -->
+    <div class="cluster firma2-intake-flow__footer" data-gap="xs">
+      <span data-back-wrap><EsaButton variant="secondary" size="md" data-back>Back</EsaButton></span>
+      <span data-next-wrap><EsaButton variant="primary" size="md" data-next>Continue</EsaButton></span>
+      <span data-submit-wrap hidden><EsaButton variant="primary" size="md" data-submit>Submit proposal</EsaButton></span>
+    </div>
+  </div>
+
+  <!-- THE PROPOSAL, READ BACK -->
+  <div class="stack" data-gap="xl" data-summary hidden></div>
+
+  <esa-dialog class="firma2-intake-flow__return" heading="Return this proposal" size="md" show-close-button>
+    <esa-textarea label="What needs to change?" help-text="The person who submitted it sees this at the top of their proposal." size="md" rows="4" required data-return-text></esa-textarea>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="primary" size="md" data-return-confirm>Return proposal</EsaButton>
+      <EsaButton variant="secondary" size="md" data-return-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <esa-snackbar-container class="firma2-intake-flow__toasts"></esa-snackbar-container>
+
+  <template data-tpl="step"><EsaButton variant="ghost" size="md">Step</EsaButton></template>
+  <template data-tpl="edit"><EsaButton variant="ghost" size="md">Edit</EsaButton></template>
+</div>
+
+<style>
+  .firma2-intake-flow :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-intake-flow__steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .firma2-intake-flow__count,
+  .firma2-intake-flow__title {
+    margin: 0;
+  }
+
+  .firma2-intake-flow__count {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-flow__footer {
+    justify-content: flex-end;
+    padding-block-start: var(--spacing-600);
+    border-block-start: 1px solid var(--color-border-default);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-location__map) {
+    height: 16rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-default);
+  }
+
+  /* A question whose label or help is formatted draws them itself
+     (intake-render's controlMarkup), in the lego's own label and help roles
+     so it reads as the plain questions around it do. */
+  .firma2-intake-flow :global(.firma2-intake-q__label),
+  .firma2-intake-flow :global(.firma2-intake-q__help) {
+    margin: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-q__label) {
+    color: var(--form-label-color, var(--color-text-secondary));
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-q__required) {
+    margin-inline-start: var(--spacing-100);
+    color: var(--color-content-utility-danger);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-q__help) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-q a) {
+    color: var(--color-content-brand);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__text > :first-child) {
+    margin-block-start: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__text > :last-child) {
+    margin-block-end: 0;
+  }
+
+  /* The review and the read-back: one definition list per screen. */
+  .firma2-intake-flow :global(.firma2-intake-flow__screen-head) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-300);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__screen-head h3) {
+    margin: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__answers) {
+    display: grid;
+    grid-template-columns: minmax(10rem, 16rem) 1fr;
+    gap: var(--spacing-300) var(--spacing-600);
+    margin: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__answers dt) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__answers dd) {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__unanswered) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__missing) {
+    color: var(--color-content-utility-danger);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__missing-list) {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+  }
+
+  /* A question an answer just revealed settles in from 4px above — the same
+     arrival as the builder's new blocks. --animation-enter is 0ms under reduced motion. */
+  @keyframes firma2-intake-flow-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  .firma2-intake-flow :global([data-arriving]) {
+    animation: firma2-intake-flow-arrive var(--animation-enter, 150ms cubic-bezier(0.23, 1, 0.32, 1));
+  }
+
+  @media (max-width: 40rem) {
+    .firma2-intake-flow :global(.firma2-intake-flow__answers) {
+      grid-template-columns: 1fr;
+      gap: var(--spacing-100);
+    }
+
+    .firma2-intake-flow :global(.firma2-intake-flow__answers dd) {
+      margin-block-end: var(--spacing-300);
+    }
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-radio-group';
+  import '@esa/ecology/esa-checkbox-group';
+  import '@esa/ecology/esa-combobox';
+  import '@esa/ecology/esa-date-picker';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-snackbar-container';
+  import type { Answers, IntakeForm, IntakeProject, QuestionBlock, Screen } from '../../data/firma2-intake';
+  import { CURRENT_USER, CURRENT_USER_ORGANIZATIONS } from '../../data/firma2-directory';
+  import {
+    answerKey,
+    clearHidden,
+    createDraft,
+    decide,
+    formFor,
+    formFields,
+    getIntakeProject,
+    isAnswered,
+    isQuestion,
+    missingRequired,
+    projectName,
+    saveIntakeProject,
+    submitProject,
+    visibleScreens,
+  } from '../../lib/intake-form';
+  import { hydrateQuestions, controlMarkup, readControl } from '../../lib/intake-render';
+  import { currentActor } from '../../lib/workspace-permissions';
+
+  type Control = HTMLElement & { value: unknown };
+  type Toasts = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
+  type Dialog = HTMLElement & { show: () => void; close: () => void };
+  type Menu = HTMLElement & { items: { label: string; action: string }[] };
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+  document.querySelectorAll<HTMLElement>('.firma2-intake-flow').forEach((root) => {
+    // The header's status, actions and crumb render in the app's top bar, outside
+    // this root (firma2-page-header hands them over), so lookups fall back to it.
+    const bar = document.querySelector<HTMLElement>('[data-firma2-top-bar="app"]');
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => (root.querySelector<T>(sel) ?? bar?.querySelector<T>(sel))!;
+    const { mode, intakeHref, reviewHref }: { mode: 'new' | 'draft'; intakeHref: string; myProjectsHref: string; reviewHref: string } = JSON.parse(root.dataset.config ?? '{}');
+    const params = new URLSearchParams(location.search);
+    const preview = params.get('preview') === '1';
+    const form: IntakeForm = formFor(preview);
+    // The form's own view of the fields: on a preview, its staged changes too.
+    const fields = formFields(form);
+    const toasts = $<Toasts>('.firma2-intake-flow__toasts');
+
+    let project: IntakeProject | undefined = mode === 'draft' ? getIntakeProject(params.get('id') ?? '') : undefined;
+    let answers: Answers = project ? { ...project.answers } : {};
+    let step = 0;
+
+    // An EsaButton clone is a wrapper span around the real <button>: its text
+    // goes in the label, its states on the button.
+    const native = (wrap: HTMLElement) => wrap.querySelector<HTMLButtonElement>('button') ?? (wrap as HTMLButtonElement);
+    const labelled = (wrap: HTMLElement, text: string) => {
+      (wrap.querySelector('.esa-button__label') ?? native(wrap)).textContent = text;
+      return wrap;
+    };
+    // Disabled is drawn from the wrapper's class and enforced by the button's attribute.
+    const setDisabled = (button: HTMLElement, off: boolean) => {
+      native(button).disabled = off;
+      button.closest('.esa-button')?.classList.toggle('esa-button--disabled', off);
+    };
+    const tpl = (name: string) => ($<HTMLTemplateElement>(`template[data-tpl="${name}"]`).content.firstElementChild!.cloneNode(true) as HTMLElement);
+    // THE TITLE IS THE FORM'S NAME, on every state of the page. Which project
+    // this is goes in the last crumb (and the tab), so typing a name never
+    // renames the page you are filling in.
+    const h1 = root.querySelector('h1');
+    if (h1) h1.textContent = form.title;
+    const crumb = bar?.querySelector<HTMLElement>('.esa-breadcrumbs__current') ?? null;
+    const setProject = (name: string) => {
+      if (crumb) crumb.textContent = name;
+      document.title = `${name} — ${form.title} — ProjectFirma 2.0`;
+    };
+    const banner = (name: string, on: boolean) => ($(`[data-banner="${name}"]`).hidden = !on);
+
+    // ---- answers, as people read them ------------------------------------------
+    const show = (q: QuestionBlock, v: unknown): string => {
+      if (!isAnswered(v)) return '';
+      if (Array.isArray(v)) return q.type === 'builtin' && q.key === 'location' ? `${v[0]}, ${v[1]}` : v.join(', ');
+      if (q.type === 'builtin' && q.key === 'estimatedTotalCost') return money.format(Number(v));
+      if (q.type === 'field' && fields.find((f) => f.id === q.fieldId)?.kind === 'money') return money.format(Number(v));
+      if (q.type === 'field' && fields.find((f) => f.id === q.fieldId)?.kind === 'number') {
+        const unit = fields.find((f) => f.id === q.fieldId)?.unit;
+        return `${Number(v).toLocaleString('en-US')}${unit ? ` ${unit}` : ''}`;
+      }
+      return String(v);
+    };
+
+    const answersList = (screen: Screen, missing: Set<string>) => {
+      const rows = screen.blocks.filter(isQuestion).map((q) => {
+        const value = show(q, answers[answerKey(q)]);
+        const dd = value
+          ? esc(value)
+          : missing.has(q.id)
+            ? '<span class="firma2-intake-flow__missing">Required</span>'
+            : '<span class="firma2-intake-flow__unanswered">Not answered</span>';
+        return `<dt class="typography-body-md">${esc(q.label || 'Untitled question')}</dt><dd class="typography-body-md">${dd}</dd>`;
+      });
+      const dl = document.createElement('dl');
+      dl.className = 'firma2-intake-flow__answers';
+      dl.innerHTML = rows.join('');
+      return dl;
+    };
+
+    // ---- the steps -------------------------------------------------------------
+    // The screens shown for the answers so far, then the review.
+    const screens = () => visibleScreens(form, answers);
+    const stepCount = () => screens().length + 1;
+    const isReview = () => step >= screens().length;
+
+    const save = () => {
+      if (preview || !project) return;
+      project = { ...project, answers };
+      saveIntakeProject(project);
+    };
+
+    const paintStepList = () => {
+      const list = $('[data-step-list]');
+      const names = [...screens().map((s, i) => s.title || `Step ${i + 1}`), 'Review'];
+      list.replaceChildren(
+        ...names.map((name, i) => {
+          const li = document.createElement('li');
+          const b = labelled(tpl('step'), name);
+          if (i === step) {
+            b.classList.add('esa-button--current');
+            native(b).setAttribute('aria-current', 'step');
+          }
+          // On the new-project page only the first screen exists until Continue.
+          const locked = mode === 'new' && !preview && i > 0;
+          if (locked) setDisabled(b, true);
+          native(b).addEventListener('click', () => !locked && go(i));
+          li.append(b);
+          return li;
+        }),
+      );
+    };
+
+    const paintReview = () => {
+      const body = $('[data-step-body]');
+      const missing = missingRequired(form, answers);
+      const missingIds = new Set(missing.map((m) => m.id));
+      const parts: HTMLElement[] = [];
+      if (missing.length) {
+        const box = document.createElement('div');
+        box.className = 'stack';
+        box.dataset.gap = 'xs';
+        box.innerHTML = `<p class="typography-body-md"><strong>${missing.length === 1 ? 'One required question is' : `${missing.length} required questions are`} still unanswered.</strong> Answer ${missing.length === 1 ? 'it' : 'them'} to submit.</p>`;
+        parts.push(box);
+      }
+      screens().forEach((screen, i) => {
+        const section = document.createElement('section');
+        section.className = 'stack';
+        section.dataset.gap = 'sm';
+        const head = document.createElement('div');
+        head.className = 'firma2-intake-flow__screen-head';
+        head.innerHTML = `<h3 class="typography-title-strong">${esc(screen.title || `Step ${i + 1}`)}</h3>`;
+        const edit = tpl('edit');
+        native(edit).setAttribute('aria-label', `Edit ${screen.title || `step ${i + 1}`}`);
+        native(edit).addEventListener('click', () => go(i));
+        head.append(edit);
+        section.append(head, answersList(screen, missingIds));
+        parts.push(section);
+      });
+      body.replaceChildren(...parts);
+      setDisabled(root.querySelector<HTMLElement>('[data-submit]')!, missing.length > 0);
+    };
+
+    const paintScreen = async (screen: Screen) => {
+      const body = $('[data-step-body]');
+      body.replaceChildren(
+        ...screen.blocks.map((b) => {
+          const div = document.createElement('div');
+          div.dataset.blockId = b.id;
+          if (b.type === 'text') {
+            div.className = 'firma2-intake-flow__text typography-body-md';
+            div.innerHTML = b.html; // stored by firma2-rich-text, through its schema
+          } else {
+            div.innerHTML = controlMarkup(b, fields, { labelled: true });
+          }
+          return div;
+        }),
+      );
+      await hydrateQuestions(body, screen.blocks.filter(isQuestion), answers, fields, true);
+    };
+
+    const paint = async (focus = false) => {
+      const all = screens();
+      step = Math.min(step, all.length);
+      paintStepList();
+      $('[data-step-count]').textContent = `Step ${step + 1} of ${stepCount()}`;
+      const review = isReview();
+      $('[data-step-title]').textContent = review ? 'Review and submit' : all[step].title || `Step ${step + 1}`;
+      $('[data-back-wrap]').hidden = step === 0;
+      $('[data-next-wrap]').hidden = review;
+      $('[data-submit-wrap]').hidden = !review;
+      if (review) paintReview();
+      else await paintScreen(all[step]);
+      if (focus) {
+        const h = $('[data-step-title]');
+        h.tabIndex = -1;
+        h.focus({ preventScroll: true });
+        window.scrollTo({ top: 0 });
+      }
+    };
+
+    const go = (i: number) => {
+      step = i;
+      void paint(true);
+    };
+
+    // An answer changed: keep it, and repaint only when it changed what is shown.
+    const shownKey = () => screens().map((s) => `${s.id}:${s.blocks.map((b) => b.id).join(',')}`).join('|');
+    $('[data-step-body]').addEventListener('change', (e) => {
+      const el = (e.target as HTMLElement).closest<Control>('[data-answer]');
+      if (!el) return;
+      const before = shownKey();
+      answers = { ...answers, [el.dataset.answer!]: readControl(el) };
+      if (el.dataset.answer === 'projectName') setProject(String(answers.projectName || (mode === 'new' ? 'New project' : 'Untitled project')));
+      if (shownKey() !== before) {
+        answers = clearHidden(form, answers);
+        const active = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[data-answer]')?.dataset.answer;
+        const had = new Set([...root.querySelectorAll<HTMLElement>('[data-step-body] > [data-block-id]')].map((el) => el.dataset.blockId));
+        void paint().then(() => {
+          if (active) root.querySelector<HTMLElement>(`[data-answer="${CSS.escape(active)}"]`)?.focus();
+          // What the answer just revealed settles in, so it reads as caused by
+          // the answer rather than as the page jumping.
+          root.querySelectorAll<HTMLElement>('[data-step-body] > [data-block-id]').forEach((el) => {
+            if (had.has(el.dataset.blockId)) return;
+            el.dataset.arriving = '';
+            el.addEventListener('animationend', () => delete el.dataset.arriving, { once: true });
+          });
+        });
+      }
+      save();
+    });
+
+    $('[data-next]').addEventListener('click', () => {
+      if (mode === 'new' && !preview && step === 0) {
+        // The draft needs a name to be found again; everything else can wait for Submit.
+        if (!isAnswered(answers.projectName)) {
+          const name = root.querySelector<HTMLElement & { errorText: string }>('[data-answer="projectName"]');
+          if (name) {
+            name.errorText = 'Give the project a name to save it as a draft.';
+            name.focus();
+          }
+          return;
+        }
+        const draft = createDraft(answers, CURRENT_USER.name);
+        location.assign(`${intakeHref}?id=${encodeURIComponent(draft.id)}&step=2`);
+        return;
+      }
+      go(step + 1);
+    });
+    $('[data-back]').addEventListener('click', () => go(step - 1));
+    $('[data-submit]').addEventListener('click', () => {
+      if (preview) {
+        showSubmitted(true);
+        return;
+      }
+      if (!project) return;
+      const next = submitProject(project.id, form);
+      if (!next) return paint();
+      location.assign(`${intakeHref}?id=${encodeURIComponent(next.id)}&submitted=1`);
+    });
+
+    // ---- the proposal, read back -----------------------------------------------
+    const approver = () => {
+      const actor = currentActor();
+      if (actor.role === 'Administrator') return true;
+      return actor.steward && CURRENT_USER_ORGANIZATIONS.includes(String(answers.leadOrganization ?? ''));
+    };
+
+    const showSubmitted = (justNow: boolean) => {
+      $('[data-steps]').hidden = true;
+      const summary = $('[data-summary]');
+      summary.hidden = false;
+      if (justNow) {
+        $('[data-after-submit]').innerHTML = form.afterSubmit;
+        banner('submitted', true);
+      }
+      summary.replaceChildren(
+        ...visibleScreens(form, answers).map((screen, i) => {
+          const section = document.createElement('section');
+          section.className = 'stack';
+          section.dataset.gap = 'sm';
+          section.innerHTML = `<h2 class="typography-title-strong">${esc(screen.title || `Step ${i + 1}`)}</h2>`;
+          section.append(answersList(screen, new Set()));
+          return section;
+        }),
+      );
+    };
+
+    const paintStatus = () => {
+      // No badge until there is a project: the first screen is not a draft until Continue saves it.
+      const status = project?.status;
+      [...root.querySelectorAll<HTMLElement>('[data-status]'), ...(bar?.querySelectorAll<HTMLElement>('[data-status]') ?? [])].forEach((el) => (el.hidden = !status || el.dataset.status !== status || preview));
+    };
+
+    // ---- deciding --------------------------------------------------------------
+    const returnDialog = $<Dialog>('.firma2-intake-flow__return');
+    const returnText = $<Control & { errorText: string }>('[data-return-text]');
+    $('[data-approve]').addEventListener('click', () => {
+      if (!project) return;
+      project = decide(project.id, 'approved', CURRENT_USER.name);
+      toasts.show({ message: `${projectName(project!)} approved. It’s in Planning & Design now.`, variant: 'success' });
+      start();
+    });
+    $('[data-return]').addEventListener('click', () => {
+      returnText.value = '';
+      returnText.errorText = '';
+      returnDialog.show();
+    });
+    $('[data-return-cancel]').addEventListener('click', () => returnDialog.close());
+    $('[data-return-confirm]').addEventListener('click', () => {
+      const comment = String(returnText.value ?? '').trim();
+      if (!comment) {
+        returnText.errorText = 'Say what needs to change.';
+        returnText.focus();
+        return;
+      }
+      if (!project) return;
+      project = decide(project.id, 'returned', CURRENT_USER.name, comment);
+      returnDialog.close();
+      toasts.show({ message: `Returned to ${project!.createdBy}.`, variant: 'success' });
+      start();
+    });
+    customElements.whenDefined('esa-dropdown-menu').then(() => {
+      $<Menu>('[data-more]').items = [{ label: 'Move to Deferred', action: 'defer' }];
+    });
+    $('[data-more]').addEventListener('menu-action', (e) => {
+      if ((e as CustomEvent<{ action: string }>).detail.action !== 'defer' || !project) return;
+      project = decide(project.id, 'deferred', CURRENT_USER.name);
+      toasts.show({ message: `${projectName(project!)} moved to Deferred.`, variant: 'success' });
+      start();
+    });
+
+    // ---- begin -----------------------------------------------------------------
+    function start() {
+      paintStatus();
+      $('[data-decide]').hidden = true;
+      banner('returned', false);
+      banner('preview', preview);
+      if (mode === 'draft' && !project) {
+        banner('missing-draft', true);
+        $('[data-steps]').hidden = true;
+        return;
+      }
+      setProject(project ? projectName(project) : 'New project');
+      const status = project?.status ?? 'draft';
+      if (status === 'draft' || status === 'returned') {
+        if (status === 'returned' && project?.returnComment) {
+          $('[data-return-comment]').textContent = `${project.decidedBy ?? 'The steward'}: “${project.returnComment}”`;
+          banner('returned', true);
+        }
+        $('[data-summary]').hidden = true;
+        $('[data-steps]').hidden = false;
+        const asked = Number(params.get('step') ?? '1') - 1;
+        step = Math.max(0, Math.min(asked, screens().length));
+        void paint();
+        return;
+      }
+      showSubmitted(params.get('submitted') === '1' && status === 'submitted');
+      if (status === 'submitted' && approver()) $('[data-decide]').hidden = false;
+    }
+
+    start();
+  });
+</script>

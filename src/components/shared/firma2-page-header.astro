@@ -1,36 +1,29 @@
 ---
-// firma2-page-header — the page's own top edge: the breadcrumb trail and the
-// page title (plus whatever actions the page hangs off them), held at the top of
-// the viewport while the rest of the page scrolls underneath.
+// firma2-page-header — the page's own top: its breadcrumb trail, status and
+// actions, handed to the app's pinned top bar, and its title, which stays in the
+// page and scrolls with it.
 //
-// Slots: "actions" (the page's workflow, trailing the title), "toolbar"
-// (record-level utilities, trailing the BREADCRUMB — crumbed pages only; see
-// the note in the markup) and "status" (what STATE the record is in — a pill
-// or two, under the title).
+// Slots: "status" (what STATE the record is in — badges), "toolbar" (record-
+// level utilities) and "actions" (the page's workflow, primary last). All three
+// render in firma2-top-bar, trailing the crumbs, in that order.
 //
-// WHY IT IS PINNED AND THE APP BAR IS NOT. AppLayout scrolls the DOCUMENT, so
-// the bar with the omnibox and the account menu rides up and out of the way —
-// it is chrome for the app, and once you are reading a record you are done with
-// it. What you are never done with is WHICH record you are reading and the way
-// back out of it, and on a long page (a project detail runs six sections) both
-// scroll off within a screen. So the header is the one band that stays: the
-// crumb is the exit, the title is the answer to "what am I looking at", and the
-// actions are the thing you came to do.
+// SINCE 2026-10-19 THE TITLE IS NOT PINNED. The sticky band below used to hold
+// crumb, title, status and actions together, and it was tall. The thin top bar
+// (Tally's editor bar was the reference) now carries everything that has to stay
+// on screen — the way out, the current page's name as its last crumb, and what
+// you can do here — so the h1 is ordinary page content. The API did not change:
+// no page had to be edited. The history below is kept where it still explains a
+// decision the bar inherited.
 //
-// bcn-lego-checked: esa-page-header IS this header and remains the whole of the
-// markup — the title role, the eyebrow, the breadcrumbs and actions slots are
-// all its own, and esa-breadcrumbs renders the trail. Nothing here re-implements
-// either. What is added is ONE behaviour neither lego has: the band. Walked the
-// catalog (`ls node_modules/@esa/ecology/src/components/`) for a sticky/affix/
-// page-top primitive — the only sticky-adjacent lego is esa-back-to-top, which
-// is a floating button, not a region, and esa-app-bar is the app's bar, not the
-// page's. Beacon is not cloned in this checkout. Every prototype opens with this
-// section, so one shared component is its home rather than the same four rules
-// pasted into four pages — which is also what keeps the band's height, its
-// hairline and its bleed identical on every screen.
+// bcn-lego-checked: esa-page-header IS the title block and remains the whole
+// of it; esa-breadcrumbs (inside firma2-top-bar) renders the trail. Nothing here
+// re-implements either. What this component adds is the hand-off to the bar and
+// the editable title's adoption of the lego's h1. Beacon is not cloned in this
+// checkout. Every prototype opens with this section, so one shared component is
+// its home — which is also what keeps the bar identical on every screen.
 import EsaPageHeader from '@esa/ecology/esa-page-header.astro';
-import EsaBreadcrumbs from '@esa/ecology/esa-breadcrumbs.astro';
 import Firma2EditableField from './firma2-editable-field.astro';
+import Firma2TopBar from './firma2-top-bar.astro';
 
 /** One step of the trail. The LAST crumb is the current page and takes no href —
     esa-breadcrumbs marks it aria-current="page" on that basis. */
@@ -59,8 +52,8 @@ export interface EditableTitle {
 interface Props {
   /** The page's name. Renders as the h1. */
   title: string;
-  /** The trail above the title. Omit on a top-level page, where a single crumb
-      would only repeat the title one line below it. */
+  /** The trail in the top bar, ending with this page. Omit on a top-level page:
+      the bar then reads home › title. */
   crumbs?: Crumb[];
   /**
    * Present when the title is a STORED VALUE the reader may correct — a record's
@@ -75,56 +68,37 @@ interface Props {
 }
 
 const { title, crumbs, editableTitle, aliasableTitle = false } = Astro.props;
-const hasCrumbs = (crumbs?.length ?? 0) > 0;
-// Only the crumbs marked aliasable are rewritten — a crumb can be a record's
-// own name, which is data and keeps its name.
-const aliasableCrumbs = (crumbs ?? []).filter((c) => c.aliasable).map((c) => c.label);
+// A top-level page's trail is just its own name after the home glyph.
+const trail = crumbs?.length ? crumbs : [{ label: title, aliasable: aliasableTitle }];
 const hasStatus = Astro.slots.has('status');
 const hasToolbar = Astro.slots.has('toolbar');
+const hasActions = Astro.slots.has('actions');
 ---
-{/* THE BAND IS A STACK so the status row below the title takes the same 8px
-    step esa-page-header puts between its own eyebrow and its h1 — the status
-    reads as part of the title block rather than as a second row of chrome. */}
-<div class="firma2-page-header stack" data-gap="xs" data-aliasable-title={aliasableTitle ? '' : undefined}>
-  {/* TWO BRANCHES, not one with a conditional inside. esa-page-header decides
-      whether to render its breadcrumbs container with Astro.slots.has(), and a
-      slot counts as FILLED as soon as an element carrying `slot="breadcrumbs"`
-      appears in the children — even inside an expression that evaluates false.
-      Passing `{hasCrumbs && <EsaBreadcrumbs …/>}` therefore rendered an empty
-      breadcrumbs div on every top-level page, and its 12px bottom margin showed
-      up as unexplained space over the title. The only way to leave the slot
-      genuinely empty is not to write it, so the crumb-less page gets its own
-      call. Actions forward unconditionally: an empty actions cluster is a
-      zero-width flex box on the bar's trailing edge and changes nothing. */}
-  {hasCrumbs ? (
-    <EsaPageHeader title={title}>
-      {/* THE CRUMB ROW IS ALSO THE TOOLBAR ROW. Two slots, two kinds of act:
-          "actions" trails the TITLE and is for the page's workflow (the
-          catalog's primary "New measure"); "toolbar" trails the CRUMB and is
-          for record-level utilities — smaller, quieter, chrome rather than
-          workflow (the project page's Share · Fact sheet · History). The
-          crumb and the toolbar share one .repel because they are the same
-          kind of thing: the strip above the title is the page's frame — the
-          way out on its leading edge, the things you can do WITH the page on
-          its trailing edge — and the title below stays the record's own.
-          Requires crumbs: the toolbar rides the crumb row, and a top-level
-          page (no crumbs) has no such row to ride — its actions belong
-          beside the title. */}
-      <div slot="breadcrumbs" class="repel" data-gap="md" data-aliasable-crumbs={aliasableCrumbs.length ? JSON.stringify(aliasableCrumbs) : undefined}>
-        <EsaBreadcrumbs items={crumbs} />
-        {hasToolbar && (
-          <div class="firma2-page-header__toolbar cluster" data-gap="xs">
-            <slot name="toolbar" />
-          </div>
-        )}
-      </div>
-      <slot name="actions" slot="actions" />
-    </EsaPageHeader>
-  ) : (
-    <EsaPageHeader title={title}>
-      <slot name="actions" slot="actions" />
-    </EsaPageHeader>
-  )}
+{/* THE BAR FIRST, THEN THE SWAP. This bar is rendered here because only the
+    page knows its trail and its actions; the inline script directly after it
+    replaces the layout's root-only bar with it DURING PARSE, so the bar the
+    reader first sees is already this one — no flash, no second paint. It has
+    to run synchronously, which is why it is is:inline and reads currentScript:
+    a module script would run after first paint. Astro counts a forwarded slot
+    as FILLED even inside a false expression, so the bar may receive an empty
+    cluster; it hides its own empty clusters rather than trusting has(). */}
+<Firma2TopBar role="page" crumbs={trail}>
+  {hasStatus && <slot name="status" slot="status" />}
+  {hasToolbar && <slot name="toolbar" slot="toolbar" />}
+  {hasActions && <slot name="actions" slot="actions" />}
+</Firma2TopBar>
+<script is:inline>
+  (() => {
+    const mine = document.currentScript && document.currentScript.previousElementSibling;
+    const host = document.querySelector('[data-firma2-top-bar="app"]');
+    if (!mine || !host || mine.getAttribute('data-firma2-top-bar') !== 'page') return;
+    mine.setAttribute('data-firma2-top-bar', 'app');
+    host.replaceWith(mine);
+  })();
+</script>
+
+<div class="firma2-page-header" data-aliasable-title={aliasableTitle ? '' : undefined}>
+  <EsaPageHeader title={title} />
 
   {/* THE TITLE, AS A FIELD. It renders here, outside the header, and the script
       below moves it into the title block around the h1 esa-page-header already
@@ -146,69 +120,12 @@ const hasToolbar = Astro.slots.has('toolbar');
     />
   )}
 
-  {/* THE RECORD'S STATUS, UNDER ITS NAME — not trailing it in the actions
-      cluster, which is where it sat because that is the only slot
-      esa-page-header offers beside the title. Two things were wrong with that
-      seat. A stage pill is not an action: it sits in the one cluster whose
-      every other occupant is a control, on the far side of a bar that can be
-      1200px wide, so the fact it qualifies is separated from the name it
-      qualifies by the whole width of the screen. Under the title it is read in
-      the same glance as the name, in the reading order a record has anyway —
-      what it is, then what state it is in.
-
-      It renders here, after the header rather than inside the title column,
-      because the lego has no slot there (the same gap the editable title works
-      around, and the same /request-lego). Nothing has to move it: with the
-      status out of the actions cluster the bar holds only the title, so the row
-      directly under the header IS the row directly under the title, and it
-      lands on the title's own left edge with no adoption script to fail.
-
-      A .cluster, so several status pills — or a pill and a timestamp — sit in a
-      row and wrap on a narrow window without this component learning anything
-      about what the page put in it. */}
-  {hasStatus && (
-    <div class="firma2-page-header__status cluster" data-gap="xs">
-      <slot name="status" />
-    </div>
-  )}
 </div>
 
 <script>
-  // FOCUS MUST NOT LAND UNDER THE BAND. WCAG 2.4.11 (Focus Not Obscured, AA in
-  // 2.2) fails the moment a sticky region covers the element that just took
-  // focus — and that is the default behaviour here: Tab to a control sitting
-  // just below the fold and the browser scrolls it flush to the top of the
-  // scrollport, which is now underneath this header. The same applies to any
-  // in-page anchor and to find-in-page.
-  //
-  // scroll-padding on the SCROLL CONTAINER is the one declaration that fixes all
-  // three at once — the browser honours it for every scroll-into-view it
-  // performs, so nothing has to be annotated element by element. AppLayout
-  // scrolls the document, so the container is the root element.
-  //
-  // Measured rather than hard-coded, because the band is not one height: it is
-  // taller with a breadcrumb than without, and taller again if a long title
-  // wraps at a narrow width. The observer covers the wrap case, which is a live
-  // resize and not something a build-time constant could know.
-  //
-  // THE SAME MEASUREMENT IS PUBLISHED AS A CUSTOM PROPERTY, because it is not
-  // only scroll-padding that needs it. Any section sized against the FOLD has to
-  // subtract whatever this band is currently occupying, and the band's height is
-  // a runtime fact — one line of title or two, crumb or no crumb. Writing it to
-  // :root turns "how tall is the header" into something CSS can read, so a
-  // full-bleed section states `calc(100dvh - var(--firma2-band-height) - …)` and
-  // re-solves it on every resize instead of carrying a constant that is right at
-  // one width. The project detail page's map is the first consumer.
+  // The bar's height (scroll-padding, --firma2-band-height) is published by
+  // firma2-top-bar itself — it is the only pinned region now.
   const band = document.querySelector<HTMLElement>('.firma2-page-header');
-  if (band) {
-    const sync = (): void => {
-      const h = Math.round(band.getBoundingClientRect().height);
-      document.documentElement.style.scrollPaddingBlockStart = `${h}px`;
-      document.documentElement.style.setProperty('--firma2-band-height', `${h}px`);
-    };
-    sync();
-    new ResizeObserver(sync).observe(band);
-  }
 
   // ── THE EDITABLE TITLE: dock the field around the lego's own h1 ─────────────
   //
@@ -282,13 +199,16 @@ const hasToolbar = Astro.slots.has('toolbar');
     // name would show a reader two names for one record with 12px between them.
     // The browser tab is the third copy and gets the same treatment: it is how a
     // reader picks this record out of eight open tabs.
-    const crumb = band.querySelector<HTMLElement>('.esa-breadcrumbs__current');
+    const crumb = document.querySelector<HTMLElement>('[data-firma2-top-bar="app"] .esa-breadcrumbs__current');
     let previous = heading.textContent?.trim() ?? '';
 
     titleField.addEventListener('firma2:field-save', (event: Event) => {
       const next = (event as CustomEvent<{ value: string }>).detail?.value?.trim() ?? '';
       if (!next || next === previous) return;
-      if (crumb) crumb.textContent = next;
+      if (crumb) {
+        crumb.textContent = next;
+        crumb.title = next;
+      }
       // Replaced rather than rebuilt: the tab title is `<name> — <app>`, and the
       // suffix is the page's to compose, not this component's to know.
       if (previous) document.title = document.title.replace(previous, next);
@@ -298,64 +218,11 @@ const hasToolbar = Astro.slots.has('toolbar');
 </script>
 
 <style>
+  /* NOT STICKY, NO BLEED, NO SURFACE. All three moved to firma2-top-bar with the
+     crumbs and actions; what is left is the title block, which sits in the
+     page's own column and scrolls with it. */
   .firma2-page-header {
-    position: sticky;
-    top: 0;
-    /* The header role from the z scale, not a hand-picked number. It has to
-       outrank ordinary page content (unpositioned, so effectively 0) and the
-       layers the two embedded libraries paint inside it. Verified rendered
-       rather than reasoned: the project grid's rows and the work-area map —
-       including Leaflet's zoom control, whose own z-index is 800 — both clip
-       cleanly under the band as they scroll past, because each library scopes
-       its stack inside a container of its own. If one ever leaks, the fix is
-       `isolation: isolate` on that container, not a higher bid here. */
-    z-index: var(--z-header, 200);
-
-    /* FULL BLEED, then pad back. esa-app-shell's content pane carries
-       `padding: var(--spacing-500)`, so a band that respected it would stop
-       short of the rail and the right edge and read as a floating card rather
-       than as the top of the page. The negative margins reach through the
-       gutters, the padding puts the title back on the content column's own
-       left edge, and the negative block-start lets the band sit against the app
-       bar with no seam of canvas between them.
-
-       This is the one place in the spoke that knows the pane's padding value.
-       It is the shell's own literal (esa-app-shell.astro), not a token the pane
-       exposes — worth a /request-lego for a `--app-shell-content-padding` hook
-       so a full-bleed child can read it instead of restating it.
-
-       THE TRAILING BLEED IS A HOOK, the leading one is not. A page whose content
-       runs to the window's right edge wants both, and that is the default. A
-       page with something ELSE on that edge — the project detail page pins a
-       full-height record rail there — wants the band to stop at the column it
-       belongs to, because the band is `position: sticky` at --z-header and the
-       rail sits a rung below at --z-sidebar: 24px of bleed is 24px of band
-       painted over the rail's top corner. Set `--firma2-band-bleed-end: 0px` on
-       any ancestor to close it. There is no matching hook on the leading edge
-       because nothing has ever needed one — the rail is on the other side and
-       the app's nav is outside the pane entirely. */
-    --_bleed: var(--spacing-500, 1.5rem);
-    margin-inline-start: calc(var(--_bleed) * -1);
-    margin-inline-end: calc(var(--firma2-band-bleed-end, var(--_bleed)) * -1);
-    margin-block-start: calc(var(--_bleed) * -1);
-    padding-inline-start: var(--_bleed);
-    padding-inline-end: var(--firma2-band-bleed-end, var(--_bleed));
-    padding-block: var(--spacing-400, 1rem);
-
-    /* Opaque, or the content scrolling beneath shows straight through. The
-       CANVAS role — the same surface the pane is painted with, so the band is
-       not a second elevation stacked on the page but the page's own top.
-
-       NO HAIRLINE. There was a 1px rule along the bottom edge, and it did two
-       jobs: it read as the rule under a page title at rest, and it marked where
-       content disappeared once the page was moving. The first job is now wrong —
-       the project's description sits directly under the band, and a line drawn
-       between a record's name and the sentence saying what that record IS
-       separates two halves of one thought. The second is a cost worth paying:
-       the band is opaque, so content still passes cleanly beneath it, and what
-       is lost is the seam, not the legibility. Removed 2026-08-20 at the
-       author's direction. */
-    background: var(--color-background-default, #fcfcfc);
+    display: block;
   }
 
   /* THE TITLE COLUMN TAKES THE BAR'S SLACK. ALWAYS — not, as it did until now,

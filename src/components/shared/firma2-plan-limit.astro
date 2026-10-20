@@ -1,0 +1,94 @@
+---
+// firma2-plan-limit — the prompt where a plan's limit is hit: "Free includes
+// 50 projects", what the next plan adds, and one way forward. Spec:
+// .scratch/tiers/spec.md (#7–#9); limits live in src/lib/plan-usage.ts.
+//
+// IT GATES THE ADD, NOT THE DATA. Wrap the add flow in it (the new-project
+// form, Add organization). At the limit the flow gives way to the prompt;
+// below it, the flow shows and the prompt doesn't. With no slot it's a
+// banner, for a page whose add has no flow of its own yet. What already
+// exists is never touched — that's the rest of the product's job.
+//
+// EVERY PLAN'S PROMPT IS BUILT, ONE SHOWS. The title is static per plan (an
+// alert box's title is a build-time prop), so each plan with a cap on this
+// metric gets its box and the script shows the one for the workspace's plan.
+//
+// bcn-lego-checked: esa-alert-box is the prompt, esa-button the action —
+// the same reader switch as firma2-plan-lock (admin gets the action, anyone
+// else whom to ask); spans carry `hidden` because a lego's own root won't.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+import { PLANS, PLAN_NAME } from '../../lib/workspace-plan';
+import { LIMITS, nextPlanFor, type Metric } from '../../lib/plan-usage';
+
+interface Props {
+  metric: Exclude<Metric, 'viewers'>;
+  /** A query parameter that turns the gate off — e.g. the intake builder's `preview`. */
+  unlessParam?: string;
+}
+
+const { metric, unlessParam } = Astro.props;
+const planHref = withBase('/prototypes/workspace-settings/plan');
+
+const NOUN: Record<Props['metric'], [string, string]> = {
+  organizations: ['organization', 'organizations'],
+  projects: ['project', 'projects'],
+  contributors: ['contributor', 'contributors'],
+  storage: ['GB of file storage', 'GB of file storage'],
+};
+
+const MESSAGE: Record<string, string> = {
+  'free:organizations': 'Upgrade to Agency to add up to 3 partner organizations.',
+  'agency:organizations': 'Program adds as many organizations as you need, with stewards and review across them.',
+  'free:projects': 'Upgrade to Agency for unlimited projects. Every project you have stays editable.',
+  'free:contributors': 'Upgrade to Agency for unlimited contributors. Viewers are free on every plan.',
+  'free:storage': 'Upgrade to Agency for 100 GB.',
+  'agency:storage': 'Program storage is sized to your program.',
+};
+
+const prompts = PLANS.flatMap((plan) => {
+  const limit = LIMITS[plan][metric];
+  const next = nextPlanFor(metric, plan);
+  if (limit === null || !next) return [];
+  const noun = NOUN[metric][limit === 1 ? 0 : 1];
+  return [{ plan, title: `${PLAN_NAME[plan]} includes ${limit} ${noun}`, message: MESSAGE[`${plan}:${metric}`], action: next === 'program' ? 'Talk to us' : 'Compare plans' }];
+});
+---
+<div class="firma2-plan-limit stack" data-gap="xl" data-metric={metric} data-unless={unlessParam}>
+  {prompts.map((p) => (
+    <div data-prompt={p.plan} hidden>
+      <EsaAlertBox variant="info" title={p.title}>
+        <div class="stack" data-gap="sm">
+          <p class="typography-body-md">{p.message}</p>
+          <span data-reader="admin" hidden><EsaButton variant="secondary" size="md" href={planHref}>{p.action}</EsaButton></span>
+          <p class="typography-body-md" data-reader="member" hidden>Ask an administrator to upgrade.</p>
+        </div>
+      </EsaAlertBox>
+    </div>
+  ))}
+  {Astro.slots.has('default') && <div data-gated><slot /></div>}
+</div>
+
+<style>
+  .firma2-plan-limit :global([hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import { readPlan } from '../../lib/workspace-plan';
+  import { atLimit, type Metric } from '../../lib/plan-usage';
+  import { currentActor } from '../../lib/workspace-permissions';
+
+  document.querySelectorAll<HTMLElement>('.firma2-plan-limit').forEach((root) => {
+    const unless = root.dataset.unless;
+    const plan = readPlan();
+    const hit = atLimit(root.dataset.metric as Metric, plan) && !(unless && new URLSearchParams(window.location.search).has(unless));
+    root.querySelectorAll<HTMLElement>('[data-prompt]').forEach((el) => (el.hidden = !hit || el.dataset.prompt !== plan));
+    const gated = root.querySelector<HTMLElement>(':scope > [data-gated]');
+    if (gated) gated.hidden = hit;
+    const admin = currentActor().role === 'Administrator';
+    root.querySelectorAll<HTMLElement>('[data-reader]').forEach((el) => (el.hidden = (el.dataset.reader === 'admin') !== admin));
+  });
+</script>

@@ -259,13 +259,13 @@ export type LayerKind = 'feature' | 'map' | 'wms' | 'geojson';
 export const LAYER_KINDS: { value: LayerKind; label: string; note: string; raster: boolean }[] = [
   {
     value: 'feature',
-    label: 'ArcGIS feature server',
+    label: 'ArcGIS feature service',
     note: 'Draws one layer’s shapes, and you choose how they look. What most reference boundaries want.',
     raster: false,
   },
   {
     value: 'map',
-    label: 'ArcGIS map server',
+    label: 'ArcGIS map service',
     note: 'Sends pre-rendered tiles, so it only works against a cached service — an uncached one draws nothing at all.',
     raster: true,
   },
@@ -278,7 +278,7 @@ export const LAYER_KINDS: { value: LayerKind; label: string; note: string; raste
   {
     value: 'geojson',
     label: 'GeoJSON',
-    note: 'A file, or a WFS asked for JSON. It styles like a feature server.',
+    note: 'A file, or a WFS asked for JSON. It styles like a feature service.',
     raster: false,
   },
 ];
@@ -366,7 +366,7 @@ export const PROBE_RESULTS: Record<LayerKind, { name: string; fields: string[]; 
   map: {
     name: 'Ownership',
     fields: [],
-    warning: 'This map service is not cached, so it has no tiles to send. Ask its publisher for a cached version, or use its feature server instead.',
+    warning: 'This map service is not cached, so it has no tiles to send. Ask its publisher for a cached version, or use its feature service instead.',
   },
   wms: { name: 'fire:hazard_severity', fields: [] },
   geojson: { name: 'hydrologic-regions.geojson', fields: ['REGION_NAME', 'REGION_ID'] },
@@ -629,8 +629,8 @@ export const SUBSCRIPTION_STEPS = [
   { key: 'access', title: 'Access' },
   { key: 'layer', title: 'Layer' },
   { key: 'matching', title: 'Matching' },
-  { key: 'fields', title: 'Project fields from this layer' },
-  { key: 'name', title: 'This subscription' },
+  { key: 'fields', title: 'Project fields' },
+  { key: 'name', title: 'Name' },
 ] as const;
 export type SubscriptionStep = (typeof SUBSCRIPTION_STEPS)[number]['key'];
 

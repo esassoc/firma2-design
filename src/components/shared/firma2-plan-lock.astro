@@ -1,0 +1,92 @@
+---
+// firma2-plan-lock — the tease on a plan-locked page: which plan unlocks it,
+// what it would add, and one way forward. Spec: .scratch/tiers/spec.md (#6–#8);
+// the locked-page pattern is .scratch/form-canvas/spec.md #23 — the real page
+// drawn read-only, this box above it.
+//
+// IT SHOWS ITSELF. Rendered on every plan, it appears only when the workspace's
+// plan (src/lib/workspace-plan.ts) lacks `needs`.
+//
+// TWO WAYS TO USE IT. Alone, it is just the box — for a page that draws its own
+// read-only state (the intake builder). Wrapped around a page's content, it
+// makes that content the read-only page: the content goes `inert` (still drawn,
+// so the reader sees what they'd get, but nothing in it can be used — true, on
+// this plan), and the top bar's actions give way to Upgrade. Crumbs and status
+// stay. A plan lock is a sales surface: the page stays; only an admin feature
+// switch removes one.
+//
+// ONE WAY FORWARD, BY WHO IS READING. An administrator gets the action: Compare
+// plans for Agency (a checkout), Talk to us for Program (a contract). Anyone
+// else is told to ask an administrator — no button they cannot use.
+//
+// bcn-lego-checked: esa-alert-box is the box, esa-button the actions; the reader
+// switch is spans because a hidden attribute on a lego's own root does not hold.
+// The top-bar Upgrade is rendered here and moved, never built in JS.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+import { PLAN_NAME } from '../../lib/workspace-plan';
+
+interface Props {
+  /** The lowest plan that includes the feature. */
+  needs: 'agency' | 'program';
+  /** What the plan would add here, in one or two sentences. */
+  message: string;
+  /** The page's own section gap, kept for the wrapped content. */
+  gap?: 'xl' | '2xl';
+}
+
+const { needs, message, gap = '2xl' } = Astro.props;
+const planHref = withBase('/prototypes/workspace-settings/plan');
+const action = needs === 'program' ? 'Talk to us' : 'Compare plans';
+const wraps = Astro.slots.has('default');
+---
+<div class="firma2-plan-lock stack" data-gap={gap} data-needs={needs} data-wraps={wraps ? '' : undefined}>
+  <div data-lock-note hidden>
+    <EsaAlertBox variant="info" title={`Available on ${PLAN_NAME[needs]}`}>
+      <div class="stack" data-gap="sm">
+        <p class="typography-body-md">{message}</p>
+        <span data-reader="admin" hidden><EsaButton variant="secondary" size="md" href={planHref}>{action}</EsaButton></span>
+        <p class="typography-body-md" data-reader="member" hidden>Ask an administrator to upgrade.</p>
+      </div>
+    </EsaAlertBox>
+  </div>
+  {wraps && (
+    <>
+      <div class="stack" data-gap={gap} data-lock-content><slot /></div>
+      <template data-lock-upgrade><EsaButton variant="primary" size="md" href={planHref}>Upgrade</EsaButton></template>
+    </>
+  )}
+</div>
+
+<style>
+  .firma2-plan-lock :global([hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import { planIncludes, type Plan } from '../../lib/workspace-plan';
+  import { currentActor } from '../../lib/workspace-permissions';
+
+  document.querySelectorAll<HTMLElement>('.firma2-plan-lock').forEach((root) => {
+    const locked = !planIncludes(root.dataset.needs as Plan);
+    root.querySelector<HTMLElement>(':scope > [data-lock-note]')!.hidden = !locked;
+    if (!locked) return;
+    const admin = currentActor().role === 'Administrator';
+    root.querySelectorAll<HTMLElement>('[data-reader]').forEach((el) => (el.hidden = (el.dataset.reader === 'admin') !== admin));
+    if (!('wraps' in root.dataset)) return;
+
+    root.querySelector<HTMLElement>(':scope > [data-lock-content]')!.inert = true;
+    // The top bar's own tools are this page's, so they lock with it; the trail and status stay.
+    const bar = document.querySelector<HTMLElement>('[data-firma2-top-bar="app"]');
+    // Inline display, not `hidden`: a lego's own root out-ranks the [hidden] rule.
+    const hide = (el: Element) => (el as HTMLElement).style.setProperty('display', 'none', 'important');
+    bar?.querySelectorAll('.firma2-top-bar__toolbar, .firma2-top-bar__fold').forEach(hide);
+    const actions = bar?.querySelector<HTMLElement>('.firma2-top-bar__actions');
+    if (actions) {
+      [...actions.children].forEach(hide);
+      if (admin) actions.append(root.querySelector<HTMLTemplateElement>(':scope > [data-lock-upgrade]')!.content.cloneNode(true));
+    }
+  });
+</script>

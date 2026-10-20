@@ -13,8 +13,16 @@
 // AN EMPTY LINE OFFERS WHAT CAN START THERE: heading, list, image, file — a
 // small toolbar beside the caret on a blank line (the Medium "+"). Images and
 // files also arrive by pasting or dropping them into the text. Select an image
-// and its toolbar is Alt text and Remove image instead of the formatting; a
-// file, Remove file.
+// and its toolbar is Alt text and Remove instead of the formatting; a
+// file, Remove.
+//
+// AS A CANVAS (the `canvas` prop) it takes the grammar every builder shares —
+// docs/adr/0001-one-editing-grammar-for-builder-canvases.md, the same as the
+// intake form builder: type `/` for the list of what can go here
+// (bcn-insert-menu); hover a block for its grip, which drags it and opens
+// Duplicate, Move up, Move down, Turn into and Delete; ⌘D duplicates the block
+// the caret is in and ⌥↑ ⌥↓ move it. Off by default: an editor inside another
+// canvas (the intake builder's text blocks) leaves grips and `/` to its host.
 //
 // A FILE SITS IN THE TEXT WHERE IT WAS PUT, as an image does. A PDF shows a
 // PREVIEW right there — the browser's own PDF reader, held to a part of the
@@ -24,11 +32,16 @@
 // name-and-download row alone; so is a PDF in a browser set to download PDFs.
 //
 // CONTRACT:
+//   in   `firma2:rich-text-mount` dispatched on a root added after load
+//        (bubbling) — mounts it. Roots present at load mount themselves.
+//        The component must also be rendered once outside a <template>,
+//        or its script never runs.
 //   in   `firma2:rich-text-set` on the root, {html} — replaces the content
 //        without counting as an edit
 //   in   `firma2:rich-text-editable` on the root, {editable} — view or edit.
 //        Read-only, the text is plain reading: no caret, no toolbars, no
 //        placeholder, and a link opens on a plain click.
+//   prop `canvas` — the builder grammar above (custom pages)
 //   in   `firma2:rich-text-focus` on the root — puts the caret at the end
 //        (the rail's Edit page)
 //   out  `firma2:rich-text-change` from the root, {html} — after typing settles
@@ -61,7 +74,10 @@
 // element drawn here, framed as firma2-document-viewer frames its own — no
 // esa- lego shows a document.
 // firma2-rich-text is the reusable home: any long-form field that needs
-// structure renders it.
+// structure renders it. As a canvas: the `/` list is bcn-insert-menu and the
+// grip is esa-dropdown-menu around a chrome esa-button. The grip drags with
+// ProseMirror's own block drag, not @tiptap/extension-drag-handle, whose v3
+// requires the Yjs collaboration packages as peers.
 import EsaButton from '@esa/ecology/esa-button.astro';
 
 interface Props {
@@ -69,9 +85,11 @@ interface Props {
   label: string;
   /** Shown in an empty editor. */
   placeholder?: string;
+  /** The builder grammar: `/`, block grips, ⌘D and ⌥↑ ⌥↓. For a page you write. */
+  canvas?: boolean;
 }
 
-const { label, placeholder = '' } = Astro.props;
+const { label, placeholder = '', canvas = false } = Astro.props;
 
 // Order: inline marks, then block types, then the link. Labels are the names a
 // screen reader announces and the tooltip shows.
@@ -97,7 +115,7 @@ const inserts = [
   { cmd: 'file', icon: 'paperclip', label: 'File' },
 ];
 ---
-<div class="firma2-rich-text" data-rich-text data-label={label} data-placeholder={placeholder} data-image-max-mb={IMAGE_MAX_MB} data-file-max-mb={FILE_MAX_MB}>
+<div class="firma2-rich-text" data-rich-text data-canvas={canvas ? '' : undefined} data-label={label} data-placeholder={placeholder} data-image-max-mb={IMAGE_MAX_MB} data-file-max-mb={FILE_MAX_MB}>
   <div data-rich-text-editor></div>
 
   {/* Taken out of the document by Tiptap on mount and put back, positioned,
@@ -108,9 +126,9 @@ const inserts = [
     ))}
     {/* A selected image swaps the formatting for what an image can take. */}
     <EsaButton variant="chrome" size="md" data-cmd="alt" data-for="image">Alt text</EsaButton>
-    <EsaButton variant="chrome" size="md" data-cmd="remove-image" data-for="image">Remove image</EsaButton>
+    <EsaButton variant="chrome" size="md" data-cmd="remove-image" data-for="image">Remove</EsaButton>
     {/* A selected file: the one thing a file can take here. */}
-    <EsaButton variant="chrome" size="md" data-cmd="remove-file" data-for="file">Remove file</EsaButton>
+    <EsaButton variant="chrome" size="md" data-cmd="remove-file" data-for="file">Remove</EsaButton>
   </div>
 
   {/* A PDF preview's two ways to read the whole thing, cloned into each one. */}
@@ -128,6 +146,16 @@ const inserts = [
     ))}
   </div>
 
+  {canvas && (
+    <>
+      <bcn-insert-menu aria-label="Insert" data-rich-text-slash></bcn-insert-menu>
+      {/* The grip of the block under the pointer, moved beside it. */}
+      <esa-dropdown-menu class="firma2-rich-text__grip" position="below-start" draggable="true" hidden data-rich-text-grip>
+        <EsaButton variant="chrome" size="md" iconOnly icon="grip-vertical" label="Drag to move, or click for options" />
+      </esa-dropdown-menu>
+    </>
+  )}
+
   <esa-dialog class="firma2-rich-text__alt-dialog" heading="Alt text" size="sm" show-close-button>
     <esa-textarea
       label="Describe the image"
@@ -137,7 +165,7 @@ const inserts = [
       data-alt-text
     ></esa-textarea>
     <div class="cluster" data-gap="xs" slot="footer">
-      <EsaButton variant="primary" size="md" data-alt-save>Save alt text</EsaButton>
+      <EsaButton variant="primary" size="md" data-alt-save>Save</EsaButton>
       <EsaButton variant="ghost" size="md" data-alt-cancel>Cancel</EsaButton>
     </div>
   </esa-dialog>
@@ -145,8 +173,8 @@ const inserts = [
   <esa-dialog class="firma2-rich-text__link-dialog" heading="Link" size="sm" show-close-button>
     <esa-text-field label="Web address" size="md" type="url" inputmode="url" placeholder="https://" data-link-url></esa-text-field>
     <div class="cluster" data-gap="xs" slot="footer">
-      <EsaButton variant="primary" size="md" data-link-save>Save link</EsaButton>
-      <EsaButton variant="ghost" size="md" data-link-remove>Remove link</EsaButton>
+      <EsaButton variant="primary" size="md" data-link-save>Save</EsaButton>
+      <EsaButton variant="ghost" size="md" data-link-remove>Remove</EsaButton>
       <EsaButton variant="ghost" size="md" data-link-cancel>Cancel</EsaButton>
     </div>
   </esa-dialog>
@@ -157,7 +185,16 @@ const inserts = [
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-textarea';
   import '@esa/ecology/esa-file-list';
-  import { Editor, Node, mergeAttributes } from '@tiptap/core';
+  import '@esa/ecology/esa-dropdown-menu';
+  import './bcn-insert-menu';
+  import type { BcnInsertMenu, InsertItem } from './bcn-insert-menu';
+  import { Editor, Extension, Node, mergeAttributes } from '@tiptap/core';
+  import type { Range } from '@tiptap/core';
+  import Suggestion from '@tiptap/suggestion';
+  import { atLimit, limitOf } from '../../lib/plan-usage';
+  import { PLAN_NAME, readPlan } from '../../lib/workspace-plan';
+  import { NodeSelection, TextSelection } from '@tiptap/pm/state';
+  import type { Node as PMNode } from '@tiptap/pm/model';
   import Image from '@tiptap/extension-image';
   import FloatingMenu from '@tiptap/extension-floating-menu';
   import StarterKit from '@tiptap/starter-kit';
@@ -171,6 +208,31 @@ const inserts = [
   type FileUrl = (fileId: string) => Promise<string | undefined>;
   type Root = HTMLElement & { firma2StoreImage?: StoreImage; firma2StoreFile?: StoreImage; firma2FileUrl?: FileUrl };
   type FileList = HTMLElement & { files: { name: string; href?: string }[] };
+  type Menu = HTMLElement & { items: { label: string; action?: string; disabled?: boolean; divider?: boolean; variant?: 'default' | 'danger' }[]; open: boolean };
+
+  // What `/` can put on a line, as a canvas.
+  const SLASH: InsertItem[] = [
+    { id: 'heading-2', label: 'Heading', group: 'Text' },
+    { id: 'heading-3', label: 'Subheading', group: 'Text' },
+    { id: 'bullet-list', label: 'Bulleted list', group: 'Text' },
+    { id: 'ordered-list', label: 'Numbered list', group: 'Text' },
+    { id: 'blockquote', label: 'Quote', group: 'Text' },
+    { id: 'image', label: 'Image', group: 'Media' },
+    { id: 'file', label: 'File', group: 'Media' },
+  ];
+  // What a block of text can turn into, from its grip.
+  const KINDS: { id: string; label: string }[] = [
+    { id: 'paragraph', label: 'text' },
+    { id: 'heading-2', label: 'heading' },
+    { id: 'heading-3', label: 'subheading' },
+    { id: 'bullet-list', label: 'bulleted list' },
+    { id: 'ordered-list', label: 'numbered list' },
+    { id: 'blockquote', label: 'quote' },
+  ];
+  const kindOf = (node: PMNode): string | null => {
+    if (node.type.name === 'heading') return `heading-${node.attrs.level}`;
+    return { paragraph: 'paragraph', bulletList: 'bullet-list', orderedList: 'ordered-list', blockquote: 'blockquote' }[node.type.name] ?? null;
+  };
 
   const isPdf = (name: string, type: string): boolean => type === 'application/pdf' || /\.pdf$/i.test(name);
   // Only an explicit false means no reader (older browsers lack the property).
@@ -282,7 +344,9 @@ const inserts = [
     },
   }).configure({ levels: [2, 3] });
 
-  document.querySelectorAll<Root>('[data-rich-text]').forEach((root) => {
+  const mountRichText = (root: Root) => {
+    if (root.hasAttribute('data-mounted')) return;
+    root.setAttribute('data-mounted', '');
     const mount = root.querySelector<HTMLElement>('[data-rich-text-editor]')!;
     const toolbar = root.querySelector<HTMLElement>('[data-rich-text-toolbar]')!;
     const insertBar = root.querySelector<HTMLElement>('[data-rich-text-inserts]')!;
@@ -297,6 +361,54 @@ const inserts = [
 
     let silent = false;
     let timer: number | undefined;
+
+    // ---- the canvas grammar (custom pages) ----
+    const canvas = root.hasAttribute('data-canvas');
+    const slash = root.querySelector<BcnInsertMenu>('[data-rich-text-slash]');
+    const grip = root.querySelector<Menu>('[data-rich-text-grip]');
+    let slashRange: Range | null = null;
+    const SlashCommand = Extension.create({
+      name: 'slashCommand',
+      addProseMirrorPlugins() {
+        return [
+          Suggestion({
+            editor: this.editor,
+            char: '/',
+            items: () => [],
+            command: () => {},
+            render: () => ({
+              onStart: (props) => {
+                slashRange = props.range;
+                slash!.items = SLASH;
+                slash!.open(props.clientRect?.() ?? props.editor.view.dom, { owner: props.editor.view.dom as HTMLElement, query: props.query });
+              },
+              onUpdate: (props) => {
+                slashRange = props.range;
+                slash!.filter(props.query);
+              },
+              onKeyDown: ({ event }) => slash!.handleKey(event),
+              onExit: () => slash!.close(),
+            }),
+          }),
+        ];
+      },
+    });
+    // The top-level block the caret is in (or the selected image or file).
+    const caretBlock = (): number | null => {
+      const { selection } = editor.state;
+      if (selection instanceof NodeSelection && selection.$from.depth === 0) return selection.from;
+      return selection.$from.depth >= 1 ? selection.$from.before(1) : null;
+    };
+    const CanvasKeys = Extension.create({
+      name: 'canvasKeys',
+      addKeyboardShortcuts() {
+        const on = (action: string) => () => {
+          const pos = caretBlock();
+          return pos == null ? false : blockAction(action, pos);
+        };
+        return { 'Mod-d': on('duplicate'), 'Alt-ArrowUp': on('up'), 'Alt-ArrowDown': on('down') };
+      },
+    });
 
     const editor = new Editor({
       element: mount,
@@ -329,6 +441,7 @@ const inserts = [
           },
         ),
         Placeholder.configure({ placeholder: root.dataset.placeholder ?? '' }),
+        ...(canvas ? [SlashCommand, CanvasKeys] : []),
         FloatingMenu.configure({
           element: insertBar,
           appendTo: () => document.body,
@@ -338,6 +451,13 @@ const inserts = [
           // it would cover the placeholder. It covers the next block at most,
           // and only until you type.
           options: { strategy: 'fixed', placement: 'bottom-start', offset: 4, flip: true, shift: true },
+          // Only for the editor you are typing in. A page with several
+          // editors (the intake builder's text blocks) otherwise kept a blank
+          // line's toolbar up on an editor nobody was in.
+          shouldShow: ({ editor, view, state }) => {
+            const { $from, empty } = state.selection;
+            return view.hasFocus() && editor.isEditable && empty && $from.depth === 1 && $from.parent.type.name === 'paragraph' && $from.parent.content.size === 0;
+          },
         }),
         BubbleMenu.configure({
           element: toolbar,
@@ -427,6 +547,16 @@ const inserts = [
         b.setAttribute('aria-pressed', String(isActive[b.dataset.cmd ?? '']?.() ?? false));
       });
     }
+    // Tiptap repositions its menus on every scroll and, doing so, makes them
+    // visible whether or not they were showing (updatePosition sets
+    // visibility unconditionally). One editor on a page hid the bug; the
+    // intake builder's several did not. A menu only stays up for the editor
+    // you are in, or while you are using the menu itself.
+    for (const bar of [toolbar, insertBar]) {
+      new MutationObserver(() => {
+        if (bar.style.visibility === 'visible' && !editor.view.hasFocus() && !bar.contains(document.activeElement)) bar.style.visibility = 'hidden';
+      }).observe(bar, { attributeFilter: ['style'] });
+    }
     for (const bar of [toolbar, insertBar]) {
       bar.addEventListener('click', (event) => {
         const cmd = (event.target as HTMLElement).closest<HTMLElement>('[data-cmd]')?.dataset.cmd;
@@ -439,8 +569,16 @@ const inserts = [
       Array.from(list ?? []).filter((f) => f.type.startsWith('image/'));
     const fail = (message: string) =>
       root.dispatchEvent(new CustomEvent('firma2:rich-text-error', { bubbles: true, detail: { message } }));
+    // A plan's file storage is a limit like any other: what's stored stays; nothing more goes in.
+    const storageFull = (): boolean => {
+      if (!atLimit('storage')) return false;
+      const plan = readPlan();
+      fail(`${PLAN_NAME[plan]} includes ${limitOf('storage', plan)} GB of file storage, and it's full. Remove files or upgrade to add more.`);
+      return true;
+    };
 
     async function insertImages(files: File[], at?: number): Promise<void> {
+      if (files.length && storageFull()) return;
       let pos = at;
       for (const file of files) {
         if (file.size > maxBytes) {
@@ -462,6 +600,7 @@ const inserts = [
 
     // ---- files ----
     async function insertFiles(files: File[], at?: number): Promise<void> {
+      if (files.length && storageFull()) return;
       let pos = at;
       for (const file of files) {
         if (file.size > fileMaxBytes) {
@@ -568,6 +707,138 @@ const inserts = [
       }
     });
 
+    // ---- block actions: the grip's menu and the canvas keys ----
+    // Each keeps the caret where it was inside the block it moved or copied.
+    function blockAction(action: string, pos: number): boolean {
+      const { state } = editor;
+      const node = state.doc.nodeAt(pos);
+      if (!node) return false;
+      const index = state.doc.resolve(pos).index(0);
+      const end = pos + node.nodeSize;
+      const offset = Math.max(0, Math.min(state.selection.from - pos, node.nodeSize - 1));
+      const caretAt = (tr: typeof state.tr, at: number) => tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(at + Math.max(offset, 1), tr.doc.content.size))));
+      if (action === 'duplicate') {
+        editor.view.dispatch(caretAt(state.tr.insert(end, node.copy(node.content)), end).scrollIntoView());
+      } else if (action === 'up') {
+        if (index === 0) return true;
+        const prevPos = pos - state.doc.child(index - 1).nodeSize;
+        editor.view.dispatch(caretAt(state.tr.delete(pos, end).insert(prevPos, node), prevPos).scrollIntoView());
+      } else if (action === 'down') {
+        if (index >= state.doc.childCount - 1) return true;
+        const next = state.doc.child(index + 1);
+        const tr = state.tr.insert(end + next.nodeSize, node).delete(pos, end);
+        editor.view.dispatch(caretAt(tr, pos + next.nodeSize).scrollIntoView());
+      } else if (action === 'delete') {
+        editor.view.dispatch(state.tr.delete(pos, end));
+      } else if (action.startsWith('into:')) {
+        const kind = action.slice(5);
+        const chain = editor.chain().focus().command(({ tr }) => {
+          tr.setSelection(TextSelection.near(tr.doc.resolve(pos + 1)));
+          return true;
+        }).clearNodes();
+        if (kind === 'heading-2' || kind === 'heading-3') chain.setHeading({ level: kind === 'heading-2' ? 2 : 3 });
+        if (kind === 'bullet-list') chain.toggleBulletList();
+        if (kind === 'ordered-list') chain.toggleOrderedList();
+        if (kind === 'blockquote') chain.toggleBlockquote();
+        chain.run();
+      } else return false;
+      editor.commands.focus();
+      return true;
+    }
+
+    if (canvas && slash) {
+      slash.addEventListener('insert-choose', (event) => {
+        const id = (event as CustomEvent<{ id: string }>).detail.id;
+        if (slashRange) editor.chain().focus().deleteRange(slashRange).run();
+        slashRange = null;
+        run[id]?.();
+      });
+    }
+
+    // THE GRIP follows the pointer from block to block, in the margin beside
+    // the block's first line. It keeps the block it was opened on while its
+    // menu is up, so moving the pointer to a menu item never retargets it.
+    if (canvas && grip) {
+      const view = editor.view;
+      let target: { pos: number; dom: HTMLElement } | null = null;
+      const topBlock = (el: EventTarget | null): HTMLElement | null => {
+        let node = el instanceof HTMLElement ? el : null;
+        while (node && node.parentElement !== view.dom) node = node.parentElement;
+        return node;
+      };
+      const posOf = (dom: HTMLElement): number | null => {
+        let found: number | null = null;
+        view.state.doc.forEach((_n, offset) => {
+          if (found == null && view.nodeDOM(offset) === dom) found = offset;
+        });
+        return found;
+      };
+      const itemsFor = (pos: number) => {
+        const node = view.state.doc.nodeAt(pos)!;
+        const index = view.state.doc.resolve(pos).index(0);
+        const kind = kindOf(node);
+        const items: Menu['items'] = [
+          { label: 'Duplicate', action: 'duplicate' },
+          { label: 'Move up', action: 'up', disabled: index === 0 },
+          { label: 'Move down', action: 'down', disabled: index === view.state.doc.childCount - 1 },
+        ];
+        if (kind) {
+          items.push({ label: '', divider: true });
+          KINDS.filter((k) => k.id !== kind).forEach((k) => items.push({ label: `Turn into ${k.label}`, action: `into:${k.id}` }));
+        }
+        items.push({ label: '', divider: true }, { label: 'Delete', action: 'delete', variant: 'danger' });
+        return items;
+      };
+      const place = (dom: HTMLElement) => {
+        const pos = posOf(dom);
+        if (pos == null) return;
+        target = { pos, dom };
+        const r = dom.getBoundingClientRect();
+        const host = root.getBoundingClientRect();
+        const line = Math.min(r.height, parseFloat(getComputedStyle(dom).lineHeight) || 24);
+        grip.style.top = `${r.top - host.top + (line - 40) / 2}px`;
+        grip.hidden = false;
+        customElements.whenDefined('esa-dropdown-menu').then(() => (grip.items = itemsFor(pos)));
+      };
+      mount.addEventListener('mousemove', (event) => {
+        if (!editor.isEditable || grip.open) return;
+        const dom = topBlock(event.target);
+        if (dom && dom !== target?.dom) place(dom);
+      });
+      root.addEventListener('mouseleave', () => {
+        if (!grip.open) grip.hidden = true;
+      });
+      grip.addEventListener('menu-action', (event) => {
+        if (!target) return;
+        blockAction((event as CustomEvent<string>).detail, target.pos);
+        grip.hidden = true;
+        target = null;
+      });
+      // Dragged, the grip carries its block: ProseMirror moves a dragged
+      // node selection on drop, as it does an image.
+      grip.addEventListener('dragstart', (event) => {
+        if (!target || !event.dataTransfer) return;
+        const selection = NodeSelection.create(view.state.doc, target.pos);
+        view.dispatch(view.state.tr.setSelection(selection));
+        (view as unknown as { dragging: unknown }).dragging = { slice: selection.content(), move: true };
+        event.dataTransfer.clearData();
+        event.dataTransfer.setData('text/html', target.dom.outerHTML);
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setDragImage(target.dom, 0, 0);
+      });
+      grip.addEventListener('dragend', () => {
+        grip.hidden = true;
+        target = null;
+      });
+      // A change elsewhere may have moved the block under the grip.
+      editor.on('update', () => {
+        if (!grip.open) {
+          grip.hidden = true;
+          target = null;
+        }
+      });
+    }
+
     // ---- content in ----
     root.addEventListener('firma2:rich-text-set', (event) => {
       const html = (event as CustomEvent<{ html: string }>).detail?.html ?? '';
@@ -583,7 +854,12 @@ const inserts = [
     root.addEventListener('firma2:rich-text-focus', () => {
       editor.commands.focus('end');
     });
-  });
+  };
+
+  document.querySelectorAll<Root>('[data-rich-text]').forEach(mountRichText);
+  // An editor added after load — cloned from a template, as the intake
+  // builder's text blocks are — asks to be mounted with this event.
+  document.addEventListener('firma2:rich-text-mount', (event) => mountRichText(event.target as Root));
 </script>
 
 <style>
@@ -591,6 +867,9 @@ const inserts = [
      (which keeps Astro's scope attribute). esa-popover's surface, token for token. */
   .firma2-rich-text__toolbar {
     visibility: hidden;
+    /* Out of the flow until Tiptap first moves it to <body> and positions it,
+       so an editor that has not shown it yet is as tall as its text. */
+    position: absolute;
     /* Its own width before it is first measured. Tiptap sets max-content only
        AFTER positioning, so the first placement measured a full-width flex row
        and centred it off the left edge of the screen. */
@@ -606,6 +885,26 @@ const inserts = [
   .firma2-rich-text__toolbar :global([data-cmd][aria-pressed='true']) {
     background: var(--color-background-elevation-sunken, #f0f0f0);
     color: var(--color-content-brand, #2a7e3b);
+  }
+
+  /* As a canvas, the grip hangs in the margin left of the text, beside the
+     block under the pointer; reading, there is none. */
+  .firma2-rich-text[data-canvas] {
+    position: relative;
+  }
+  .firma2-rich-text__grip {
+    position: absolute;
+    inset-inline-start: calc(-1 * (var(--control-height-md, 2.5rem) + var(--spacing-200, 0.5rem)));
+    z-index: 1;
+    /* The lego's own hook: room for "Turn into numbered list" on one line. */
+    --dropdown-menu-min-width: 14rem;
+  }
+  .firma2-rich-text__grip[hidden],
+  .firma2-rich-text[data-readonly] .firma2-rich-text__grip {
+    display: none;
+  }
+  .firma2-rich-text__grip :global(button) {
+    cursor: grab;
   }
 
   .firma2-rich-text :global(.firma2-rich-text__content) {

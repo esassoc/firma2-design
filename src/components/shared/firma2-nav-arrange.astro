@@ -1,0 +1,458 @@
+---
+// firma2-nav-arrange — the app rail's own rows, rearranged by each person for
+// themselves (a preference, over the order the administrator set in Workspace
+// settings › Menu order) the way Pages rows are: drag a row in the rail, or use its "…" › Move for the same move without
+// dragging. Every product row takes part (My Projects, Map, the Workspace rows,
+// More and its rows, the reader's organizations); the Pages group keeps its own
+// order in firma2-pages-nav.
+//
+// WHERE A ROW CAN GO is src/lib/nav-order.ts: the top rows, the Workspace rows
+// and More's rows pass freely between each other; the organizations reorder
+// only among themselves. Drop on the top or bottom half of a row to land before
+// or after it; on More to file the row at the end of More (the top sliver of
+// More drops beside it instead) — the same gestures as a Pages folder. A row
+// the drop may not reach shows no marker and takes no drop.
+//
+// THE "…" on each row carries Move (a dialog: pick the section, then the place
+// in it, with bcn-sortable-list) and, once this person's order differs from the
+// workspace's, Reset to workspace order.
+// A dimmed row (a route not built yet) is out of the pointer by the lego's own
+// rule, so it moves only through the dialog — and it is still a drop target.
+//
+// AppLayout renders the nav model's order on the server; this script repaints
+// the rail in the stored order once it is defined, the same handoff Pages uses.
+// The current page's row still steps out of a closed More and sits just above
+// it (navItemsFor's rule), wherever More now is.
+//
+// bcn-lego-checked: esa-sidebar-nav has no drag-to-reorder and no per-row
+// action slot (the gap firma2-pages-nav documents and plans a /request-lego
+// for). Beacon is not cloned here. This rides the same seams as Pages, on
+// purpose, so both go away together when the lego reorders natively: one named
+// slot per row in the rail's shadow markup (marked data-firma2-nav, so Pages'
+// own slot pass leaves it alone), styled by the sheet firma2-pages-nav adopts
+// into the rail; and Pages' drop marker and snackbar container, which are always
+// on the app rail's page. The menus are esa-dropdown-menu, the dialog
+// esa-dialog + esa-radio-group, the order bcn-sortable-list — all unchanged.
+import EsaButton from '@esa/ecology/esa-button.astro';
+---
+<template data-nav-row-actions>
+  <esa-dropdown-menu class="firma2-nav-arrange__row" data-row-menu position="below-end">
+    <EsaButton variant="chrome" size="xs" iconOnly icon="ellipsis" label="Actions" />
+  </esa-dropdown-menu>
+</template>
+
+<esa-dialog class="firma2-nav-arrange__move" heading="Move" size="md" show-close-button>
+  <div class="stack" data-gap="lg">
+    <esa-radio-group label="Section" size="md" data-nav-move-section></esa-radio-group>
+    <div class="stack" data-gap="xs">
+      <p class="typography-label-md" id="firma2-nav-move-order" data-nav-move-order-label>Order</p>
+      <bcn-sortable-list data-nav-move-sort>
+        <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+        <ol class="firma2-nav-arrange__order" aria-labelledby="firma2-nav-move-order" data-nav-move-rows></ol>
+      </bcn-sortable-list>
+    </div>
+  </div>
+  <div class="cluster" data-gap="xs" slot="footer">
+    <EsaButton variant="primary" size="md" data-nav-move-save>Move</EsaButton>
+    <EsaButton variant="ghost" size="md" data-nav-move-cancel>Cancel</EsaButton>
+  </div>
+</esa-dialog>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-radio-group';
+  import { iconSvg } from '@esa/ecology/icon-registry';
+  import './bcn-sortable-list';
+  import { PAGES_GROUP } from '../../data/firma2-pages';
+  import { YOUR_ORGANIZATIONS_GROUP } from '../../data/firma2-nav';
+  import {
+    MORE_KEY, WORKSPACE_GROUP, isCustomLayout, moveKey, readLayout, resetLayout, sectionOf, sectionsFor, writeLayout,
+  } from '../../lib/nav-order';
+  import type { NavLayout, NavSection } from '../../lib/nav-order';
+  import { drawMenuIcons } from '../../lib/menu-icons';
+
+  interface RailItem {
+    key?: string;
+    label: string;
+    href?: string;
+    icon?: string;
+    group?: string;
+    active?: boolean;
+    disabled?: boolean;
+    children?: RailItem[];
+  }
+  type Rail = HTMLElement & { items: RailItem[]; _expanded: Set<string>; updateComplete?: Promise<unknown> };
+  type Menu = HTMLElement & { items: unknown };
+  type Dialog = HTMLElement & { show(): void; close(): void; heading: string };
+  type Radio = HTMLElement & { options: { value: string; label: string }[]; value: string | null };
+  type Toasts = HTMLElement & { show(o: { message: string; variant: string }): void };
+
+  const SECTION_LABEL: Record<NavSection, string> = {
+    top: 'Top of the menu',
+    workspace: WORKSPACE_GROUP,
+    more: 'More',
+    orgs: YOUR_ORGANIZATIONS_GROUP,
+  };
+  const ORDER_LABEL: Record<NavSection, string> = {
+    top: 'Order at the top',
+    workspace: `Order in ${WORKSPACE_GROUP}`,
+    more: 'Order in More',
+    orgs: `Order in ${YOUR_ORGANIZATIONS_GROUP}`,
+  };
+
+  const toast = (message: string): void => {
+    customElements.whenDefined('esa-snackbar-container').then(() => {
+      document.querySelector<Toasts>('[data-pages-toasts]')?.show({ message, variant: 'success' });
+    });
+  };
+
+  function mount(): void {
+    const rail = document.querySelector<Rail>('.firma2-app-frame[data-nav="app"] esa-sidebar-nav');
+    const root = rail?.shadowRoot;
+    if (!rail || !root) return;
+
+    // ---- the rows: every product row by key, taken once from the server's render ----
+    // More arrives with the current page's row already stepped out of it, so
+    // its children are gathered from both places.
+    const pool = new Map<string, RailItem>();
+    for (const item of rail.items) {
+      if (!item.key || item.group === PAGES_GROUP) continue;
+      pool.set(item.key, item.key === MORE_KEY ? { ...item, children: undefined } : item);
+      if (item.key === MORE_KEY) for (const c of item.children ?? []) if (c.key) pool.set(c.key, c);
+    }
+    const orgGroup = rail.items.find((i) => i.group === YOUR_ORGANIZATIONS_GROUP)?.group;
+
+    const build = (layout: NavLayout): RailItem[] => {
+      const row = (key: string, group?: string): RailItem[] => {
+        const item = pool.get(key);
+        return item ? [{ ...item, group }] : [];
+      };
+      const inMore = layout.more.flatMap((k) => row(k));
+      const current = inMore.find((c) => c.active);
+      const place = (section: NavSection, group?: string): RailItem[] =>
+        layout[section].flatMap((key) => {
+          if (key !== MORE_KEY) return row(key, group);
+          const rest = inMore.filter((c) => c !== current);
+          // An empty More has nothing to open; its row goes until a row is put back in it.
+          return [
+            ...(current ? [{ ...current, group }] : []),
+            ...(rest.length ? [{ ...pool.get(MORE_KEY)!, group, children: rest }] : []),
+          ];
+        });
+      return [...place('top'), ...place('workspace', WORKSPACE_GROUP), ...layout.orgs.flatMap((k) => row(k, orgGroup))];
+    };
+
+    let layout = readLayout();
+    const paint = (): void => {
+      layout = readLayout();
+      rail.items = [...build(layout), ...rail.items.filter((i) => i.group === PAGES_GROUP)];
+      syncMenus();
+    };
+
+    // ---- which row a rail <li> is ----
+    // The rail renders rail.items in order, one li.item each, so the li's place
+    // among its siblings is its item's place; a More child is matched the same
+    // way inside More. Pages rows are not ours.
+    const rowKey = (li: Element): string | undefined => {
+      if (li.classList.contains('item')) {
+        const all = Array.from(root.querySelectorAll('.list > li.item'));
+        const item = rail.items[all.indexOf(li)];
+        return item && item.group !== PAGES_GROUP ? item.key : undefined;
+      }
+      const parent = li.parentElement?.closest('li.item');
+      if (!li.classList.contains('child') || !parent || rowKey(parent) !== MORE_KEY) return undefined;
+      const more = rail.items.find((i) => i.key === MORE_KEY);
+      return more?.children?.[Array.from(li.parentElement!.children).indexOf(li)]?.key;
+    };
+    const ownRows = (): { li: HTMLElement; key: string }[] =>
+      Array.from(root.querySelectorAll<HTMLElement>('.list > li.item, .list > li.item > .children > li.child')).flatMap((li) => {
+        const key = rowKey(li);
+        return key ? [{ li, key }] : [];
+      });
+
+    // One named slot per row, and the rows that are not links (More, the
+    // organizations, a dimmed route) made draggable. Re-run on every shadow
+    // mutation: Lit reuses row elements by position, so a slot can end up on the
+    // wrong row after a move, and is then removed.
+    const placeSlots = (): void => {
+      const rows = ownRows();
+      const owned = new Map(rows.map((r) => [r.li, r.key]));
+      root.querySelectorAll<HTMLSlotElement>('slot[data-firma2-nav]').forEach((slot) => {
+        const key = owned.get(slot.parentElement as HTMLElement);
+        if (slot.name !== `nav-${key}`) slot.remove();
+      });
+      for (const { li, key } of rows) {
+        const link = li.querySelector<HTMLElement>(':scope > .link');
+        if (link && link.tagName !== 'A') link.draggable = true;
+        if (li.querySelector(`:scope > slot[name="nav-${CSS.escape(key)}"]`)) continue;
+        const slot = document.createElement('slot');
+        slot.name = `nav-${key}`;
+        slot.dataset.firma2Nav = '';
+        slot.dataset.firma2Row = link?.classList.contains('link--parent') ? 'parent' : 'nav';
+        li.appendChild(slot);
+      }
+    };
+
+    // ---- the "…" on each row ----
+    const rowTemplate = document.querySelector<HTMLTemplateElement>('template[data-nav-row-actions]');
+    const menuFor = (key: string) =>
+      rail.querySelector<Menu>(`:scope > .firma2-nav-arrange__row[data-nav-key="${CSS.escape(key)}"]`);
+    const menuItems = () => [
+      { label: 'Move', action: 'move', icon: 'list-ordered' },
+      ...(isCustomLayout() ? [{ label: 'Reset to workspace order', action: 'reset', icon: 'rotate-ccw' }] : []),
+    ];
+    const syncMenus = (): void => {
+      const items = menuItems();
+      for (const [key, item] of pool) {
+        let menu = menuFor(key);
+        if (!menu) {
+          menu = rowTemplate?.content.firstElementChild?.cloneNode(true) as Menu | undefined ?? null;
+          if (!menu) return;
+          menu.dataset.navKey = key;
+          menu.slot = `nav-${key}`;
+          rail.appendChild(menu);
+          const trigger = menu.querySelector('button');
+          trigger?.setAttribute('aria-label', `Actions for ${item.label}`);
+          trigger?.setAttribute('title', `Actions for ${item.label}`);
+        }
+        const m = menu;
+        // Assigned only after define, or it shadows the lego's reactive accessor.
+        customElements.whenDefined('esa-dropdown-menu').then(() => {
+          m.items = items;
+          drawMenuIcons(m);
+        });
+      }
+      placeSlots();
+    };
+    const refocus = (key: string) => menuFor(key)?.querySelector<HTMLElement>('button')?.focus();
+
+    rail.addEventListener('menu-action', (event) => {
+      const menu = (event.target as HTMLElement).closest<HTMLElement>('.firma2-nav-arrange__row');
+      const key = menu?.dataset.navKey;
+      if (!key) return;
+      const action = (event as CustomEvent<string>).detail;
+      if (action === 'move') openMove(key);
+      else if (action === 'reset') {
+        resetLayout();
+        paint();
+        toast('Workspace order restored.');
+        requestAnimationFrame(() => refocus(key));
+      }
+    });
+
+    // ---- Move: pick the section, then the row's place in it ----
+    const move = document.querySelector<Dialog>('.firma2-nav-arrange__move');
+    const moveSection = move?.querySelector<Radio>('[data-nav-move-section]');
+    const moveRows = move?.querySelector<HTMLElement>('[data-nav-move-rows]');
+    const moveLabel = move?.querySelector<HTMLElement>('[data-nav-move-order-label]');
+    let draft: { key: string; from: NavSection; section: NavSection; order: string[] } | undefined;
+
+    const paintMove = (): void => {
+      if (!draft || !moveRows || !moveLabel) return;
+      moveLabel.textContent = ORDER_LABEL[draft.section];
+      moveRows.replaceChildren(
+        ...draft.order.map((key) => {
+          const item = pool.get(key);
+          const li = document.createElement('li');
+          li.dataset.sortKey = key;
+          li.dataset.sortLabel = item?.label ?? key;
+          const icon = document.createElement('span');
+          icon.className = 'firma2-nav-arrange__order-icon';
+          icon.setAttribute('aria-hidden', 'true');
+          icon.innerHTML = (item?.icon && iconSvg(item.icon, 18)) ?? '';
+          const label = document.createElement('span');
+          // The row being moved is the one set in bold.
+          label.className = key === draft!.key ? 'typography-label-md-strong' : 'typography-body-md';
+          label.textContent = item?.label ?? key;
+          li.append(icon, label);
+          return li;
+        }),
+      );
+    };
+
+    function openMove(key: string): void {
+      const from = sectionOf(layout, key);
+      const item = pool.get(key);
+      if (!move || !moveSection || !from || !item) return;
+      draft = { key, from, section: from, order: [...layout[from]] };
+      const sections = sectionsFor(from, key);
+      Promise.all(['esa-dialog', 'esa-radio-group'].map((t) => customElements.whenDefined(t))).then(() => {
+        move.heading = `Move ${item.label}`;
+        moveSection.options = sections.map((s) => ({ value: s, label: SECTION_LABEL[s] }));
+        moveSection.value = from;
+        // An organization has one section to be in: no choice to show.
+        moveSection.style.display = sections.length > 1 ? '' : 'none';
+        paintMove();
+        move.show();
+      });
+    }
+
+    // A new section puts the row last in it; going back to where it started
+    // puts it back where it was.
+    moveSection?.addEventListener('change', () => {
+      if (!draft) return;
+      const section = moveSection.value as NavSection;
+      draft.section = section;
+      draft.order = section === draft.from
+        ? [...layout[section]]
+        : [...layout[section].filter((k) => k !== draft!.key), draft.key];
+      paintMove();
+    });
+    move?.querySelector('[data-nav-move-sort]')?.addEventListener('sort-change', (event) => {
+      if (draft) draft.order = (event as CustomEvent<{ order: string[] }>).detail.order;
+    });
+    move?.querySelector('[data-nav-move-save]')?.addEventListener('click', () => {
+      if (!draft) return;
+      const { key, from, section, order } = draft;
+      move.close();
+      if (section !== from || order.join() !== layout[from].join()) {
+        const next = moveKey(layout, key, section, null);
+        next[section] = order;
+        writeLayout(next);
+        paint();
+        const label = pool.get(key)?.label ?? 'Row';
+        toast(section === from ? `${label} moved.` : `${label} moved to ${SECTION_LABEL[section]}.`);
+      }
+      requestAnimationFrame(() => refocus(key));
+    });
+    move?.querySelector('[data-nav-move-cancel]')?.addEventListener('click', () => {
+      move.close();
+      if (draft) refocus(draft.key);
+    });
+
+    // ---- dragging a row in the rail ----
+    const marker = document.querySelector<HTMLElement>('[data-pages-drop]');
+    let dragKey: string | undefined;
+    let landing: { section: NavSection; beforeKey: string | null } | undefined;
+
+    const hideMarker = () => {
+      landing = undefined;
+      if (marker) delete marker.dataset.show;
+    };
+    const showMarker = (rect: DOMRect, mode: 'into' | 'before' | 'after') => {
+      if (!marker) return;
+      marker.dataset.show = mode === 'into' ? 'into' : 'line';
+      marker.style.top = `${mode === 'after' ? rect.bottom : rect.top}px`;
+      marker.style.left = `${rect.left}px`;
+      marker.style.width = `${rect.width}px`;
+      marker.style.height = mode === 'into' ? `${rect.height}px` : '';
+    };
+    const nextAfter = (list: string[], key: string): string | null => {
+      const rest = list.filter((k) => k !== dragKey);
+      return rest[rest.indexOf(key) + 1] ?? null;
+    };
+
+    rail.addEventListener('dragstart', (event) => {
+      const li = event.composedPath().find(
+        (n): n is HTMLLIElement => n instanceof HTMLLIElement && root.contains(n),
+      );
+      const key = li && rowKey(li);
+      if (!key || !event.dataTransfer) return;
+      dragKey = key;
+      event.dataTransfer.effectAllowed = 'move';
+      const href = li.querySelector<HTMLAnchorElement>(':scope > a.link')?.href;
+      // A link dropped outside the rail is still a link; a row that is not one carries its name.
+      event.dataTransfer.setData('text/plain', href ?? pool.get(key)?.label ?? key);
+      if (href) event.dataTransfer.setData('text/uri-list', href);
+      rail.dataset.firma2Dragging = '';
+    });
+
+    // The row under the pointer is found by height, not by the event target: a
+    // dimmed row is out of the pointer (pointer-events: none) but still a place
+    // to drop beside.
+    rail.addEventListener('dragover', (event) => {
+      if (!dragKey) return;
+      const hit = ownRows().find(({ li }) => {
+        const r = li.querySelector<HTMLElement>(':scope > .link')?.getBoundingClientRect();
+        return r && event.clientY >= r.top && event.clientY < r.bottom && event.clientX >= r.left && event.clientX <= r.right;
+      });
+      const rect = hit?.li.querySelector<HTMLElement>(':scope > .link')?.getBoundingClientRect();
+      const from = sectionOf(layout, dragKey);
+      if (!hit || !rect || !from) return hideMarker();
+      const allowed = sectionsFor(from, dragKey);
+
+      let where: { section: NavSection; beforeKey: string | null; mode: 'into' | 'before' | 'after' } | undefined;
+      const lower = event.clientY > rect.top + rect.height / 2;
+      const isChild = hit.li.classList.contains('child');
+      const at = sectionOf(layout, hit.key);
+      if (hit.key === MORE_KEY && !isChild && event.clientY >= rect.top + rect.height * 0.3) {
+        where = { section: 'more', beforeKey: null, mode: 'into' };
+      } else if (hit.key === MORE_KEY && at) {
+        where = { section: at, beforeKey: MORE_KEY, mode: 'before' };
+      } else if (at && (at !== 'more' || isChild)) {
+        // A row in its own section (the current page's row, stepped out above
+        // More, sits outside More's list and takes no drop).
+        where = { section: at, beforeKey: lower ? nextAfter(layout[at], hit.key) : hit.key, mode: lower ? 'after' : 'before' };
+      }
+      if (!where || !allowed.includes(where.section) || hit.key === dragKey) return hideMarker();
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      landing = { section: where.section, beforeKey: where.beforeKey };
+      showMarker(rect, where.mode);
+    });
+
+    rail.addEventListener('dragleave', (event) => {
+      if (!dragKey) return;
+      const to = (event as DragEvent).relatedTarget as Node | null;
+      if (!to || !rail.contains(to)) hideMarker();
+    });
+
+    rail.addEventListener('drop', (event) => {
+      if (!dragKey) return;
+      event.preventDefault();
+      const key = dragKey;
+      const where = landing;
+      hideMarker();
+      if (!where || where.beforeKey === key) return;
+      const next = moveKey(layout, key, where.section, where.beforeKey);
+      const changed = (['top', 'workspace', 'more', 'orgs'] as NavSection[]).some((s) => next[s].join() !== layout[s].join());
+      if (!changed) return;
+      writeLayout(next);
+      // Filed in More: open it, so the row is seen landing.
+      if (where.section === 'more') {
+        const more = pool.get(MORE_KEY);
+        if (more) rail._expanded = new Set([...rail._expanded, more.label]);
+      }
+      paint();
+    });
+
+    rail.addEventListener('dragend', () => {
+      if (!dragKey) return;
+      dragKey = undefined;
+      hideMarker();
+      delete rail.dataset.firma2Dragging;
+    });
+
+    paint();
+    rail.updateComplete?.then(placeSlots);
+    new MutationObserver(placeSlots).observe(root, { childList: true, subtree: true });
+  }
+
+  customElements.whenDefined('esa-sidebar-nav').then(() => requestAnimationFrame(mount));
+</script>
+
+<style>
+  /* bcn-lego-checked: the Move dialog's list is bcn-sortable-list's rows,
+     which take the consumer's own markup; no esa- lego lays out an icon-and-
+     label list row. Beacon is not cloned here. Same rows, same tokens, as
+     firma2-pages-nav's Move dialog. */
+  .firma2-nav-arrange__order {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-nav-arrange__order :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-100);
+    border-block-end: 1px solid var(--color-border-default-subtle);
+  }
+  .firma2-nav-arrange__order :global(li:last-child) { border-block-end: 0; }
+  .firma2-nav-arrange__order :global(.firma2-nav-arrange__order-icon) {
+    display: inline-flex;
+    flex: none;
+    color: var(--color-content-default-secondary);
+  }
+</style>

@@ -18,7 +18,7 @@ export const DIRECTION_OPTIONS: { value: Direction; label: string }[] = [
   { value: 'none', label: 'Not synced' },
   { value: 'layer', label: 'Layer to ProjectFirma' },
   { value: 'app', label: 'ProjectFirma to layer' },
-  { value: 'both', label: 'Either way, newest wins' },
+  { value: 'both', label: 'Both ways, latest change wins' },
 ];
 
 /**

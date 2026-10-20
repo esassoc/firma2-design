@@ -45,6 +45,18 @@
 //   <bcn-sortable-list group="tags" label="Partners">…</bcn-sortable-list>
 //   <bcn-sortable-list group="tags" label="Community">…</bcn-sortable-list>
 //
+// A list can turn rows away: `refuse="key1 key2"` names the keys it never
+// takes, so a drag skips it and the grip's menu leaves out "Move to" it — a
+// row that may not be nested in itself (More, on the menu-order page).
+//
+//   <bcn-sortable-list group="menu" label="More" refuse="more">…</bcn-sortable-list>
+//
+// A ROW CAN CARRY ITS OWN ACTIONS: `data-sort-actions` holds a JSON list of
+// esa-dropdown-menu items, shown above the moves (the form canvas puts
+// Duplicate and Remove there — docs/adr/0001). The list leaves them alone, so
+// their `menu-action` bubbles to the consumer; the row is
+// `event.target.closest("li")`. Changing the attribute re-decorates.
+//
 // A row that lands in another list fires `sort-change` on the list it LANDED
 // IN, with `detail.from` the list it left. The event bubbles, so a consumer
 // with nested lists checks `event.target`.
@@ -138,7 +150,7 @@ export class BcnSortableList extends HTMLElement {
   connectedCallback(): void {
     ensureStyles();
     this.#decorate();
-    this.#observer.observe(this, { childList: true, subtree: true });
+    this.#observer.observe(this, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-sort-actions'] });
     // Capture phase on the host runs before esa-dropdown-menu's trigger
     // listener inside its shadow root, so the click a drag ends with can be
     // eaten before it opens the menu.
@@ -159,7 +171,15 @@ export class BcnSortableList extends HTMLElement {
   #peers(): BcnSortableList[] {
     const group = this.getAttribute('group');
     if (!group) return [this];
-    return Array.from(document.querySelectorAll<BcnSortableList>(`bcn-sortable-list[group="${CSS.escape(group)}"]`));
+    // Only upgraded lists: while linked lists upgrade in turn, the first one's
+    // attributeChangedCallback runs before its later peers are instances.
+    return Array.from(document.querySelectorAll(`bcn-sortable-list[group="${CSS.escape(group)}"]`))
+      .filter((p): p is BcnSortableList => p instanceof BcnSortableList);
+  }
+
+  /** Whether this list will take the row with `key` (see `refuse`). */
+  #takes(key: string): boolean {
+    return !(this.getAttribute('refuse') ?? '').split(/\s+/).includes(key);
   }
 
   get #list(): HTMLElement | null {
@@ -211,24 +231,34 @@ export class BcnSortableList extends HTMLElement {
       const button = menu.querySelector('button');
       button?.setAttribute('aria-label', `Move ${name}`);
       button?.setAttribute('title', 'Drag to move, or click for options');
+      // A row's own actions (Duplicate, Remove, …) come first, from the
+      // consumer's `data-sort-actions` JSON; they are not handled here, so
+      // their `menu-action` bubbles on to the consumer.
+      const own: MenuEl['items'] = li.dataset.sortActions ? JSON.parse(li.dataset.sortActions) : [];
       const items: MenuEl['items'] = [
+        ...own,
+        ...(own.length ? [{ label: '', action: '', divider: true }] : []),
         { label: 'Move up', action: 'up', disabled: i === 0 },
         { label: 'Move down', action: 'down', disabled: i === movable.length - 1 },
         { label: 'Move to top', action: 'top', disabled: i === 0 },
         { label: 'Move to bottom', action: 'bottom', disabled: i === movable.length - 1 },
       ];
+      // `to:n` is the peer's place among ALL the other lists, refusing or not,
+      // so the action still finds it.
       const peers = this.#peers().filter((p) => p !== this);
-      if (peers.length) {
+      const offered = peers.filter((p) => p.#takes(li.dataset.sortKey!));
+      if (offered.length) {
         items.push({ label: '', action: '', divider: true });
-        peers.forEach((p, n) =>
-          items.push({ label: p.getAttribute('move-label') ?? `Move to ${p.getAttribute('label') ?? `list ${n + 1}`}`, action: `to:${n}` }),
-        );
+        offered.forEach((p) => {
+          const n = peers.indexOf(p);
+          items.push({ label: p.getAttribute('move-label') ?? `Move to ${p.getAttribute('label') ?? `list ${n + 1}`}`, action: `to:${n}` });
+        });
       }
       customElements.whenDefined('esa-dropdown-menu').then(() => {
         menu!.items = items;
       });
     });
-    this.#observer.observe(this, { childList: true, subtree: true });
+    this.#observer.observe(this, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-sort-actions'] });
 
     // DEFERRED TWO FRAMES, not done here. A move from the menu closes
     // esa-dropdown-menu, and its focus restore runs in its own next render —
@@ -268,7 +298,7 @@ export class BcnSortableList extends HTMLElement {
     if (action.startsWith('to:')) {
       event.stopPropagation();
       const peer = this.#peers().filter((p) => p !== this)[Number(action.slice(3))];
-      if (!peer?.#list) return;
+      if (!peer?.#list || !peer.#takes(li.dataset.sortKey)) return;
       // Joins the end of the list it moves to.
       peer.#list.append(li);
       peer.#commit(li.dataset.sortKey, peer.#order(), this);
@@ -346,7 +376,7 @@ export class BcnSortableList extends HTMLElement {
       const y = e.clientY;
       // The list under the pointer — or, between lists, the nearest one.
       // Unlinked, that is always this list.
-      const peers = this.#peers();
+      const peers = this.#peers().filter((p) => p.#takes(li.dataset.sortKey!));
       const distance = (p: BcnSortableList) => {
         const r = p.getBoundingClientRect();
         return y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;

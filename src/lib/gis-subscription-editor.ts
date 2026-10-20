@@ -297,7 +297,7 @@ export const mountSubscriptionEditor = (root: HTMLElement, onChange: (draft: Sub
         // shared layer, the URL for a public service.
         const arcgis = draft.access === 'arcgis';
         f.layer.errorText = arcgis && !draft.layerId ? 'Choose a shared layer.' : '';
-        f.url.errorText = arcgis ? '' : !draft.url ? 'Paste the service’s query URL.' : !draft.layerId ? 'Read the layer to list its fields.' : '';
+        f.url.errorText = arcgis ? '' : !draft.url ? 'Paste the service’s query URL.' : !draft.layerId ? 'Select Load layer fields first.' : '';
         return !f.layer.errorText && !f.url.errorText;
       }
       if (step === 'matching') {
@@ -305,7 +305,7 @@ export const mountSubscriptionEditor = (root: HTMLElement, onChange: (draft: Sub
         return !f.join.errorText;
       }
       if (step === 'name') {
-        f.name.errorText = draft.name.trim() ? '' : 'Name it the way your team will.';
+        f.name.errorText = draft.name.trim() ? '' : 'Name the subscription.';
         return !f.name.errorText;
       }
       return true;

@@ -258,9 +258,11 @@ const { label = 'the side panel', sizeVar = '--sidebar-width' } = Astro.props;
        it the flex parent stretches this to the full page height and a sticky box
        with nowhere to travel simply never sticks. */
     position: sticky;
-    top: 0;
+    /* Under the pinned top bar, not behind it: the bar spans the whole content
+       column, this one included, so the track starts at its bottom edge. */
+    top: var(--firma2-band-height, 48px);
     align-self: start;
-    block-size: 100dvh;
+    block-size: calc(100dvh - var(--firma2-band-height, 48px));
 
     /* A COLUMN, so the inner stack can take the leftover height and scroll inside
        it. `min-block-size: 0` goes on the inner, not here — this box is already
@@ -518,6 +520,19 @@ const { label = 'the side panel', sizeVar = '--sidebar-width' } = Astro.props;
     display: none;
   }
 
+  /* OPENING MIRRORS SHUTTING: the empty track travels, then the content lands.
+     Shutting already worked that way — the content leaves on the click and the
+     strip narrows behind it. Opening did not: content back in the layout holds a
+     flex item at its min-content width (the 400.78px above), so the rail jumped
+     to full width on the first frame and the basis had nothing left to animate.
+     The toggle sets `data-opening` until the track's transition ends (see the
+     script). It is a script and not a delayed `display` transition because a
+     transition AWAY from `none` shows the content for its whole length, delay
+     included — `display` can wait to hide, never to show. */
+  .firma2-record-rail[data-opening] .firma2-record-rail__inner {
+    display: none;
+  }
+
   /* THE PRIMITIVE IS THE THING TO MEASURE, so it is made a container.
      :global because the element belongs to the PAGE — it is the `.sidebar` spine
      the page composes, not markup this component renders — and `:has()` keeps the
@@ -655,8 +670,27 @@ const { label = 'the side panel', sizeVar = '--sidebar-width' } = Astro.props;
       toggle.setAttribute('aria-expanded', String(!collapsed));
     };
 
+    // OPENING KEEPS THE CONTENT OUT until the track has finished growing — the
+    // stylesheet's `data-opening` rule says why. The track's own transition is
+    // the clock: it ends, or is cancelled by a click that shuts the rail again,
+    // and either way the content lands. Under reduced motion the token is 0ms,
+    // no transition is created, and it lands at once.
+    const open = (): void => {
+      rail.dataset.opening = '';
+      rail.removeAttribute('collapsed');
+      const land = (): void => {
+        delete rail.dataset.opening;
+      };
+      const track = rail
+        .getAnimations()
+        .find((a) => (a as CSSTransition).transitionProperty === 'flex-basis');
+      if (track) track.finished.then(land, land);
+      else land();
+    };
+
     toggle.addEventListener('click', () => {
-      rail.toggleAttribute('collapsed');
+      if (rail.hasAttribute('collapsed')) open();
+      else rail.setAttribute('collapsed', '');
       sync();
       (rail.querySelector('bcn-edge-handle') as Persistable | null)?.persist?.();
     });

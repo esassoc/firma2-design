@@ -109,14 +109,14 @@ export interface AccessChoice<V extends string = string> {
 
 export const visibilityChoices: AccessChoice<OrganizationVisibility>[] = [
   { value: 'public', label: 'Public', hint: 'Anyone can see them, including visitors who aren’t signed in.' },
-  { value: 'workspace', label: 'Public to workspace', hint: 'Anyone signed in to this workspace can see them.' },
+  { value: 'workspace', label: 'Workspace members', hint: 'Anyone signed in to this workspace can see them.' },
   { value: 'private', label: 'Private to organization members', hint: 'Only this organization’s members can see them.' },
 ];
 
 export const joiningChoices: AccessChoice[] = [
-  { value: 'open', label: 'Anyone with access can join', hint: 'Anyone who can see this organization can join it themselves.' },
+  { value: 'open', label: 'Anyone who can see it can join', hint: 'Anyone who can see this organization can join it themselves.' },
   { value: 'invite', label: 'Invitation required', hint: 'People join only when someone who manages members invites them.' },
-  { value: 'approval', label: 'Approval required', hint: 'Anyone with access can ask to join; someone who manages members approves each request.' },
+  { value: 'approval', label: 'Approval required', hint: 'Anyone who can see it can ask to join; someone who manages members approves each request.' },
 ];
 
 /** The short form a grid cell has room for. */

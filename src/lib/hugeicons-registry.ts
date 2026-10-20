@@ -79,6 +79,7 @@ import {
   LinkSquare02Icon,
   Loading03Icon,
   LocateIcon,
+  LockIcon,
   Location01Icon,
   Maximize01Icon,
   Menu01Icon,
@@ -214,6 +215,8 @@ const MAP: Record<string, unknown> = {
   'zoom-in': ZoomInIcon,
   'zoom-out': ZoomOutIcon,
   scan: CenterFocusIcon,
+  // A standard question that can't be removed or renamed (firma2-intake-builder).
+  lock: LockIcon,
 };
 
 // Hugeicons ships React-style nodes ([tag, {strokeWidth, …, key}]); emit SVG markup.

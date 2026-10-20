@@ -1,0 +1,97 @@
+---
+// firma2-intake-publish — the intake builder's header status and actions:
+// whether members see what you see, Preview, and Publish.
+//
+// PUBLISH SHOWS ONLY WHEN THERE IS SOMETHING TO PUBLISH. With nothing
+// unpublished the status says when the form went live and the button leaves,
+// rather than sitting disabled and inviting "why".
+//
+// BELOW AGENCY the same slots say what is true there: a "Standard form"
+// badge, Preview, and Upgrade in the primary's place — the call to action the
+// locked builder below it repeats (.scratch/form-canvas/spec.md #19, #23).
+//
+// It talks to firma2-intake-builder through two document events:
+// `firma2:intake-saved` (in — repaint) and `firma2:intake-publish` (out).
+//
+// bcn-lego-checked: esa-badge (unpublished), esa-button (Preview,
+// Publish); the status text is a typography composite. Spans carry the
+// toggles because a hidden attribute on a lego's own root does not hold.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  slot?: string;
+}
+const previewHref = withBase('/prototypes/projects/new?preview=1');
+const planHref = withBase('/prototypes/workspace-settings/plan');
+---
+<span class="firma2-intake-publish cluster" data-gap="sm">
+  <span data-unpublished hidden><EsaBadge variant="warning" size="md" value="Unpublished changes" /></span>
+  <span data-standard hidden><EsaBadge variant="secondary" size="md" value="Standard form" /></span>
+  <span class="typography-body-md firma2-intake-publish__when" data-published-at></span>
+  <EsaButton variant="secondary" size="md" href={previewHref} target="_blank">Preview</EsaButton>
+  <span data-publish-wrap hidden><EsaButton variant="primary" size="md" data-publish>Publish</EsaButton></span>
+  <span data-upgrade-wrap hidden><EsaButton variant="primary" size="md" href={planHref}>Upgrade</EsaButton></span>
+</span>
+
+<style>
+  .firma2-intake-publish {
+    align-items: center;
+  }
+
+  .firma2-intake-publish :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-intake-publish__when {
+    color: var(--color-text-secondary);
+  }
+
+  /* Opacity only: the status changes in place, so it does not travel. */
+  @keyframes firma2-intake-publish-arrive {
+    from {
+      opacity: 0;
+    }
+  }
+
+  .firma2-intake-publish__when[data-arriving] {
+    animation: firma2-intake-publish-arrive var(--animation-enter, 150ms cubic-bezier(0.23, 1, 0.32, 1));
+  }
+</style>
+
+<script>
+  import { readFormStore } from '../../lib/intake-form';
+  import { planIncludes } from '../../lib/workspace-plan';
+  import { currentActor } from '../../lib/workspace-permissions';
+
+  document.querySelectorAll<HTMLElement>('.firma2-intake-publish').forEach((root) => {
+    if (!planIncludes('agency')) {
+      root.querySelector<HTMLElement>('[data-standard]')!.hidden = false;
+      // Only an administrator can upgrade; the locked note tells anyone else whom to ask.
+      root.querySelector<HTMLElement>('[data-upgrade-wrap]')!.hidden = currentActor().role !== 'Administrator';
+      return;
+    }
+    let wasDirty: boolean | null = null;
+    const paint = () => {
+      const { dirty, publishedAt } = readFormStore();
+      root.querySelector<HTMLElement>('[data-unpublished]')!.hidden = !dirty;
+      root.querySelector<HTMLElement>('[data-publish-wrap]')!.hidden = !dirty;
+      const when = publishedAt ? new Date(publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : '';
+      const status = root.querySelector<HTMLElement>('[data-published-at]')!;
+      status.textContent = dirty || !when ? '' : `Published ${when}`;
+      // Only on the publish itself — not on load, not on every save — the new
+      // status fades in, so the click visibly landed.
+      if (wasDirty === true && !dirty) {
+        status.dataset.arriving = '';
+        status.addEventListener('animationend', () => delete status.dataset.arriving, { once: true });
+      }
+      wasDirty = dirty;
+    };
+    root.querySelector('[data-publish]')!.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('firma2:intake-publish'));
+    });
+    document.addEventListener('firma2:intake-saved', paint);
+    paint();
+  });
+</script>

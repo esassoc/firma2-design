@@ -169,10 +169,10 @@ export const stageSettings: StageSetting[] = STAGE_ORDER.map((stage) => ({
 // ---------------------------------------------------------------------------
 
 export const customFields: SettingsRow[] = [
-  { name: 'Grant agreement number', description: 'The number on the signed agreement.', cells: { kind: 'Text', types: 'All types', required: 'Yes' } },
+  { name: 'Grant agreement number', description: 'The number on the signed agreement.', cells: { kind: 'Short text', types: 'All types', required: 'Yes' } },
   { name: 'Stream miles opened', description: 'Upstream habitat made reachable by the work.', cells: { kind: 'Number', types: 'Fish passage', required: 'Yes' } },
-  { name: 'Permits held', description: 'Permits secured before construction.', cells: { kind: 'Choice', types: '3 types', required: 'No' } },
-  { name: 'CEQA document', description: 'The environmental review the project relied on.', cells: { kind: 'Choice', types: 'All types', required: 'No' } },
+  { name: 'Permits held', description: 'Permits secured before construction.', cells: { kind: 'Multi-select', types: '3 types', required: 'No' } },
+  { name: 'CEQA document', description: 'The environmental review the project relied on.', cells: { kind: 'Single select', types: 'All types', required: 'No' } },
   { name: 'Landowner agreement signed', description: 'Whether access is secured for the life of the project.', cells: { kind: 'Yes or no', types: '4 types', required: 'No' } },
   { name: 'Burn window', description: 'The season prescribed fire is allowed.', cells: { kind: 'Date range', types: 'Forest health & fuels', required: 'No' } },
 ];
@@ -182,11 +182,11 @@ export const customFields: SettingsRow[] = [
 // ---------------------------------------------------------------------------
 
 export const fundingSourceFields: SettingsRow[] = [
-  { name: 'Award number', description: 'The funder’s reference for the award.', cells: { kind: 'Text', required: 'Yes' } },
+  { name: 'Award number', description: 'The funder’s reference for the award.', cells: { kind: 'Short text', required: 'Yes' } },
   { name: 'Match required', description: 'Share of the award the grantee must raise.', cells: { kind: 'Percent', required: 'Yes' } },
   { name: 'Award period', description: 'When the money can be spent.', cells: { kind: 'Date range', required: 'Yes' } },
-  { name: 'Program officer', description: 'Who to call at the funder.', cells: { kind: 'Text', required: 'No' } },
-  { name: 'Restricted to', description: 'The only work the money can pay for.', cells: { kind: 'Choice', required: 'No' } },
+  { name: 'Program officer', description: 'Who to call at the funder.', cells: { kind: 'Short text', required: 'No' } },
+  { name: 'Restricted to', description: 'The only work the money can pay for.', cells: { kind: 'Single select', required: 'No' } },
 ];
 
 // ---------------------------------------------------------------------------
@@ -243,7 +243,7 @@ export const IDLE_TIMEOUTS: SecurityChoice[] = [
 export const PERMISSION_AUDIENCES: SecurityChoice[] = [
   { value: 'admins', label: 'Only administrators' },
   { value: 'stewards', label: 'Administrators and stewards' },
-  { value: 'editors', label: 'Everyone except viewers' },
+  { value: 'editors', label: 'Administrators and contributors' },
 ];
 
 // Workspace-wide acts only. What each role may edit and approve is fixed by the

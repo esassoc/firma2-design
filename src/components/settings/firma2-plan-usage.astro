@@ -1,0 +1,96 @@
+---
+// firma2-plan-usage — Plan and usage › Usage: each counted thing against the
+// plan's limit. Spec: .scratch/tiers/spec.md (Limits, #9); counts and limits
+// come from src/lib/plan-usage.ts.
+//
+// FIVE COUNTS, NO BARS. A bar says "how full" — the wrong question for "38
+// of 1". The number and a quiet badge at or over the limit answer it, and one
+// note above them says what being over means: nothing goes, nothing more is added.
+//
+// THE NUMBERS ARE THE BROWSER'S. The plan comes from the prototype's switch and
+// added organizations from this browser's storage, so the script writes them.
+//
+// bcn-lego-checked: firma2-rail-section is the section (settings: no cards),
+// esa-alert-box the over-limit note, esa-badge the state; rows are `.repel`
+// in a list. No CSS beyond secondary text colour and the list reset.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import { METRICS, type Metric } from '../../lib/plan-usage';
+
+const ROW: Record<Metric, { label: string; hint?: string }> = {
+  organizations: { label: 'Organizations' },
+  projects: { label: 'Projects' },
+  contributors: { label: 'Contributors', hint: 'Including administrators' },
+  viewers: { label: 'Viewers' },
+  storage: { label: 'File storage' },
+};
+---
+<div class="firma2-plan-usage">
+  <Firma2RailSection title="Usage">
+    <div class="stack" data-gap="lg">
+      <div data-over-note hidden>
+        <EsaAlertBox variant="warning" title="Over your plan's limits">
+          <p class="typography-body-md" data-over-text></p>
+        </EsaAlertBox>
+      </div>
+      <ul class="stack firma2-plan-usage__list" data-gap="md" role="list">
+        {METRICS.map((m) => (
+          <li class="repel" data-gap="md" data-metric={m}>
+            <div class="stack" data-gap="2xs">
+              <span class="typography-body-md">{ROW[m].label}</span>
+              {ROW[m].hint && <span class="typography-body-sm firma2-plan-usage__hint">{ROW[m].hint}</span>}
+            </div>
+            <span class="cluster" data-gap="sm">
+              <span data-state="at" hidden><EsaBadge variant="secondary" size="sm" value="At limit" /></span>
+              <span data-state="over" hidden><EsaBadge variant="warning" size="sm" value="Over limit" /></span>
+              <span class="typography-body-md" data-value></span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </Firma2RailSection>
+</div>
+
+<style>
+  .firma2-plan-usage :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-plan-usage__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .firma2-plan-usage__hint {
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import { limitOf, readUsage, type Metric } from '../../lib/plan-usage';
+
+  const NOUN: Record<Metric, string> = { organizations: 'organizations', projects: 'projects', contributors: 'contributors', viewers: 'viewers', storage: 'files' };
+  const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} or ${xs.at(-1)}`);
+
+  document.querySelectorAll<HTMLElement>('.firma2-plan-usage').forEach((root) => {
+    const usage = readUsage();
+    const over: string[] = [];
+    root.querySelectorAll<HTMLElement>('[data-metric]').forEach((row) => {
+      const metric = row.dataset.metric as Metric;
+      const used = usage[metric];
+      const limit = limitOf(metric);
+      const unit = metric === 'storage' ? ' GB' : '';
+      row.querySelector<HTMLElement>('[data-value]')!.textContent =
+        limit === null ? `${used}${unit} · Unlimited` : `${used}${unit} of ${limit}${unit}`;
+      const state = limit === null ? null : used > limit ? 'over' : used === limit ? 'at' : null;
+      row.querySelectorAll<HTMLElement>('[data-state]').forEach((b) => (b.hidden = b.dataset.state !== state));
+      if (state === 'over') over.push(NOUN[metric]);
+    });
+    root.querySelector<HTMLElement>('[data-over-note]')!.hidden = over.length === 0;
+    root.querySelector<HTMLElement>('[data-over-text]')!.textContent =
+      `Everything you have stays and keeps working. To add more ${list(over)}, upgrade or remove some.`;
+  });
+</script>

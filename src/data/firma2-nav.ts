@@ -161,7 +161,9 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   // make a reader guess which one holds the name. Branding is the look; labels
   // and definitions are the language.
   { key: 'ws-branding', label: 'Branding', href: '/prototypes/workspace-settings/branding', icon: 'eye', group: 'Look and language' },
-  { key: 'ws-labels', label: 'Labels and definitions', href: '/prototypes/workspace-settings/labels', icon: 'file-text', group: 'Look and language' },
+  { key: 'ws-labels', label: 'Terminology', href: '/prototypes/workspace-settings/labels', icon: 'file-text', group: 'Look and language' },
+  // Where everyone's app menu starts; each person can rearrange their own (2026-10-19).
+  { key: 'ws-menu-order', label: 'Menu order', href: '/prototypes/workspace-settings/menu-order', icon: 'list-ordered', group: 'Look and language' },
 
   { key: 'ws-project-types', label: 'Project types', href: '/prototypes/workspace-settings/project-types', icon: 'folder', group: 'Projects' },
   { key: 'ws-classifications', label: 'Classifications', href: '/prototypes/workspace-settings/classifications', icon: 'folder', group: 'Projects' },
@@ -177,6 +179,8 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   { key: 'ws-tags', label: 'Tags', href: '/prototypes/workspace-settings/tags', icon: 'list', group: 'Projects' },
   { key: 'ws-stages', label: 'Stages', href: '/prototypes/workspace-settings/stages', icon: 'activity', group: 'Projects' },
   { key: 'ws-custom-fields', label: 'Custom fields', href: '/prototypes/workspace-settings/custom-fields', icon: 'pencil', group: 'Projects' },
+  // How a new project starts: the form every proposal fills (2026-10-19).
+  { key: 'ws-intake-form', label: 'Intake form', href: '/prototypes/workspace-settings/intake-form', icon: 'file-plus', group: 'Projects' },
 
   // MAPS: where projects come from, and what every map sits against. A
   // workspace's GIS arrangement, set once — hackathon team 2.
@@ -199,11 +203,16 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   { key: 'ws-security', label: 'Security', href: '/prototypes/workspace-settings/security', icon: 'shield', group: 'Administration' },
   { key: 'ws-custom-pages', label: 'Custom pages', href: '/prototypes/workspace-settings/custom-pages', icon: 'file-text', group: 'Administration' },
   { key: 'ws-import-export', label: 'Import and export', href: '/prototypes/workspace-settings/import-export', icon: 'upload', group: 'Administration' },
+  // Where every plan-locked page's Upgrade leads (2026-10-19, .scratch/form-canvas/spec.md).
+  { key: 'ws-plan', label: 'Plan and usage', href: '/prototypes/workspace-settings/plan', icon: 'credit-card', group: 'Administration' },
 
   // The index of the organization's settings pages (General, Members, …) and
   // the way out of it. Its sub-pages keep this row active.
   { key: 'ws-organization-settings', label: 'Settings', href: '/prototypes/workspace-settings/organization-settings', icon: 'settings', group: 'Your organization' },
 ];
+
+/** Where the top bar's home glyph goes: the rail's first row, the one with the home icon. */
+export const HOME_HREF = '/prototypes/my-projects';
 
 /** Where Settings opens: the first row of its rail. */
 export const SETTINGS_HOME = '/prototypes/settings/preferences';
