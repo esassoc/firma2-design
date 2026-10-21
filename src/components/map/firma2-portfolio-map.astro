@@ -30,16 +30,33 @@
 // uses one. Beacon is not cloned on this machine.
 import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
-import { projects, projectHref, projectSlug, STAGE_ORDER } from '../../data/firma2-projects';
+import { projects as allProjects, projectHref, projectSlug, STAGE_ORDER } from '../../data/firma2-projects';
+import type { Project } from '../../data/firma2-projects';
 import { HYDROLOGIC_REGIONS, PLACES, SUBWATERSHEDS, seedWorkAreas } from '../../data/firma2-geography';
 import { classificationInGroup, practiceAreaOf } from '../../data/firma2-classifications';
 import { stages } from '../../data/firma2-workspace-settings';
 import { TAGS } from '../../data/firma2-tags';
 import { withBase } from '../../lib/base';
 
+// SCOPED BY A PROP, NOT FORKED. An organization's Map tab is this page's map
+// over the projects it leads or funds — the same controls, colours and
+// coverage, so "Map" reads the same wherever it appears. A page with its own
+// split of the set (led vs funded) passes it as one more colour-by choice.
+interface Props {
+  /** The projects on the map. Every project in the workspace by default. */
+  projects?: Project[];
+  /** One more colour-by choice: its label, its values in order, and each project's value by slug. */
+  split?: { label: string; order: string[]; valueOf: Record<string, string> };
+  /** The canvas's accessible name. */
+  label?: string;
+}
+
+const { projects = allProjects, split, label = 'Portfolio map' } = Astro.props;
 const hiddenStages = stages.filter((s) => s.cells.publicPage === 'Hidden').map((s) => s.name);
 const config = {
+  split: split ? { label: split.label, order: split.order } : null,
   projects: projects.map((p) => ({
+    split: split?.valueOf[projectSlug(p)] ?? '',
     slug: projectSlug(p),
     name: p.projectName,
     href: withBase(projectHref(p)),
@@ -108,7 +125,7 @@ const config = {
 
   <div class="firma2-portfolio-map__main stack" data-gap="lg">
     <div class="firma2-portfolio-map__surface">
-      <div class="firma2-portfolio-map__canvas" role="application" aria-label="Portfolio map" data-canvas></div>
+      <div class="firma2-portfolio-map__canvas" role="application" aria-label={label} data-canvas></div>
       <div class="firma2-portfolio-map__search">
         <esa-text-field data-search type="search" size="sm" label="Find a place" placeholder="A town, region or subwatershed" autocomplete="off"></esa-text-field>
         <ul class="firma2-portfolio-map__results" data-results hidden></ul>
@@ -273,7 +290,7 @@ const config = {
 
   .firma2-portfolio-map__surface {
     position: relative;
-    block-size: calc(100dvh - calc(var(--firma2-band-height, 48px) + var(--spacing-800, 4rem)));
+    block-size: calc(var(--firma2-fold, 100dvh) - calc(var(--firma2-band-height, 48px) + var(--spacing-800, 4rem)));
     min-block-size: 32rem;
     border: 1px solid var(--color-border-default);
     border-radius: var(--radius-md, 0.5rem);
@@ -421,10 +438,11 @@ const config = {
 
   type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean };
   type Chart = HTMLElement & Record<string, unknown>;
-  type Facet = 'projectType' | 'stage' | 'planGoal' | 'practiceArea';
+  type Facet = 'projectType' | 'stage' | 'planGoal' | 'practiceArea' | 'split';
 
   interface ProjectRow {
     slug: string;
+    split: string;
     name: string;
     href: string;
     projectType: string;
@@ -438,6 +456,7 @@ const config = {
   }
 
   interface Config {
+    split: { label: string; order: string[] } | null;
     projects: ProjectRow[];
     stageOrder: string[];
     tagOptions: { value: string; label: string }[];
@@ -446,7 +465,7 @@ const config = {
     places: Place[];
   }
 
-  const FACETS: { value: Facet; label: string }[] = [
+  const BASE_FACETS: { value: Facet; label: string }[] = [
     { value: 'projectType', label: 'Project type' },
     { value: 'stage', label: 'Stage' },
     { value: 'planGoal', label: 'Plan goal' },
@@ -460,6 +479,7 @@ const config = {
     const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
     const config: Config = JSON.parse(root.dataset.config ?? '{}');
     const seeds = Object.fromEntries(config.projects.map((p) => [p.slug, p.seed]));
+    const FACETS = config.split ? [...BASE_FACETS, { value: 'split' as Facet, label: config.split.label }] : BASE_FACETS;
 
     let facet: Facet = 'projectType';
     let selected = new Set<string>();
@@ -472,7 +492,9 @@ const config = {
     // ---- the facet's values, and their colours -------------------------------
     const valuesFor = (f: Facet): string[] => {
       const values = [...new Set(config.projects.map((p) => p[f]))];
-      return f === 'stage' ? config.stageOrder.filter((s) => values.includes(s)) : values.sort();
+      if (f === 'stage') return config.stageOrder.filter((s) => values.includes(s));
+      if (f === 'split') return (config.split?.order ?? []).filter((s) => values.includes(s));
+      return values.sort();
     };
     const colorOf = (value: string) => {
       const index = valuesFor(facet).indexOf(value);
@@ -890,9 +912,23 @@ const config = {
 
     paintAll();
     // The portfolio frames itself ONCE, on arrival. Refitting on every filter
-    // would throw away the reader's own pan and zoom.
+    // would throw away the reader's own pan and zoom. In a tab that starts
+    // hidden the canvas has no size yet, and a fit at zero size lands on the
+    // whole ocean, so the fit waits for the canvas's first real size.
     const everything = placed().flatMap((x) => x.area.path);
-    if (everything.length) map.fitBounds(L.latLngBounds(everything), { padding: [40, 40] });
+    const frame = () => {
+      map.invalidateSize();
+      if (everything.length) map.fitBounds(L.latLngBounds(everything), { padding: [40, 40] });
+    };
+    if (canvas.clientWidth > 0) frame();
+    else {
+      const first = new ResizeObserver(() => {
+        if (canvas.clientWidth === 0) return;
+        first.disconnect();
+        frame();
+      });
+      first.observe(canvas);
+    }
   }
 
   document.querySelectorAll<HTMLElement>('.firma2-portfolio-map').forEach((root) => void initPortfolio(root));

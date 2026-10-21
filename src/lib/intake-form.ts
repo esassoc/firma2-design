@@ -19,7 +19,7 @@
 import { BUILTINS, DEFAULT_FORM_TITLE, SEED_FORM, SEED_PROPOSALS, STANDARD_FORM, builtin } from '../data/firma2-intake';
 import type { Answers, Block, BuiltinKey, Condition, IntakeForm, IntakeProject, IntakeStatus, QuestionBlock, Screen } from '../data/firma2-intake';
 import type { FieldDefinition } from '../data/firma2-project-types';
-import { allFields, updateField } from './project-type-draft';
+import { allFields } from './project-type-draft';
 import { PROJECT_TYPES } from '../data/firma2-project-types';
 import { CLASSIFICATIONS } from '../data/firma2-classifications';
 import { TAGS } from '../data/firma2-tags';
@@ -75,7 +75,7 @@ export const conditionOptions = (block: Block, fields: FieldDefinition[] = allFi
 };
 
 /** Earlier blocks this one may be conditioned on — never itself, never a later one. */
-export const conditionSources = (form: IntakeForm, targetId: string, fields: FieldDefinition[] = formFields(form)): QuestionBlock[] => {
+export const conditionSources = (form: IntakeForm, targetId: string, fields: FieldDefinition[] = allFields()): QuestionBlock[] => {
   const screenIndex = form.screens.findIndex((s) => s.id === targetId);
   const blocks = allBlocks(form);
   // A screen may depend on anything on the screens before it.
@@ -182,7 +182,7 @@ export const reorder = (form: IntakeForm, layout: Record<string, string[]>): Int
 // is dropped rather than kept dangling: a rule the builder would not let you
 // write must not survive a drag.
 const dropBrokenConditions = (form: IntakeForm): IntakeForm => {
-  const fields = formFields(form);
+  const fields = allFields();
   const ok = (targetId: string, when?: Condition) => !when || conditionSources(form, targetId, fields).some((b) => b.id === when.source);
   return {
     ...form,
@@ -224,24 +224,15 @@ export const splitScreen = (form: IntakeForm, at: { afterId?: string; screenId?:
 };
 
 /**
- * A copy of a block, placed right below it. A standard question appears once,
- * so it is never copied. A custom question gets a new field of the same kind
- * and choices — two questions must never share one answer by accident. The
- * condition is copied too.
+ * A copy of a block, placed right below it. Only a text block is copied: a
+ * question asks one field, and a field is asked once per form, so a copy would
+ * ask the same fact twice. The condition is copied too.
  */
 export const duplicateBlock = (form: IntakeForm, id: string): { form: IntakeForm; block?: Block } => {
   const block = findBlock(form, id);
-  if (!block || block.type === 'builtin') return { form };
-  if (block.type === 'text') {
-    const copy: Block = { ...block, id: newId('t') };
-    return { form: insertBlock(form, copy, { afterId: id }), block: copy };
-  }
-  const field = formFields(form).find((f) => f.id === block.fieldId);
-  if (!field) return { form };
-  const fieldId = nextFieldId(form, block.label || field.label);
-  const staged = stageField(form, { ...field, id: fieldId, label: `${field.label} (copy)`, options: field.options ? [...field.options] : undefined });
-  const copy: Block = { ...block, id: newId('q'), fieldId, fieldNamed: undefined };
-  return { form: insertBlock(staged, copy, { afterId: id }), block: copy };
+  if (!block || block.type !== 'text') return { form };
+  const copy: Block = { ...block, id: newId('t') };
+  return { form: insertBlock(form, copy, { afterId: id }), block: copy };
 };
 
 export const addScreen = (form: IntakeForm, afterScreenId?: string): { form: IntakeForm; screen: Screen } => {
@@ -306,36 +297,12 @@ export const choicesFor = (block: QuestionBlock, fields: FieldDefinition[] = all
 };
 
 // ---------------------------------------------------------------------------
-// Staged fields — custom-field changes waiting for Publish
+// Fields — made in Custom fields, only ever placed here
 // ---------------------------------------------------------------------------
 
-/** The catalog as this form sees it: every field, with its staged changes over them. */
-export const formFields = (form: IntakeForm): FieldDefinition[] => {
-  const staged = form.fields ?? {};
-  const catalog = allFields();
-  const ids = new Set(catalog.map((f) => f.id));
-  return [...catalog.map((f) => staged[f.id] ?? f), ...Object.values(staged).filter((f) => !ids.has(f.id))];
-};
-
-/** A field the catalog does not have yet: created by this form, at its next publish. */
-export const isNewField = (id: string): boolean => !allFields().some((f) => f.id === id);
-
-export const stageField = (form: IntakeForm, field: FieldDefinition): IntakeForm => ({ ...form, fields: { ...form.fields, [field.id]: field } });
-
-export const unstageField = (form: IntakeForm, id: string): IntakeForm => {
-  const { [id]: _gone, ...rest } = form.fields ?? {};
-  return { ...form, fields: rest };
-};
-
-/** An id for a new field, clear of the catalog and of anything already staged. */
-export const nextFieldId = (form: IntakeForm, label: string): string => {
-  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'field';
-  const taken = new Set(formFields(form).map((f) => f.id));
-  let id = `local-${slug}`;
-  let n = 2;
-  while (taken.has(id)) id = `local-${slug}-${n++}`;
-  return id;
-};
+/** The custom fields this form already asks: each is asked at most once. */
+export const fieldsInForm = (form: IntakeForm): Set<string> =>
+  new Set(allBlocks(form).flatMap((b) => (b.type === 'field' ? [b.fieldId] : [])));
 
 export { BUILTINS };
 
@@ -386,13 +353,23 @@ const SEED_PUBLISHED_AT = '2026-10-02T17:30:00Z';
 
 // A form saved before forms had names gets the default one, and a built-in
 // always carries its attribute's own name — the builder cannot rename one, and
-// a form saved before that rule is brought back in line here.
-const named = (f: IntakeForm): IntakeForm => ({
-  ...f,
-  fields: f.fields ?? {},
-  title: typeof f.title === 'string' ? f.title : DEFAULT_FORM_TITLE,
-  screens: f.screens.map((s) => ({ ...s, blocks: s.blocks.map((b) => (b.type === 'builtin' ? { ...b, label: builtin(b.key).label } : b)) })),
-});
+// a form saved before that rule is brought back in line here. A question whose
+// field is gone — one the builder used to create and never published — goes
+// with it: fields are made in Custom fields now (2026-10-20).
+const named = (f: IntakeForm): IntakeForm => {
+  const known = new Set(allFields().map((x) => x.id));
+  const { fields: _staged, ...rest } = f as IntakeForm & { fields?: unknown };
+  return {
+    ...rest,
+    title: typeof f.title === 'string' ? f.title : DEFAULT_FORM_TITLE,
+    screens: f.screens.map((s) => ({
+      ...s,
+      blocks: s.blocks
+        .filter((b) => b.type !== 'field' || known.has(b.fieldId))
+        .map((b) => (b.type === 'builtin' ? { ...b, label: builtin(b.key).label } : b)),
+    })),
+  };
+};
 
 export const readFormStore = (): FormStore => {
   const stored = readJson<FormStore>(FORM_KEY);
@@ -407,17 +384,10 @@ export const saveWorking = (working: IntakeForm): FormStore => {
   return store;
 };
 
-/**
- * Make the working copy live. Its staged field changes go into the catalog
- * first — new fields appear in Custom fields, edits reach every project — and
- * then the form itself, with nothing left staged.
- */
+/** Make the working copy live. */
 export const publish = (): FormStore => {
   const current = readFormStore();
-  // Blank choices (a new question's unfilled "Choice 1") never reach the catalog.
-  Object.values(current.working.fields ?? {}).forEach((f) => updateField(f.options ? { ...f, options: f.options.filter((o) => o.trim()) } : f));
-  const working: IntakeForm = { ...current.working, fields: {} };
-  const store = { ...current, working, published: clone(working), publishedAt: new Date().toISOString(), dirty: false };
+  const store = { ...current, published: clone(current.working), publishedAt: new Date().toISOString(), dirty: false };
   writeJson(FORM_KEY, store);
   return store;
 };

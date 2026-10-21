@@ -19,7 +19,12 @@
 // SAVED AS YOU GO. Editing a field saves on every change and the sheet's
 // footer says Done; defining a new one is an act, so it has Add field.
 //
-// bcn-lego-checked: esa-side-dialog, esa-text-field, esa-select,
+// THE ONE PLACE FIELDS ARE MADE. The intake form only places them
+// (src/data/firma2-intake.ts), so its "New custom field" comes here
+// (?new=1&for=intake) and Add takes the new field straight back onto the form.
+// The form's "Saves to" links a field's sheet open (?field=<id>).
+//
+// bcn-lego-checked: bcn-side-sheet (esa-side-dialog, docked), esa-text-field, esa-select,
 // esa-input-tag, esa-textarea, esa-button, esa-confirm-dialog; the table is
 // the firma2-settings-table style (no table lego). Beacon is not cloned here.
 import EsaButton from '@esa/ecology/esa-button.astro';
@@ -29,6 +34,7 @@ import { projects } from '../../data/firma2-projects';
 import { withBase } from '../../lib/base';
 
 const config = {
+  intakeHref: withBase('/prototypes/workspace-settings/intake-form'),
   kinds: FIELD_KINDS.map((k) => ({ value: k.id, label: k.name, note: k.note })),
   units: UNITS,
   // Fields are asked of every project of the types that place them.
@@ -55,7 +61,7 @@ const config = {
 
   <template data-tpl-edit><EsaButton variant="ghost" size="sm">Edit</EsaButton></template>
 
-  <esa-side-dialog class="firma2-custom-fields__sheet" heading="Edit field" size="md" position="right">
+  <bcn-side-sheet class="firma2-custom-fields__sheet" heading="Edit field" size="md" position="right">
     <div class="stack" data-gap="lg">
       <p class="typography-body-md" data-usage></p>
       <esa-text-field data-label label="Name" size="md" placeholder="e.g. Barrier type" required></esa-text-field>
@@ -74,7 +80,7 @@ const config = {
         <span data-cancel-wrap><EsaButton variant="ghost" size="md" data-cancel>Cancel</EsaButton></span>
       </span>
     </div>
-  </esa-side-dialog>
+  </bcn-side-sheet>
 
   <esa-confirm-dialog class="firma2-custom-fields__confirm" variant="danger" heading="Delete this field?" confirm-label="Delete field"></esa-confirm-dialog>
 </div>
@@ -129,7 +135,7 @@ const config = {
 </style>
 
 <script>
-  import '@esa/ecology/esa-side-dialog';
+  import '../shared/bcn-side-sheet';
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-select';
   import '@esa/ecology/esa-input-tag';
@@ -138,10 +144,11 @@ const config = {
   import type { FieldDefinition, FieldKind } from '../../data/firma2-project-types';
   import { hasOptions } from '../../data/firma2-project-types';
   import { allFields, deleteField, isProjectTypeKey, nextLocalFieldId, updateField, withProjectTypeDraft } from '../../lib/project-type-draft';
-  import { fixSideDialog } from '../../lib/side-dialog-fix';
+  import { fieldsInForm, readFormStore } from '../../lib/intake-form';
 
   type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string; helpText?: string; disabled?: boolean; heading?: string; message?: string; show?: () => void; close?: () => void };
   interface Config {
+    intakeHref: string;
     kinds: { value: FieldKind; label: string; note: string }[];
     units: string[];
     types: { slug: string; name: string; href: string; projects: number }[];
@@ -157,6 +164,10 @@ const config = {
     /** The project types that place a field, read through each draft so studio edits count. */
     const usersOf = (id: string) => config.types.filter((t) => withProjectTypeDraft(t.slug)?.fields.some((f) => f.fieldId === id));
     const answeredBy = (id: string) => usersOf(id).reduce((n, t) => n + t.projects, 0);
+    /** Whether the intake form asks it — the copy being edited, so an unpublished placement counts. */
+    const onIntake = (id: string) => fieldsInForm(readFormStore().working).has(id);
+    const params = new URLSearchParams(location.search);
+    const forIntake = params.get('for') === 'intake';
 
     const describe = (f: FieldDefinition) =>
       hasOptions(f.kind) ? `${kindName(f.kind)} · ${(f.options ?? []).filter((o) => o !== 'Unspecified').length} choices` : f.kind === 'number' && f.unit ? `${kindName(f.kind)} · ${f.unit}` : kindName(f.kind);
@@ -166,13 +177,17 @@ const config = {
       $('[data-rows]').replaceChildren(
         ...allFields().map((f) => {
           const users = usersOf(f.id);
+          const intake = onIntake(f.id);
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td><span class="typography-body-md">${esc(f.label)}</span>${f.helpText ? `<span class="firma2-custom-fields__meta typography-body-sm">${esc(f.helpText)}</span>` : ''}</td>
             <td class="typography-body-md">${esc(describe(f))}</td>
             <td>${
-              users.length
-                ? `<span class="firma2-custom-fields__types typography-body-md">${users.map((t) => `<a href="${t.href}">${esc(t.name)}</a>`).join('')}</span><span class="firma2-custom-fields__meta typography-body-sm">${answeredBy(f.id)} projects answer it</span>`
+              users.length || intake
+                ? `<span class="firma2-custom-fields__types typography-body-md">${[
+                    ...(intake ? [`<a href="${config.intakeHref}">Intake form</a>`] : []),
+                    ...users.map((t) => `<a href="${t.href}">${esc(t.name)}</a>`),
+                  ].join('')}</span>${users.length ? `<span class="firma2-custom-fields__meta typography-body-sm">${answeredBy(f.id)} projects answer it</span>` : ''}`
                 : '<span class="typography-body-md firma2-custom-fields__meta">Not used yet</span>'
             }</td>`;
           const td = document.createElement('td');
@@ -188,7 +203,6 @@ const config = {
 
     // ---- the sheet ------------------------------------------------------------------
     const sheet = $<Control>('.firma2-custom-fields__sheet');
-    void fixSideDialog(sheet as HTMLElement & { show: () => void; close: () => void });
     const label = $<Control>('[data-label]');
     const kind = $<Control>('[data-kind]');
     const options = $<Control>('[data-options]');
@@ -209,10 +223,10 @@ const config = {
       const k = String(kind.value ?? 'choice') as FieldKind;
       options.hidden = !hasOptions(k);
       unit.hidden = k !== 'number';
-      const used = editingId ? usersOf(editingId).length > 0 : false;
+      const used = editingId ? usersOf(editingId).length > 0 || onIntake(editingId) : false;
       kind.disabled = used;
       kind.helpText = used
-        ? `Locked while a project type asks this field. Changing its kind would lose the answers projects have already given.`
+        ? `Locked while a project type or the intake form asks this field. Changing its kind would lose the answers projects have already given.`
         : config.kinds.find((x) => x.value === k)?.note ?? '';
     };
 
@@ -221,16 +235,21 @@ const config = {
       draft = id ? { ...allFields().find((f) => f.id === id)! } : { id: '', label: '', kind: 'choice', options: [] };
       sheet.heading = id ? 'Edit field' : 'New field';
       const users = id ? usersOf(id) : [];
+      const intake = id ? onIntake(id) : false;
       $('[data-usage]').textContent = id
         ? users.length
-          ? `Asked on ${users.map((t) => t.name).join(', ')}: ${answeredBy(id)} projects today, and every new project of ${users.length === 1 ? 'that type' : 'those types'}.`
-          : 'No project type uses this field yet. Add it from a project type’s page.'
-        : 'Defined once for the workspace. Each project type then chooses whether to ask it.';
+          ? `Asked on ${users.map((t) => t.name).join(', ')}: ${answeredBy(id)} projects today, and every new project of ${users.length === 1 ? 'that type' : 'those types'}.${intake ? ' The intake form asks it too.' : ''}`
+          : intake
+            ? 'The intake form asks this field. No project type places it on project pages yet.'
+            : 'Nothing asks this field yet. Add it to the intake form or a project type.'
+        : forIntake
+          ? 'Defined once for the workspace. Add it, and it goes straight onto your intake form.'
+          : 'Defined once for the workspace. Each project type then chooses whether to ask it.';
       $('[data-add-wrap]').hidden = Boolean(id);
       $('[data-cancel-wrap]').hidden = Boolean(id);
       $('[data-done-wrap]').hidden = !id;
       // Delete only for a field nothing uses; the studio is where a project type gives one up.
-      $('[data-delete-wrap]').hidden = !id || users.length > 0;
+      $('[data-delete-wrap]').hidden = !id || users.length > 0 || intake;
       void Promise.all(['esa-select', 'esa-text-field', 'esa-input-tag', 'esa-textarea'].map((t) => customElements.whenDefined(t))).then(() => {
         kind.options = config.kinds.map(({ value, label: l }) => ({ value, label: l }));
         unit.options = config.units.map((u) => ({ value: u, label: u }));
@@ -280,13 +299,19 @@ const config = {
       label.errorText = name ? '' : 'Name the field.';
       options.errorText = hasOptions(draft.kind) && list.length < 2 ? 'A choice field needs at least two choices.' : '';
       if (!name || options.errorText) return;
+      const id = nextLocalFieldId(name);
       updateField({
         ...draft,
-        id: nextLocalFieldId(name),
+        id,
         label: name,
         options: hasOptions(draft.kind) ? list : undefined,
         unit: draft.kind === 'number' ? draft.unit : undefined,
       });
+      // Made for the intake form: back to it, with the field placed.
+      if (forIntake) {
+        location.href = `${config.intakeHref}?add=${encodeURIComponent(id)}`;
+        return;
+      }
       paint();
       sheet.close?.();
     });
@@ -306,6 +331,15 @@ const config = {
     });
 
     document.querySelectorAll('[data-new-field]').forEach((b) => b.addEventListener('click', () => open(null)));
+    // Arriving from the intake form: its new field, or the field it saves to.
+    if (forIntake) {
+      const add = $('[data-add-wrap]');
+      const text = add.querySelector('.esa-button__label') ?? add.querySelector('button');
+      if (text) text.textContent = 'Add to intake form';
+    }
+    const linked = params.get('field');
+    if (params.get('new') === '1') open(null);
+    else if (linked && allFields().some((f) => f.id === linked)) open(linked);
     window.addEventListener('storage', (event) => {
       if (isProjectTypeKey(event.key)) paint();
     });

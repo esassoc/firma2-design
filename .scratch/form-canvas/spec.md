@@ -44,16 +44,16 @@ form page, locked, showing the fixed form and a call to upgrade.
 | # | Decision |
 |---|---|
 | 1 | One shared grammar for the intake builder AND custom pages, not intake only. |
-| 2 | The intake builder's docked sidebar is removed: no palette, no settings rail. |
+| 2 | ~~The intake builder's docked sidebar is removed: no palette, no settings rail.~~ *Partly reversed 2026-10-20 (#31): a Fields drawer is back on the right; settings still sit on the blocks.* |
 | 3 | Save models stay different: intake saves as you go and goes live on **Publish changes**; a custom page keeps read → **Edit** → **Update**. Only the top bar matches (#19). |
 | 4 | The canvas draws questions exactly as members see them (`typography-label-md` labels from the legos). The member form is not restyled. |
 | 5 | Screens are divider blocks inserted from `/` or +, draggable like any block. Nothing screen-related shows until a second screen exists. |
 | 6 | Settings are split across the canvas: `*` toggles Required; a "Saves to *Field*" line on the selected question; a "When … is …" condition row under its block. The grip opens `esa-dropdown-menu` with actions only. |
 | 7 | `/` and + open one inline grouped list. Standard questions already on the form stay listed, greyed with "In form". No insert dialog. |
-| 8 | Dragging new types onto the canvas from outside goes away (no palette). Reordering by drag stays. |
+| 8 | ~~Dragging new types onto the canvas from outside goes away (no palette).~~ *Reversed 2026-10-20 (#31): fields drag in from the drawer.* Reordering by drag stays. |
 | 9 | One `bcn-insert-menu` component serves both editors. Custom pages drive it through `@tiptap/suggestion`; intake drives it from its add lines. Filed upstream with `/request-lego`. |
 | 10 | Adding a second screen makes a title line appear for screen 1, too. Each divider carries the title of the screen after it. |
-| 11 | Clicking "Saves to" opens the field picker, field name and unit inline under it (esa-select, esa-text-field) and closes them when focus leaves. No dialog. |
+| 11 | ~~Clicking "Saves to" opens the field picker, field name and unit inline under it.~~ *Superseded 2026-10-20 by #26–#30:* "Saves to *Field*" is a link to that field in Custom fields. |
 | 12 | "Add condition" (grip menu of a question, text block or divider) draws a row: **When** [earlier question ▾] **is** [answers ▾] [×]. It stays visible whenever a condition exists and replaces the "Shown when" badge. Answers use `esa-filter-dropdown` if it fits a multi-select; otherwise `esa-checkbox-group`. |
 | 13 | Selection = hover tint + focus ring. No green border or fill. Escape deselects. |
 | 14 | Locked standard questions: no Remove or Add condition in their grip menu; a lock icon beside the label on hover with a tooltip; "Choices come from *Organizations*" link where "Saves to" would be. |
@@ -68,6 +68,12 @@ form page, locked, showing the fixed form and a call to upgrade.
 | 23 | The locked page draws the real canvas with the fixed form, read-only: no grips, no +, no `/`. One info `esa-alert-box` above it pitches the upgrade with one CTA. The top bar shows a "Standard form" badge and **Upgrade** where Publish changes would be. |
 | 24 | Upgrade leads to a new **Workspace settings › Plan** page. In the prototype, its button switches the workspace to the paid tier. |
 | 25 | The Plan page lists only what is actually plan-locked today (intake form customization), one section per locked feature. No pricing table and no plan names beyond Free and Pro. |
+| 26 | **Fields are made in Custom fields, never in the builder** (2026-10-20). The builder only places existing fields. Making a field, its kind and its choices while also writing the question asked for two designs in one gesture. |
+| 27 | ~~`/` and + list a **Custom fields** group~~ *(moved to the drawer, #31)*: every workspace field by name, greyed "In form" once placed (a field is asked at most once per form), then **New custom field**. |
+| 28 | New custom field goes to Custom fields (`?new=1&for=intake`), its Add button reads **Add to intake form**, and Add returns to the builder with the field placed where it was asked for. |
+| 29 | A placed field arrives with its name as the question, selected, so typing rewords it ("How many acres will this restore?"). Choices are the field's and are drawn read-only; Duplicate is for text blocks only. |
+| 31 | A **Fields drawer** docks on the right (firma2-side-panel, toggled by **Fields** in the top bar), as Jira's work-item layout does: search, Custom fields then Standard questions as neutral name-only tiles (ghost + outline, no type icons), "In form" greyed, New custom field at the end. Click places below the selection; drag drops where a line shows. **The drawer is the only way a question reaches the form** — custom or standard. The per-block + is gone and `/` lists Layout only (Text, New screen) (amends #7, #10, #27). It only lists, no settings. Absent below Agency. |
+| 30 | A first-time **Set up your intake form** guide sits above the canvas: create fields → add them → word them as questions → publish. Each step ticks from real state; the guide goes when all are done or it is hidden. |
 
 ## User Stories
 

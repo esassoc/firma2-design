@@ -112,6 +112,9 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
   CenterFocusIcon,
+  Share01Icon,
+  Globe02Icon,
+  GitCompareIcon,
 } from '@hugeicons/core-free-icons';
 import { toMarkup } from './hugeicon-markup';
 import type { IconNode } from './hugeicon-markup';
@@ -217,6 +220,11 @@ const MAP: Record<string, unknown> = {
   scan: CenterFocusIcon,
   // A standard question that can't be removed or renamed (firma2-intake-builder).
   lock: LockIcon,
+  // The top bar's icon-only record actions (firma2-project-actions, the review
+  // page): Share, Public page, Review changes.
+  'share-2': Share01Icon,
+  globe: Globe02Icon,
+  'git-compare': GitCompareIcon,
 };
 
 // Hugeicons ships React-style nodes ([tag, {strokeWidth, …, key}]); emit SVG markup.

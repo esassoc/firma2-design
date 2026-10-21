@@ -8,6 +8,11 @@
 // types already follow — so an answer has one home, and the same fact is never
 // stored twice.
 //
+// FIELDS ARE MADE IN CUSTOM FIELDS, NEVER HERE (2026-10-20). The form places a
+// field that already exists, at most once, and words it as a question; its
+// name, kind and choices stay the field's. A form that also made fields asked
+// the administrator to design a data model and a questionnaire in one gesture.
+//
 // WHAT BELONGS TO THE FORM, NOT THE FIELD: a custom question's wording, help
 // text, whether it is required, and when it is shown. A BUILT-IN keeps the
 // attribute's own name everywhere — only its help text, required-ness and
@@ -17,8 +22,6 @@
 //
 // The rules over this shape (visibility, clearing, readiness, the locked
 // built-ins) live in src/lib/intake-form.ts. INVENTED CONTENT throughout.
-
-import type { FieldDefinition } from './firma2-project-types';
 
 /** The Project's own attributes the form can ask for. */
 export type BuiltinKey =
@@ -105,8 +108,6 @@ export interface BuiltinBlock extends BlockBase {
 export interface FieldBlock extends BlockBase {
   type: 'field';
   fieldId: string;
-  /** Its new field was named by hand, so it stops following the wording. */
-  fieldNamed?: boolean;
   /** The question's wording. The field keeps its own name in Custom fields. */
   label: string;
   help?: string;
@@ -141,13 +142,6 @@ export interface Screen {
 export interface IntakeForm {
   /** The form's name — the title of every page a member fills it on. */
   title: string;
-  /**
-   * Custom-field changes made in the builder and not yet published: new fields
-   * (ids the catalog does not have) and edits to existing ones (ids it does).
-   * Custom fields and every project see none of it until Publish
-   * applies it — the same terms as the rest of the form.
-   */
-  fields?: Record<string, FieldDefinition>;
   screens: Screen[];
   /** Shown once a proposal is submitted. Rich text. */
   afterSubmit: string;

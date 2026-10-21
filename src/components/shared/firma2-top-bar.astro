@@ -15,7 +15,9 @@
 // moves one server-rendered node.
 //
 // Slots: "status" (badges — what state the record is in), "toolbar" (record
-// utilities), "actions" (the page's workflow; the primary goes last, rightmost).
+// utilities), "actions" (the page's workflow; its primary rightmost). No rail
+// toggle lives here: every rail carries its own chevron on its edge
+// (firma2-rail; user, 2026-10-20).
 //
 // bcn-lego-checked: esa-app-bar is the strip and esa-breadcrumbs the trail;
 // esa-dropdown-menu + EsaButton chrome/iconOnly are the two "…" menus (the
@@ -193,18 +195,22 @@ const hasActions = Astro.slots.has('actions');
   // button, so whatever the toolbar's component wired (share sheet, history
   // drawer, a link) runs unchanged. The toolbar is hidden in CSS at that width;
   // the items are rebuilt on open so a button that appeared later is included.
+  // The toolbar's buttons are icon-only, so an item is named by the button's
+  // accessible name — its aria-label, or its text where it has one.
   function wireFold(bar: HTMLElement): void {
     const toolbar = bar.querySelector<HTMLElement>('[data-top-bar-toolbar]');
     const menu = bar.querySelector<Menu>('[data-top-bar-fold]');
     if (!toolbar || !menu) return;
+    const nameOf = (el: HTMLElement): string =>
+      el.getAttribute('aria-label')?.trim() || el.textContent?.trim() || '';
     const controls = (): HTMLElement[] =>
       [...toolbar.querySelectorAll<HTMLElement>('a[href], button')].filter(
-        (el) => !el.closest('esa-dropdown-menu') && el.textContent?.trim(),
+        (el) => !el.closest('esa-dropdown-menu') && nameOf(el),
       );
     const build = (): void => {
       const list = controls();
       menu.toggleAttribute('data-empty', list.length === 0);
-      menu.items = list.map((el, i) => ({ label: el.textContent!.trim(), action: String(i) }));
+      menu.items = list.map((el, i) => ({ label: nameOf(el), action: String(i) }));
     };
     build();
     menu.addEventListener('click', build, true);
@@ -237,13 +243,17 @@ const hasActions = Astro.slots.has('actions');
     --_bleed: var(--spacing-500, 1.5rem);
 
     position: sticky;
-    top: 0;
+    top: var(--firma2-sticky-origin, 0px);
     /* The header role from the z scale. It outranks ordinary content and the
        layers the two embedded libraries paint — the grid's rows and Leaflet
        (zoom control at 800) both clip under it because each scopes its stack in
        a container of its own. If one ever leaks, the fix is `isolation: isolate`
-       on that container, not a higher bid here. */
-    z-index: var(--z-header, 200);
+       on that container, not a higher bid here.
+       ONE RUNG ABOVE THE RECORD RAIL, which claims header + 1 for its edge
+       toggle (firma2-record-rail). The rail starts under the bar, so the two
+       boxes never overlap — but what hangs from the bar does: its tooltips
+       and "…" menus drop into the rail's column and were painted under it. */
+    z-index: calc(var(--z-header, 200) + 2);
     margin-block: calc(var(--_bleed) * -1) var(--_bleed);
     margin-inline: calc(var(--_bleed) * -1);
   }
@@ -261,7 +271,7 @@ const hasActions = Astro.slots.has('actions');
     min-block-size: 48px;
     display: flex;
     align-items: center;
-    background: var(--color-background-default, #fcfcfc);
+    background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
     border-block-end: 1px solid var(--color-border-default, #e0e0e0);
   }
   .firma2-top-bar :global(.firma2-top-bar__bar > .esa-app-bar__row) {

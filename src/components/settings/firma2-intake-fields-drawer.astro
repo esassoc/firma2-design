@@ -1,0 +1,186 @@
+---
+// firma2-intake-fields-drawer — the intake builder's docked Fields drawer:
+// every question the form can ask, to click onto it or drag into place. The
+// Jira work-item-layout pattern, docked on the right in firma2-side-panel.
+// Tiles carry names only, no type icons (user, 2026-10-20).
+//
+// IT LISTS, IT NEVER MAKES. Standard questions are the project's own
+// attributes; custom fields are the workspace's, made in Custom fields
+// (src/data/firma2-intake.ts). One already on the form stays listed, greyed
+// "In form", because each is asked once. New custom field at the end goes to
+// Custom fields and comes back with the field placed. The drawer is the ONLY
+// way a question reaches the form: there is no +, and `/` lists layout only.
+//
+// TALKS TO THE BUILDER BY EVENTS, so the canvas keeps the one add():
+//   click → `firma2:intake-add` { id }      (placed below the selection)
+//   drag  → dataTransfer `application/x-firma2-intake` = id  (dropped in place)
+// and repaints on the builder's `firma2:intake-saved`. Ids are the `/` list's:
+// `builtin:<key>`, `field:<fieldId>`, `new-field`.
+//
+// bcn-lego-checked: no esa- field palette exists (walked
+// `ls node_modules/@esa/ecology/src/components/`); Beacon is not cloned here.
+// Composed from: esa-text-field (search), esa-button (ghost + outline: neutral
+// rows, never a brand fill; no icon — a tile is a name) cloned from a template
+// for each tile, esa-empty-state
+// is too large for a no-match line inside a 26rem rail, so that is one <p>.
+// Bespoke: the tile list layout only.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { BUILTINS } from '../../data/firma2-intake';
+
+const config = {
+  standard: BUILTINS.map((b) => ({ id: `builtin:${b.key}`, label: b.label, key: b.key })),
+};
+---
+<div class="firma2-intake-fields stack" data-gap="lg" data-config={JSON.stringify(config)}>
+  <esa-text-field label="Search fields" size="md" type="search" data-fields-search></esa-text-field>
+  <div class="stack" data-gap="lg" data-fields-groups></div>
+  <p class="firma2-intake-fields__none typography-body-md" hidden data-fields-none></p>
+  <div><EsaButton variant="secondary" size="md" icon="plus" data-fields-new>New custom field</EsaButton></div>
+
+  <template data-tile><EsaButton variant="ghost" appearance="outline" size="md">Field</EsaButton></template>
+</div>
+
+<style>
+  .firma2-intake-fields [hidden] {
+    display: none !important;
+  }
+
+  .firma2-intake-fields :global(.firma2-intake-fields__group) {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-fields :global(.firma2-intake-fields__list) {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-200);
+  }
+
+  /* A tile spans the rail and reads from its start, like a row in a list. */
+  .firma2-intake-fields :global(.firma2-intake-fields__list .esa-button),
+  .firma2-intake-fields :global(.firma2-intake-fields__list .esa-button__native) {
+    inline-size: 100%;
+  }
+
+  .firma2-intake-fields :global(.firma2-intake-fields__list .esa-button__native) {
+    justify-content: flex-start;
+    cursor: grab;
+  }
+
+  .firma2-intake-fields :global(.firma2-intake-fields__list .esa-button__label) {
+    flex: 1;
+    min-inline-size: 0;
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-200);
+    text-align: start;
+  }
+
+  .firma2-intake-fields :global(.firma2-intake-fields__note) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-fields__none {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import { builtinsInForm, fieldsInForm, readFormStore } from '../../lib/intake-form';
+  import { allFields } from '../../lib/project-type-draft';
+  import type { BuiltinKey } from '../../data/firma2-intake';
+
+  const DRAG_TYPE = 'application/x-firma2-intake';
+
+  interface Config {
+    standard: { id: string; label: string; key: BuiltinKey }[];
+  }
+  type Item = { id: string; label: string; inForm: boolean };
+
+  document.querySelectorAll<HTMLElement>('.firma2-intake-fields').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const search = $<HTMLElement & { value?: string }>('[data-fields-search]');
+    const none = $('[data-fields-none]');
+    let query = '';
+
+    const tile = (item: Item) => {
+      const tpl = root.querySelector<HTMLTemplateElement>('template[data-tile]')!;
+      const el = tpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const label = el.querySelector('.esa-button__label');
+      const button = el.querySelector('button') ?? el;
+      if (label) {
+        label.textContent = '';
+        const name = document.createElement('span');
+        name.textContent = item.label;
+        label.append(name);
+        if (item.inForm) {
+          const note = document.createElement('span');
+          note.className = 'firma2-intake-fields__note';
+          note.textContent = 'In form';
+          label.append(note);
+        }
+      }
+      // Asked once: one already on the form is shown, not offered.
+      el.classList.toggle('esa-button--disabled', item.inForm);
+      button.toggleAttribute('disabled', item.inForm);
+      if (!item.inForm) {
+        button.setAttribute('aria-label', `Add ${item.label}`);
+        el.draggable = true;
+        el.addEventListener('dragstart', (e) => {
+          e.dataTransfer?.setData(DRAG_TYPE, item.id);
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
+        });
+        button.addEventListener('click', () => root.dispatchEvent(new CustomEvent('firma2:intake-add', { bubbles: true, detail: { id: item.id } })));
+      }
+      const li = document.createElement('li');
+      li.append(el);
+      return li;
+    };
+
+    const group = (name: string, items: Item[]) => {
+      const section = document.createElement('section');
+      section.className = 'stack';
+      section.dataset.gap = 'sm';
+      const h = document.createElement('h3');
+      h.className = 'firma2-intake-fields__group typography-label-md';
+      h.textContent = name;
+      const ul = document.createElement('ul');
+      ul.className = 'firma2-intake-fields__list';
+      ul.setAttribute('aria-label', name);
+      ul.append(...items.map(tile));
+      section.append(h, ul);
+      return section;
+    };
+
+    const paint = () => {
+      const form = readFormStore().working;
+      const placed = builtinsInForm(form);
+      const asked = fieldsInForm(form);
+      const q = query.trim().toLowerCase();
+      const match = (i: Item) => !q || i.label.toLowerCase().includes(q);
+      const standard = config.standard.map((b) => ({ id: b.id, label: b.label, inForm: placed.has(b.key) })).filter(match);
+      const custom = allFields()
+        .map((f) => ({ id: `field:${f.id}`, label: f.label, inForm: asked.has(f.id) }))
+        .filter(match);
+      $('[data-fields-groups]').replaceChildren(
+        ...[custom.length ? group('Custom fields', custom) : null, standard.length ? group('Standard questions', standard) : null].filter((x): x is HTMLElement => !!x),
+      );
+      none.hidden = !!(standard.length || custom.length);
+      none.textContent = `No field matches “${query.trim()}”. Make it with New custom field.`;
+    };
+
+    $('[data-fields-new]').addEventListener('click', () => root.dispatchEvent(new CustomEvent('firma2:intake-add', { bubbles: true, detail: { id: 'new-field' } })));
+    search.addEventListener('change', () => {
+      query = String(search.value ?? '');
+      paint();
+    });
+    document.addEventListener('firma2:intake-saved', paint);
+    paint();
+  });
+</script>

@@ -29,8 +29,11 @@
 // peek — the peek takes its place while open.
 //
 // TWO VIEWS, AS TABS (user, 2026-10-09): Overview is the page as it was;
-// Map is the My projects map explorer — cards over a full-pane map, bound
-// both ways — scoped to the projects the organization leads or funds.
+// Map is the workspace Map page's map (firma2-portfolio-map) scoped to the
+// projects the organization leads or funds, with led or funded as one more
+// colour-by choice (user, 2026-10-20: "Map" must read the same everywhere —
+// it was the My projects explorer, which looked like a different product).
+// The export follows it, as on the Map page.
 //
 // Zero page CSS.
 import AppLayout from '../../../../layouts/AppLayout.astro';
@@ -43,7 +46,9 @@ import Firma2RecordRail from '../../../../components/shared/firma2-record-rail.a
 import Firma2EntityConnections from '../../../../components/shared/firma2-entity-connections.astro';
 import { organizationGraph } from '../../../../lib/entity-graph';
 import Firma2PageTabs from '../../../../components/shared/firma2-page-tabs.astro';
-import Firma2MyProjectsMap from '../../../../components/projects/firma2-my-projects-map.astro';
+import Firma2PortfolioMap from '../../../../components/map/firma2-portfolio-map.astro';
+import Firma2PortfolioExport from '../../../../components/map/firma2-portfolio-export.astro';
+import { projectSlug } from '../../../../data/firma2-projects';
 import Firma2OrgUpdates from '../../../../components/organizations/firma2-org-updates.astro';
 import type { Organization } from '../../../../data/firma2-directory';
 import {
@@ -67,6 +72,7 @@ interface Props {
 const { organization } = Astro.props;
 const rows = organizationProjects(organization.name);
 const lastYear = coverage(rows.map((r) => r.project), LAST_CLOSED_YEAR);
+const ledOrFunded = Object.fromEntries(rows.map((r) => [projectSlug(r.project), r.leads ? 'Led' : 'Funded']));
 ---
 <!-- manifest:
   layout: firma2-project-peek-layout > stack(xl)
@@ -74,7 +80,7 @@ const lastYear = coverage(rows.map((r) => r.project), LAST_CLOSED_YEAR);
     - project peek   -> firma2-project-peek-layout (docked rail, opened from a missing-report row)
     - rail           -> firma2-record-rail         (slot="rail"; gives way to the peek)
       - connections  -> firma2-entity-connections  (led and funded projects, local graph)
-    - page header    -> firma2-page-header
+    - page header    -> firma2-page-header        (export action: firma2-portfolio-export)
     - views          -> firma2-page-tabs          (Overview | Map, ?view=map)
       overview:
         - summary        -> firma2-org-summary        (projects, money, last year's reports)
@@ -82,7 +88,7 @@ const lastYear = coverage(rows.map((r) => r.project), LAST_CLOSED_YEAR);
         - map            -> firma2-project-set-map    (the organization's work areas, led vs funded)
         - latest updates -> firma2-org-updates        (newest five, linked to Updates)
       map:
-        - explorer       -> firma2-my-projects-map    (the organization's projects; flush=false)
+        - map            -> firma2-portfolio-map      (the Map page's map, scoped; led or funded as a colour-by)
 -->
 <AppLayout title={`${organization.name} — ProjectFirma 2.0`} active={organizationNavKey(organization.slug, 'home')} width="full">
   <Firma2ProjectPeekLayout>
@@ -90,7 +96,9 @@ const lastYear = coverage(rows.map((r) => r.project), LAST_CLOSED_YEAR);
       <Firma2EntityConnections graph={organizationGraph(organization.name)} />
     </Firma2RecordRail>
     <div class="stack" data-gap="xl">
-      <Firma2PageHeader title={organization.name} />
+      <Firma2PageHeader title={organization.name}>
+        <Firma2PortfolioExport slot="actions" />
+      </Firma2PageHeader>
       <Firma2PageTabs views={[{ key: 'overview', label: 'Overview' }, { key: 'map', label: 'Map' }]}>
         <div slot="overview" class="stack" data-gap="xl">
           <Firma2OrgSummary rows={rows} coverage={lastYear} />
@@ -103,14 +111,13 @@ const lastYear = coverage(rows.map((r) => r.project), LAST_CLOSED_YEAR);
           />
           <Firma2OrgUpdates updates={organizationUpdates(organization.name)} limit={5} allHref={organizationPageHref(organization.slug, 'updates')} />
         </div>
-        <Firma2MyProjectsMap
-          slot="map"
-          projects={rows.map((r) => r.project)}
-          searchLabel="Search this organization's projects"
-          mapLabel="Map of this organization's projects"
-          emptyDescription="Try a different name or clear the stage filter — every project this organization leads or funds is on this page."
-          flush={false}
-        />
+        <div slot="map">
+          <Firma2PortfolioMap
+            projects={rows.map((r) => r.project)}
+            split={{ label: 'Led or funded', order: ['Led', 'Funded'], valueOf: ledOrFunded }}
+            label="Map of this organization's projects"
+          />
+        </div>
       </Firma2PageTabs>
     </div>
   </Firma2ProjectPeekLayout>

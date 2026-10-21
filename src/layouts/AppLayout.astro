@@ -249,6 +249,12 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     'esa-combobox': `
       .input { height: 40px; padding-block: 0; }
     `,
+    // Not a height: the group's <fieldset> keeps the UA's grooved border,
+    // padding and margin — esa-radio-group resets all four, this lego none
+    // (hub bug, 2026-10-20; drop this once the hub resets it).
+    'esa-checkbox-group': `
+      .items { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
+    `,
   };
 
   function pinControl(tag: string, css: string): void {
@@ -725,10 +731,10 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
   // holding no focusable element cannot be scrolled by keyboard unless it is
   // itself focusable — WCAG 2.1.1, and axe's `scrollable-region-focusable`.
   //
-  // This layout scrolls the DOCUMENT and sets the pane to `overflow: visible`, so
-  // none of that applies: the pane does not scroll, arrow keys already move the
-  // page, and the tabindex is left over as a focus stop that does nothing. It is
-  // not free either — @esa/tokens/focus.css matches `[tabindex]:focus-visible`,
+  // The pane scrolls again here (the inset sheet), but Chrome 130+ and Firefox
+  // make a scroller with no focusable child keyboard-focusable on their own, so
+  // the attribute is still not what keeps it reachable — and it is not free
+  // either — @esa/tokens/focus.css matches `[tabindex]:focus-visible`,
   // so landing on it draws a 2px ring around the ENTIRE content region, which
   // reads as a rendering fault rather than as a focus indicator. Every keyboard
   // user hit it on the way out of the rail.
@@ -782,7 +788,35 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
      because a nav you have to scroll back up to reach is not a nav. */
   .firma2-app-frame {
     display: grid;
-    min-height: 100dvh;
+    height: 100dvh;
+    /* THE INSET SHEET — a deliberate departure from esa-app-shell, which has no
+       inset variant. The content pane is a rounded sheet laid on the rail's
+       sunken surface, a gutter clear of the viewport on every side; the gap and
+       the change in value, not a border, are what separate it from the rail.
+       Rounded corners only hold if the sheet never scrolls out from under them,
+       so the PANE is the scroller here, not the document (see the content rule
+       below), and --firma2-fold is the height of that scrollport: every sticky
+       panel that used to size itself to 100dvh sizes itself to this instead. */
+    --firma2-gutter: var(--spacing-200, 8px);
+    --firma2-fold: calc(100dvh - 2 * var(--firma2-gutter));
+    /* The sheet's surface: RAISED, not default. The sheet is a panel above the
+       frame, and Radix lifts a panel one step in dark (its --color-panel-solid
+       is gray-2) rather than sinking what is behind it. Light resolves raised
+       and default to the same step, so only dark moves — olive-dark 1 → 2,
+       which puts the sheet clear of the frame instead of four RGB values off
+       it. Published rather than inlined because every band that paints "the
+       page" so content can pass under it (top bar, record rail, peek, side
+       panel, sticky table columns, graph halos) has to paint this same step;
+       outside the shell they fall back to default. */
+    --firma2-sheet-background: var(--color-background-elevation-raised, #fcfcfc);
+    /* A sticky box inside a scroll container sticks to its CONTENT edge — the
+       scrollport deflated by the container's padding — so in this pane `top: 0`
+       lands 1.5rem below the sheet's top and a fold-tall rail overruns its
+       bottom by the same. Every block-axis sticky in the spoke adds this to its
+       `top`, which puts its zero back on the sheet's edge. The literal is the
+       pane padding the bleeding bands already restate as --_bleed. */
+    --firma2-sticky-origin: calc(var(--spacing-500, 1.5rem) * -1);
+    background: var(--color-background-elevation-sunken, #f0f0f0);
     /* The height of the account strip at the foot of the rail — see the ACCOUNT
        MENU block below. Declared here because the rail reads it too, to reserve
        the space, and one number cannot be kept in sync in two places. */
@@ -811,6 +845,9 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
        The shell's companion `height: 100%` needs no override — it resolves
        against a parent with no fixed height, so it is already `auto`. */
     overflow: visible;
+    /* The gutter around the sheet reads as the rail's surface carried round the
+       page, so the shell paints it rather than its stock page background. */
+    background: transparent;
   }
   .firma2-app-frame :global(.esa-app-shell__body) {
     display: contents;
@@ -836,6 +873,10 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
        it), so this comes out of the 100dvh rather than adding to it, and
        esa-sidebar-nav's own `height: 100%` inner nav shortens to match. */
     padding-block-end: var(--firma2-account-height);
+    /* The gutter is the rail's edge now; a hairline beside it would draw a
+       second edge a gutter's width from the sheet's own. The border sits on the
+       host, so this outer rule beats the lego's :host declaration. */
+    border-inline-end: 0;
   }
   /* THE BAR IS GONE. Its three controls now live in the rail (see
      moveChromeIntoRail above), which left an empty 66px band that scrolled away
@@ -886,10 +927,65 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     grid-row: 1;
     min-height: 0;
     position: relative;
-    /* The document is the scroller now, so the pane must not open a second one
-       inside it — `overflow: visible` replaces the shell's `overflow-y: auto`.
-       Without it the bar would scroll away and the content would not follow. */
-    overflow: visible;
+    /* THE SHEET. The pane is the scroller again (the shell's own `overflow-y:
+       auto`, restated so it is not read as an accident), sized to the fold and
+       held a gutter clear of every edge. `overflow` is also what clips the
+       sticky top bar and record rail to the rounded corners — without it their
+       square backgrounds would paint over the curve. `overscroll-behavior` keeps
+       a fling at the end of a page from bouncing the frame around it. */
+    margin: var(--firma2-gutter);
+    margin-inline-start: 0;
+    block-size: var(--firma2-fold);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: var(--radius-lg, 12px);
+    background: var(--firma2-sheet-background);
+    box-shadow: 0 0 0 var(--border-width-default, 1px) var(--color-border-default-subtle, #d9d9d9);
+  }
+  /* ROOM FOR A DOCKED SIDE SHEET (bcn-side-sheet). While one is open the pane's
+     end padding grows by the sheet's width, so the sheet sits ON the page
+     beside what it edits rather than over it — under the top bar, whose end
+     bleed grows by the same amount so it still spans the whole pane. The sheet
+     writes its width here as --firma2-side-sheet-size when it opens; a dragged
+     width (--firma2-side-sheet-width, from its edge handle) beats it. Below
+     64rem the sheet lies over the pane instead, so nothing is reserved. Whole
+     selector in :global — Astro mangles a :global nested inside :has. */
+  .firma2-app-frame {
+    --firma2-side-sheet-size: 400px;
+  }
+  @media (min-width: 64.0625rem) {
+    :global(.firma2-app-frame:has(bcn-side-sheet[open]) .esa-app-shell__content) {
+      --_sheet-room: calc(var(--spacing-500, 1.5rem) + var(--firma2-side-sheet-width, var(--firma2-side-sheet-size)));
+      padding-inline-end: var(--_sheet-room);
+    }
+    /* Opening from and closing to the strip: the room follows the sheet. */
+    :global(.firma2-app-frame:has(bcn-side-sheet[open][collapsed]) .esa-app-shell__content) {
+      --_sheet-room: calc(var(--spacing-500, 1.5rem) + 2.5rem + 2 * var(--spacing-200, 0.5rem) + var(--border-width-default, 1px));
+    }
+    :global(.firma2-app-frame:has(bcn-side-sheet[open]) .esa-app-shell__content > .firma2-top-bar) {
+      margin-inline-end: calc(var(--_sheet-room) * -1);
+    }
+    /* Same ease as the sheet's own width, so the two edges move as one. */
+    :global(.firma2-app-frame .esa-app-shell__content) {
+      transition: padding-inline-end var(--transition-base, 200ms ease);
+    }
+    :global(.firma2-app-frame .esa-app-shell__content > .firma2-top-bar) {
+      transition: margin-inline-end var(--transition-base, 200ms ease);
+    }
+    :global(.firma2-app-frame:has(bcn-side-sheet[data-resizing]) .esa-app-shell__content),
+    :global(.firma2-app-frame:has(bcn-side-sheet[data-resizing]) .esa-app-shell__content > .firma2-top-bar) {
+      transition: none;
+    }
+  }
+  /* A phone has no gutter to spare: the sheet goes back to the full pane. */
+  @media (max-width: 40rem) {
+    .firma2-app-frame {
+      --firma2-gutter: 0px;
+    }
+    .firma2-app-frame :global(.esa-app-shell__content) {
+      border-radius: 0;
+      box-shadow: none;
+    }
   }
 
   /* THE CAP, WITHOUT A SECOND GUTTER. esa-container brings its own 2rem
@@ -959,7 +1055,6 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
        use. */
     background: var(--color-background-elevation-sunken, #f0f0f0);
     border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
-    border-inline-end: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
   }
 
   /* ---- THE RAIL'S EDGE HANDLE ----

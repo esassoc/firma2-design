@@ -1,0 +1,150 @@
+---
+// firma2-intake-setup — the first-time guide above the intake builder. Setting
+// up an intake form is done about once per workspace, so it is walked, not
+// learned: make the fields, place them, word them as questions, publish.
+//
+// FIELDS FIRST. The builder never makes a field (src/data/firma2-intake.ts):
+// what a workspace records is decided in Custom fields, and the form only asks
+// for it. Both start from the Fields drawer — its New custom field, then its
+// tiles — so the guide points there and carries no button of its own.
+//
+// EACH STEP TICKS ITSELF from the real state — the catalog, the working copy,
+// what is published — so the guide is never out of step with the form. It goes
+// once every step is done, or when it is hidden; hidden is remembered in this
+// browser. Paid plans only: below Agency there is no form to set up.
+//
+// bcn-lego-checked: esa-alert-box is the box (the plan lock's slot, the same
+// place on the page), esa-icon the tick, esa-button Hide setup; the step list
+// is an <ol>, as no esa- checklist or stepper exists (walked
+// `ls node_modules/@esa/ecology/src/components/`). Beacon is not cloned here.
+// The tick switch is spans, because [hidden] on a lego's own root does not hold.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+
+const STEPS = [
+  { id: 'fields', title: 'Create your custom fields', todo: 'Decide what your workspace records about every project. Make each with New custom field, under Fields.' },
+  { id: 'placed', title: 'Add them to this form', todo: 'Drag a field from Fields to its place, or click it to add it below the selected question.' },
+  { id: 'worded', title: 'Word each one as a question', todo: 'Type over a field’s name with what members should read, like “How many acres will this restore?”' },
+  { id: 'published', title: 'Publish', todo: 'Members see the new form once you publish it.' },
+];
+---
+<div class="firma2-intake-setup" hidden data-intake-setup>
+  <EsaAlertBox variant="info" title="Set up your intake form">
+    <div class="stack" data-gap="md">
+      <ol class="firma2-intake-setup__steps stack" data-gap="sm">
+        {STEPS.map((step) => (
+          <li class="firma2-intake-setup__step" data-step={step.id}>
+            <span class="firma2-intake-setup__mark" data-mark="done"><EsaIcon name="circle-check" size="sm" /></span>
+            <span class="firma2-intake-setup__mark" data-mark="todo"><EsaIcon name="circle" size="sm" /></span>
+            <span class="stack" data-gap="xs">
+              <span class="typography-label-md">{step.title}</span>
+              <span class="firma2-intake-setup__detail typography-body-sm" data-detail data-todo={step.todo}>{step.todo}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <span><EsaButton variant="ghost" size="md" data-setup-hide>Hide setup</EsaButton></span>
+    </div>
+  </EsaAlertBox>
+</div>
+
+<style>
+  .firma2-intake-setup[hidden],
+  .firma2-intake-setup :global([data-mark][hidden]) {
+    display: none !important;
+  }
+
+  .firma2-intake-setup__steps {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-intake-setup__step {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-300);
+  }
+
+  /* The tick sits on the step title's first line. */
+  .firma2-intake-setup__mark {
+    display: inline-flex;
+    flex: none;
+    padding-block-start: var(--spacing-050, 0.125rem);
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-setup__mark[data-mark='done'] {
+    color: var(--color-content-success, var(--color-content-brand));
+  }
+
+  .firma2-intake-setup__detail {
+    color: var(--color-text-secondary);
+  }
+
+  /* Done steps step back, so the next one reads first. */
+  .firma2-intake-setup__step[data-done] .typography-label-md {
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import { allBlocks, fieldsInForm, readFormStore } from '../../lib/intake-form';
+  import { allFields } from '../../lib/project-type-draft';
+  import { planIncludes } from '../../lib/workspace-plan';
+
+  const HIDDEN_KEY = 'firma2:intake-setup-hidden';
+  const readHidden = () => {
+    try {
+      return localStorage.getItem(HIDDEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-intake-setup]').forEach((root) => {
+    if (!planIncludes('agency')) return;
+
+    const paint = () => {
+      const { working, published, dirty } = readFormStore();
+      const fields = allFields();
+      const placed = fieldsInForm(working);
+      const asked = allBlocks(working).flatMap((b) => (b.type === 'field' ? [b] : []));
+      const worded = asked.filter((b) => b.label.trim() && b.label.trim() !== fields.find((f) => f.id === b.fieldId)?.label);
+      const done: Record<string, { ok: boolean; note?: string }> = {
+        fields: { ok: fields.length > 0, note: `${fields.length} ${fields.length === 1 ? 'field' : 'fields'} ready. Add more any time.` },
+        placed: { ok: placed.size > 0, note: `${placed.size} of ${fields.length} on the form.` },
+        worded: { ok: asked.length > 0 && worded.length === asked.length, note: 'Every field reads as a question.' },
+        published: { ok: !dirty && fieldsInForm(published).size > 0, note: 'Members fill this form now.' },
+      };
+      let current = false;
+      root.querySelectorAll<HTMLElement>('[data-step]').forEach((li) => {
+        const state = done[li.dataset.step!];
+        li.toggleAttribute('data-done', state.ok);
+        li.querySelector<HTMLElement>('[data-mark="done"]')!.hidden = !state.ok;
+        li.querySelector<HTMLElement>('[data-mark="todo"]')!.hidden = state.ok;
+        const detail = li.querySelector<HTMLElement>('[data-detail]')!;
+        detail.textContent = state.ok && state.note ? state.note : detail.dataset.todo ?? '';
+        // The first step not done is the one to do now.
+        if (!state.ok && !current) {
+          li.setAttribute('aria-current', 'step');
+          current = true;
+        } else li.removeAttribute('aria-current');
+      });
+      root.hidden = readHidden() || Object.values(done).every((d) => d.ok);
+    };
+
+    root.querySelector('[data-setup-hide]')?.addEventListener('click', () => {
+      try {
+        localStorage.setItem(HIDDEN_KEY, '1');
+      } catch {
+        // Hidden for this visit only.
+      }
+      root.hidden = true;
+    });
+    // The builder announces every save; publishing goes through the same event.
+    document.addEventListener('firma2:intake-saved', paint);
+    paint();
+  });
+</script>

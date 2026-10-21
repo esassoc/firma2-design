@@ -109,16 +109,16 @@ const STYLES = `
   bcn-sortable-list [data-sort-grip] { flex: none; }
   bcn-sortable-list [data-sort-spacer] { flex: none; visibility: hidden; }
   bcn-sortable-list [data-sort-grip] button { cursor: grab; touch-action: none; }
+  /* THE ROW MOVES AS ITSELF, NOT ON A PLATE (user, 2026-10-20). A lifted row
+     once grew a floating card — surface, shadow, padding — the full width of
+     the list, so a short "Map" became a 784px slab and the drag felt like
+     moving a container that holds the item. Now nothing is added around it:
+     the row keeps its own look and only the surface it already sits on goes
+     behind it, so it covers the rows it passes instead of showing through. */
   bcn-sortable-list li[data-dragging] {
     position: relative;
     z-index: var(--z-dropdown, 50);
-    background: var(--color-background-elevation-floating, #fcfcfc);
-    box-shadow: var(--elevation-4, 0 6px 24px -6px rgba(0, 0, 0, 0.12));
-    border-radius: var(--radius-sm, 0.25rem);
-    /* Room inside the shadow, taken back out of the margin so the row's
-       content does not shift sideways the moment it lifts. */
-    padding-inline: var(--spacing-200, 0.5rem);
-    margin-inline: calc(var(--spacing-200, 0.5rem) * -1);
+    background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
   }
   bcn-sortable-list li[data-dragging] [data-sort-grip] button { cursor: grabbing; }
   bcn-sortable-list[data-sorting] { user-select: none; cursor: grabbing; }
