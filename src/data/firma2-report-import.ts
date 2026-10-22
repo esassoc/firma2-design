@@ -66,7 +66,6 @@ const DEER_CREEK_SHEET: ImportReading = {
       amount: 5.5,
       answers: { 'Riparian treatments': 'Planting' },
       quote: 'Rows 4 and 6 — “Willow stakes, east bank reach 2, 3.5 ac” and “Cottonwood poles, east bank reach 2, 2 ac”',
-      note: 'Two rows on the same bank, added together.',
       confidence: 'High',
     },
     {
@@ -96,7 +95,7 @@ const DEER_CREEK_SHEET: ImportReading = {
       answers: {},
       quote: 'Row 10 — “Exclusion fence, upland pasture, 2,640 ft. Notes: ~4 ac fenced off”',
       conversion: '2,640 ft = 0.5 miles',
-      note: 'Used the fence length, not the note’s “~4 ac”: this measure counts miles of fence, and acres enclosed are a different quantity.',
+      note: 'Used the fence length, not the note’s “~4 ac”.',
       confidence: 'High',
     },
     {
@@ -106,7 +105,7 @@ const DEER_CREEK_SHEET: ImportReading = {
       amount: 140,
       answers: { 'Volunteer activities': 'Planting' },
       quote: 'Row 12 — “Saturday workday, sign-in sheet, 140 hrs”',
-      note: 'The row has no date, so it was filed under 2025 from the sheet’s title. “Planting” is inferred from the rows around it.',
+      note: 'Undated, so filed under 2025 from the sheet title. “Planting” is inferred.',
       confidence: 'Medium',
     },
     {
@@ -116,15 +115,15 @@ const DEER_CREEK_SHEET: ImportReading = {
       amount: 2,
       answers: { 'Riparian treatments': 'Planting' },
       quote: 'Row 3 — “10/28/2024, late-season planting, west bank, 2 ac”',
-      note: 'Dated October 2024, so filed under 2024 even though the sheet is titled 2025.',
+      note: 'Filed by its date, not the sheet title.',
       confidence: 'Medium',
     },
   ],
   notAsked: [
-    'Stream temperature, 7-day maximum 64.9 °F at logger LC-2 — this project isn’t asked for temperature.',
-    'Crew lunch, $180 — no measure counts costs.',
+    'Stream temperature, 7-day maximum 64.9 °F at logger LC-2',
+    'Crew lunch, $180',
   ],
-  skipped: ['Row 14, “TOTAL” — a sum of the rows above it.'],
+  skipped: ['Row 14, “TOTAL”.'],
 };
 
 const DEER_CREEK_TEXT: ImportReading = {
@@ -155,11 +154,11 @@ const DEER_CREEK_TEXT: ImportReading = {
       answers: { 'Volunteer activities': 'Planting' },
       quote: '“A volunteer day brought out 35 people for 4 hours each”',
       conversion: '35 people × 4 hours = 140 hours',
-      note: '“Planting” is inferred from the sentence before it.',
+      note: '“Planting” is inferred.',
       confidence: 'Medium',
     },
   ],
-  notAsked: ['Stream temperature, 7-day maximum 65 °F — this project isn’t asked for temperature.'],
+  notAsked: ['Stream temperature, 7-day maximum 65 °F'],
   skipped: [],
 };
 

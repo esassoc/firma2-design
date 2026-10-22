@@ -1,0 +1,267 @@
+---
+// firma2-utility-bar — the thin strip under the inset sheet, on the frame's
+// own surface: workspace utilities that belong to no page (Recent, Help,
+// Shortcuts) trailing, the product credit leading. Modelled on Linear's frame
+// foot (user, 2026-10-21): the sheet stops a strip short of the window and
+// these sit below it, quieter than anything on the page.
+//
+// ONE PER FRAME, OWNED BY THE LAYOUT. AppLayout renders it after the shell and
+// the inline script below moves it into the shell during parse — the shell's
+// grid places it under the content column, so it follows the rail's width
+// (resize, collapse, peek) with no width of its own. The height is the
+// frame's --firma2-utility-height, which --firma2-fold subtracts.
+//
+// bcn-lego-checked: no esa- lego is a frame foot — esa-app-bar is a page-top
+// bar with a 72px minimum and esa-app-shell has no footer slot (same gap the
+// account strip documents). Every control inside is a lego: EsaButton chrome,
+// esa-dropdown-menu for Recent and Help, esa-dialog + EsaKbd for Shortcuts.
+// Beacon is not cloned in this checkout. The strip adds placement only.
+//
+// ECOLOGY DEVIATION: the buttons are the top bar's compact md (32px) — the
+// spoke's one standard for chrome-row buttons, and the height of the rail's
+// collapse toggle on the same row. A one-off 28px was tried and dropped as
+// non-standard (user, 2026-10-21). Same /request-lego as firma2-top-bar.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaKbd from '@esa/ecology/esa-kbd.astro';
+
+// THE SHORTCUTS THE APP ACTUALLY HAS — each row names where its handler lives,
+// so the list cannot advertise a key nothing listens for. `mod` renders ⌘ and
+// becomes Ctrl off a Mac (script below).
+const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] = [
+  {
+    group: 'Anywhere',
+    rows: [
+      { label: 'Search', keys: ['/'] }, // esa-app-shell's omnibox, hotkey="slash"
+      { label: 'Open settings', keys: ['G', 'then', 'S'] }, // AppLayout
+      { label: 'Show shortcuts', keys: ['?'] }, // this component
+    ],
+  },
+  {
+    group: 'Rich text',
+    rows: [
+      { label: 'Bold', keys: ['mod', 'B'] }, // Tiptap default
+      { label: 'Italic', keys: ['mod', 'I'] }, // Tiptap default
+      { label: 'Add a link', keys: ['mod', 'K'] }, // firma2-rich-text
+    ],
+  },
+  {
+    group: 'Fields and forms',
+    rows: [
+      { label: 'Save a multi-line field', keys: ['mod', 'Enter'] }, // firma2-editable-field
+      { label: 'Duplicate a form field', keys: ['mod', 'D'] }, // firma2-intake-builder
+    ],
+  },
+];
+---
+<footer class="firma2-utility-bar" aria-label="Workspace utilities" data-firma2-utility-bar>
+  {/* The product credit, leading; quieter than the controls (user, 2026-10-21). */}
+  <p class="typography-body-sm firma2-utility-bar__credit">ProjectFirma by ESA</p>
+  <div class="cluster firma2-utility-bar__tools" data-gap="xs" data-justify="end" data-align="center">
+    <esa-dropdown-menu position="above-end" data-utility-recent>
+      <EsaButton variant="chrome" size="md" icon="history">Recent</EsaButton>
+    </esa-dropdown-menu>
+    <esa-dropdown-menu position="above-end" data-utility-help>
+      <EsaButton variant="chrome" size="md" icon="circle-question-mark">Help</EsaButton>
+    </esa-dropdown-menu>
+    <EsaButton variant="chrome" size="md" icon="keyboard" data-utility-shortcuts>Shortcuts</EsaButton>
+  </div>
+
+  <esa-dialog heading="Keyboard shortcuts" size="sm" show-close-button data-utility-shortcuts-dialog>
+    <div class="stack" data-gap="lg">
+      {SHORTCUTS.map(({ group, rows }) => (
+        <section class="stack" data-gap="xs">
+          <h3 class="typography-label-md firma2-utility-bar__group">{group}</h3>
+          <dl class="stack" data-gap="xs">
+            {rows.map(({ label, keys }) => (
+              <div class="repel firma2-utility-bar__row">
+                <dt class="typography-body-sm">{label}</dt>
+                <dd class="cluster" data-gap="xs">
+                  {keys.map((key) => key === 'then'
+                    ? <span class="typography-body-sm firma2-utility-bar__then">then</span>
+                    : <EsaKbd>{key === 'mod' ? <span data-mod>⌘</span> : key}</EsaKbd>)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ))}
+    </div>
+    <EsaButton slot="footer" variant="secondary" size="md" data-utility-shortcuts-close>Close</EsaButton>
+  </esa-dialog>
+</footer>
+
+<script is:inline>
+  // Into the shell before first paint, so it is never drawn outside the grid.
+  (function () {
+    var bar = document.currentScript && document.currentScript.previousElementSibling;
+    var shell = bar && bar.closest('.firma2-app-frame') && bar.closest('.firma2-app-frame').querySelector('.esa-app-shell');
+    if (bar && shell) shell.appendChild(bar);
+  })();
+</script>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-dialog';
+  import type { EsaMenuItem } from '@esa/ecology/esa-dropdown-menu';
+
+  type Menu = HTMLElement & { items: EsaMenuItem[] };
+  type Dialog = HTMLElement & { show(): void; close(): void; open: boolean };
+
+  // RECENT IS THIS BROWSER'S HISTORY OF APP PAGES — the last eight, newest
+  // first, the current page left out (you are on it). Per browser, like the
+  // rail's own arrangement: the prototype has no account to store it on.
+  const STORE = 'firma2:recent-pages';
+  const LIMIT = 8;
+  type Visit = { href: string; title: string };
+
+  const read = (): Visit[] => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORE) ?? '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const here = location.pathname + location.search;
+  // Page titles read "Plan and usage — Workspace settings — ProjectFirma 2.0";
+  // only the page's own name fits a menu row (the rest wrapped it to three lines).
+  const title = document.title.split(' — ')[0].trim() || 'Untitled page';
+  const visits = [{ href: here, title }, ...read().filter((v) => v.href !== here)].slice(0, LIMIT + 1);
+  try {
+    localStorage.setItem(STORE, JSON.stringify(visits));
+  } catch {
+    /* private window — Recent just shows what it can */
+  }
+
+  const HELP: EsaMenuItem[] = [
+    // Not built: dimmed like an unbuilt nav row, so the menu says what will be here.
+    { label: 'Help center', action: 'help-center', disabled: true },
+    { label: "What's new", action: 'whats-new', disabled: true },
+    { label: 'Contact support', action: 'contact-support', disabled: true },
+  ];
+
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+
+  document.querySelectorAll<HTMLElement>('[data-firma2-utility-bar]').forEach((bar) => {
+    const recent = bar.querySelector<Menu>('[data-utility-recent]');
+    const help = bar.querySelector<Menu>('[data-utility-help]');
+    const dialog = bar.querySelector<Dialog>('[data-utility-shortcuts-dialog]');
+    const others = visits.filter((v) => v.href !== here).slice(0, LIMIT);
+
+    void customElements.whenDefined('esa-dropdown-menu').then(() => {
+      if (recent) {
+        recent.items = others.length
+          ? others.map((v) => ({ label: v.title, action: `recent:${v.href}` }))
+          : [{ label: 'No recent pages', action: 'recent-empty', disabled: true }];
+      }
+      if (help) help.items = HELP;
+    });
+    recent?.addEventListener('menu-action', (event) => {
+      const action = (event as CustomEvent<string>).detail;
+      if (action.startsWith('recent:')) window.location.href = action.slice('recent:'.length);
+    });
+
+    if (!isMac) bar.querySelectorAll('[data-mod]').forEach((el) => (el.textContent = 'Ctrl'));
+
+    const show = (): void => {
+      void customElements.whenDefined('esa-dialog').then(() => dialog?.show());
+    };
+    bar.querySelector('[data-utility-shortcuts]')?.addEventListener('click', show);
+    bar.querySelector('[data-utility-shortcuts-close]')?.addEventListener('click', () => dialog?.close());
+
+    // ? opens the list — Linear's and GitHub's key for it. Not while typing:
+    // in a field (or a lego's shadow-root field) ? is a question mark.
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== '?' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const typing = event.composedPath().some(
+        (node) =>
+          node instanceof HTMLElement &&
+          (node.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)),
+      );
+      if (typing || dialog?.open) return;
+      event.preventDefault();
+      show();
+    });
+  });
+</script>
+
+<style>
+  /* Placement in the shell's grid lives in AppLayout, beside the rail's and the
+     sheet's — one stylesheet owns the frame's tracks. This is the strip's own
+     box: the frame's surface (nothing painted), its two ends on the page's own
+     content edges — the sheet's 24px padding, plus the gutter on the trailing
+     side, where the strip runs on past the sheet to the window. So the credit
+     starts under the h1 and the last button ends under the top bar's last. */
+  .firma2-utility-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-400, 1rem);
+    block-size: var(--firma2-utility-height, 40px);
+    padding-inline: var(--spacing-500, 1.5rem) calc(var(--spacing-500, 1.5rem) + var(--firma2-gutter, 8px));
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* COMPACT BUTTONS — firma2-top-bar's 32px md, the same two declarations.
+     Two classes on the button so this outranks AppLayout's 40px CONTROL_PINS
+     rule on specificity rather than on emission order. */
+  .firma2-utility-bar :global(.esa-button.esa-button--md > .esa-button__native) {
+    block-size: 32px;
+    padding-block: 0;
+  }
+
+  /* The menu hosts and the button wrappers are block boxes around an inline
+     control, so each carried a line box's extra pixels and the three sat a
+     pixel apart. As flex boxes they are exactly the button's height. */
+  .firma2-utility-bar esa-dropdown-menu,
+  .firma2-utility-bar :global(.cluster .esa-button) {
+    display: flex;
+  }
+  /* The menu's own shadow wrapper is inline-block, out of reach; no leading on
+     the host leaves it no strut. The button sets its own type, so it is untouched. */
+  .firma2-utility-bar esa-dropdown-menu {
+    line-height: 0;
+  }
+
+  /* The shortcuts dialog lives here but is never in the row: open, it is in
+     the top layer; shut, it was a flex item that centred the controls under
+     space-between and held a gap open after them. */
+  .firma2-utility-bar > esa-dialog {
+    position: absolute;
+  }
+
+  /* The credit gives way before the controls do. */
+  .firma2-utility-bar__credit {
+    margin: 0;
+    min-inline-size: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--color-content-default-tertiary, var(--color-content-default-secondary, #646464));
+  }
+  /* margin-inline-start: auto, not space-between — see the dialog rule. */
+  .firma2-utility-bar__tools {
+    flex: none;
+    margin-inline-start: auto;
+  }
+  /* Under 52rem the strip is the controls' width: "ProjectFirma b…" is worse
+     than no credit, so it steps out. */
+  @media (max-width: 52rem) {
+    .firma2-utility-bar__credit {
+      display: none;
+    }
+  }
+
+  .firma2-utility-bar__group {
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-utility-bar__row {
+    align-items: center;
+    min-block-size: 32px;
+  }
+  .firma2-utility-bar__row dd {
+    margin: 0;
+  }
+  .firma2-utility-bar__then {
+    color: var(--color-content-default-secondary, #646464);
+  }
+</style>

@@ -53,6 +53,12 @@ export interface KpiRowView {
    */
   plannedPercent: number;
   totalText: string;
+  /**
+   * The compact row's figure (the goal card): the share of the goal, or why
+   * there is none. `of` is what the share is of, for assistive tech — the
+   * card has no room to print it and no reader needs it twice.
+   */
+  share: { text: string; of: string };
   /** How much of the goal is not yet planned, or "No goal set". Empty when fully planned. */
   lead: string;
   /**
@@ -108,6 +114,13 @@ export const kpiRowView = (k: KpiRowInput): KpiRowView => {
     return rounded === 100 ? 99 : rounded;
   })();
 
+  const share =
+    k.goal == null
+      ? { text: 'No goal', of: '' }
+      : k.reported == null
+        ? { text: 'Not reported', of: '' }
+        : { text: `${percent}%`, of: ' of goal' };
+
   const plannedPercent =
     k.goal != null && k.goal > 0 && k.committed != null ? Math.min(100, Math.round((k.committed / k.goal) * 100)) : 0;
 
@@ -155,5 +168,5 @@ export const kpiRowView = (k: KpiRowInput): KpiRowView => {
     sub: lead,
   };
 
-  return { expected, percent, plannedPercent, totalText, lead, highlight, from, table };
+  return { expected, percent, plannedPercent, totalText, share, lead, highlight, from, table };
 };

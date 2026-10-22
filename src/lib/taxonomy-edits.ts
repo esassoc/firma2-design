@@ -261,9 +261,9 @@ export const classificationsIn = (groupSlug: string): TaxonomyEntry[] =>
 export const groupRemovalBlock = (groupSlug: string): string | null => {
   const held = classificationsIn(groupSlug).length;
   if (held > 0) {
-    return `${held} ${held === 1 ? 'classification is' : 'classifications are'} in this group. Move ${held === 1 ? 'it' : 'them'} to another group first.`;
+    return `Move ${held === 1 ? 'its classification' : `its ${held} classifications`} to another group first.`;
   }
-  if (entries('classificationGroup').length <= 1) return 'This is the only group, and every classification needs one.';
+  if (entries('classificationGroup').length <= 1) return 'The last group can’t be removed.';
   return null;
 };
 

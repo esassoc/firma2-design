@@ -123,14 +123,14 @@ export const COUNTING_RULES: {
   {
     id: 'sum',
     name: 'Sums',
-    optionLabel: 'Yes — totals and cumulative figures are meaningful',
-    description: 'Values add up. Totals and cumulative figures across projects and periods are meaningful — acres treated, barriers removed, hours contributed.',
+    optionLabel: 'Yes — totals are meaningful',
+    description: 'Values add up across projects and periods — acres treated, barriers removed, hours contributed.',
   },
   {
     id: 'no-sum',
     name: 'Does not sum',
-    optionLabel: 'No — report each value on its own',
-    description: 'Values do not add up. Report them individually or as an average, never as a total — a temperature, a percentage, a survival rate.',
+    optionLabel: 'No — each value stands alone',
+    description: 'Values don’t add up: report each one or an average, never a total — a temperature, a percentage, a survival rate.',
   },
 ];
 

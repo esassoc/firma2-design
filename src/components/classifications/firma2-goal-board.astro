@@ -5,8 +5,16 @@
 // set out to do.
 //
 // GROUPS SORT IT. Each group gets its heading and its stored description, and
-// its goals in a two-up grid: a KPI's name and its "reported of goal" figure
-// need about 26rem on one line, and two cards at the content cap give it that.
+// its goals in a grid of scan cards from the leading edge. The first grid
+// paired cards of unequal KPI counts into ragged rows (user, 2026-10-21); the
+// cards are one height now (firma2-goal-card), so the grid is back.
+//
+// GROUPS COLLAPSE (user, 2026-10-21): each is an esa-collapsible, open on
+// first visit; the ones this reader closed stay closed (localStorage, a
+// convenience — every group opens when storage is unavailable). The lego's
+// summary is a label; here it is restated in the title-strong tokens so the
+// group still reads above its cards' titles. A <summary> is a button to
+// assistive tech, so the group's name labels its <section> instead of an h2.
 //
 // SETTINGS EDITS SHOW HERE. Goals added, renamed or removed in Workspace
 // settings, KPIs linked or unlinked, and targets changed are applied in the
@@ -18,6 +26,7 @@
 // of the first, emptied) once a goal sits in it; renamed and re-described
 // groups update; groups and the goals within each follow the order arranged
 // in settings; a group with no goals left is hidden.
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
 import Firma2GoalCard from './firma2-goal-card.astro';
 import Firma2KpiProgress from './firma2-kpi-progress.astro';
 import { CLASSIFICATION_GROUPS, classificationsInGroup } from '../../data/firma2-classifications';
@@ -37,21 +46,20 @@ const data = {
   catalog: Object.fromEntries(measures.map((m) => [m.slug, { name: m.name, unit: m.unit ?? '', decimals: m.decimalPlaces }])),
 };
 ---
-<div class="firma2-goal-board stack" data-gap="2xl" data-goal-board data-goals={JSON.stringify(data)}>
+<div class="firma2-goal-board stack" data-gap="lg" data-goal-board data-goals={JSON.stringify(data)}>
   {groups.map(({ group, rollups }) => (
-    <section class="stack" data-gap="md" aria-labelledby={`group-${group.slug}`} data-group={group.slug}>
-      <div class="stack" data-gap="2xs">
-        <h2 class="typography-title-strong" id={`group-${group.slug}`} data-group-name>{group.name}</h2>
+    <section class="firma2-goal-board__group" aria-label={group.name} data-group={group.slug}>
+      <EsaCollapsible title={group.name} open flush>
         <p class="firma2-goal-board__description typography-body-md" data-group-desc>{group.description}</p>
-      </div>
-      <div class="firma2-goal-board__grid grid" data-gap="lg" data-cards>
-        {rollups.map((rollup) => <Firma2GoalCard rollup={rollup} />)}
-      </div>
+        <div class="firma2-goal-board__grid grid" data-gap="lg" data-cards>
+          {rollups.map((rollup) => <Firma2GoalCard rollup={rollup} />)}
+        </div>
+      </EsaCollapsible>
     </section>
   ))}
   <template data-kpi-row>
     <li>
-      <Firma2KpiProgress name="" unit="" decimals={0} reported={null} committed={null} from={[]} />
+      <Firma2KpiProgress compact name="" unit="" decimals={0} reported={null} committed={null} from={[]} />
     </li>
   </template>
 </div>
@@ -71,11 +79,22 @@ const data = {
     display: none;
   }
 
+  /* CONTENT_READING (src/lib/content-width.ts), held on the leading edge —
+     width="reading" would centre the column under a left-aligned header. */
   /* auto-FILL, not the primitive's auto-fit: a group with one goal keeps a
-     card the width of its neighbours' instead of stretching across the row. */
+     card the width of its neighbours' instead of stretching across the row.
+     20rem holds a measure name of ~28 characters beside its share. */
   .firma2-goal-board__grid {
-    --grid-min: min(26rem, 100%);
+    --grid-min: 20rem;
     grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr));
+  }
+
+  .firma2-goal-board__group :global(.esa-collapsible__summary) {
+    font-family: var(--typography-title-strong-font-family);
+    font-size: var(--typography-title-strong-font-size);
+    font-weight: var(--typography-title-strong-font-weight);
+    line-height: var(--typography-title-strong-line-height);
+    letter-spacing: var(--typography-title-strong-letter-spacing);
   }
 </style>
 
@@ -105,10 +124,9 @@ const data = {
         if (!sectionTemplate) continue;
         section = sectionTemplate.cloneNode(true) as HTMLElement;
         section.dataset.group = g.slug;
-        section.setAttribute('aria-labelledby', `group-${g.slug}`);
-        section.querySelector('h2')?.setAttribute('id', `group-${g.slug}`);
       }
-      const name = section.querySelector('[data-group-name]');
+      section.setAttribute('aria-label', g.name);
+      const name = section.querySelector('.esa-collapsible__title');
       if (name) name.textContent = g.name;
       const desc = section.querySelector('[data-group-desc]');
       if (desc) desc.textContent = g.description;
@@ -139,8 +157,12 @@ const data = {
         const link = card.querySelector<HTMLAnchorElement>('[data-card-link]');
         // No goal page exists for it yet; its settings page is where it lives.
         if (link) link.href = recordHref('/prototypes/workspace-settings/classifications', e.slug);
+        // Nor a peek: the panel's records are the build's.
+        card.querySelector('.firma2-peek-button')?.remove();
         const count = card.querySelector('[data-card-count]');
         if (count) count.textContent = '0 projects';
+        const funders = card.querySelector('[data-card-funders]');
+        if (funders) funders.textContent = '0 funders';
         grid.append(card);
         cards.push(card);
       }
@@ -155,12 +177,21 @@ const data = {
         }
         const name = card.querySelector('[data-card-name]');
         if (name) name.textContent = e.name;
+        card.querySelector('.firma2-peek-button [aria-label]')?.setAttribute('aria-label', `Preview ${e.name}`);
         const swatch = card.querySelector<HTMLElement>('[data-card-swatch]');
         if (swatch && e.color) swatch.style.background = e.color;
         const list = card.querySelector<HTMLElement>('[data-kpi-list]')!;
+        const desc = card.querySelector('[data-card-desc]');
+        if (desc && e.description != null) desc.textContent = e.description;
         const n = renderKpis(list, template, e.slug, data);
         const empty = card.querySelector<HTMLElement>('[data-kpi-empty]');
         if (empty) empty.hidden = n > 0;
+        // The card shows three (its CSS); the line counts the rest.
+        const more = card.querySelector<HTMLElement>('[data-kpi-more]');
+        if (more) {
+          more.hidden = n <= 3;
+          more.textContent = `+${n - 3} more ${n - 3 === 1 ? 'measure' : 'measures'}`;
+        }
       }
 
       // Stored order within the group; a group with no goals is not shown.
@@ -170,5 +201,24 @@ const data = {
       }
       section.hidden = inGroup.length === 0;
     });
+
+    // Closed groups, remembered per reader. `toggle` does not bubble.
+    const KEY = 'firma2:goal-board:closed';
+    let closed: string[] = [];
+    try {
+      closed = JSON.parse(localStorage.getItem(KEY) ?? '[]');
+    } catch {}
+    board.querySelectorAll<HTMLElement>('section[data-group]').forEach((section) => {
+      const details = section.querySelector('details');
+      if (details && closed.includes(section.dataset.group ?? '')) details.open = false;
+    });
+    board.addEventListener('toggle', () => {
+      const now = [...board.querySelectorAll<HTMLElement>('section[data-group]')]
+        .filter((s) => !s.querySelector('details')?.open)
+        .map((s) => s.dataset.group ?? '');
+      try {
+        localStorage.setItem(KEY, JSON.stringify(now));
+      } catch {}
+    }, true);
   });
 </script>

@@ -153,9 +153,9 @@ function validateMeasure(dto: Pm2MeasureUpsert, selfId: number | null): string[]
   else if (name.length > 200) errors.push('A measure name cannot be longer than 200 characters.');
   else if (store().measures.some((m) => m.id !== selfId && same(m.name, name)))
     errors.push('This catalog already has a measure with that name.');
-  if (dto.themeId != null && !pm2Theme(dto.themeId)) errors.push('That is not a theme we know about.');
-  if (dto.unitId != null && !pm2Unit(dto.unitId)) errors.push('That is not a unit we know about.');
-  if (dto.countingRuleId != null && !pm2Rule(dto.countingRuleId)) errors.push('That is not a counting rule we know about.');
+  if (dto.themeId != null && !pm2Theme(dto.themeId)) errors.push('That theme doesn’t exist.');
+  if (dto.unitId != null && !pm2Unit(dto.unitId)) errors.push('That unit doesn’t exist.');
+  if (dto.countingRuleId != null && !pm2Rule(dto.countingRuleId)) errors.push('That counting rule doesn’t exist.');
 
   const seen: string[] = [];
   for (const c of dto.categories) {
@@ -168,7 +168,7 @@ function validateMeasure(dto: Pm2MeasureUpsert, selfId: number | null): string[]
     if (seen.some((s) => same(s, cname))) errors.push(`This measure asks "${cname}" more than once.`);
     seen.push(cname);
     const named = c.options.map((o) => o.name.trim()).filter(Boolean);
-    if (named.length === 0) errors.push(`"${cname}" has no options, so nobody could answer it.`);
+    if (named.length === 0) errors.push(`Add an option to "${cname}".`);
     const optSeen: string[] = [];
     for (const o of named) {
       if (o.length > 200) errors.push('Option names cannot be longer than 200 characters.');
@@ -221,7 +221,7 @@ export function createMeasure(dto: Pm2MeasureUpsert): Result<Pm2Measure> {
 }
 
 export const FROZEN_MESSAGE =
-  'This measure has been published, so its categories and options can no longer be changed. Reporters have already answered these questions, and changing them would alter what their past answers meant. Names, the definition and the reporter guidance can still be edited.';
+  'Categories and options are locked once published.';
 
 export function updateMeasure(id: number, dto: Pm2MeasureUpsert): Result<Pm2Measure> {
   const m = getMeasure(id);
@@ -254,7 +254,7 @@ export function updateMeasure(id: number, dto: Pm2MeasureUpsert): Result<Pm2Meas
 export function missingForPublish(m: Pick<Pm2Measure, 'name' | 'definition' | 'unitId' | 'countingRuleId' | 'themeId'>): string[] {
   const missing: string[] = [];
   if (!m.name.trim()) missing.push('a name');
-  if (!m.definition.trim()) missing.push('a definition saying what counts');
+  if (!m.definition.trim()) missing.push('a definition');
   if (m.unitId == null) missing.push('a unit');
   if (m.countingRuleId == null) missing.push('whether the values add up');
   if (m.themeId == null) missing.push('a theme');
@@ -267,10 +267,10 @@ export function publishMeasure(id: number): Result<Pm2Measure> {
   if (m.statusId !== 1) return fail('This measure is already published.');
   const errors: string[] = [];
   if (!m.definition.trim())
-    errors.push('A published measure needs a definition saying what counts toward it and what does not. It is what makes two reporters answer the same question the same way.');
+    errors.push('A published measure needs a definition.');
   if (m.unitId == null) errors.push('A published measure needs a unit.');
   if (m.countingRuleId == null)
-    errors.push('A published measure needs to say whether its values add up. Totals and cumulative figures depend on it, and offering them for a measure that does not sum would be reporting a lie.');
+    errors.push('A published measure needs to say whether its values add up.');
   if (m.themeId == null) errors.push('A published measure needs a theme.');
   if (errors.length) return fail(...errors);
   m.statusId = 2;
@@ -290,9 +290,9 @@ export function deleteMeasure(id: number): Result {
   const m = getMeasure(id);
   if (!m) return fail('That measure does not exist.');
   if (m.statusId !== 1)
-    return fail('Only a draft can be deleted. A measure that has been published is retired instead, which stops it being asked while keeping everything reported against it.');
+    return fail('Only drafts can be deleted. Retire this measure instead.');
   if (store().entries.some((e) => e.measureId === id))
-    return fail('This measure has entries reported against it, so it is retired rather than deleted.');
+    return fail('Retire it instead — it has entries.');
   store().measures = store().measures.filter((x) => x.id !== id);
   commit();
   return ok(undefined);
@@ -316,8 +316,8 @@ function log(c: Omit<Pm2Change, 'id' | 'changedBy' | 'changedDate'>): void {
 function validateEntry(projectSlug: string, dto: Pm2EntryUpsert, selfId: number | null): string[] {
   const m = getMeasure(dto.measureId);
   if (!m) return ['That measure does not exist.'];
-  if (m.statusId === 1) return ['This measure is still a draft, so nothing can be reported against it yet. Publish it first.'];
-  if (m.statusId === 3) return ['This measure has been retired, so it is no longer collecting entries.'];
+  if (m.statusId === 1) return ['Publish this draft before reporting against it.'];
+  if (m.statusId === 3) return ['This measure is retired and no longer takes entries.'];
   const errors: string[] = [];
   if (!PM2_PERIODS.some((p) => p.id === dto.periodId)) errors.push('That reporting period does not exist.');
   if (!(dto.value >= 0)) errors.push('A reported value cannot be negative.');
@@ -329,7 +329,7 @@ function validateEntry(projectSlug: string, dto: Pm2EntryUpsert, selfId: number 
       errors.push(anywhere ? 'An option was chosen that belongs to a different measure.' : 'One of the options chosen no longer exists. Reload the form and try again.');
       continue;
     }
-    if (answered.has(cat.id)) errors.push(`"${cat.name}" was answered more than once. One answer per question.`);
+    if (answered.has(cat.id)) errors.push(`Pick one answer for "${cat.name}".`);
     answered.add(cat.id);
   }
   const dup = store().entries.some(
@@ -338,8 +338,8 @@ function validateEntry(projectSlug: string, dto: Pm2EntryUpsert, selfId: number 
   if (dup)
     errors.push(
       dto.optionIds.length
-        ? 'This project has already reported that combination for this measure and period. Edit the existing row rather than adding a second one — two identical rows would count twice in every total.'
-        : 'This project has already reported an untagged value for this measure and period. Edit the existing row rather than adding a second one.',
+        ? 'This project already reported that combination for this period. Edit that row instead.'
+        : 'This project already reported an untagged value for this period. Edit that row instead.',
     );
   return errors;
 }
@@ -388,8 +388,8 @@ export function deleteEntry(projectSlug: string, entryId: number): Result {
 export function setTarget(projectSlug: string, measureId: number, value: number): Result {
   const m = getMeasure(measureId);
   if (!m) return fail("That measure is not in this tenant's catalog.");
-  if (m.statusId !== 2) return fail(`Only a published measure can carry a target. ${m.name} is not being asked of any project yet.`);
-  if (!pm2IsSummable(m)) return fail(`A target is only meaningful for a measure whose values add up; ${m.name} does not sum.`);
+  if (m.statusId !== 2) return fail('Only a published measure can carry a target.');
+  if (!pm2IsSummable(m)) return fail(`${m.name} doesn’t add up, so it can’t carry a target.`);
   if (!(value > 0)) return fail('A target must be greater than zero.');
   const existing = store().targets.find((t) => t.projectSlug === projectSlug && t.measureId === measureId);
   if (!existing) {
@@ -627,11 +627,11 @@ export function draftFromClaim(claim: string): Pm2Draft {
   const payoff =
     row.countingRuleId === 1
       ? `Total ${unit} of ${row.name.toLowerCase()}${by ? ` and broken down ${by}` : ''}, by period and cumulative.`
-      : `${unit[0].toUpperCase()}${unit.slice(1)} of ${row.name.toLowerCase()} per period. This measure does not sum, so no total is offered.`;
+      : `${unit[0].toUpperCase()}${unit.slice(1)} of ${row.name.toLowerCase()} per period, with no total.`;
   const warnings: string[] = [];
   if (row.categories.length > 1)
-    warnings.push('Two breakdowns double the picks on every entry. Keep both only if your funder asks for both.');
+    warnings.push('Two breakdowns double the picks on every entry.');
   if (store().measures.some((m) => same(m.name, row.name)))
-    warnings.push(`Your catalog already has a measure called “${row.name}”. Rename this one or use that one.`);
+    warnings.push(`Your catalog already has a measure called “${row.name}”.`);
   return { ...clone(row), payoff, warnings };
 }

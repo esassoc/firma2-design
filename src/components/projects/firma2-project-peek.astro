@@ -45,7 +45,8 @@
 // behind the "…" menu — Share live (src/lib/share-record.ts, the same gesture
 // the page header runs), the other two real, enabled and unwired.
 //
-// PAINTING: one panel, one <template> per project (server-rendered, so the
+// PAINTING (src/lib/record-peek.ts, shared with the classification peek):
+// one panel, one <template> per project (server-rendered, so the
 // fact rows ARE firma2-project-facts, the chips ARE esa-pill, the map IS
 // firma2-project-map — scope hashes, configs and all). A template's clone is
 // CACHED per project: an edit made here survives closing the panel exactly as
@@ -365,6 +366,7 @@ const records = projects.map((project) => {
   import '@esa/ecology/esa-snackbar-container';
   import '../shared/bcn-edge-handle';
   import { shareRecord } from '../../lib/share-record';
+  import { initRecordPeek } from '../../lib/record-peek';
 
   type Menu = HTMLElement & { items: { label: string; action: string }[]; open?: boolean };
   type Snackbar = HTMLElement & {
@@ -372,18 +374,16 @@ const records = projects.map((project) => {
   };
 
   function initProjectPeek(panel: HTMLElement) {
-    const inner = panel.querySelector<HTMLElement>('.firma2-rail__inner');
     const nameEl = panel.querySelector<HTMLElement>('[data-peek-name]');
     const door = panel.querySelector<HTMLAnchorElement>('[data-peek-door]');
     const stageEl = panel.querySelector<HTMLElement>('[data-peek-stage]');
-    const host = panel.querySelector<HTMLElement>('[data-peek-record-host]');
     const menu = panel.querySelector<Menu>('.firma2-project-peek__more');
     const toasts = panel.querySelector<Snackbar>('.firma2-project-peek__toasts');
     // esa-button spreads rest props onto the native element itself, so these
     // ARE the <a>/<button> and the per-project hrefs are attribute writes.
     const openLink = panel.querySelector<HTMLAnchorElement>('a[data-peek-open]');
     const recordLink = panel.querySelector<HTMLAnchorElement>('a[data-peek-record]');
-    if (!inner || !nameEl || !door || !stageEl || !host) return;
+    if (!nameEl || !door || !stageEl) return;
 
     // The stage chips, pre-cloned per stage from the server-rendered templates.
     const pills = new Map<string, HTMLElement>();
@@ -391,106 +391,20 @@ const records = projects.map((project) => {
       .querySelectorAll<HTMLElement>('[data-peek-stage-templates] [data-stage]')
       .forEach((el) => pills.set(el.dataset.stage ?? '', el));
 
-    // One clone per project, CUT ONCE and kept: reopening a project shows the
-    // record as you left it, edits included — the same lifetime an edit has on
-    // the detail page (this browser session; nothing persists).
-    const clones = new Map<string, HTMLElement>();
-    let current: { slug: string; name: string; href: string } | null = null;
-    /** Where focus goes back when the panel closes — the peek button that
-     *  opened it, which is how a non-modal panel avoids dropping a keyboard
-     *  reader at <body>. */
-    let opener: HTMLElement | null = null;
-
-    const paint = (slug: string): boolean => {
-      const template = panel.querySelector<HTMLTemplateElement>(
-        `template[data-project-peek="${CSS.escape(slug)}"]`,
-      );
-      if (!template) return false;
-      const name = template.dataset.name ?? '';
-      const href = template.dataset.href ?? '#';
-      current = { slug, name, href };
-
-      nameEl.textContent = name;
-      door.href = href;
-      openLink?.setAttribute('href', href);
-      recordLink?.setAttribute('href', `${href}#record-work`);
-      const pill = pills.get(template.dataset.stage ?? '');
-      stageEl.replaceChildren(...(pill ? [pill.firstElementChild!.cloneNode(true)] : []));
-
-      let record = clones.get(slug);
-      if (!record) {
-        record = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
-        clones.set(slug, record);
-      }
-      host.replaceChildren(record);
-      return true;
-    };
-
-    const open = (slug: string, trigger: HTMLElement | null): void => {
-      if (!paint(slug)) return;
-      if (trigger) opener = trigger;
-      // firma2-rail eases the track open (from out of the page, or at once if
-      // it is already open) and fires rail-opened when the content is back in
-      // the layout.
-      panel.dispatchEvent(new CustomEvent('firma2:rail-open'));
-    };
-
-    panel.addEventListener('firma2:rail-opened', (event) => {
-      if (event.target !== panel) return;
-      // Announce the (now laid-out) subtree to the modules whose load-time
-      // sweeps never saw inside the template. Both seams are idempotent; on a
-      // cached clone the map answers with invalidate + refit instead of a
-      // second init. After the rail has landed, so the map measures a real box.
-      const record = host.firstElementChild;
-      record?.dispatchEvent(new CustomEvent('firma2:field-hydrate', { bubbles: true }));
-      record?.dispatchEvent(new CustomEvent('firma2:map-init', { bubbles: true }));
-      // Every open starts at the top, whichever project it shows.
-      inner.scrollTo(0, 0);
-      // A non-modal panel still owes the keyboard a way in: focus lands on the
-      // name, which announces which record just opened.
-      door.focus();
-    });
-
-    // The rail's edge chevron closes it (firma2-rail, closes mode); Escape
-    // asks the rail to do the same.
-    const close = (): void => {
-      panel.dispatchEvent(new CustomEvent('firma2:rail-close'));
-    };
-    panel.addEventListener('firma2:rail-closed', (event) => {
-      if (event.target !== panel) return;
-      // The stored trigger is the [data-open-project] wrapper span; the tab
-      // stop is the esa-button inside it. Guard on isConnected — AG Grid
-      // repaints cells, and focusing a detached node silently does nothing
-      // while LOOKING like a focus return.
-      if (opener?.isConnected) {
-        (opener.querySelector<HTMLElement>('button, a') ?? opener).focus();
-      }
-    });
-
-    // The delegated seam, mirroring the measure and schema sheets: anything
-    // carrying data-open-project opens this panel. Capture phase so grid cells
-    // never also act on the peek click.
-    document.addEventListener(
-      'click',
-      (event) => {
-        const trigger = (event.target as Element).closest<HTMLElement>('[data-open-project]');
-        if (!trigger) return;
-        const slug = trigger.dataset.openProject ?? '';
-        if (slug) open(slug, trigger);
+    // Opening, caching, focus and Escape are src/lib/record-peek.ts, shared
+    // with the classification peek; the header is this panel's own.
+    const peek = initRecordPeek(panel, {
+      trigger: 'data-open-project',
+      template: 'data-project-peek',
+      paint: (template) => {
+        const href = template.dataset.href ?? '#';
+        nameEl.textContent = template.dataset.name ?? '';
+        door.href = href;
+        openLink?.setAttribute('href', href);
+        recordLink?.setAttribute('href', `${href}#record-work`);
+        const pill = pills.get(template.dataset.stage ?? '');
+        stageEl.replaceChildren(...(pill ? [pill.firstElementChild!.cloneNode(true)] : []));
       },
-      true,
-    );
-
-
-    // ESCAPE'S LADDER, bottom rung. An open FIELD consumed the key already
-    // (editable-field stops propagation); an open MENU or select dropdown
-    // preventDefaulted it on its way past — so a plain Escape that reaches
-    // here with its default intact means "close the panel". Listener on the
-    // panel, not the document: this surface is non-modal, and Escape pressed
-    // in the grid belongs to the grid.
-    panel.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
-      close();
     });
 
     // Items land only after the element upgrades — a property assigned to the
@@ -508,11 +422,12 @@ const records = projects.map((project) => {
 
     menu?.addEventListener('menu-action', (event) => {
       const action = (event as CustomEvent<string>).detail;
+      const current = peek?.current();
       if (action === 'share' && current) {
         void shareRecord(
           {
-            title: `${current.name} — ProjectFirma 2.0`,
-            url: new URL(current.href, window.location.href).toString(),
+            title: `${current.dataset.name} — ProjectFirma 2.0`,
+            url: new URL(current.dataset.href ?? '#', window.location.href).toString(),
           },
           toasts,
         );

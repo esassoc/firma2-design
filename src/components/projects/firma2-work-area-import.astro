@@ -48,7 +48,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
 ---
 <div class="firma2-work-area-import stack" data-gap="xl" data-config={JSON.stringify(config)}>
   <div data-off hidden>
-    <EsaEmptyState title="Shapes come from your GIS" description="This workspace keeps its projects current from a GIS subscription, so their shapes are edited there and synced here. Importing a file would give them a second owner." />
+    <EsaEmptyState title="Shapes come from your GIS" />
     <div class="firma2-work-area-import__center">
       <EsaButton variant="secondary" size="md" tag="a" href={sourceHref}>Open Project source</EsaButton>
     </div>
@@ -57,7 +57,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
   <div class="stack" data-gap="xl" data-on>
     <EsaCard title="File">
       <div class="stack" data-gap="md">
-        <p class="typography-body-md">A zipped shapefile or file geodatabase with boundaries for many projects. For one project, use Upload shapes on its own page.</p>
+        <p class="typography-body-md">A zipped shapefile or file geodatabase.</p>
         <esa-file-upload label="File" accept=".zip" max-size-mb="100" data-file></esa-file-upload>
         <p class="typography-body-sm">
           No file to hand? <button type="button" class="firma2-work-area-import__link" data-sample>Use a partner’s sample file</button>.
@@ -83,8 +83,6 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
 
       <div class="firma2-work-area-import__map" role="application" aria-label="Shapes that will be added" data-map></div>
 
-      <EsaAlertBox variant="info" title="Nothing is added yet"><p class="typography-body-sm" data-summary></p></EsaAlertBox>
-
       <section class="stack" data-gap="md" data-matched-section>
         <h3 class="typography-title-strong firma2-work-area-import__h">Will be added</h3>
         <table class="firma2-work-area-import__table">
@@ -95,7 +93,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
 
       <section class="stack" data-gap="md" data-unmatched-section>
         <div data-unmatched-warning>
-          <EsaAlertBox variant="warning" title="Some shapes match no project">
+          <EsaAlertBox variant="warning" title="Unmatched shapes">
             <p class="typography-body-sm" data-unmatched-text></p>
           </EsaAlertBox>
         </div>
@@ -320,7 +318,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
       $('[data-matched]').innerHTML = matched
         .map(({ i, area, project }) => {
           const n = already(project);
-          return `<tr><td class="typography-body-sm num">${i + 1}</td><td class="typography-body-sm"><a href="${project.href}">${esc(project.name)}</a></td><td class="typography-body-sm">${esc(area.label)}</td><td class="typography-body-sm">${KIND[area.kind]}</td><td class="typography-body-sm num">${formatExtent(area.extent, area.unit) || '—'}</td><td class="typography-body-sm firma2-work-area-import__muted">${n ? `${n} — these are added beside them` : 'None — its first'}</td></tr>`;
+          return `<tr><td class="typography-body-sm num">${i + 1}</td><td class="typography-body-sm"><a href="${project.href}">${esc(project.name)}</a></td><td class="typography-body-sm">${esc(area.label)}</td><td class="typography-body-sm">${KIND[area.kind]}</td><td class="typography-body-sm num">${formatExtent(area.extent, area.unit) || '—'}</td><td class="typography-body-sm firma2-work-area-import__muted">${n || 'None'}</td></tr>`;
         })
         .join('');
       $('[data-matched-section]').hidden = matched.length === 0;
@@ -350,12 +348,11 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
       );
       $('[data-unmatched-section]').hidden = unmatched.length === 0;
       $('[data-unmatched-text]').textContent =
-        `${unmatched.length} ${unmatched.length === 1 ? 'shape matches' : 'shapes match'} no project by ${joinField}. Choose its project below, or it is skipped and nothing about it is kept.`;
+        matched.length === 0
+          ? `No shape matches a project by ${joinField}. Try another field, or pick projects below.`
+          : `${unmatched.length} ${unmatched.length === 1 ? 'shape matches' : 'shapes match'} no project by ${joinField}. Pick a project for each, or it’s skipped.`;
 
       const projectCount = new Set(matched.map((m) => m.project.slug)).size;
-      $('[data-summary]').textContent = matched.length
-        ? `${matched.length} ${matched.length === 1 ? 'shape' : 'shapes'} will be added to ${projectCount} ${projectCount === 1 ? 'project' : 'projects'}${handMatched.size ? `, ${handMatched.size} of them matched by hand` : ''}.`
-        : `No shape matches a project by ${joinField}. Try another field, or compare against the project’s ${againstField === 'number' ? 'name' : 'number'}.`;
       $('[data-commit-wrap]').classList.toggle('esa-button--disabled', matched.length === 0);
       const label = $('[data-commit]').querySelector('.esa-button__label') ?? $('[data-commit]');
       label.textContent = matched.length ? `Add ${matched.length} work ${matched.length === 1 ? 'area' : 'areas'} to ${projectCount} ${projectCount === 1 ? 'project' : 'projects'}` : 'Add work areas';
@@ -374,7 +371,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
         $('[data-reading]').hidden = true;
         loaded = true;
         handMatched.clear();
-        $('[data-file-line]').textContent = `${fileName}: one layer, ${config.sample.layer}, with ${config.sample.features.length} shapes and the fields ${fields.join(', ')}.`;
+        $('[data-file-line]').textContent = `${fileName} · ${config.sample.features.length} shapes`;
         customElements.whenDefined('esa-select').then(() => {
           join.options = fields.map((f) => ({ value: f, label: f }));
           join.value = joinField;
@@ -383,7 +380,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
             { value: 'name', label: 'Name' },
           ];
           against.value = againstField;
-          name.options = [{ value: '', label: 'Its position in the file' }, ...fields.map((f) => ({ value: f, label: f }))];
+          name.options = [{ value: '', label: 'Position in file' }, ...fields.map((f) => ({ value: f, label: f }))];
           name.value = nameField;
           paint();
         });

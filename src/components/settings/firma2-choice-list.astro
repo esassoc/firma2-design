@@ -1,0 +1,244 @@
+---
+// firma2-choice-list — a choice field's choices, one per row, in the order
+// they are offered: type one, drag it by its grip (or use the grip's menu) to
+// move it, remove it with its bin. A drop-in for the esa-input-tag it
+// replaces in the custom field sheets — same `value` (string[]), `errorText`
+// and `change` — because chips cannot be put in order, and the order a
+// field's choices are listed in is the order every project is asked them.
+//
+// ADDING IS ADDING A ROW, as on the schema board: "Add choice" opens an
+// empty row with the cursor in it; Enter keeps the row and opens the next. A
+// row left empty is not a choice.
+//
+// `change` fires when a choice is committed (Enter or leaving the row), moved
+// or removed — not per keystroke, so "Add at least two choices" does not
+// flash while the first one is being typed.
+//
+// Props: label (the fieldset's legend; rows are named "Choice 2"), hidden.
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+interface Props {
+  label?: string;
+  hidden?: boolean;
+  [key: `data-${string}`]: unknown;
+}
+const { label = 'Choices', hidden, ...rest } = Astro.props;
+---
+<!-- bcn-lego-checked: every control is a lego (esa-text-field, esa-button) or
+     the spoke's bcn-sortable-list (reorders rows — no esa- list does;
+     esassoc/ecology#39). esa-input-tag holds the values but cannot order them.
+     The classes only lay out the row list. Beacon is not cloned on this
+     machine. Same row construction as firma2-schema-board's options. -->
+<firma2-choice-list class="firma2-choice-list" hidden={hidden} {...rest}>
+  <fieldset class="firma2-choice-list__set stack" data-gap="xs">
+    <legend class="firma2-choice-list__legend typography-label-md">{label}</legend>
+    <bcn-sortable-list data-choice-sort>
+      <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+      <ol class="firma2-choice-list__rows" data-choice-rows></ol>
+    </bcn-sortable-list>
+    <p class="firma2-choice-list__error typography-body-sm" data-choice-error hidden></p>
+    <div>
+      <EsaButton variant="ghost" size="md" icon="plus" data-choice-add>Add choice</EsaButton>
+    </div>
+  </fieldset>
+  <template data-tpl-remove><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Remove choice" /></template>
+</firma2-choice-list>
+
+<style>
+  .firma2-choice-list {
+    display: block;
+  }
+
+  .firma2-choice-list[hidden],
+  .firma2-choice-list :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-choice-list__set {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-inline-size: 0;
+  }
+
+  .firma2-choice-list__legend {
+    padding: 0;
+    margin-block-end: var(--spacing-100);
+  }
+
+  .firma2-choice-list__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    row-gap: var(--spacing-200);
+  }
+
+  .firma2-choice-list__rows:empty {
+    display: none;
+  }
+
+  .firma2-choice-list__rows :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200);
+  }
+
+  .firma2-choice-list__rows :global(esa-text-field) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .firma2-choice-list__rows :global(.firma2-choice-list__remove) {
+    flex: none;
+  }
+
+  .firma2-choice-list__error {
+    margin: 0;
+    color: var(--form-error-color, var(--color-content-utility-danger));
+  }
+</style>
+
+<script>
+  import '../shared/bcn-sortable-list';
+  import '@esa/ecology/esa-text-field';
+  import { announce } from '@esa/ecology/announcer';
+
+  type Field = HTMLElement & { value?: string; errorText?: string };
+  interface Choice {
+    key: string;
+    text: string;
+  }
+
+  let seq = 0;
+  const ERR_TAKEN = 'That choice is already listed.';
+
+  class Firma2ChoiceList extends HTMLElement {
+    #items: Choice[] = [];
+    #error = '';
+
+    connectedCallback() {
+      // A `value` assigned before this element was defined shadows the accessor.
+      if (Object.prototype.hasOwnProperty.call(this, 'value')) {
+        const v = (this as unknown as { value: unknown }).value;
+        delete (this as unknown as { value?: unknown }).value;
+        this.value = v as string[];
+      }
+      if (this.dataset.wired) return;
+      this.dataset.wired = '';
+      this.#rows.addEventListener('change', (e) => e.stopPropagation());
+      this.querySelector('[data-choice-sort]')!.addEventListener('sort-change', (e) => {
+        e.stopPropagation();
+        const { order, key } = (e as CustomEvent<{ order: string[]; key: string }>).detail;
+        this.#items = order.map((k) => this.#items.find((c) => c.key === k)!).filter(Boolean);
+        const moved = this.#items.find((c) => c.key === key);
+        this.#paint();
+        if (moved?.text) announce(`${moved.text} moved to ${this.#items.indexOf(moved) + 1} of ${this.#items.length}.`);
+        this.#emit();
+      });
+      this.querySelector('[data-choice-add]')!.addEventListener('click', () => this.#addAfter(null));
+    }
+
+    /** The named choices, in order. Empty rows are not choices. */
+    get value(): string[] {
+      return this.#items.map((c) => c.text.trim()).filter(Boolean);
+    }
+
+    set value(list: string[]) {
+      this.#items = (Array.isArray(list) ? list : []).map((text) => ({ key: `choice-${(seq += 1)}`, text: String(text) }));
+      this.#paint();
+    }
+
+    get errorText() {
+      return this.#error;
+    }
+
+    set errorText(message: string) {
+      this.#error = message ?? '';
+      const p = this.querySelector<HTMLElement>('[data-choice-error]');
+      if (!p) return;
+      p.textContent = this.#error;
+      p.hidden = !this.#error;
+    }
+
+    get #rows() {
+      return this.querySelector<HTMLOListElement>('[data-choice-rows]')!;
+    }
+
+    #emit() {
+      this.dispatchEvent(new CustomEvent('change', { detail: { value: this.value }, bubbles: true }));
+    }
+
+    #fieldOf(key: string) {
+      return this.#rows.querySelector<Field>(`li[data-sort-key="${key}"] esa-text-field`);
+    }
+
+    #focus(key: string | null) {
+      const target: HTMLElement | null = key ? this.#fieldOf(key) : this.querySelector<HTMLElement>('[data-choice-add]');
+      requestAnimationFrame(() => requestAnimationFrame(() => target?.focus()));
+    }
+
+    /** A new empty row after `key` (or last), with the cursor in it. */
+    #addAfter(key: string | null) {
+      const choice = { key: `choice-${(seq += 1)}`, text: '' };
+      const at = key ? this.#items.findIndex((c) => c.key === key) + 1 : this.#items.length;
+      this.#items.splice(at, 0, choice);
+      this.#paint();
+      this.#focus(choice.key);
+    }
+
+    #remove(key: string) {
+      const at = this.#items.findIndex((c) => c.key === key);
+      const [gone] = this.#items.splice(at, 1);
+      this.#paint();
+      if (gone?.text) announce(`${gone.text} removed.`);
+      this.#focus(this.#items[at]?.key ?? this.#items[at - 1]?.key ?? null);
+      if (gone?.text.trim()) this.#emit();
+    }
+
+    #row(choice: Choice, n: number): HTMLLIElement {
+      const li = document.createElement('li');
+      li.dataset.sortKey = choice.key;
+      li.dataset.sortLabel = choice.text || 'New choice';
+
+      const field = document.createElement('esa-text-field') as Field;
+      field.setAttribute('size', 'md');
+      field.setAttribute('aria-label', `Choice ${n}`);
+      void customElements.whenDefined('esa-text-field').then(() => (field.value = choice.text));
+      let committed = choice.text;
+      const commit = () => {
+        const next = String(field.value ?? '').trim();
+        const taken = Boolean(next) && this.#items.some((c) => c !== choice && c.text.trim() === next);
+        field.errorText = taken ? ERR_TAKEN : '';
+        choice.text = taken ? committed : next;
+        li.dataset.sortLabel = choice.text || 'New choice';
+        if (taken || choice.text === committed) return;
+        committed = choice.text;
+        this.#emit();
+      };
+      field.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key !== 'Enter') return;
+        e.preventDefault();
+        commit();
+        if (choice.text && !field.errorText) this.#addAfter(choice.key);
+      });
+      field.addEventListener('focusout', commit);
+
+      const remove = (this.querySelector<HTMLTemplateElement>('[data-tpl-remove]')!.content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+      remove.classList.add('firma2-choice-list__remove');
+      const name = choice.text ? `Remove ${choice.text}` : `Remove choice ${n}`;
+      remove.querySelector('button')?.setAttribute('aria-label', name);
+      remove.querySelector('button')?.setAttribute('title', name);
+      remove.addEventListener('click', () => this.#remove(choice.key));
+
+      li.append(field, remove);
+      return li;
+    }
+
+    #paint() {
+      this.#rows.replaceChildren(...this.#items.map((c, i) => this.#row(c, i + 1)));
+    }
+  }
+
+  if (!customElements.get('firma2-choice-list')) customElements.define('firma2-choice-list', Firma2ChoiceList);
+</script>

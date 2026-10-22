@@ -47,7 +47,7 @@ export const reporterBurden = (picks: number): ReporterBurden => {
   const words = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
   const count = words[picks] ?? String(picks);
   const asked = picks <= 0 ? 'one number' : `one number and ${count} ${picks === 1 ? 'pick' : 'picks'}`;
-  return { level, answers, asks: asked, detail: `Each entry asks for ${asked}, on every project, every year.` };
+  return { level, answers, asks: asked, detail: `Each entry asks for ${asked}.` };
 };
 
 /** Fill a firma2-reporter-burden element in. */

@@ -1,0 +1,197 @@
+---
+// firma2-classification-peek — the classification peek PANEL: a docked rail
+// beside the classifications board, opened from a goal card's side-panel
+// button (user, 2026-10-21: "a peek interaction like we have for projects").
+//
+// The brief's five (docs/product-brief.md §5):
+//   1. One question: what is this goal made of — how much work, money and
+//      who is behind it — and do I need to open it?
+//   2. Reader: the executive or program manager scanning the board; the card
+//      already told them HOW FAR along it is, the peek tells them WITH WHAT.
+//   3. Series vs scalar: the four totals are scalars, stated once; every
+//      measure with its full figure (the card shows three, as a share); the
+//      measures and projects as links — the record rail's own Connections
+//      graph, with its list view.
+//   4. Irreversible: nothing; the panel reads, every node is a door.
+//   5. Cut: the measure table by year and the funders (the classification's
+//      page, one click on — "Open classification").
+//
+// BOTH SECTIONS ARE THE PAGE'S OWN, reused whole: firma2-classification-
+// summary (description + four totals) and firma2-entity-connections (the
+// page's rail). Nothing here restates a figure the page computes.
+//
+// THE CONSTRUCTION IS THE PROJECT PEEK'S: a closes-mode firma2-rail, one
+// <template> per classification, cloned once and kept — src/lib/record-peek.ts
+// owns opening, caching, focus and Escape for both. The header is painted
+// from this browser's taxonomy edits, so a goal renamed in settings reads
+// the same here as on its card.
+//
+// bcn-lego-checked: firma2-rail is the rail, esa-button the door, esa-badge
+// the group (as on the classification page's header); the swatch is the
+// goal card's 12px square (no esa- swatch lego). Layout is .stack/.repel/
+// .cluster. Beacon is not cloned on this machine.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2Rail from '../shared/firma2-rail.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import Firma2KpiProgress from './firma2-kpi-progress.astro';
+import Firma2ClassificationSummary from './firma2-classification-summary.astro';
+import Firma2EntityConnections from '../shared/firma2-entity-connections.astro';
+import { CLASSIFICATIONS, CLASSIFICATION_GROUPS } from '../../data/firma2-classifications';
+import { classificationHref, rollupClassification } from '../../data/firma2-classification-rollup';
+import { classificationGraph } from '../../lib/entity-graph';
+import { withBase } from '../../lib/base';
+
+const records = CLASSIFICATIONS.map((c) => ({
+  c,
+  rollup: rollupClassification(c),
+  group: CLASSIFICATION_GROUPS.find((g) => g.slug === c.group)?.name ?? '',
+  href: withBase(classificationHref(c.slug)),
+}));
+---
+<Firma2Rail
+  id="firma2-classification-peek"
+  class="firma2-classification-peek"
+  label="classification details"
+  ariaLabel="Classification peek"
+  width="34rem"
+  floor="26rem"
+  min={416}
+  max={720}
+  storageKey="classification-peek"
+  unpinAt={904}
+  closes
+  hidden
+>
+  <header class="firma2-classification-peek__head stack" data-gap="sm">
+    <h2 class="firma2-classification-peek__title typography-title">
+      <a class="firma2-classification-peek__door cluster" data-gap="xs" data-peek-door href="#">
+        <span class="firma2-classification-peek__swatch" aria-hidden="true" data-peek-swatch></span>
+        <span data-peek-name></span>
+      </a>
+    </h2>
+    <div class="repel" data-gap="sm">
+      <span data-peek-group>
+        <span class="visually-hidden">Classification group </span>
+        <EsaBadge value="" variant="secondary" size="md" />
+      </span>
+      <EsaButton variant="secondary" appearance="outline" size="md" href="#" data-peek-open>
+        Open classification
+      </EsaButton>
+    </div>
+  </header>
+
+  <div data-peek-record-host></div>
+
+  {records.map(({ c, rollup, group, href }) => (
+    <template data-classification-peek={c.slug} data-name={c.name} data-color={c.color} data-group={group} data-href={href}>
+      <div class="stack" data-gap="2xl">
+        <Firma2ClassificationSummary classification={c} rollup={rollup} />
+        {rollup.kpis.length > 0 && (
+          <Firma2RailSection title="Performance measures">
+            <ul class="firma2-classification-peek__kpis stack" data-gap="lg">
+              {rollup.kpis.map((k) => (
+                <li>
+                  <Firma2KpiProgress
+                    name={k.measure.name}
+                    unit={k.unit}
+                    decimals={k.measure.decimalPlaces}
+                    reported={k.reported}
+                    committed={k.committed}
+                    goal={k.goal?.value}
+                    goalYear={k.goal?.year}
+                    from={[]}
+                  />
+                </li>
+              ))}
+            </ul>
+          </Firma2RailSection>
+        )}
+        <Firma2EntityConnections graph={classificationGraph(c)} />
+      </div>
+    </template>
+  ))}
+</Firma2Rail>
+
+<style>
+  .firma2-classification-peek__title {
+    margin: 0;
+    /* The rail's toggle sits at this row's trailing end. */
+    padding-inline-end: calc(2.5rem + var(--spacing-200, 0.5rem));
+  }
+
+  /* THE DOOR, as on the project peek: the name reads as a title and
+     underlines on hover/focus. */
+  .firma2-classification-peek__door {
+    flex-wrap: nowrap;
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-sm, 0.25rem);
+  }
+  .firma2-classification-peek__door:hover,
+  .firma2-classification-peek__door:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .firma2-classification-peek__door:focus-visible {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+
+  /* The goal card's swatch. */
+  .firma2-classification-peek__swatch {
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-radius: var(--radius-sm, 4px);
+    flex: none;
+  }
+
+  /* Two-up, never three and an orphan, at every width this track allows —
+     the summary's own rule (13rem) is tuned for the page's column. */
+  .firma2-classification-peek :global(.firma2-classification-summary__figures) {
+    --grid-min: 12rem;
+  }
+
+  .firma2-classification-peek__kpis {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  :global(.firma2-classification-peek .firma2-rail__inner [hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import { getEntry } from '../../lib/taxonomy-edits';
+  import { initRecordPeek } from '../../lib/record-peek';
+
+  document.querySelectorAll<HTMLElement>('.firma2-classification-peek').forEach((panel) => {
+    const nameEl = panel.querySelector<HTMLElement>('[data-peek-name]');
+    const swatch = panel.querySelector<HTMLElement>('[data-peek-swatch]');
+    const door = panel.querySelector<HTMLAnchorElement>('[data-peek-door]');
+    const groupEl = panel.querySelector<HTMLElement>('[data-peek-group]');
+    const openLink = panel.querySelector<HTMLAnchorElement>('a[data-peek-open]');
+    if (!nameEl || !swatch || !door || !groupEl) return;
+
+    initRecordPeek(panel, {
+      trigger: 'data-open-classification',
+      template: 'data-classification-peek',
+      paint: (template, slug) => {
+        // This browser's settings edits win over the build's name and colour.
+        const edit = getEntry('classification', slug);
+        const href = template.dataset.href ?? '#';
+        nameEl.textContent = edit?.name ?? template.dataset.name ?? '';
+        swatch.style.background = edit?.color ?? template.dataset.color ?? '';
+        door.href = href;
+        openLink?.setAttribute('href', href);
+        const group = edit?.group ? getEntry('classificationGroup', edit.group)?.name : undefined;
+        const label = group ?? template.dataset.group ?? '';
+        groupEl.hidden = !label;
+        const badge = groupEl.querySelector('.esa-badge__text');
+        if (badge) badge.textContent = label;
+      },
+    });
+  });
+</script>

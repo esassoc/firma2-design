@@ -16,8 +16,7 @@
 // source fills them in — a control that rewrites the fields below it reads as
 // cause and effect; one that rewrites fields above it reads as a glitch. It
 // carries access, permissions and notifications, never members, projects or
-// details; the help line says so, since "settings" alone does not say where
-// it stops.
+// details; the help line says so once a source is picked.
 //
 // NOTHING REACHES A SERVER. Add writes the new organization to this viewer's
 // browser (src/lib/added-organizations.ts) and returns to the list, which
@@ -38,7 +37,7 @@ const listHref = withBase('/prototypes/workspace-settings/organizations');
 const sourceOptions = [
   // A real value, not '': esa-select reads an empty value as "nothing chosen"
   // and shows its placeholder instead of this option.
-  { value: 'none', label: 'None — use workspace defaults' },
+  { value: 'none', label: 'Workspace defaults' },
   ...organizations.map((o) => ({ value: o.slug, label: o.name })),
 ];
 // What each source copies into the access selects. Every fixture organization
@@ -49,17 +48,16 @@ const sources = Object.fromEntries(
 
 const toOptions = (choices: { value: string; label: string }[]) =>
   JSON.stringify(choices.map(({ value, label }) => ({ value, label })));
-const hintsOf = (choices: { value: string; hint: string }[]) =>
+const hintsOf = (choices: { value: string; hint?: string }[]) =>
   JSON.stringify(Object.fromEntries(choices.map((c) => [c.value, c.hint])));
-const hintFor = (choices: { value: string; hint: string }[], value: string) =>
-  choices.find((c) => c.value === value)?.hint ?? '';
+const hintFor = (choices: { value: string; hint?: string }[], value: string) =>
+  choices.find((c) => c.value === value)?.hint || undefined;
 
 // Workspace defaults, the same as Organization settings › Access: Public (a
 // restoration organization's projects are public record) and invitation
 // required (widening later is one edit; narrowing cannot un-admit anyone).
 const DEFAULTS = { visibility: 'public', joining: 'invite' };
-const SOURCE_HINT_NONE = 'Start from the workspace defaults.';
-const SOURCE_HINT_COPY = 'Copies access, permissions, and notifications. Members, projects, and details aren’t copied.';
+const SOURCE_HINT_COPY = 'Copies access, permissions and notifications only.';
 ---
 <form
   class="firma2-organization-create-form stack"
@@ -69,7 +67,6 @@ const SOURCE_HINT_COPY = 'Copies access, permissions, and notifications. Members
   data-sources={JSON.stringify(sources)}
   data-names={JSON.stringify(organizations.map((o) => o.name))}
   data-defaults={JSON.stringify(DEFAULTS)}
-  data-source-hint-none={SOURCE_HINT_NONE}
   data-source-hint-copy={SOURCE_HINT_COPY}
 >
   <Firma2RailSection title="Details">
@@ -91,7 +88,6 @@ const SOURCE_HINT_COPY = 'Copies access, permissions, and notifications. Members
         label="Copy settings from"
         size="md"
         options={JSON.stringify(sourceOptions)}
-        help-text={SOURCE_HINT_NONE}
         data-seed="none"
         data-org-source
       ></esa-select>
@@ -171,7 +167,7 @@ const SOURCE_HINT_COPY = 'Copies access, permissions, and notifications. Members
       [visibility, joining].forEach((el) => el.addEventListener('change', () => syncHint(el)));
       source.addEventListener('change', () => {
         const picked = sources[source.value];
-        source.helpText = picked ? form.dataset.sourceHintCopy ?? '' : form.dataset.sourceHintNone ?? '';
+        source.helpText = picked ? form.dataset.sourceHintCopy ?? '' : '';
         if (picked) setAccess(picked.visibility, picked.joining);
         else setAccess(defaults.visibility, defaults.joining);
       });
@@ -194,7 +190,7 @@ const SOURCE_HINT_COPY = 'Copies access, permissions, and notifications. Members
       const error = !value
         ? 'Enter the organization’s name.'
         : taken.has(value.toLowerCase())
-          ? 'An organization with this name is already in the workspace.'
+          ? 'An organization already has this name.'
           : '';
       if (error) {
         name.errorText = error;

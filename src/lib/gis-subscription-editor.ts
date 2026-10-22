@@ -147,11 +147,9 @@ export const mountSubscriptionEditor = (root: HTMLElement, onChange: (draft: Sub
     f.extra.value = [...draft.extraFields];
     const shapeId = [layer.globalIdField, layer.objectIdField].includes(draft.joinField);
     f.join.helpText = shapeId
-      ? `${draft.joinField} identifies a shape, not a project, and changes when the layer is republished — every project would look abandoned. Choose a project number or grant ID.`
-      : 'The field holding each project’s external ID, such as a project number.';
+      ? `${draft.joinField} changes when the layer is republished. Choose a project number or grant ID.`
+      : 'Each project’s external ID, such as a project number.';
     f.join.errorText = '';
-    f.featureId.helpText = 'Only matters when one project has several shapes.';
-    f.label.helpText = 'What each shape is called on the map.';
     paintMappings();
   };
 
@@ -193,9 +191,8 @@ export const mountSubscriptionEditor = (root: HTMLElement, onChange: (draft: Sub
     f.layer.hidden = !arcgis;
     $('[data-read-wrap]').hidden = arcgis;
     $('[data-access-help]').textContent = arcgis
-      ? `No credentials needed. Share feature services into ${config.group.title}, where the ProjectFirma ArcGIS account is a member. Nothing is stored here.`
-      : 'A service anyone can read without signing in. It must return GeoJSON — for ArcGIS, the query URL with f=geojson.';
-    f.url.helpText = arcgis ? 'Filled in from the layer you choose.' : '';
+      ? `Share feature services into ${config.group.title}.`
+      : 'Must return GeoJSON. For ArcGIS, add f=geojson to the query URL.';
     f.url.disabled = arcgis;
   };
 

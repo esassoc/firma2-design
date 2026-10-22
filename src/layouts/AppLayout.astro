@@ -20,6 +20,7 @@ import { CONTENT_MAX, CONTENT_READING } from '../lib/content-width';
 import Firma2PagesNav from '../components/shared/firma2-pages-nav.astro';
 import Firma2NavArrange from '../components/shared/firma2-nav-arrange.astro';
 import Firma2TopBar from '../components/shared/firma2-top-bar.astro';
+import Firma2UtilityBar from '../components/shared/firma2-utility-bar.astro';
 import { seedEntries } from '../data/firma2-pages';
 import { pagesNavItems } from '../lib/custom-pages';
 
@@ -115,6 +116,7 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
       <Firma2TopBar />
       {width === 'full' ? <slot /> : <EsaContainer maxWidth={width === 'reading' ? CONTENT_READING : CONTENT_MAX}><slot /></EsaContainer>}
     </EsaAppShell>
+    <Firma2UtilityBar />
   </div>
   {nav === 'app' && <Firma2PagesNav />}
   {nav === 'app' && <Firma2NavArrange />}
@@ -798,7 +800,12 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
        below), and --firma2-fold is the height of that scrollport: every sticky
        panel that used to size itself to 100dvh sizes itself to this instead. */
     --firma2-gutter: var(--spacing-200, 8px);
-    --firma2-fold: calc(100dvh - 2 * var(--firma2-gutter));
+    /* The sheet stops a strip short of the window's foot: firma2-utility-bar
+       (Recent, Help, Shortcuts) sits on the frame below it, Linear's frame foot
+       (user, 2026-10-21). The strip replaces the bottom gutter, so the fold is
+       one gutter and one strip shorter than the viewport. */
+    --firma2-utility-height: 40px;
+    --firma2-fold: calc(100dvh - var(--firma2-gutter) - var(--firma2-utility-height));
     /* The sheet's surface: RAISED, not default. The sheet is a panel above the
        frame, and Radix lifts a panel one step in dark (its --color-panel-solid
        is gray-2) rather than sinking what is behind it. Light resolves raised
@@ -835,9 +842,9 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
   .firma2-app-frame :global(.esa-app-shell) {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    /* ONE row. The bar used to hold the top one; with the bar gone the rail and
-       the content are the whole grid, side by side. */
-    grid-template-rows: minmax(0, 1fr);
+    /* The sheet's row, then the utility strip's under it. The rail, its foot
+       and its grip span both, so only the content column gives up the strip. */
+    grid-template-rows: minmax(0, 1fr) auto;
     /* `overflow: visible` undoes the shell's own `overflow: hidden`, and it is
        load-bearing rather than tidying: an `overflow: hidden` ancestor becomes
        the scrollport for every sticky descendant, so the rail below would have
@@ -862,7 +869,7 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
      resolve against that 100dvh, so a long nav still scrolls within the rail. */
   .firma2-app-frame :global(.esa-app-shell__nav) {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / -1;
     position: sticky;
     top: 0;
     align-self: start;
@@ -935,6 +942,7 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
        a fling at the end of a page from bouncing the frame around it. */
     margin: var(--firma2-gutter);
     margin-inline-start: 0;
+    margin-block-end: 0;
     block-size: var(--firma2-fold);
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -977,10 +985,21 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
       transition: none;
     }
   }
-  /* A phone has no gutter to spare: the sheet goes back to the full pane. */
+  /* The utility strip's place: under the content column, in the frame's
+     gutter rather than on the sheet. */
+  .firma2-app-frame :global(.esa-app-shell > .firma2-utility-bar) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  /* A phone has no gutter to spare: the sheet goes back to the full pane, and
+     the strip goes with the gutter. */
   @media (max-width: 40rem) {
     .firma2-app-frame {
       --firma2-gutter: 0px;
+      --firma2-utility-height: 0px;
+    }
+    .firma2-app-frame :global(.esa-app-shell > .firma2-utility-bar) {
+      display: none;
     }
     .firma2-app-frame :global(.esa-app-shell__content) {
       border-radius: 0;
@@ -1023,7 +1042,7 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
        follows it down to 72px when it collapses — no width of its own, and no
        second place to keep that number in sync. */
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / -1;
     align-self: end;
     /* The rail holds the fold with `top: 0`; this holds the other edge. Both are
        sticky because the document is what scrolls (see the frame rule at the top
@@ -1032,6 +1051,11 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     position: sticky;
     bottom: 0;
     z-index: var(--z-sidebar, 100);
+    /* One hairline short of the rail's edge. The sheet's outline is a 1px ring
+       painted OUTSIDE the sheet — on the rail's last pixel column — and a
+       full-width strip at this z-index covered it, so the sheet's edge stopped
+       at the strip's top line and its bottom corner came out unoutlined. */
+    margin-inline-end: var(--border-width-default, 1px);
 
     /* Account leading, collapse trailing. `space-between` rather than a gap so
        the toggle keeps the rail's trailing edge whatever the name's length —
@@ -1046,15 +1070,12 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
        lands on the same left edge as every nav item's icon above it. */
     padding: var(--spacing-200, 8px);
 
-    /* The rail's surface and the rail's edge, both read from the same tokens
-       esa-sidebar-nav uses (--color-background-elevation-sunken /
-       --color-border-default-subtle). The strip is laid OVER the rail rather
-       than inside it, so it has to paint the same surface or it would read as a
-       panel floating on the nav. The top hairline is the only thing that says
-       it is a separate region — the same weight the rail's own group headings
-       use. */
+    /* The rail's surface, read from the same token esa-sidebar-nav uses
+       (--color-background-elevation-sunken). The strip is laid OVER the rail
+       rather than inside it, so it has to paint the same surface or it would
+       read as a panel floating on the nav. No top hairline (user, 2026-10-21):
+       the strip is the rail's foot, not a separate region. */
     background: var(--color-background-elevation-sunken, #f0f0f0);
-    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
   }
 
   /* ---- THE RAIL'S EDGE HANDLE ----
@@ -1089,7 +1110,7 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
      what makes it sit ON the line instead of inside it. */
   .firma2-app-frame :global(.esa-app-shell > bcn-edge-handle) {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / -1;
     justify-self: end;
     align-self: start;
     position: sticky;

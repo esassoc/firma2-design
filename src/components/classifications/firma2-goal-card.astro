@@ -11,9 +11,21 @@
 // A goal with no KPIs says so in place (esa-empty-state): that is a goal
 // nobody can report progress toward, which an administrator needs to see.
 //
-// The board repaints every card from this browser's edits (renames, KPIs
+// The board repaints every card from this browser's edits (description,
+// counts and the "+N more" line included) (renames, KPIs
 // linked or unlinked, targets) — see firma2-goal-board; the data hooks here
 // are what it writes into.
+//
+// A SCAN CARD, THE SAME HEIGHT AS ITS NEIGHBOURS (user, 2026-10-21, the
+// "compact scan card"). Top to bottom: the name and the side-panel button;
+// the description, clamped to two lines (classification names are terse —
+// "Plan goal" — and the sentence is what says what the goal is); the first
+// three measures as one-line rows with the share of the goal; "+N more
+// measures"; and, on the card's floor, a line counting projects and funders, the scale of the
+// effort. Every slot holds its height, so cards sit in a grid without
+// ragged rows. Everything else — the full figures, every measure, cost,
+// spend, the measures and projects as links — is the peek
+// (firma2-classification-peek), opened from the button beside the name.
 //
 // Each KPI is firma2-kpi-progress — the ring a project's measures use, so
 // progress against a measure looks the same on every surface.
@@ -26,6 +38,7 @@ import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-card-section.css';
 import Firma2KpiProgress from './firma2-kpi-progress.astro';
+import Firma2ProjectPeekButton from '../projects/firma2-project-peek-button.astro';
 import type { ClassificationRollup } from '../../data/firma2-classification-rollup';
 import { classificationHref } from '../../data/firma2-classification-rollup';
 import { withBase } from '../../lib/base';
@@ -37,43 +50,107 @@ interface Props {
 const { rollup } = Astro.props;
 const { classification: c, kpis, projects } = rollup;
 const titleId = `goal-${c.slug}`;
+// The board repaints both strings from settings edits (firma2-goal-board).
+const SHOWN = 3;
+const more = (n: number) => `+${n - SHOWN} more ${n - SHOWN === 1 ? 'measure' : 'measures'}`;
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 ---
-<div class="firma2-goal-card" data-goal-card data-slug={c.slug}>
+<div class="firma2-goal-card" data-goal-card data-slug={c.slug} data-peek-row>
 <EsaCard>
-  <div slot="header" class="firma2-goal-card__header repel" data-gap="sm">
+  <div slot="header" class="firma2-peek-pair">
     <h3 class="firma2-goal-card__title typography-title-sm-strong" id={titleId}>
       <a class="firma2-goal-card__link cluster" data-gap="xs" href={withBase(classificationHref(c.slug))} data-card-link>
         <span class="firma2-goal-card__swatch" style={`background:${c.color}`} aria-hidden="true" data-card-swatch></span>
         <span data-card-name>{c.name}</span>
       </a>
     </h3>
-    <span class="typography-body-sm firma2-goal-card__count" data-card-count>{projects.length} {projects.length === 1 ? 'project' : 'projects'}</span>
+    <Firma2ProjectPeekButton slug={c.slug} name={c.name} kind="classification" />
   </div>
-  <div data-kpi-empty hidden={kpis.length > 0}>
-    <EsaEmptyState size="sm" title="No performance measures yet" description="Link one to track progress here." />
+  <div class="firma2-goal-card__body stack" data-gap="md">
+    <div class="firma2-goal-card__description">
+      <p data-card-desc>{c.description}</p>
+    </div>
+    <div data-kpi-empty hidden={kpis.length > 0}>
+      <EsaEmptyState size="sm" title="No performance measures yet" />
+    </div>
+    <ul class="firma2-goal-card__kpis stack" data-gap="sm" aria-labelledby={titleId} data-kpi-list>
+      {kpis.map((k) => (
+        <li>
+          <Firma2KpiProgress
+            compact
+            name={k.measure.name}
+            unit={k.unit}
+            decimals={k.measure.decimalPlaces}
+            reported={k.reported}
+            committed={k.committed}
+            goal={k.goal?.value}
+            goalYear={k.goal?.year}
+            from={[]}
+          />
+        </li>
+      ))}
+    </ul>
+    <p class="firma2-goal-card__more typography-body-md" data-kpi-more hidden={kpis.length <= SHOWN}>{more(kpis.length)}</p>
+    <!-- Not esa-card's footer slot: it fills a band and sets meta type, and
+         the counts are the effort's scale, not a caption. -->
+    <p class="firma2-goal-card__meta typography-body-md">
+      <span data-card-count>{plural(projects.length, 'project')}</span> · <span data-card-funders>{plural(rollup.funders, 'funder')}</span>
+    </p>
   </div>
-  <ul class="firma2-goal-card__kpis stack" data-gap="lg" aria-labelledby={titleId} data-kpi-list>
-    {kpis.map((k) => (
-      <li>
-        <Firma2KpiProgress
-          name={k.measure.name}
-          unit={k.unit}
-          decimals={k.measure.decimalPlaces}
-          reported={k.reported}
-          committed={k.committed}
-          goal={k.goal?.value}
-          goalYear={k.goal?.year}
-          from={[]}
-        />
-      </li>
-    ))}
-  </ul>
 </EsaCard>
 </div>
 
 <style>
-  .firma2-goal-card__header {
-    inline-size: 100%;
+  /* Same height as the row's tallest card, footer on the floor. */
+  .firma2-goal-card {
+    display: grid;
+  }
+  .firma2-goal-card > :global(.esa-card) {
+    display: flex;
+    flex-direction: column;
+  }
+  .firma2-goal-card :global(.esa-card__body) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .firma2-goal-card__body {
+    flex: 1;
+  }
+
+  /* Two lines, held even when the sentence is shorter — the measures start
+     at the same height on every card. */
+  .firma2-goal-card__description {
+    min-block-size: 2lh;
+  }
+  .firma2-goal-card__description p {
+    margin: 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* Three rows; the rest are the peek's. Repainted lists follow the same rule. */
+  .firma2-goal-card__kpis > :global(li:nth-child(n + 4)) {
+    display: none;
+  }
+
+  .firma2-goal-card__more {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-goal-card__more[hidden] {
+    display: none;
+  }
+
+  /* On the card's floor, whatever sits above it. */
+  .firma2-goal-card__meta {
+    margin: auto 0 0;
+    padding-block-start: var(--spacing-200, 0.5rem);
+    color: var(--color-content-default-secondary, #646464);
   }
 
   .firma2-goal-card__title {
@@ -98,10 +175,6 @@ const titleId = `goal-${c.slug}`;
     flex: none;
   }
 
-  .firma2-goal-card__count {
-    margin: 0;
-    color: var(--color-content-default-secondary, #646464);
-  }
 
   .firma2-goal-card__kpis {
     margin: 0;

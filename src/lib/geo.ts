@@ -85,9 +85,9 @@ export const coordinateProblem = (latText: string, lngText: string): string | nu
   if (!latText.trim() || !lngText.trim()) return null;
   const lat = Number(latText);
   const lng = Number(lngText);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'Both values need to be numbers, like 40.0231 and -122.0654.';
-  if (lat < -90 || lat > 90) return 'Latitude runs from -90 to 90. Check the first number.';
-  if (lng < -180 || lng > 180) return 'Longitude runs from -180 to 180. Check the second number.';
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'Enter numbers, like 40.0231 and -122.0654.';
+  if (lat < -90 || lat > 90) return 'Latitude must be between -90 and 90.';
+  if (lng < -180 || lng > 180) return 'Longitude must be between -180 and 180.';
   return null;
 };
 
@@ -97,7 +97,7 @@ export const coordinateProblem = (latText: string, lngText: string): string | nu
  * project that lands in China and, zoomed in, looks like nothing happened.
  */
 export const coordinateWarning = (lngText: string): string | null =>
-  Number(lngText) > 0 ? 'That longitude is east of Greenwich, on the other side of the world. In California it is negative.' : null;
+  Number(lngText) > 0 ? 'Longitude is positive. In California it’s negative.' : null;
 
 /** "62 acres", "4.1 miles" — the unit is part of the value. */
 export const formatExtent = (extent: number | null, unit: 'acres' | 'miles' | null): string => {

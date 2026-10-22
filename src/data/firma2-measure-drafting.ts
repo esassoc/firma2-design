@@ -100,9 +100,7 @@ export const DRAFT_ACTIVITIES: DraftActivity[] = [
       label: 'treatment',
       say: 'broken down by how we treated it',
     },
-    warnings: [
-      'Fencing and planting the same ground are two entries, one per treatment. Say so in the guidance, or reporters will pick one and the other goes uncounted.',
-    ],
+    warnings: [],
   },
   {
     id: 'invasive-removal',
@@ -171,9 +169,7 @@ export const DRAFT_ACTIVITIES: DraftActivity[] = [
       options: ['Within 100 feet of a structure', 'Open ground', 'Unspecified'],
       say: 'and whether it was right behind homes or out on open ground',
     },
-    warnings: [
-      'Herd size and herding days describe effort, not ground treated, so they are left out. Two programs with the same acres and twice the goats did the same work.',
-    ],
+    warnings: [],
   },
   {
     id: 'fuels-thinning',
@@ -242,7 +238,7 @@ export const DRAFT_ACTIVITIES: DraftActivity[] = [
       say: 'and which species they were',
     },
     warnings: [
-      'This species list also holds a frog, a turtle and a bird. Cut it to the salmon you place carcasses for, so reporters are not offered species that never apply.',
+      'Cut this species list to the salmon you place carcasses for.',
     ],
   },
   {
@@ -265,7 +261,7 @@ export const DRAFT_ACTIVITIES: DraftActivity[] = [
       say: 'by the kind of barrier we removed',
     },
     warnings: [
-      'Barriers removed are already counted by “Fish passage barriers removed”. This one adds what each removal was worth — keep both only if your funder asks for miles.',
+      'Overlaps “Fish passage barriers removed”. Keep both only if your funder asks for miles.',
     ],
   },
   {
@@ -311,7 +307,7 @@ export const DRAFT_ACTIVITIES: DraftActivity[] = [
       say: 'by what we did to the road',
     },
     warnings: [
-      'This is an estimate from a model, not a measurement. Name the inventory method in the definition so two projects compute it the same way.',
+      'Name the inventory method in the definition.',
     ],
   },
   {
@@ -327,9 +323,7 @@ export const DRAFT_ACTIVITIES: DraftActivity[] = [
     reporterGuidance: 'Report the seven-day average maximum from the same station every year.',
     say: 'how warm our streams get in summer',
     sentence: 'At this station, this summer, the seven-day maximum was [N] °C',
-    warnings: [
-      'A temperature is a condition, not work done. Readings do not add up, so this measure shows each reading on its own and no program total.',
-    ],
+    warnings: [],
   },
 
   // --- Flood risk reduction ------------------------------------------------
@@ -384,7 +378,7 @@ export const DRAFT_ACTIVITIES: DraftActivity[] = [
     say: 'how much water we saved',
     sentence: 'On this project, this year, we saved [N] of water',
     warnings: [
-      'Water savings are reported in acre-feet, which is not on the unit list. The draft leaves the unit empty — ask an administrator to add acre-feet before this can collect.',
+      'Acre-feet isn’t on the unit list. Ask an administrator to add it.',
     ],
   },
   {
@@ -450,9 +444,7 @@ export const DRAFT_ACTIVITIES: DraftActivity[] = [
       options: ['School program', 'Volunteer day', 'Public meeting', 'Unspecified'],
       say: 'by the kind of event',
     },
-    warnings: [
-      'Attendance says who showed up, not what they learned. If the funder wants to know what changed, that needs a survey, not this number.',
-    ],
+    warnings: [],
   },
 ];
 
@@ -480,13 +472,10 @@ export const funderAnswers = (a: DraftActivity): FunderAnswer[] => {
 };
 
 /**
- * The line under the cost question — what the choice costs a reporter, said
- * while it is still open.
+ * The line under the cost question. Empty: the burden meter on each choice
+ * already shows what it costs a reporter, so the caller hides the line.
  */
-export const costOfSplit = (a: DraftActivity): string => {
-  if (!a.split) return 'One number per project, every year.';
-  return `One total is one number per project, every year. Splitting by ${a.split.label} adds a pick to every entry, on every project, for as long as the measure runs.`;
-};
+export const costOfSplit = (_a: DraftActivity): string => '';
 
 export const claimFor = (a: DraftActivity, split: boolean): string =>
   `I need to tell my funder ${a.say}${split && a.split ? `, ${a.split.say}` : ''}.`;
@@ -506,12 +495,12 @@ const OUTCOME_CUES: { pattern: RegExp; warning: string }[] = [
   {
     pattern: /\b(more|extra)\b[^.]*\b(fish|salmon|juveniles?|young)\b|\bbecause of (it|this|them)\b/,
     warning:
-      'Your claim also asks how much difference the work made. Proving that needs a study against untreated places, not a reporting field, so this measure leaves it out.',
+      'Left out how much difference the work made — that needs a study, not a reporting field.',
   },
   {
     pattern: /\b(happier|healthier|better off|improv\w*)\b/,
     warning:
-      'Your claim asks whether things got better. Reporters would each judge that differently, so this measure leaves it out. If it matters, give it its own outcome measure.',
+      'Left out whether things got better. Give it its own outcome measure if it matters.',
   },
 ];
 
@@ -576,7 +565,7 @@ export const payoff = (d: MeasureDraftResult): string => {
   const by = d.split && d.activity.split ? `, split by ${d.activity.split.label}` : '';
   return sums
     ? `A program total${by}, for any year and any project.`
-    : `Each reading on its own${by}. No program total, because readings do not add up.`;
+    : `Each reading on its own${by}, with no total.`;
 };
 
 const capitalise = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);

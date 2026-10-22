@@ -19,7 +19,7 @@ import type { Breakdown } from '../data/firma2-performance-measures';
 import { nameButton } from './name-button';
 
 const ERR_QUESTION = 'Add a question to save it.';
-const ERR_OPTIONS = 'Add at least two options to save it — one option splits nothing.';
+const ERR_OPTIONS = 'Add at least two options to save it.';
 const ERR_OPTION_NAME = 'Name the option.';
 const ERR_OPTION_TAKEN = 'Already in this breakdown.';
 const NOTE_NEW = 'Saves once it has a question and two options.';
@@ -51,9 +51,6 @@ export interface SchemaBoard {
   /** Retired: nothing edits, moves or retires — the measure takes no new figures. Repaints when it changes. */
   setFrozen: (frozen: boolean) => void;
 }
-
-/** What a retired breakdown says under its "Retired" pill. */
-const RETIRED_NOTE = 'Reporters are no longer asked this. Entries already filed keep their answers.';
 
 let idSeq = 0;
 /** An id for a breakdown made in this browser. Unique per page load and across reloads. */
@@ -197,15 +194,14 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
     p.textContent = message ?? '';
   };
 
-  /** The line under a heading: what a new one needs, or why a retired one recedes. */
+  /** The line under a heading: what a new one still needs. */
   const paintMeta = (li: HTMLLIElement) => {
     const meta = li.querySelector<HTMLElement>('.firma2-schema-board__meta')!;
     const pill = li.querySelector<HTMLElement>('.firma2-schema-board__head > .firma2-schema-board__marker');
     const retired = 'retired' in li.dataset;
     if (pill) pill.hidden = !retired;
     if (retired) {
-      meta.hidden = false;
-      meta.textContent = RETIRED_NOTE;
+      meta.hidden = true;
     } else if (!li.dataset.saved) {
       meta.hidden = false;
       meta.textContent = NOTE_NEW;
@@ -457,7 +453,7 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
       li.replaceWith(swapped);
       relink();
       hooks.onChange();
-      announce(action === 'retire' ? `${label} retired. Reporters are no longer asked it; past entries keep their answers.` : `${label} restored. Reporters are asked it again.`);
+      announce(action === 'retire' ? `${label} retired. Past entries keep their answers.` : `${label} restored.`);
       focusLater(swapped.querySelector<HTMLElement>('.firma2-schema-board__menu button'));
     });
     const pill = retiredPill();

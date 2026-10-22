@@ -75,7 +75,6 @@ const config = {
   <div class="stack" data-gap="lg" data-view="disconnected">
     <EsaEmptyState
       title="Connect your ArcGIS account"
-      description="Sign in once, link a layer, and keep projects current from either side."
     />
     <div class="firma2-gis-sync__center">
       <EsaButton variant="primary" size="md" data-connect>Connect ArcGIS</EsaButton>
@@ -124,7 +123,6 @@ const config = {
 
     <Firma2RailSection title="Sync direction by field">
       <div class="stack" data-gap="lg">
-        <p class="typography-body-md">Each field follows one side, or whichever changed last.</p>
         <ul class="stack firma2-gis-sync__rows" data-gap="lg" data-rows></ul>
         <div data-access-alert hidden>
           <EsaAlertBox variant="warning" title="Edit access needed">
@@ -140,7 +138,7 @@ const config = {
     <Firma2RailSection title="Changed in both places">
       <div class="stack" data-gap="lg">
         <div data-no-conflicts>
-          <EsaEmptyState title="No conflicts" description="Fields changed on both sides since the last sync show up here." />
+          <EsaEmptyState title="No conflicts" />
         </div>
         <div class="stack" data-gap="lg" data-conflicts></div>
       </div>
@@ -170,7 +168,7 @@ const config = {
     heading="Disconnect ArcGIS?"
     confirm-label="Disconnect"
     cancel-label="Stay connected"
-    message="Every project keeps its shapes and fields, still editable here. Syncing stops until you connect again."
+    message="Projects keep their shapes and fields."
   ></esa-confirm-dialog>
 </div>
 
@@ -373,7 +371,7 @@ const config = {
         const ctl = rowControls.get(row.key)!;
         const cur = state.fields[row.key] ?? { direction: 'none' as Direction, layerField: '' };
         ctl.direction.value = cur.direction;
-        ctl.direction.helpText = needsEdit && ['app', 'both'].includes(cur.direction) ? 'Writes to your layer, which needs edit access.' : '';
+        ctl.direction.helpText = needsEdit && ['app', 'both'].includes(cur.direction) ? 'Needs edit access.' : '';
         // Shapes are the geometry itself: nothing to pick. Unsynced fields pick nothing either.
         ctl.cell.hidden = row.layerField === null || cur.direction === 'none';
         ctl.layerField.options = fieldOptions(layer);
@@ -402,12 +400,9 @@ const config = {
         .map((f) => ({ value: f.name, label: `${f.name}${f.alias ? ` — ${f.alias}` : ''} · ${counts[f.name] ?? 0} of ${total} projects` }));
       joinSel.value = state.joinField;
       const shapeId = [layer.globalIdField, layer.objectIdField].includes(state.joinField);
-      const suggested = config.suggested[layer.id];
       joinSel.helpText = shapeId
-        ? `${state.joinField} identifies a shape, not a project, and changes when the layer is republished. Choose a project number.`
-        : state.joinField && state.joinField === suggested
-          ? `Suggested: it matches the most projects.`
-          : '';
+        ? `${state.joinField} identifies a shape, not a project. Choose a project number.`
+        : '';
 
       const hit = matched();
       const features = config.featureCounts[layer.id] ?? 0;
@@ -443,7 +438,7 @@ const config = {
 
       const w = writes();
       $('[data-access-alert]').hidden = !(w > 0 && state.access === 'read');
-      $('[data-access-text]').textContent = `${n(w, 'field writes', 'fields write')} to your layer, and ProjectFirma can only read it now. Ask your ArcGIS administrator for edit access in ${config.group.title}, then check again.`;
+      $('[data-access-text]').textContent = `Ask your ArcGIS administrator for edit access in ${config.group.title}.`;
       setLabel($('[data-check-access]'), busy === 'access' ? 'Checking…' : 'Check edit access');
 
       // A conflict exists only where a field is set to "Either way" and a sync has found it.
@@ -487,7 +482,7 @@ const config = {
 
     $('[data-link]').addEventListener('click', () => {
       if (!matched()) {
-        joinSel.errorText = 'No project matches this field. Choose one that holds project numbers.';
+        joinSel.errorText = 'Choose a field that holds project numbers.';
         return;
       }
       joinSel.errorText = '';
@@ -515,11 +510,11 @@ const config = {
         const open = config.conflicts.filter((c) => state.fields[c.field]?.direction === 'both' && !state.resolved.includes(`${c.project}|${c.field}`));
         const layer = layerOf()!;
         const lines = [
-          `${n(reads ? config.sync.fromLayer : 0, 'change', 'changes')} came from your layer, and ${n(writesOn && canWrite ? config.sync.toLayer : 0, 'change', 'changes')} went to it.`,
-          writesOn && !canWrite ? `${n(writes(), 'field', 'fields')} could not write: your layer is read only for ProjectFirma.` : '',
-          open.length ? `${n(open.length, 'field changed', 'fields changed')} on both sides. Both values are kept until you choose.` : '',
+          `${n(reads ? config.sync.fromLayer : 0, 'change', 'changes')} from your layer, ${n(writesOn && canWrite ? config.sync.toLayer : 0, 'change', 'changes')} to it.`,
+          writesOn && !canWrite ? `${n(writes(), 'field', 'fields')} not written: your layer is read-only.` : '',
+          open.length ? `${n(open.length, 'field changed', 'fields changed')} on both sides. Choose which to keep.` : '',
           ...(state.fields.shapes?.direction === 'layer' || state.fields.shapes?.direction === 'both'
-            ? config.sync.staleShapes.map((name) => `“${name}” is gone from the layer. It’s kept here and marked stale.`)
+            ? config.sync.staleShapes.map((name) => `“${name}” left the layer; kept as stale.`)
             : []),
           state.joinField === 'PROJ_ID' && config.unmatched[layer.id]?.length ? `Matched no project: ${config.unmatched[layer.id].join(', ')}.` : '',
         ].filter(Boolean);

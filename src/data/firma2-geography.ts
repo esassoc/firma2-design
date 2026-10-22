@@ -256,29 +256,28 @@ export const subwatershedsNear = (project: Project, count = 4): Subwatershed[] =
 
 export type LayerKind = 'feature' | 'map' | 'wms' | 'geojson';
 
-export const LAYER_KINDS: { value: LayerKind; label: string; note: string; raster: boolean }[] = [
+export const LAYER_KINDS: { value: LayerKind; label: string; note?: string; raster: boolean }[] = [
   {
     value: 'feature',
     label: 'ArcGIS feature service',
-    note: 'Draws one layer’s shapes, and you choose how they look. What most reference boundaries want.',
     raster: false,
   },
   {
     value: 'map',
     label: 'ArcGIS map service',
-    note: 'Sends pre-rendered tiles, so it only works against a cached service — an uncached one draws nothing at all.',
+    note: 'Cached services only.',
     raster: true,
   },
   {
     value: 'wms',
     label: 'WMS',
-    note: 'The open standard your own GeoServer, MapServer or QGIS Server publishes. It sends images, so its look is fixed by the publisher.',
+    note: 'Its look is fixed by the publisher.',
     raster: true,
   },
   {
     value: 'geojson',
     label: 'GeoJSON',
-    note: 'A file, or a WFS asked for JSON. It styles like a feature service.',
+    note: 'A file, or a WFS returning JSON.',
     raster: false,
   },
 ];
@@ -366,7 +365,7 @@ export const PROBE_RESULTS: Record<LayerKind, { name: string; fields: string[]; 
   map: {
     name: 'Ownership',
     fields: [],
-    warning: 'This map service is not cached, so it has no tiles to send. Ask its publisher for a cached version, or use its feature service instead.',
+    warning: 'This service isn’t cached, so it can’t draw. Use its feature service instead.',
   },
   wms: { name: 'fire:hazard_severity', fields: [] },
   geojson: { name: 'hydrologic-regions.geojson', fields: ['REGION_NAME', 'REGION_ID'] },
@@ -463,7 +462,7 @@ export const UPLOAD_SAMPLES: Record<'gdb' | 'noprj', UploadFile> = {
   noprj: {
     fileName: 'survey-reach.zip',
     refusal: [
-      'survey_reach.prj is missing, so there is no way to know what the coordinates mean. Export the shapefile again with its projection, zip the .shp, .shx, .dbf and .prj together, and choose it here.',
+      'survey_reach.prj is missing. Zip the .shp, .shx, .dbf and .prj together and choose it again.',
     ],
     layers: [],
   },

@@ -84,19 +84,15 @@ export type FieldKind = 'choice' | 'multi-choice' | 'yes-no' | 'number' | 'money
 /** Kinds answered from the field's own closed list. */
 export const hasOptions = (kind: FieldKind): boolean => kind === 'choice' || kind === 'multi-choice';
 
-export const FIELD_KINDS: { id: FieldKind; name: string; note: string }[] = [
-  { id: 'choice', name: 'Single select', note: 'Picked from a list you control. Rolls up across projects.' },
-  { id: 'multi-choice', name: 'Multi-select', note: 'Any number picked from a list you control. Rolls up across projects.' },
-  { id: 'yes-no', name: 'Yes or no', note: 'One of two answers. Counts across projects.' },
-  { id: 'number', name: 'Number', note: 'A quantity in a fixed unit. Totals across projects.' },
-  { id: 'money', name: 'Money', note: 'An amount in dollars. Totals across projects.' },
-  { id: 'date', name: 'Date', note: 'A single day.' },
-  {
-    id: 'text',
-    name: 'Short text',
-    note: 'Free text. You can’t total or filter by it — use it for references, never for categories.',
-  },
-  { id: 'long-text', name: 'Long text', note: 'A paragraph or more. You can’t total or filter by it.' },
+export const FIELD_KINDS: { id: FieldKind; name: string; note?: string }[] = [
+  { id: 'choice', name: 'Single select' },
+  { id: 'multi-choice', name: 'Multi-select' },
+  { id: 'yes-no', name: 'Yes or no' },
+  { id: 'number', name: 'Number' },
+  { id: 'money', name: 'Money' },
+  { id: 'date', name: 'Date' },
+  { id: 'text', name: 'Short text', note: 'Can’t be totaled or filtered. Not for categories.' },
+  { id: 'long-text', name: 'Long text', note: 'Can’t be totaled or filtered.' },
 ];
 
 export const kindName = (id: FieldKind): string => FIELD_KINDS.find((k) => k.id === id)?.name ?? id;

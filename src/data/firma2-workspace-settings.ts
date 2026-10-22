@@ -62,12 +62,12 @@ export const MONTHS = [
 // ---------------------------------------------------------------------------
 
 const STAGE_COPY: Record<ProjectStage, { description: string; reports: string; publicPage: string }> = {
-  Proposal: { description: 'Submitted for review. Not yet funded.', reports: 'No', publicPage: 'Hidden' },
+  Proposal: { description: 'Submitted, not yet funded.', reports: 'No', publicPage: 'Hidden' },
   'Planning & Design': { description: 'Funded and being designed or permitted.', reports: 'No', publicPage: 'Shown' },
-  Implementation: { description: 'On the ground. Reports measures and spending each year.', reports: 'Yes', publicPage: 'Shown' },
+  Implementation: { description: 'Work underway.', reports: 'Yes', publicPage: 'Shown' },
   'Post-Implementation': { description: 'Built, and still monitored or maintained.', reports: 'Yes', publicPage: 'Shown' },
-  Completed: { description: 'Closed out. Its record is final.', reports: 'No', publicPage: 'Shown' },
-  Deferred: { description: 'Paused. It keeps its record but drops out of reports.', reports: 'No', publicPage: 'Hidden' },
+  Completed: { description: 'Closed out; the record is final.', reports: 'No', publicPage: 'Shown' },
+  Deferred: { description: 'Paused.', reports: 'No', publicPage: 'Hidden' },
 };
 
 export const stages: SettingsRow[] = STAGE_ORDER.map((stage) => ({
@@ -203,15 +203,15 @@ export interface SecuritySwitch {
   key: string;
   /** One or two words to scan down — also the switch's accessible name. */
   label: string;
-  /** What turning it on does. */
-  hint: string;
+  /** What turning it on does — omit when the label already says it. */
+  hint?: string;
   on: boolean;
 }
 
 export interface SecurityPermission {
   key: string;
   label: string;
-  hint: string;
+  hint?: string;
   value: string;
 }
 
@@ -223,13 +223,13 @@ export const workspaceSecurity = {
 };
 
 export const SIGN_IN_METHODS: SecuritySwitch[] = [
-  { key: 'signin-microsoft', label: 'Microsoft', hint: 'Agency and work accounts through Microsoft.', on: true },
-  { key: 'signin-google', label: 'Google', hint: 'Google Workspace and personal Google accounts.', on: true },
-  { key: 'signin-email', label: 'Email and password', hint: 'An email address and a password set in this workspace.', on: true },
+  { key: 'signin-microsoft', label: 'Microsoft', on: true },
+  { key: 'signin-google', label: 'Google', on: true },
+  { key: 'signin-email', label: 'Email and password', on: true },
 ];
 
 export const SIGN_IN_RULES: SecuritySwitch[] = [
-  { key: 'two-step', label: 'Two-step verification', hint: 'Everyone enters a code from an authenticator app when they sign in.', on: false },
+  { key: 'two-step', label: 'Two-step verification', hint: 'Required for everyone.', on: false },
 ];
 
 export const IDLE_TIMEOUTS: SecurityChoice[] = [
@@ -249,27 +249,27 @@ export const PERMISSION_AUDIENCES: SecurityChoice[] = [
 // Workspace-wide acts only. What each role may edit and approve is fixed by the
 // role itself (docs/roles-and-permissions.md), so it has no setting here.
 export const SECURITY_PERMISSIONS: SecurityPermission[] = [
-  { key: 'perm-invite', label: 'Invite people', hint: 'Send invitations to join the workspace. Stewards can always invite people into their own organization.', value: 'admins' },
-  { key: 'perm-organizations', label: 'Add organizations', hint: 'Add organizations to the directory and the pickers.', value: 'stewards' },
-  { key: 'perm-projects', label: 'Create projects', hint: 'Start a new project record.', value: 'editors' },
+  { key: 'perm-invite', label: 'Invite people', hint: 'Stewards can always invite to their own organization.', value: 'admins' },
+  { key: 'perm-organizations', label: 'Add organizations', value: 'stewards' },
+  { key: 'perm-projects', label: 'Create projects', value: 'editors' },
   // Goals are the initiative's to set, so administrators by default; a
   // workspace that has its program staff set up goals opens it wider.
-  { key: 'perm-classifications', label: 'Manage classifications', hint: 'Set up classification groups and classifications, with their performance measures and goal targets.', value: 'admins' },
+  { key: 'perm-classifications', label: 'Manage classifications', value: 'admins' },
   // A target commits a project to an amount on a performance measure; PM 2
   // keeps that with administrators, so it starts there (user, 2026-10-09).
-  { key: 'perm-targets', label: 'Set project targets', hint: 'Commit a project to an amount on a performance measure, or clear it. Anyone who can edit a project can still report against it.', value: 'admins' },
+  { key: 'perm-targets', label: 'Set project targets', hint: 'Project editors can still report.', value: 'admins' },
   // QA/QC happens at publish (user, 2026-10-09): editors change their records
   // freely, and the public sees a project only once someone trusted to check it
   // has published it. Stewards and administrators by default.
-  { key: 'perm-publish', label: 'Publish projects', hint: 'Review what changed on a project and update its public page.', value: 'stewards' },
-  { key: 'perm-import', label: 'Import data', hint: 'Bring in projects and records from a spreadsheet or GIS file.', value: 'admins' },
-  { key: 'perm-export', label: 'Export data', hint: 'Download projects, funding and measures as a spreadsheet.', value: 'stewards' },
-  { key: 'perm-api', label: 'Create API tokens', hint: 'Let another system read and change workspace data.', value: 'admins' },
+  { key: 'perm-publish', label: 'Publish projects', value: 'stewards' },
+  { key: 'perm-import', label: 'Import data', value: 'admins' },
+  { key: 'perm-export', label: 'Export data', value: 'stewards' },
+  { key: 'perm-api', label: 'Create API tokens', value: 'admins' },
 ];
 
 export const PUBLIC_SITE: SecuritySwitch[] = [
-  { key: 'public-pages', label: 'Public access', hint: 'Anyone can view published projects, public pages and the map without signing in.', on: true },
-  { key: 'public-contacts', label: 'Contact details', hint: 'Show email addresses and phone numbers on public pages. Names always show.', on: false },
+  { key: 'public-pages', label: 'Public access', hint: 'Published projects, pages and the map, without signing in.', on: true },
+  { key: 'public-contacts', label: 'Contact details', hint: 'Names always show.', on: false },
 ];
 
 // ---------------------------------------------------------------------------
@@ -289,9 +289,9 @@ export const customPagesSettings = {
 // Same audiences as Security's workspace permissions, so "who can" reads the
 // same ladder on both pages.
 export const CUSTOM_PAGE_PERMISSIONS: SecurityPermission[] = [
-  { key: 'pages-create', label: 'Create pages', hint: 'Add pages and folders to the rail.', value: 'editors' },
-  { key: 'pages-edit', label: 'Edit any page', hint: 'Change any page’s title, text and folder. Authors can always edit their own.', value: 'stewards' },
-  { key: 'pages-delete', label: 'Delete pages', hint: 'Remove pages and folders. Pages in a deleted folder move to the top of Pages.', value: 'admins' },
+  { key: 'pages-create', label: 'Create pages', value: 'editors' },
+  { key: 'pages-edit', label: 'Edit any page', hint: 'Authors can always edit their own.', value: 'stewards' },
+  { key: 'pages-delete', label: 'Delete pages', value: 'admins' },
 ];
 
 export const CUSTOM_PAGE_VISIBILITY: SecurityChoice[] = [
@@ -301,7 +301,7 @@ export const CUSTOM_PAGE_VISIBILITY: SecurityChoice[] = [
 ];
 
 export const CUSTOM_PAGE_PUBLISHING: SecuritySwitch[] = [
-  { key: 'pages-review', label: 'Review before publishing', hint: 'New and changed pages stay drafts until someone who can edit any page approves them.', on: false },
+  { key: 'pages-review', label: 'Review before publishing', hint: 'Anyone who can edit any page approves.', on: false },
 ];
 
 export const CUSTOM_PAGE_HISTORY: SecurityChoice[] = [
@@ -311,9 +311,9 @@ export const CUSTOM_PAGE_HISTORY: SecurityChoice[] = [
 ];
 
 export const CUSTOM_PAGE_EVENTS: SecuritySwitch[] = [
-  { key: 'notify-published', label: 'Page published', hint: 'A new page goes live, or a draft is approved.', on: true },
-  { key: 'notify-edited', label: 'Page edited', hint: 'Someone changes a page’s title or text.', on: true },
-  { key: 'notify-removed', label: 'Page moved or deleted', hint: 'A page changes folder or is removed.', on: false },
+  { key: 'notify-published', label: 'Page published', on: true },
+  { key: 'notify-edited', label: 'Page edited', on: true },
+  { key: 'notify-removed', label: 'Page moved or deleted', on: false },
 ];
 
 export const CUSTOM_PAGE_NOTIFY_WHO: SecurityChoice[] = [

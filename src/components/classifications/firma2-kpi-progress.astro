@@ -20,6 +20,11 @@
 // arithmetic and wording are src/lib/kpi-row.ts, shared with the browser
 // repaint (paintKpiProgress in src/lib/goal-kpis.ts).
 //
+// COMPACT (the goal card, 2026-10-21): one row — ring, the name (wrapping to
+// two lines at most; truncating to one cut 20 of 33 names on the board), and
+// the share of the goal at the end. The row's title carries the full figure. The card shows three of these and hands the rest to the peek,
+// so every card on the board stands the same height.
+//
 // The board's compact form. A classification's own page draws the same
 // figures as a table with the projects as child rows
 // (firma2-classification-measures).
@@ -41,12 +46,21 @@ interface Props extends KpiRowInput {
    * a measure across the portfolio — it is noise, so the note stays quiet.
    */
   goalNote?: boolean;
+  /** One line: ring, name, share of the goal. */
+  compact?: boolean;
 }
 
-const { name, href, goalNote = true, ...input } = Astro.props;
+const { name, href, goalNote = true, compact = false, ...input } = Astro.props;
 const v = kpiRowView(input);
 const lead = !goalNote && input.goal == null ? '' : v.lead;
 ---
+{compact ? (
+<div class="firma2-kpi-progress firma2-kpi-progress--compact" data-kpi-progress data-compact title={`${name}: ${v.totalText}`}>
+  <BcnProgressRing value={v.percent} secondary={v.plannedPercent} size="xs" />
+  <span class="firma2-kpi-progress__name typography-body-md" data-kpi-name>{name}</span>
+  <span class="firma2-kpi-progress__share typography-body-md" data-muted={v.share.of ? undefined : ''}><span data-kpi-share>{v.share.text}</span><span class="visually-hidden" data-kpi-share-of>{v.share.of}</span></span>
+</div>
+) : (
 <div class="firma2-kpi-progress stack" data-gap="2xs" data-kpi-progress>
   <div class="firma2-kpi-progress__head">
     <BcnProgressRing value={v.percent} secondary={v.plannedPercent} size="xs" />
@@ -59,6 +73,7 @@ const lead = !goalNote && input.goal == null ? '' : v.lead;
     <span class="firma2-kpi-progress__note typography-body-sm" data-kpi-note hidden={!lead}>{lead}</span>
   </p>
 </div>
+)}
 
 <style>
   /* THE FIGURE SITS UNDER ITS NAME (user, 2026-10-03). It used to be pushed
@@ -98,6 +113,35 @@ const lead = !goalNote && input.goal == null ? '' : v.lead;
 
   .firma2-kpi-progress__note::before {
     content: ' · ';
+  }
+
+  /* Ring and share sit on the name's first line when it wraps. */
+  .firma2-kpi-progress--compact {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-200, 0.5rem);
+  }
+
+  .firma2-kpi-progress--compact .firma2-kpi-progress__name {
+    flex: 1;
+    min-inline-size: 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+
+  .firma2-kpi-progress__share {
+    flex: none;
+    font-weight: var(--font-weight-semibold, 600);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* "No goal", "Not reported": a finding, not a figure — quiet. */
+  .firma2-kpi-progress__share[data-muted] {
+    font-weight: inherit;
+    color: var(--color-content-default-secondary, #646464);
   }
 
   .firma2-kpi-progress__note[hidden] {

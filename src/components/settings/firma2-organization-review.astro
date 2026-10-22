@@ -8,10 +8,6 @@
 // overdue. A schedule turns a wait longer than its period into Overdue on the
 // organization's Review page and the workspace's.
 //
-// THE HELP LINE FOLLOWS THE ANSWER, the Access page's convention: a closed
-// select shows only the option it holds, so the line under it states what
-// THAT option does.
-//
 // No Save: each control commits on change. Persists in this browser
 // (src/lib/publish-store.ts) because the Review pages read it.
 //
@@ -27,11 +23,6 @@ interface Props {
 }
 
 const { organization } = Astro.props;
-const hint = (days: number | null) =>
-  days === null
-    ? 'No project shows as overdue, however long its changes wait.'
-    : `A change waiting more than ${days} days shows as overdue.`;
-const hints = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, hint(c.days)]));
 const seed = reviewCadence(organization.name);
 ---
 <div class="stack" data-gap="2xl" data-review-settings data-organization={organization.name} data-seed={seed}>
@@ -41,8 +32,6 @@ const seed = reviewCadence(organization.name);
       label="How often stewards review projects"
       size="md"
       options={JSON.stringify(REVIEW_CADENCES.map(({ value, label }) => ({ value, label })))}
-      help-text={hints[seed]}
-      data-hints={JSON.stringify(hints)}
     ></esa-select>
   </Firma2RailSection>
 
@@ -57,7 +46,7 @@ const seed = reviewCadence(organization.name);
   import { readPublishing, writeCadence, writeReminders } from '../../lib/publish-store';
   import type { ReviewCadence } from '../../data/firma2-review-cadence';
 
-  type SelectEl = HTMLElement & { value: string; helpText: string };
+  type SelectEl = HTMLElement & { value: string };
   type SwitchEl = HTMLElement & { checked: boolean };
 
   const root = document.querySelector<HTMLElement>('[data-review-settings]');
@@ -68,13 +57,8 @@ const seed = reviewCadence(organization.name);
     // element becomes an own property that shadows the lego's setter.
     customElements.whenDefined('esa-select').then(() => {
       const select = root.querySelector<SelectEl>('esa-select[name="cadence"]')!;
-      const hints: Record<string, string> = JSON.parse(select.dataset.hints ?? '{}');
       select.value = state.cadence[organization] ?? root.dataset.seed ?? 'none';
-      select.helpText = hints[select.value] ?? '';
-      select.addEventListener('change', () => {
-        writeCadence(organization, select.value as ReviewCadence);
-        select.helpText = hints[select.value] ?? '';
-      });
+      select.addEventListener('change', () => writeCadence(organization, select.value as ReviewCadence));
     });
     customElements.whenDefined('esa-switch-toggle').then(() => {
       const toggle = root.querySelector<SwitchEl>('esa-switch-toggle[name="reminders"]')!;

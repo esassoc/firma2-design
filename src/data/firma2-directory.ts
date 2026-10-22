@@ -103,20 +103,20 @@ export type OrganizationVisibility = 'public' | 'workspace' | 'private';
 export interface AccessChoice<V extends string = string> {
   value: V;
   label: string;
-  /** What choosing it means — shown as help text while selected. */
-  hint: string;
+  /** What choosing it means, shown as help text while selected — omit when the label says it. */
+  hint?: string;
 }
 
 export const visibilityChoices: AccessChoice<OrganizationVisibility>[] = [
-  { value: 'public', label: 'Public', hint: 'Anyone can see them, including visitors who aren’t signed in.' },
-  { value: 'workspace', label: 'Workspace members', hint: 'Anyone signed in to this workspace can see them.' },
-  { value: 'private', label: 'Private to organization members', hint: 'Only this organization’s members can see them.' },
+  { value: 'public', label: 'Public' },
+  { value: 'workspace', label: 'Workspace members' },
+  { value: 'private', label: 'Private to organization members' },
 ];
 
 export const joiningChoices: AccessChoice[] = [
-  { value: 'open', label: 'Anyone who can see it can join', hint: 'Anyone who can see this organization can join it themselves.' },
-  { value: 'invite', label: 'Invitation required', hint: 'People join only when someone who manages members invites them.' },
-  { value: 'approval', label: 'Approval required', hint: 'Anyone who can see it can ask to join; someone who manages members approves each request.' },
+  { value: 'open', label: 'Anyone who can see it can join' },
+  { value: 'invite', label: 'Invitation required' },
+  { value: 'approval', label: 'Approval required', hint: 'Member managers approve each request.' },
 ];
 
 /** The short form a grid cell has room for. */

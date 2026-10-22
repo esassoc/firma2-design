@@ -173,7 +173,7 @@ export class BcnIconPicker extends HTMLElement {
       matches.length === 0
         ? `No icons match “${query}”.`
         : matches.length > RESULT_CAP
-          ? `Showing ${RESULT_CAP} of ${matches.length}. Keep typing to narrow.`
+          ? `Showing ${RESULT_CAP} of ${matches.length} — type to narrow.`
           : `${matches.length} ${matches.length === 1 ? 'icon' : 'icons'}.`;
     this.#status.textContent = text;
     announce(text);

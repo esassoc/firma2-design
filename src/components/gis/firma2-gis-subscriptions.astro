@@ -55,17 +55,9 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
 const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new');
 ---
 <div class="firma2-gis-subs stack" data-gap="xl" data-config={JSON.stringify(config)}>
-  <!-- WHERE THE SWITCH IS. Subscribed mode is set on a different screen, so a
-       reader whose administrator changes it would otherwise find this page
-       changed with nothing saying why. -->
-  <p class="typography-body-md" data-mode-note>
-    Projects in this workspace come from these subscriptions. Change that in <a href={sourceHref}>Project source</a>.
-  </p>
-
   <div data-off hidden>
     <EsaEmptyState
       title="Subscriptions are off for this workspace"
-      description="Turn them on in Project source to keep projects current from your organization’s GIS. It changes how every project gets its shapes."
     />
     <div class="firma2-gis-subs__center">
       <EsaButton variant="secondary" size="md" tag="a" href={sourceHref}>Open Project source</EsaButton>
@@ -85,7 +77,7 @@ const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new')
   <div class="stack" data-gap="lg" data-list></div>
 
   <div data-none hidden>
-    <EsaEmptyState title="No subscriptions yet" description="Add one to keep project shapes current from your own GIS." />
+    <EsaEmptyState title="No subscriptions yet" />
   </div>
 
   <!-- ---- clone sources ---------------------------------------------------- -->
@@ -101,7 +93,7 @@ const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new')
             <EsaButton variant="chrome" size="md" iconOnly icon="pencil" label="Edit subscription" data-edit />
           </span>
           <span class="cluster" data-gap="xs">
-            <EsaButton variant="ghost" size="sm" data-retire>Stop syncing, keep shapes</EsaButton>
+            <EsaButton variant="ghost" size="sm" data-retire>Stop syncing</EsaButton>
             <span data-delete-wrap><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Delete subscription" data-delete /></span>
           </span>
         </div>
@@ -211,7 +203,6 @@ const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new')
       const subscribed = readProjectSource() === 'subscribed';
       const subs = readSubscriptions();
       $('[data-off]').hidden = subscribed;
-      $('[data-mode-note]').hidden = !subscribed;
       $('[data-none]').hidden = !subscribed || subs.length > 0;
       document.querySelectorAll<HTMLElement>('[data-add-subscription]').forEach((el) => (el.hidden = !subscribed));
       const unfinished = readSubscriptionDraft();
@@ -232,8 +223,8 @@ const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new')
           const layer = layerById(sub.layerId);
           const meta: [string, string][] = [
             // WHOSE FIELD IS WHOSE: the left one is in their layer, the right one is ours.
-            ['Matched on', `<code>${esc(sub.joinField)}</code> in your layer → the external ID on a project`],
-            ['Access', sub.access === 'arcgis' ? `Shared with the ProjectFirma account, through ${esc(config.group.title)}` : 'A public service'],
+            ['Matched on', `<code>${esc(sub.joinField)}</code> → project external ID`],
+            ['Access', sub.access === 'arcgis' ? `Shared through ${esc(config.group.title)}` : 'A public service'],
             ['Keeps current', `${sub.projectCount} projects, ${sub.workAreaCount} work areas`],
             ['Synced fields', sub.extraFields.length ? sub.extraFields.map((f) => `<code>${esc(f)}</code>`).join(', ') : 'Shapes only'],
             ['Layer', layer ? `${esc(layer.name)} (${layer.geometry.toLowerCase()}s)` : 'A public service'],
@@ -245,8 +236,7 @@ const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new')
 
           const syncWrap = card.querySelector<HTMLElement>('[data-sync-wrap]')!;
           syncWrap.classList.toggle('esa-button--disabled', !sub.active || syncing === sub.id);
-          syncWrap.title = sub.active ? '' : 'Inactive subscriptions are not synced.';
-          const syncLabel = syncWrap.querySelector('.esa-button__label');
+                    const syncLabel = syncWrap.querySelector('.esa-button__label');
           if (syncLabel) syncLabel.textContent = syncing === sub.id ? 'Syncing…' : 'Sync now';
           card.querySelector('[data-sync]')!.addEventListener('click', () => sync(sub.id));
           nameButton(card.querySelector<HTMLElement>('[data-edit]')!, `Edit ${sub.name}`);
@@ -275,11 +265,10 @@ const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new')
         const r = config.sync;
         const alert = clone('success');
         const lines = [
-          `${r.added} added, ${r.updated} updated. ${r.projectsUpdated} projects had a mapped field change.`,
-          ...r.stale.map((name) => `“${name}” is gone from the layer. It’s kept here and marked stale.`),
-          r.skippedWithoutJoin ? `${r.skippedWithoutJoin} feature skipped: nothing in ${sub.joinField} to match a project on.` : '',
+          `${r.added} added, ${r.updated} updated.`,
+          ...r.stale.map((name) => `“${name}” left the layer; kept as stale.`),
+          r.skippedWithoutJoin ? `${r.skippedWithoutJoin} feature skipped: no ${sub.joinField}.` : '',
           r.unmatched.length ? `Matched no project: ${r.unmatched.join(', ')}. Add the project, or correct ${sub.joinField} in your layer.` : '',
-          sub.extraFields.length ? `${sub.extraFields.join(' and ')} updated on every matched project.` : '',
         ].filter(Boolean);
         alert.querySelector('[data-lines]')!.innerHTML = lines.map((l) => `<p class="typography-body-sm">${esc(l)}</p>`).join('');
         results.set(id, alert);
@@ -290,7 +279,7 @@ const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new')
               ? {
                   ...s,
                   lastSuccess: new Date().toISOString(),
-                  lastMessage: `Matched ${s.projectCount} of ${s.projectCount + 1} features on ${s.joinField}. ${r.stale.length} no longer in the layer, kept. 1 matched no project: ${r.unmatched.join(', ')}.`,
+                  lastMessage: `Matched ${s.projectCount} of ${s.projectCount + 1} features. ${r.stale.length} stale. 1 unmatched: ${r.unmatched.join(', ')}.`,
                   staleLabels: r.stale,
                   // Fields ever brought across keep their values when un-nominated.
                   syncedFields: [...new Set([...(s.syncedFields ?? []), ...s.extraFields])],
@@ -306,7 +295,7 @@ const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new')
     let retiring: Subscription | null = null;
     const askRetire = (sub: Subscription) => {
       retiring = sub;
-      retire.message = `Its ${sub.workAreaCount} work areas stay on their ${sub.projectCount} projects and become editable here. Syncs stop reading this layer; to follow it again, add a new subscription.`;
+      retire.message = `Its ${sub.workAreaCount} work areas stay and become editable here.`;
       retire.show();
     };
     retire.addEventListener('resolved', (e) => {

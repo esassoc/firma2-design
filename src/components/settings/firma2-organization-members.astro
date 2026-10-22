@@ -12,8 +12,8 @@
 // ONE FIELD FOR BOTH WAYS IN. "Someone already in the workspace" and "someone
 // new, by email" are one question — who? — answered two ways, so they are one
 // esa-input-tag: its suggestions are the workspace's other people, and anything
-// typed that is not one of them is an email to invite. The help text says so,
-// because the second half is the part a reader would not guess.
+// typed that is not one of them is an email to invite. The placeholder says
+// "Name or email"; the error catches a newcomer typed by a non-steward.
 //
 // STEWARDS ARE MARKED HERE, AND MADE HERE. Steward is Linear's team owner: a
 // flag on one membership, not a workspace role, so the page that lists the
@@ -186,9 +186,6 @@ const DEFAULT_ROLE = 'Viewer';
     <div class="stack" data-gap="lg">
       <esa-input-tag
         label="People"
-        help-text={canInvite
-          ? 'Pick someone already in the workspace, or type an email address to invite them.'
-          : 'Pick someone already in the workspace. Only stewards can invite people who aren’t in it yet.'}
         placeholder="Name or email"
         size="md"
         name="people"
@@ -196,7 +193,7 @@ const DEFAULT_ROLE = 'Viewer';
       ></esa-input-tag>
       <esa-select
         label="Role"
-        help-text="For the people you invite. Anyone already in the workspace keeps their role."
+        help-text="Applies only to people you invite."
         size="md"
         name="role"
         data-members-role
@@ -286,17 +283,17 @@ const DEFAULT_ROLE = 'Viewer';
       const present = memberEmails();
 
       if (picked.length === 0) {
-        people.errorText = 'Add at least one person, or cancel.';
+        people.errorText = 'Add at least one person.';
         return;
       }
       const notEmail = picked.find((v) => !known.has(v.toLowerCase()) && !EMAIL.test(v));
       if (notEmail) {
-        people.errorText = `“${notEmail}” isn’t anyone in the workspace or an email address.`;
+        people.errorText = `“${notEmail}” isn’t a person or an email address.`;
         return;
       }
       const newcomer = canInvite ? undefined : picked.find((v) => !known.has(v.toLowerCase()));
       if (newcomer) {
-        people.errorText = `${newcomer} isn’t in the workspace yet. Ask a steward to invite them.`;
+        people.errorText = `Ask a steward to invite ${newcomer}.`;
         return;
       }
       const already = picked.find((v) => present.has(v.toLowerCase()));
@@ -378,7 +375,7 @@ const DEFAULT_ROLE = 'Viewer';
     body.addEventListener('menu-action', (event) => {
       if ((event as CustomEvent<string>).detail !== 'resend') return;
       const row = (event.target as Element).closest<HTMLElement>('tr[data-member]');
-      if (row) toasts?.show({ message: `Invitation sent again to ${row.dataset.name ?? ''}.`, variant: 'success' });
+      if (row) toasts?.show({ message: `Invitation resent to ${row.dataset.name ?? ''}.`, variant: 'success' });
     });
 
     // ---- Steward ------------------------------------------------------------
@@ -415,16 +412,10 @@ const DEFAULT_ROLE = 'Viewer';
     const lastContributor = (row: HTMLElement) =>
       row.dataset.role === 'Contributor' && Number(row.dataset.elsewhere ?? 0) === 0;
     function removeMessage(row: HTMLElement): string {
-      const elsewhere = Number(row.dataset.elsewhere ?? 0) > 0;
-      if (row.dataset.role === 'Administrator')
-        return 'They stay an administrator of the workspace. Only their membership here ends.';
-      if (lastContributor(row))
-        return `${org} is their last organization, so they become a Viewer with no organization. Their past work stays in the workspace.`;
-      if (row.dataset.role === 'Contributor')
-        return `They stop drafting on ${org}’s projects. Their other organizations aren’t affected.`;
-      return elsewhere
-        ? `They lose ${org}’s member-only views. Their other organizations aren’t affected.`
-        : `They stay in the workspace as a Viewer, without ${org}’s member-only views.`;
+      if (row.dataset.role === 'Administrator') return 'They stay a workspace administrator.';
+      if (lastContributor(row)) return 'This is their last organization, so they become a Viewer.';
+      if (row.dataset.role === 'Contributor') return `They stop editing ${org}’s projects.`;
+      return `They lose ${org}’s member-only views.`;
     }
 
     body.addEventListener('menu-action', async (event) => {
@@ -439,7 +430,7 @@ const DEFAULT_ROLE = 'Viewer';
         row.hasAttribute('data-invited')
           ? {
               heading: `Cancel the invitation to ${name}?`,
-              message: 'The link in their email stops working. You can invite them again later.',
+              message: 'Their invitation link stops working.',
               confirmLabel: 'Cancel invitation',
               cancelLabel: 'Keep invitation',
             }
@@ -483,7 +474,7 @@ const DEFAULT_ROLE = 'Viewer';
       toasts?.show({
         message: wasInvite
           ? `Invitation to ${name} canceled.`
-          : becameViewer ? `${name} removed. They’re now a Viewer.` : `${name} removed.`,
+          : `${name} removed.`,
         variant: 'success',
       });
     });

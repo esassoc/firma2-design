@@ -78,6 +78,12 @@ export const paintKpiProgress = (root: HTMLElement, f: KpiFigures, t?: GoalTarge
   const total = root.querySelector('[data-kpi-total]');
   if (total) total.textContent = v.totalText;
   paintRing(root, v.percent, v.plannedPercent);
+  const share = root.querySelector('[data-kpi-share]');
+  if (share) share.textContent = v.share.text;
+  const of = root.querySelector('[data-kpi-share-of]');
+  if (of) of.textContent = v.share.of;
+  root.querySelector('.firma2-kpi-progress__share')?.toggleAttribute('data-muted', !v.share.of);
+  root.title = root.matches('[data-compact]') ? `${f.name}: ${v.totalText}` : '';
   const note = root.querySelector<HTMLElement>('[data-kpi-note]');
   if (note) {
     note.textContent = v.lead;

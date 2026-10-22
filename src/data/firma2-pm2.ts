@@ -66,14 +66,14 @@ export const PM2_COUNTING_RULES: Pm2CountingRule[] = [
   {
     id: 1,
     displayName: 'Sums',
-    optionLabel: 'Yes — totals and cumulative figures are meaningful',
-    description: 'Values add up. Totals and cumulative figures across projects and periods are meaningful — acres treated, barriers removed, hours contributed.',
+    optionLabel: 'Yes — totals are meaningful',
+    description: 'Values add up across projects and periods — acres treated, barriers removed, hours contributed.',
   },
   {
     id: 2,
     displayName: 'Does not sum',
-    optionLabel: 'No — report each value on its own',
-    description: 'Values do not add up. Report them individually or as an average, never as a total — a temperature, a percentage, a survival rate. Cumulative figures are not offered.',
+    optionLabel: 'No — each value stands alone',
+    description: 'Values don’t add up: report each one or an average, never a total or a cumulative figure — a temperature, a percentage, a survival rate.',
   },
 ];
 

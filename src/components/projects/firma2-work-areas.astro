@@ -88,11 +88,11 @@ const GLYPHS = {
 };
 
 const TOOLS = [
-  { key: 'area', label: 'Draw an area', hint: 'A treatment unit, a parcel, a planting block.' },
-  { key: 'reach', label: 'Draw a reach', hint: 'A stream reach, a fence line, a trail.' },
-  { key: 'point', label: 'Drop a point', hint: 'A gauge, a crossing, a site with no boundary.' },
-  { key: 'coords', label: 'Enter coordinates', hint: 'A latitude and longitude off a spec sheet.' },
-  { key: 'reference', label: 'Use a reference area', hint: 'A subwatershed this workspace already holds.' },
+  { key: 'area', label: 'Draw an area' },
+  { key: 'reach', label: 'Draw a reach' },
+  { key: 'point', label: 'Drop a point' },
+  { key: 'coords', label: 'Enter coordinates' },
+  { key: 'reference', label: 'Use a reference area' },
 ] as const;
 ---
 <section class="firma2-work-areas" data-config={JSON.stringify(config)}>
@@ -115,7 +115,7 @@ const TOOLS = [
     <!-- Moved into Leaflet's top-left control stack by the script, under zoom. -->
     <div class="firma2-work-areas__tools leaflet-bar" role="group" aria-label="Add a work area" data-tools data-editor-only>
       {TOOLS.map((tool) => (
-        <button type="button" class="firma2-work-areas__tool" data-tool={tool.key} aria-pressed="false" aria-label={tool.label} title={`${tool.label} — ${tool.hint}`}>
+        <button type="button" class="firma2-work-areas__tool" data-tool={tool.key} aria-pressed="false" aria-label={tool.label} title={tool.label}>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={GLYPHS[tool.key]} />
         </button>
       ))}
@@ -128,7 +128,7 @@ const TOOLS = [
       <div class="stack" data-gap="md" data-form-name hidden>
         <esa-text-field data-name label="Name this area" size="md" maxlength="200" autocomplete="off" placeholder="East fence line"></esa-text-field>
         <p class="typography-body-sm" data-measure></p>
-        <p class="typography-body-sm" data-edit-help hidden>Drag a point to move it. Drag a midpoint to add one. Right-click a point to remove it.</p>
+        <p class="typography-body-sm" data-edit-help hidden>Drag a point to move it, a midpoint to add one. Right-click a point to remove it.</p>
         <div class="cluster" data-gap="xs" data-pending-actions>
           <EsaButton variant="primary" size="sm" data-save-pending>Save</EsaButton>
           <EsaButton variant="ghost" size="sm" data-discard>Discard</EsaButton>
@@ -144,7 +144,6 @@ const TOOLS = [
           <esa-text-field data-lat label="Latitude" size="md" inputmode="decimal" autocomplete="off" placeholder="40.0231"></esa-text-field>
           <esa-text-field data-lng label="Longitude" size="md" inputmode="decimal" autocomplete="off" placeholder="-122.0654"></esa-text-field>
         </div>
-        <p class="typography-body-sm" data-coord-note>Paste a whole pair into Latitude and it splits itself. In California, longitude is negative.</p>
         <div class="cluster" data-gap="xs">
           <span data-coord-save-wrap><EsaButton variant="primary" size="sm" data-save-coords>Save</EsaButton></span>
           <EsaButton variant="ghost" size="sm" data-cancel-form>Cancel</EsaButton>
@@ -153,7 +152,6 @@ const TOOLS = [
 
       <div class="stack" data-gap="md" data-form-adopt hidden>
         <esa-select data-adopt label="Use a reference area" placeholder="Choose a subwatershed" size="md"></esa-select>
-        <p class="typography-body-sm">Its boundary is used exactly, so this project and the coverage report agree about where the work is.</p>
         <div class="cluster" data-gap="xs">
           <span data-adopt-save-wrap><EsaButton variant="primary" size="sm" data-save-adopt>Use this area</EsaButton></span>
           <EsaButton variant="ghost" size="sm" data-cancel-form>Cancel</EsaButton>
@@ -162,14 +160,13 @@ const TOOLS = [
     </div>
 
     <!-- How to FINISH, which nothing on the canvas says: the first point again
-         closes an area, a double-click ends a line. Idle, it says that a saved
-         shape is clickable, which a drawn polygon gives no hint of. -->
+         closes an area, a double-click ends a line. Shown only while drawing. -->
     <p class="firma2-work-areas__plate firma2-work-areas__plate--hint typography-body-sm" data-hint hidden></p>
   </div>
 
   <div class="firma2-work-areas__below stack" data-gap="md">
     <p class="typography-body-md" data-subscribed-note hidden>
-      These shapes are maintained in your GIS by the <a data-subscription-link href={subscriptionsHref}></a> subscription. Change them there, and the next sync brings the change here.
+      Synced from the <a data-subscription-link href={subscriptionsHref}></a> subscription. Edit them in your GIS.
     </p>
     <table class="firma2-work-areas__table" data-table hidden>
       <caption class="visually-hidden">Work areas on this project</caption>
@@ -185,7 +182,7 @@ const TOOLS = [
       <tbody data-rows></tbody>
     </table>
     <div data-empty hidden>
-      <EsaEmptyState size="sm" headingLevel={4} title="No work areas mapped" description="Draw it, type a coordinate off a spec sheet, use a subwatershed, or upload a shapefile." />
+      <EsaEmptyState size="sm" headingLevel={4} title="No work areas mapped" />
     </div>
     <p class="typography-body-md" data-undo-line hidden>
       <span data-undo-text></span>
@@ -622,7 +619,7 @@ const TOOLS = [
     const sourceText = (area: MapWorkArea): string => {
       if (!editable() && area.origin === 'record' && subscription()) {
         const stale = subscription()?.staleLabels?.includes(area.label);
-        return stale ? 'From your GIS · no longer upstream, kept' : 'From your GIS';
+        return stale ? 'From your GIS · removed upstream' : 'From your GIS';
       }
       return {
         record: '',
@@ -680,9 +677,15 @@ const TOOLS = [
 
     // ---- the plates -----------------------------------------------------------------
     const HINTS: Partial<Record<Tool, string>> = {
-      area: 'Click on the map to place points. Click the first point again to finish the area. Esc cancels.',
-      reach: 'Click on the map to place points, and double-click to finish the line. Esc cancels.',
-      point: 'Click on the map where it is.',
+      area: 'Click to place points. Click the first point to finish. Esc cancels.',
+      reach: 'Click to place points. Double-click to finish. Esc cancels.',
+      point: 'Click where it is.',
+    };
+
+    const paintMeasure = (text: string) => {
+      const el = $('[data-measure]');
+      el.textContent = text;
+      el.hidden = !text;
     };
 
     const paintPlates = () => {
@@ -691,8 +694,8 @@ const TOOLS = [
       canvas.classList.toggle('is-drawing', mode === 'draw');
 
       const hint = $('[data-hint]');
-      hint.hidden = !editable() || mode === 'coords' || mode === 'adopt' || mode === 'pending' || (mode === 'idle' && !areas.length);
-      hint.textContent = mode === 'draw' && tool ? HINTS[tool] ?? '' : mode === 'edit' ? 'Done keeps the shape as it is now.' : 'Click a shape to reshape or rename it.';
+      hint.hidden = !editable() || mode !== 'draw' || !tool || !HINTS[tool];
+      hint.textContent = mode === 'draw' && tool ? HINTS[tool] ?? '' : '';
 
       const form = $('[data-form]');
       form.hidden = !(mode === 'pending' || mode === 'edit' || mode === 'coords' || mode === 'adopt');
@@ -766,7 +769,7 @@ const TOOLS = [
       nameField.value = '';
       nameField.errorText = '';
       const m = measure(pending.kind, path);
-      $('[data-measure]').textContent = m == null ? 'A point has no extent.' : `About ${formatExtent(m, unitOf(pending.kind))}.`;
+      paintMeasure(m == null ? '' : `About ${formatExtent(m, unitOf(pending.kind))}.`);
       paintPlates();
       window.setTimeout(() => nameField.focus(), 50);
     };
@@ -799,7 +802,7 @@ const TOOLS = [
       if (!pending) return;
       const label = String(nameField.value ?? '').trim();
       if (!label) {
-        nameField.errorText = 'Give it a name, so it can be told apart from the others.';
+        nameField.errorText = 'Enter a name.';
         return;
       }
       const area: MapWorkArea = {
@@ -835,7 +838,7 @@ const TOOLS = [
       areas = areas.map((a) => (a.id === area.id ? { ...a, path, extent } : a));
       if (area.kind === 'point') liveShape?.setLatLng(path[0]);
       else liveShape?.setLatLngs(path);
-      $('[data-measure]').textContent = extent == null ? 'A point has no extent.' : formatExtent(extent, area.unit);
+      paintMeasure(extent == null ? '' : formatExtent(extent, area.unit));
       if (persist) {
         save();
         paintTable();
@@ -904,7 +907,7 @@ const TOOLS = [
       nameField.label = 'Name';
       nameField.value = area.label;
       nameField.errorText = '';
-      $('[data-measure]').textContent = area.extent == null ? 'A point has no extent.' : formatExtent(area.extent, area.unit);
+      paintMeasure(area.extent == null ? '' : formatExtent(area.extent, area.unit));
       paintHandles();
       paintTable();
       paintPlates();
@@ -914,7 +917,7 @@ const TOOLS = [
     nameField.addEventListener('change', () => {
       if (mode !== 'edit') return;
       const label = String(nameField.value ?? '').trim();
-      nameField.errorText = label ? '' : 'A work area needs a name.';
+      nameField.errorText = label ? '' : 'Enter a name.';
       if (!label) return;
       areas = areas.map((a) => (a.id === editingId ? { ...a, label } : a));
       save();
@@ -971,7 +974,7 @@ const TOOLS = [
     $('[data-save-coords]').addEventListener('click', () => {
       const point = typedPoint();
       const label = String(coordName.value ?? '').trim();
-      coordName.errorText = label ? '' : 'Give it a name, so it can be told apart from the others.';
+      coordName.errorText = label ? '' : 'Enter a name.';
       if (!point || !label) return checkCoords();
       areas = [...areas, { id: newWorkAreaId(slug), label, kind: 'point', path: [point], extent: null, unit: null, origin: 'coordinates' }];
       removed = null;

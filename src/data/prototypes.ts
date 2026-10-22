@@ -30,8 +30,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'classifications',
     title: 'Classifications',
-    description:
-      'One grouped list of work types and plan goals. A project’s primary classification sets its fields and page layout.',
+    description: 'Work types and plan goals, grouped',
     route: '/prototypes/workspace-settings/classifications',
     createdAt: '2026-10-01',
     status: 'in-progress',
@@ -39,8 +38,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'public-project-page',
     title: 'Public project page',
-    description:
-      'One project as the public sees it — no account, the tenant’s brand, and only the sections its primary classification publishes.',
+    description: 'A project as the public sees it',
     route: '/prototypes/public/scott-river-fish-passage-barrier-removal',
     createdAt: '2026-10-01',
     status: 'in-progress',
@@ -48,7 +46,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'branding',
     title: 'Branding',
-    description: 'Pick one colour and every screen and public page follows, with its contrast graded as you choose.',
+    description: 'One brand colour for every screen',
     route: '/prototypes/workspace-settings/branding',
     createdAt: '2026-10-01',
     status: 'in-progress',
@@ -57,7 +55,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'my-projects',
     title: 'My Projects',
-    description: 'The projects you can update, as cards with a map of where each one is — search, filter by stage, then Update or Open.',
+    description: 'Projects you can update, with a map',
     route: '/prototypes/my-projects',
     createdAt: '2026-10-03',
     status: 'in-progress',
@@ -67,8 +65,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'work-areas',
     title: 'Place a project',
-    description:
-      'Draw an area or a reach, drop a point, paste a coordinate off a spec sheet, adopt a subwatershed or upload a shapefile — then reshape it in place.',
+    description: 'Draw, drop, paste or upload a project’s footprint',
     route: '/prototypes/projects/cosumnes-floodplain-reconnection',
     createdAt: '2026-10-02',
     status: 'in-progress',
@@ -76,7 +73,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'portfolio-map',
     title: 'Portfolio map',
-    description: 'Every project on one map, the legend as the filter, the regions with no work counted, and the shapes exported as GeoJSON, KML or CSV.',
+    description: 'Every project on one map',
     route: '/prototypes/map',
     createdAt: '2026-10-02',
     status: 'in-progress',
@@ -84,7 +81,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'gis-subscriptions',
     title: 'GIS subscriptions',
-    description: 'Keep project footprints current from your own ArcGIS layer: sync, see what was refused and why, and leave without losing a shape.',
+    description: 'Sync footprints from your ArcGIS layer',
     route: '/prototypes/workspace-settings/gis-subscriptions',
     createdAt: '2026-10-02',
     status: 'in-progress',
@@ -92,7 +89,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'gis-sync',
     title: 'GIS sync (two-way)',
-    description: 'Connect ArcGIS once, link a layer, and choose per field which side wins. Edit in either place and the latest change follows.',
+    description: 'Two-way ArcGIS sync, chosen per field',
     route: '/prototypes/workspace-settings/gis-sync',
     createdAt: '2026-10-02',
     status: 'in-progress',
@@ -100,7 +97,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'map-layers',
     title: 'Map layers',
-    description: 'The reference boundaries every map sits against, checked against the service before they are saved.',
+    description: 'Reference boundaries for every map',
     route: '/prototypes/workspace-settings/map-layers',
     createdAt: '2026-10-02',
     status: 'in-progress',
@@ -108,7 +105,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'organization-settings',
     title: 'Organization settings',
-    description: 'Every page that configures your organization in one index, with leave, retire and delete priced in their own rows.',
+    description: 'Your organization’s settings pages',
     route: '/prototypes/workspace-settings/organization-settings',
     createdAt: '2026-10-02',
     status: 'in-progress',
@@ -116,7 +113,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'project-source',
     title: 'Project source',
-    description: 'Create projects in ProjectFirma, or keep them current from your GIS — with the cost of switching stated before it happens.',
+    description: 'Create projects here or sync them from GIS',
     route: '/prototypes/workspace-settings/project-source',
     createdAt: '2026-10-02',
     status: 'in-progress',
@@ -127,8 +124,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'measure-drafting',
     title: 'Draft a measure from a claim',
-    description:
-      'Write what you owe your funder, or answer two clickable questions, and get a measure drafted with its reporting cost priced.',
+    description: 'Draft a measure from a funder claim',
     route: '/prototypes/workspace-settings/performance-measures/new',
     createdAt: '2026-10-01',
     status: 'in-progress',
@@ -136,8 +132,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'report-import',
     title: 'Report from a document',
-    description:
-      'Upload a crew log or paste a report; each proposed entry shows its source and is checked before it is saved.',
+    description: 'Report from a crew log or pasted report',
     route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement',
     createdAt: '2026-10-01',
     status: 'in-progress',
@@ -148,8 +143,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'settings',
     title: 'Settings',
-    description:
-      'One account’s own settings, in four pages: theme, name and email, which events send mail, and sign-in and sessions.',
+    description: 'Your account settings',
     route: '/prototypes/settings',
     createdAt: '2026-08-24',
     status: 'in-progress',
@@ -160,8 +154,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'pm2-catalog',
     title: 'Performance measures (PM 2)',
-    description:
-      'The measure catalog and setup page as ProjectFirma2 built them: breakdowns, not subcategories, frozen when a measure is published.',
+    description: 'Measure catalog and setup, as ProjectFirma2 built it',
     route: '/prototypes/workspace-settings/pm2',
     createdAt: '2026-10-08',
     status: 'in-progress',
@@ -169,8 +162,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'pm2-project',
     title: 'Project measures (PM 2)',
-    description:
-      'A project’s measures by period and as a report form, with per-project targets and Record work. Switch who you are viewing as.',
+    description: 'A project’s measures by period, with targets',
     route: '/prototypes/pm2/projects/deer-creek-riparian-corridor-enhancement',
     createdAt: '2026-10-08',
     status: 'in-progress',
@@ -178,8 +170,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'performance-measures',
     title: 'Performance measure setup',
-    description:
-      'Every performance measure in one searchable table, drafts first, with the setup page each one is defined on.',
+    description: 'Every performance measure in one table',
     route: '/prototypes/workspace-settings/performance-measures',
     createdAt: '2026-08-20',
     status: 'in-progress',
@@ -187,8 +178,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'projects',
     title: 'Projects index',
-    description:
-      'Every project in one searchable table, with stage and program filters and CSV export.',
+    description: 'Every project in one table',
     route: '/prototypes/projects',
     createdAt: '2026-08-19',
     status: 'in-progress',
@@ -204,8 +194,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'project-detail',
     title: 'Project detail',
-    description:
-      'One project in full: work areas on a map, performance measures, funding sources and milestones.',
+    description: 'One project in full',
     route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement',
     createdAt: '2026-08-20',
     status: 'in-progress',
@@ -218,8 +207,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'project-detail-map',
     title: 'Project detail — map view',
-    description:
-      'One project read as a place: the work-areas map fills the screen, and the record and its sections float over it until you hide them.',
+    description: 'One project, map first',
     route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement/map',
     createdAt: '2026-08-24',
     status: 'in-progress',
