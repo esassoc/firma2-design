@@ -44,6 +44,7 @@ import {
   Cancel01Icon,
   CancelCircleIcon,
   ChartIncreaseIcon,
+  CheckmarkBadge01Icon,
   CheckmarkCircle02Icon,
   ChefHatIcon,
   CircleDotIcon,
@@ -110,12 +111,12 @@ import {
   UserIcon,
   UserMultipleIcon,
   ViewIcon,
-  ZoomInIcon,
-  ZoomOutIcon,
-  CenterFocusIcon,
   Share01Icon,
   Globe02Icon,
   GitCompareIcon,
+  MapsIcon,
+  MinusSignIcon,
+  Layers01Icon,
 } from '@hugeicons/core-free-icons';
 import { toMarkup } from './hugeicon-markup';
 import type { IconNode } from './hugeicon-markup';
@@ -143,6 +144,7 @@ const MAP: Record<string, unknown> = {
   'arrow-down': ArrowDown02Icon,
   'circle-alert': AlertCircleIcon,
   'circle-check': CheckmarkCircle02Icon,
+  'badge-check': CheckmarkBadge01Icon,
   'circle-x': CancelCircleIcon,
   info: InformationCircleIcon,
   eye: ViewIcon,
@@ -189,6 +191,8 @@ const MAP: Record<string, unknown> = {
   'circle-dot': CircleDotIcon,
   'circle-pause': PauseCircleIcon,
   'panel-right': PanelRightIcon,
+  // The project record's Map mode in its top bar (firma2-rail-modes).
+  map: MapsIcon,
   'grip-vertical': DragDropVerticalIcon,
   pentagon: PentagonIcon,
   spline: SplineIcon,
@@ -216,10 +220,6 @@ const MAP: Record<string, unknown> = {
   'file-plus': FileAddIcon,
   'text-cursor-input': InputTextIcon,
   'folder-input': FolderInputIcon,
-  // The Connections graph's view controls (firma2-entity-connections).
-  'zoom-in': ZoomInIcon,
-  'zoom-out': ZoomOutIcon,
-  scan: CenterFocusIcon,
   // A standard question that can't be removed or renamed (firma2-intake-builder).
   lock: LockIcon,
   // The top bar's icon-only record actions (firma2-project-actions, the review
@@ -227,6 +227,9 @@ const MAP: Record<string, unknown> = {
   'share-2': Share01Icon,
   globe: Globe02Icon,
   'git-compare': GitCompareIcon,
+  // Map controls (src/lib/leaflet.ts): zoom out and the reference-layer switcher.
+  minus: MinusSignIcon,
+  layers: Layers01Icon,
 };
 
 // Hugeicons ships React-style nodes ([tag, {strokeWidth, …, key}]); emit SVG markup.

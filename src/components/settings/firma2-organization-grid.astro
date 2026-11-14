@@ -1,8 +1,16 @@
 ---
 // firma2-organization-grid — Workspace settings › Organizations: every
 // organization with an account in this workspace — who can see it, how many
-// members and projects it has, who answers for it, and when it was added —
+// members and projects it has, who answers for it, who added it and when —
 // searchable by name or contact and filterable by type.
+//
+// WHO ADDED IT, AND WHETHER IT IS VERIFIED. Only administrators add
+// organizations (.scratch/access-requests/spec.md, decisions 7 and 20), so
+// Added by names one; it is how an administrator traces an organization that
+// looks wrong. Verified domain is the domain an organization has proved it
+// controls and that matches its website (decision 6) — plain text, blank when
+// unverified, because a blank says nothing against an organization nobody has
+// set up yet and a column of "Unverified" would.
 //
 // PROJECTS IS ONE COUNT, led or funded: the reader asks "how much does this
 // organization do here", and two columns of mostly blanks answered it worse.
@@ -16,11 +24,13 @@
 // THE NAME IS A DOOR. Each row links to that organization's record, the
 // reader's own included.
 //
-// ADDED ROWS come from Add organization (/organizations/new), which keeps them
+// ADDED ROWS come from Add organization (/organizations/new) and from approved
+// requests (/organizations/requests/<id>), which keep them
 // in this viewer's browser (src/lib/added-organizations.ts). They go in at the
 // top, where the reader who just added one is looking, and the arrival is
-// confirmed once. They have no record page yet, so their name is plain text,
-// not a link.
+// confirmed once — so is a request answered without adding one (declined, or
+// its requester added to an existing organization). They have no record page
+// yet, so their name is plain text, not a link.
 //
 // bcn-lego-checked: ecology has NO table/grid lego — esa-grid is a
 // documentation-only page with nothing to import; checked the full
@@ -34,7 +44,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
-import { organizations, organizationTypes } from '../../data/firma2-directory';
+import { organizations, organizationTypes, verifiedDomain } from '../../data/firma2-directory';
 import { withBase } from '../../lib/base';
 
 // Only types that have members are offered, so the filter never returns nothing.
@@ -45,6 +55,7 @@ const typeOptions = organizationTypes
 // Resolved here rather than in the client: the base path is a build-time fact.
 const rows = organizations.map((o) => ({
   ...o,
+  verified: verifiedDomain(o) ?? '',
   href: withBase(`/prototypes/workspace-settings/organizations/${o.slug}`),
 }));
 ---
@@ -97,6 +108,7 @@ const rows = organizations.map((o) => ({
   import '@esa/ecology/esa-filter-dropdown';
   import '@esa/ecology/esa-snackbar-container';
   import { readAddedOrganizations, takeJustAdded } from '../../lib/added-organizations';
+  import { takeAnswerNote } from '../../lib/answered-request-note';
   import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
   import { label } from '../../lib/vocabulary';
   import { visibilityLabel } from '../../data/firma2-directory';
@@ -104,7 +116,7 @@ const rows = organizations.map((o) => ({
   import { dateFormatter } from '../../lib/format';
   import type { ColDef } from 'ag-grid-community';
 
-  type Row = Organization & { href: string };
+  type Row = Organization & { href: string; verified: string };
 
   function initOrganizationGrid(root: HTMLElement) {
     const emptyState = root.querySelector<HTMLElement>('[data-orgs-empty] > *');
@@ -137,6 +149,10 @@ const rows = organizations.map((o) => ({
               : esc(p.data.name),
         },
         {
+          headerName: 'Verified domain', field: 'verified', colId: 'verified',
+          width: 160, tooltipField: 'verified',
+        },
+        {
           headerName: 'Visibility', field: 'visibility', colId: 'visibility', width: 140,
           valueFormatter: (p: { value?: Organization['visibility'] }) => (p.value ? visibilityLabel[p.value] : ''),
         },
@@ -149,6 +165,10 @@ const rows = organizations.map((o) => ({
           headerName: 'Primary contact', field: 'primaryContact', colId: 'primaryContact',
           flex: 1, minWidth: 160, tooltipField: 'primaryContact',
           getQuickFilterText: (p) => p.data?.primaryContact ?? '',
+        },
+        {
+          headerName: 'Added by', field: 'addedBy', colId: 'addedBy',
+          width: 160, tooltipField: 'addedBy',
         },
         {
           headerName: 'Created', field: 'created', colId: 'created', width: 140,
@@ -166,17 +186,22 @@ const rows = organizations.map((o) => ({
     });
     if (!handle) return;
 
-    const added: Row[] = readAddedOrganizations().map((o) => ({ ...o, href: '' }));
+    // Added here, so never verified yet: a domain is verified on the record.
+    const added: Row[] = readAddedOrganizations().map((o) => ({ ...o, verified: '', href: '' }));
     if (added.length) {
       handle.data.unshift(...added);
       handle.countState.total += added.length;
       handle.gridApi.applyTransaction({ add: added, addIndex: 0 });
     }
+    // One arrival receipt at most: an add (from the form or an approved
+    // request) or a request answered without one.
     const justAdded = takeJustAdded();
-    if (justAdded) {
+    const answered = takeAnswerNote();
+    const receipt = justAdded ? `${justAdded.name} added.` : answered;
+    if (receipt) {
       customElements.whenDefined('esa-snackbar-container').then(() => {
         root.querySelector<HTMLElement & { show(o: { message: string; variant: string }): void }>('[data-orgs-toasts]')?.show({
-          message: `${justAdded.name} added.`,
+          message: receipt,
           variant: 'success',
         });
       });

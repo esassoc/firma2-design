@@ -29,23 +29,31 @@
 //
 // bcn-lego-checked: esa-card, esa-badge, esa-button, bcn-side-sheet,
 // esa-select, esa-text-field, esa-switch-toggle, esa-color-picker,
-// esa-alert-box, esa-confirm-dialog. The style preview is one swatch box
-// painted from the chosen values — there is no swatch lego, and a full map in
-// the sheet would preview a basemap more than a style. Beacon is not cloned.
+// esa-range-slider (width, opacity), esa-button-toggle (line style),
+// esa-alert-box, esa-confirm-dialog. The style preview is one swatch drawn
+// from the chosen values (an SVG, so a dash pattern shows) — there is no
+// swatch lego, and a full map in the sheet would preview a basemap more than
+// a style. The same swatch heads each card's badges, so the list answers
+// "which one is the blue dashed line" without opening anything. Beacon is not
+// cloned.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
-import { LAYER_KINDS, PROBE_RESULTS } from '../../data/firma2-geography';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { LAYER_KINDS, LINE_STYLES, MAP_SWATCHES, PROBE_RESULTS } from '../../data/firma2-geography';
 
-const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
+const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS, lineStyles: LINE_STYLES, swatches: MAP_SWATCHES };
 ---
 <div class="firma2-map-layers stack" data-gap="lg" data-config={JSON.stringify(config)}>
-  <div class="stack" data-gap="md" data-list></div>
-  <div data-none hidden>
-    <EsaEmptyState title="No map layers yet" />
-  </div>
+  <Firma2RailSection title="Reference layers">
+    <span slot="actions" data-add-layer><EsaButton variant="primary" size="md" icon="plus">Add layer</EsaButton></span>
+    <div class="stack" data-gap="md" data-list></div>
+    <div data-none hidden>
+      <EsaEmptyState title="No reference layers yet" />
+    </div>
+  </Firma2RailSection>
 
   <template data-tpl-card>
     <EsaCard title="Layer" subtitle="url">
@@ -54,7 +62,7 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
         <EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Delete layer" data-delete />
       </div>
       <div class="stack" data-gap="sm">
-        <div class="cluster" data-gap="xs" data-badges></div>
+        <div class="cluster firma2-map-layers__badges" data-gap="xs" data-badges></div>
         <p class="typography-body-md firma2-map-layers__muted" data-description></p>
       </div>
     </EsaCard>
@@ -91,18 +99,14 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
         <div class="stack" data-gap="md" data-style>
           <esa-switch-toggle data-publisher label="Use the publisher’s colors"></esa-switch-toggle>
           <div class="stack" data-gap="md" data-own-style>
-            <div class="firma2-map-layers__pair">
-              <esa-color-picker data-stroke label="Line color"></esa-color-picker>
-              <esa-text-field data-stroke-width label="Line width" size="md" inputmode="decimal"></esa-text-field>
-            </div>
-            <div class="firma2-map-layers__pair">
-              <esa-color-picker data-fill label="Fill color"></esa-color-picker>
-              <esa-text-field data-fill-opacity label="Fill opacity" size="md" inputmode="decimal" help-text="From 0 to 1."></esa-text-field>
-            </div>
+            <esa-color-picker data-stroke label="Line color" size="md"></esa-color-picker>
+            <esa-button-toggle data-stroke-style label="Line style" size="md"></esa-button-toggle>
+            <esa-range-slider data-stroke-width label="Line width (px)" size="md" min="0.5" max="6" step="0.5"></esa-range-slider>
+            <esa-color-picker data-fill label="Fill color" size="md"></esa-color-picker>
+            <esa-range-slider data-fill-opacity label="Fill opacity (%)" size="md" min="0" max="100" step="1"></esa-range-slider>
           </div>
-          <div class="firma2-map-layers__preview-row cluster" data-gap="md">
-            <span class="firma2-map-layers__preview" data-preview aria-hidden="true"></span>
-          </div>
+          <esa-switch-toggle data-show-labels label="Label shapes with the pop-up field"></esa-switch-toggle>
+          <span class="firma2-map-layers__preview" data-preview aria-hidden="true"></span>
         </div>
       </section>
     </div>
@@ -129,19 +133,32 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
     margin: 0;
   }
 
-  .firma2-map-layers__pair {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--spacing-400);
-    align-items: start;
+  .firma2-map-layers__badges {
+    align-items: center;
   }
 
-  /* A patch of the style as it will draw: the line on top of the fill. */
-  .firma2-map-layers__preview {
-    inline-size: 4rem;
-    block-size: 2.5rem;
+  /* A patch of the style as it will draw: the line on top of the fill, on the
+     sunken surface standing in for the base map. */
+  .firma2-map-layers__preview,
+  .firma2-map-layers :global(.firma2-map-layers__swatch) {
+    display: block;
+    flex: none;
+    inline-size: 6rem;
+    block-size: 3.5rem;
     border-radius: var(--radius-sm, 0.25rem);
     background: var(--color-background-elevation-sunken, #f0f0f0);
+  }
+
+  .firma2-map-layers :global(.firma2-map-layers__swatch) {
+    inline-size: 2rem;
+    block-size: 1.25rem;
+  }
+
+  .firma2-map-layers__preview :global(svg),
+  .firma2-map-layers :global(.firma2-map-layers__swatch svg) {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
   }
 </style>
 
@@ -151,17 +168,35 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-switch-toggle';
   import '@esa/ecology/esa-color-picker';
+  import '@esa/ecology/esa-range-slider';
+  import '@esa/ecology/esa-button-toggle';
   import '@esa/ecology/esa-confirm-dialog';
-  import type { LayerKind, ReferenceLayer } from '../../data/firma2-geography';
+  import { dashOf, lineStyleOf } from '../../data/firma2-geography';
+  import type { LayerKind, LineStyle, ReferenceLayer } from '../../data/firma2-geography';
   import { nameButton } from '../../lib/name-button';
   import { onGeoChange, readLayers, writeLayers } from '../../lib/work-areas';
 
-  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string; helpText?: string; checked?: boolean; message?: string; show?: () => void; close?: () => void; heading?: string };
+  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string; helpText?: string; checked?: boolean; message?: string; swatches?: unknown; show?: () => void; close?: () => void; heading?: string };
 
   interface Config {
     kinds: { value: LayerKind; label: string; note?: string; raster: boolean }[];
     probes: Record<LayerKind, { name: string; fields: string[]; warning?: string }>;
+    lineStyles: { value: LineStyle; label: string }[];
+    swatches: { value: string; label: string }[];
   }
+
+  // The layer's style as one inset rectangle: its line, dashes included, over
+  // its fill. Sized by the box it lands in; the stroke keeps its real width.
+  const esc = (v: string) => v.replace(/[^#\w(),.% -]/g, '');
+  const swatchSvg = (layer: ReferenceLayer): string => {
+    const width = Math.max(0.5, layer.strokeWidth);
+    const style = lineStyleOf(layer);
+    const dash = dashOf(style, width);
+    return `<svg aria-hidden="true"><rect x="15%" y="20%" width="70%" height="60%" rx="2" vector-effect="non-scaling-stroke"
+      fill="${esc(layer.fill || layer.stroke)}" fill-opacity="${Math.max(0, Math.min(1, layer.fillOpacity))}"
+      stroke="${esc(layer.stroke)}" stroke-width="${width}" stroke-opacity="0.8"
+      ${dash ? `stroke-dasharray="${dash}"` : ''} stroke-linecap="${style === 'dotted' ? 'round' : 'butt'}"/></svg>`;
+  };
 
   document.querySelectorAll<HTMLElement>('.firma2-map-layers').forEach((root) => {
     const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
@@ -184,12 +219,18 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
           const card = clone('card');
           card.querySelector('.esa-card__title')!.textContent = layer.name;
           card.querySelector('.esa-card__subtitle')!.textContent = layer.url;
+          const swatch = document.createElement('span');
+          swatch.className = 'firma2-map-layers__swatch';
+          swatch.setAttribute('aria-hidden', 'true');
+          swatch.innerHTML = swatchSvg(layer);
           card.querySelector('[data-badges]')!.append(
+            ...(layer.publisherColours || kindOf(layer.kind).raster ? [] : [swatch]),
             badge('info', kindOf(layer.kind).label),
             ...(layer.active ? [] : [badge('warning', 'Not available on maps')]),
             ...(layer.active && layer.onByDefault ? [badge('primary', 'On when a map opens')] : []),
             ...(layer.publisherColours ? [badge('secondary', 'Publisher’s colors')] : []),
             ...(layer.minZoom != null ? [badge('secondary', `From zoom ${layer.minZoom}`)] : []),
+            ...(layer.showLabels && !kindOf(layer.kind).raster ? [badge('secondary', 'Labeled')] : []),
           );
           card.querySelector('[data-description]')!.textContent = layer.description;
           // Icon-only, so each name says WHICH layer: a screen reader's list of
@@ -233,7 +274,9 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
       active: $<Control>('[data-active]'),
       publisher: $<Control>('[data-publisher]'),
       stroke: $<Control>('[data-stroke]'),
+      strokeStyle: $<Control>('[data-stroke-style]'),
       strokeWidth: $<Control>('[data-stroke-width]'),
+      showLabels: $<Control>('[data-show-labels]'),
       fill: $<Control>('[data-fill]'),
       fillOpacity: $<Control>('[data-fill-opacity]'),
     };
@@ -256,16 +299,8 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
       $('[data-appearance]').hidden = kind.raster;
       $('[data-own-style]').hidden = draft.publisherColours;
       const preview = $('[data-preview]');
-      if (draft.publisherColours) {
-        preview.style.border = '2px dashed var(--color-border-default)';
-        preview.style.background = 'var(--color-background-elevation-sunken)';
-      } else {
-        const opacity = Math.max(0, Math.min(1, draft.fillOpacity));
-        preview.style.border = `${Math.max(0.5, draft.strokeWidth)}px solid ${draft.stroke}`;
-        preview.style.background = opacity
-          ? `color-mix(in srgb, ${draft.fill || draft.stroke} ${Math.round(opacity * 100)}%, var(--color-background-elevation-sunken))`
-          : 'var(--color-background-elevation-sunken)';
-      }
+      preview.hidden = draft.publisherColours;
+      preview.innerHTML = swatchSvg(draft);
     };
 
     const fill = () => {
@@ -283,9 +318,11 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
       f.active.checked = draft.active;
       f.publisher.checked = draft.publisherColours;
       f.stroke.value = draft.stroke;
-      f.strokeWidth.value = String(draft.strokeWidth);
+      f.strokeStyle.value = lineStyleOf(draft);
+      f.strokeWidth.value = draft.strokeWidth;
       f.fill.value = draft.fill;
-      f.fillOpacity.value = String(draft.fillOpacity);
+      f.fillOpacity.value = Math.round(draft.fillOpacity * 100);
+      f.showLabels.checked = Boolean(draft.showLabels);
       $('[data-probe-result]').textContent = '';
       $('[data-probe-warning]').hidden = true;
       paintSheet();
@@ -311,13 +348,15 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
             strokeWidth: 1,
             fill: '#6b7280',
             fillOpacity: 0,
+            strokeStyle: 'solid',
+            showLabels: false,
             draws: null,
           };
       sheet.heading = id ? 'Edit layer' : 'Add layer';
       $('[data-add-wrap]').hidden = Boolean(id);
       $('[data-cancel-wrap]').hidden = Boolean(id);
       $('[data-done-wrap]').hidden = !id;
-      void Promise.all(['esa-select', 'esa-text-field', 'esa-switch-toggle', 'esa-color-picker'].map((t) => customElements.whenDefined(t))).then(() => {
+      void Promise.all(['esa-select', 'esa-text-field', 'esa-switch-toggle', 'esa-color-picker', 'esa-range-slider', 'esa-button-toggle'].map((t) => customElements.whenDefined(t))).then(() => {
         fill();
         sheet.show();
       });
@@ -325,6 +364,11 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
 
     customElements.whenDefined('esa-select').then(() => {
       f.kind.options = config.kinds.map((k) => ({ value: k.value, label: k.label }));
+    });
+    customElements.whenDefined('esa-button-toggle').then(() => (f.strokeStyle.options = config.lineStyles));
+    customElements.whenDefined('esa-color-picker').then(() => {
+      f.stroke.swatches = config.swatches;
+      f.fill.swatches = config.swatches;
     });
 
     const text = (c: Control) => String(c.value ?? '').trim();
@@ -364,8 +408,10 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
     f.publisher.addEventListener('change', () => ((draft = { ...draft, publisherColours: Boolean(f.publisher.checked) }), commit()));
     f.stroke.addEventListener('change', () => ((draft = { ...draft, stroke: text(f.stroke) || draft.stroke }), commit()));
     f.fill.addEventListener('change', () => ((draft = { ...draft, fill: text(f.fill) || draft.fill }), commit()));
+    f.strokeStyle.addEventListener('change', () => ((draft = { ...draft, strokeStyle: (text(f.strokeStyle) || 'solid') as LineStyle }), commit()));
     f.strokeWidth.addEventListener('change', () => ((draft = { ...draft, strokeWidth: num(f.strokeWidth, draft.strokeWidth) }), commit()));
-    f.fillOpacity.addEventListener('change', () => ((draft = { ...draft, fillOpacity: Math.max(0, Math.min(1, num(f.fillOpacity, draft.fillOpacity))) }), commit()));
+    f.fillOpacity.addEventListener('change', () => ((draft = { ...draft, fillOpacity: Math.max(0, Math.min(100, num(f.fillOpacity, draft.fillOpacity * 100))) / 100 }), commit()));
+    f.showLabels.addEventListener('change', () => ((draft = { ...draft, showLabels: Boolean(f.showLabels.checked) }), commit()));
 
     // ---- check service: scripted, by kind ------------------------------------------
     $('[data-probe]').addEventListener('click', () => {
@@ -406,7 +452,7 @@ const config = { kinds: LAYER_KINDS, probes: PROBE_RESULTS };
     });
     $('[data-done]').addEventListener('click', () => sheet.close());
     $('[data-cancel]').addEventListener('click', () => sheet.close());
-    document.querySelectorAll('[data-add-layer]').forEach((b) => b.addEventListener('click', () => open(null)));
+    root.querySelectorAll('[data-add-layer]').forEach((b) => b.addEventListener('click', () => open(null)));
 
     onGeoChange(paint);
     paint();

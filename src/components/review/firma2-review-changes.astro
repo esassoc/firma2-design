@@ -10,15 +10,22 @@
 // History sheet keeps every one — the evidence behind the review.
 //
 // GROUPED BY WHERE IT SITS ON THE PAGE — key facts, performance measures,
-// funding sources, work areas — so a steward checks each change against the
+// funding sources, work areas — so a manager checks each change against the
 // section it will appear in.
 //
-// REVERT IS PER FIELD, and only where a field holds the value. A steward who
+// REVERT IS PER FIELD, and only where a field holds the value. A manager who
 // finds one bad change puts that field back and publishes the rest; a filed
 // report or a redrawn boundary has no single value to restore, so its row has
 // no Revert — the fix for those is on the record. A revert writes the
 // published value back to the record (src/lib/publish-store.ts; the project
 // page applies it on load) and the row leaves the diff.
+//
+// UNDO LAST PUBLISH lives in the publish history at the foot of the diff,
+// which appears once this browser has published or undone here. Undo puts the
+// public page back to the snapshot before the newest publish and is logged as
+// its own row ("Publish undone"), never by deleting the publish; it is offered
+// only while nothing newer has happened to the project (src/lib/publish-undo.ts).
+// The changes that publish carried come back into the diff above.
 //
 // bcn-lego-checked: Revert is esa-button, "New" is esa-badge, the first-publish
 // note esa-alert-box — legos, unchanged. The rows are a definition list on
@@ -46,15 +53,15 @@ const meta = (c: UnpublishedChange) =>
   [c.editors.join(', '), c.edits > 1 ? `${c.edits} edits` : null, labelOfIso(c.lastIso)].filter(Boolean).join(' · ');
 const isAdd = (c: UnpublishedChange) => c.from === undefined;
 ---
-<section class="firma2-review-changes stack" data-gap="xl" data-slug={slug} aria-label="Unpublished changes">
-  {publishedIso ? (
-    <dl class="firma2-review-changes__last cluster" data-gap="xs">
-      <dt class="typography-label-md-strong">Last published</dt>
-      <dd class="typography-body-md">{labelOfIso(publishedIso)}, {publishedBy}</dd>
-    </dl>
-  ) : (
+<section class="firma2-review-changes stack" data-gap="xl" data-slug={slug} data-published-iso={publishedIso ?? undefined} data-published-by={publishedBy ?? undefined} aria-label="Unpublished changes">
+  {/* Both render; the script shows the one this browser's publishes and undos leave true. */}
+  <dl class="firma2-review-changes__last cluster" data-gap="xs" data-last hidden={!publishedIso}>
+    <dt class="typography-label-md-strong">Last published</dt>
+    <dd class="typography-body-md" data-last-text>{publishedIso ? `${labelOfIso(publishedIso)}, ${publishedBy}` : ''}</dd>
+  </dl>
+  <div data-never hidden={!!publishedIso}>
     <EsaAlertBox variant="info" title="Not public yet" />
-  )}
+  </div>
 
   {groups.map(({ group, rows }) => (
     <section class="stack" data-gap="sm" data-group>
@@ -96,6 +103,20 @@ const isAdd = (c: UnpublishedChange) => c.from === undefined;
       </ol>
     </section>
   ))}
+
+  {/* PUBLISH HISTORY — only once this browser has published or undone here;
+      before that it would repeat the Last published line above. Newest first.
+      The undo is here as well as on the publish toast: a toast's button can't
+      be reached by keyboard, so the page must hold the same act. */}
+  <section class="stack" data-gap="sm" data-publish-history hidden aria-labelledby={`publish-history-${slug}`}>
+    <div class="repel" data-gap="md">
+      <h2 class="typography-title-sm-strong" id={`publish-history-${slug}`}>Publish history</h2>
+      <span data-undo-wrap hidden>
+        <EsaButton variant="secondary" appearance="outline" size="md" data-undo-publish>Undo last publish</EsaButton>
+      </span>
+    </div>
+    <ol class="firma2-review-changes__list" role="list" data-history-list></ol>
+  </section>
 </section>
 
 <style>
@@ -125,6 +146,24 @@ const isAdd = (c: UnpublishedChange) => c.from === undefined;
   }
   .firma2-review-changes__row:last-child {
     border-block-end: 0;
+  }
+
+  /* The history's rows are built by the script, so they carry no scope
+     attribute; the same ruled rows as the diff, one line of meta each. */
+  .firma2-review-changes :global(.firma2-review-changes__history-row) {
+    display: grid;
+    gap: var(--spacing-100);
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-review-changes :global(.firma2-review-changes__history-row:last-child) {
+    border-block-end: 0;
+  }
+  .firma2-review-changes :global(.firma2-review-changes__history-row > p) {
+    margin: 0;
+  }
+  .firma2-review-changes :global(.firma2-review-changes__history-row > p + p) {
+    color: var(--color-content-default-secondary);
   }
 
   .firma2-review-changes__label {
@@ -157,10 +196,13 @@ const isAdd = (c: UnpublishedChange) => c.from === undefined;
 
 <script>
   import { pendingKeys, readPublishing, revert } from '../../lib/publish-store';
+  import { PUBLISH_LOG_CHANGED, eventsFor, undoPublish, undoablePublish } from '../../lib/publish-undo';
+  import { CURRENT_USER } from '../../data/firma2-directory';
+  import { TODAY_ISO, labelOfIso } from '../../data/firma2-publish-history';
 
   // The rows this browser has already published or reverted leave the diff;
   // a group with nothing left goes with them. The actions component listens
-  // for the count so Publish knows what is still in front of the steward.
+  // for the count so Publish knows what is still in front of the manager.
   document.querySelectorAll<HTMLElement>('.firma2-review-changes').forEach((root) => {
     const slug = root.dataset.slug!;
     const rows = () => [...root.querySelectorAll<HTMLElement>('[data-change]')];
@@ -173,7 +215,63 @@ const isAdd = (c: UnpublishedChange) => c.from === undefined;
         g.hidden = !g.querySelector('[data-change]:not([hidden])');
       });
       document.dispatchEvent(new CustomEvent('firma2:review-pending', { detail: { slug, keys: [...left] } }));
+      paintHistory();
     };
+
+    // ---- Last published, and the publish history -------------------------
+    // What the public page shows now: this browser's newest publish standing,
+    // else the seed's. An undo puts the store back, so this follows it.
+    const seedIso = root.dataset.publishedIso ?? null;
+    const seedBy = root.dataset.publishedBy ?? null;
+    const part = <T extends HTMLElement>(name: string) => root.querySelector<T>(`[data-${name}]`)!;
+    // Undo follows who may publish; firma2-review-actions owns that check.
+    let allowed = true;
+    document.addEventListener('firma2:review-state', (event) => {
+      const detail = (event as CustomEvent<{ slug: string; allowed: boolean }>).detail;
+      if (detail.slug !== slug) return;
+      allowed = detail.allowed;
+      paintHistory();
+    });
+
+    function paintHistory() {
+      const local = readPublishing().published[slug];
+      const iso = local?.iso ?? seedIso;
+      const by = local?.by ?? seedBy;
+      part('last').hidden = !iso;
+      part('never').hidden = !!iso;
+      if (iso) part('last-text').textContent = `${labelOfIso(iso)}, ${by}`;
+
+      const events = eventsFor(slug);
+      part('publish-history').hidden = events.length === 0;
+      part('undo-wrap').hidden = !allowed || !undoablePublish(slug);
+      const list = part('history-list');
+      const rows = [
+        ...events.map((e) => ({ what: e.kind === 'publish' ? 'Published' : 'Publish undone', iso: e.iso, by: e.by })),
+      ].reverse();
+      if (seedIso && seedBy) rows.push({ what: 'Published', iso: seedIso, by: seedBy });
+      list.replaceChildren(
+        ...rows.map((r) => {
+          const li = document.createElement('li');
+          li.className = 'firma2-review-changes__row firma2-review-changes__history-row';
+          const what = Object.assign(document.createElement('p'), { className: 'typography-label-md-strong firma2-review-changes__label', textContent: r.what });
+          const meta = Object.assign(document.createElement('p'), { className: 'typography-body-sm firma2-review-changes__meta', textContent: `${labelOfIso(r.iso)} · ${r.by}` });
+          li.append(what, meta);
+          return li;
+        }),
+      );
+    }
+
+    part('undo-publish').addEventListener('click', () => {
+      if (!undoPublish(slug, CURRENT_USER.name, TODAY_ISO)) return;
+      paint();
+      // The button leaves with the act; focus goes to the history's heading.
+      const heading = root.querySelector<HTMLElement>(`#publish-history-${CSS.escape(slug)}`);
+      heading?.setAttribute('tabindex', '-1');
+      heading?.focus();
+      document.dispatchEvent(new CustomEvent('firma2:review-toast', { detail: { message: 'Publish undone. Its changes are back in review.' } }));
+    });
+    // An undo from the toast, or another of this tab's components.
+    document.addEventListener(PUBLISH_LOG_CHANGED, () => paint());
 
     root.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest('[data-revert-button]');

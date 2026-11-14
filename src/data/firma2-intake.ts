@@ -148,13 +148,14 @@ export interface IntakeForm {
 }
 
 export const DEFAULT_AFTER_SUBMIT =
-  '<p class="typography-body-md">Your proposal is with the lead organization’s steward. You’ll get a notification when they approve it or send it back.</p>';
+  '<p class="typography-body-md">Your proposal is with the lead organization’s manager. You’ll get a notification when they approve it or send it back.</p>';
 
 export const DEFAULT_FORM_TITLE = 'Project proposal';
 
 /**
  * A new workspace's form: one screen holding the four attributes no project
- * can exist without. Everything else is the administrator's to add.
+ * can exist without, and one example screen shown only to stormwater
+ * projects. Everything else is the administrator's to add.
  */
 export const SEED_FORM: IntakeForm = {
   title: DEFAULT_FORM_TITLE,
@@ -169,6 +170,20 @@ export const SEED_FORM: IntakeForm = {
         { id: 'q-classifications', type: 'builtin', key: 'classifications', label: 'Classifications', required: true },
       ],
     },
+    // One screen asked only of stormwater projects: the workspace's one long
+    // list (sixteen treatment types), so a new workspace's form shows what a
+    // long closed list gets — its guidance, "Used here" and "Help me choose"
+    // (src/lib/vocabulary-picker.ts). An administrator can remove it like any
+    // screen.
+    {
+      id: 's-stormwater',
+      title: 'Stormwater treatment',
+      when: { source: 'q-type', op: 'is', values: ['Stormwater & water quality'] },
+      blocks: [
+        { id: 'q-bmp-type', type: 'field', fieldId: 'bmp-type', label: 'Which treatment was built?', required: false },
+        { id: 'q-drainage-area', type: 'field', fieldId: 'drainage-area', label: 'How much area drains to it?', required: false },
+      ],
+    },
   ],
   afterSubmit: DEFAULT_AFTER_SUBMIT,
 };
@@ -176,7 +191,7 @@ export const SEED_FORM: IntakeForm = {
 /**
  * The form a free workspace's members fill: fixed, because customizing it is a
  * paid feature (.scratch/form-canvas/spec.md, decisions 18 and 22). The four a
- * project can't exist without, plus Description — what a steward reviews —
+ * project can't exist without, plus Description — what a manager reviews —
  * and Location, which puts the proposal on the map.
  */
 export const STANDARD_FORM: IntakeForm = {
@@ -217,11 +232,11 @@ export interface IntakeProject {
   submittedAt?: string;
   decidedAt?: string;
   decidedBy?: string;
-  /** The steward's note when returned. Cleared on resubmit. */
+  /** The manager's note when returned. Cleared on resubmit. */
   returnComment?: string;
 }
 
-/** Invented proposals so the steward's queue has something in it. */
+/** Invented proposals so the manager's queue has something in it. */
 export const SEED_PROPOSALS: IntakeProject[] = [
   {
     id: 'p-mill-creek',

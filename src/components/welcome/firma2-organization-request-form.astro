@@ -1,0 +1,194 @@
+---
+// firma2-organization-request-form — "My organization isn't listed": a
+// newcomer asks for a new organization (.scratch/access-requests/spec.md,
+// decisions 2, 7, 8, 18).
+//
+// ONLY AN ADMINISTRATOR CREATES IT. The form says so before it is filled in,
+// once, because it decides how long the wait is and who answers.
+//
+// THE WEBSITE IS THE EVIDENCE. An administrator judges a new organization by
+// whether the requester's email sits at its domain. A mismatch is flagged to
+// them, never blocked here (small organizations use personal addresses), so
+// the field asks for the site and says why in its hint.
+//
+// DUPLICATES ARE CAUGHT AT THE SOURCE. As the name and website are typed, any
+// organization already here that looks alike is offered as the door to ask
+// instead — the cheapest point to stop "Feather River Headwaters Trust" being
+// requested beside "Feather Headwaters Trust".
+//
+// bcn-lego-checked: esa-text-field, esa-select, esa-textarea and esa-button are
+// the form; esa-alert-box carries the look-alikes; esa-snackbar-container is not
+// needed because the page answers in place. All composed unchanged. Beacon is
+// not cloned on this machine. `.stack`/`.cluster` lay it out; the CSS only
+// shows the sent state in place of the form.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import { organizations, organizationTypes } from '../../data/firma2-directory';
+import { NEWCOMER } from '../../data/firma2-access-requests';
+import { withBase } from '../../lib/base';
+
+const types = JSON.stringify(organizationTypes.map((t) => ({ value: t, label: t })));
+interface Props {
+  /** Where Cancel, Back and the look-alikes' "ask to join" lead: the first
+   *  sign-in's welcome page, or the in-app Join an organization page. */
+  back?: string;
+}
+const { back = '/prototypes/welcome' } = Astro.props;
+const backHref = withBase(back);
+const slugs = Object.fromEntries(organizations.map((o) => [o.name, o.slug]));
+---
+<section
+  class="firma2-organization-request-form stack"
+  data-gap="xl"
+  data-name={NEWCOMER.name}
+  data-email={NEWCOMER.email}
+  data-welcome={backHref}
+  data-context={back === '/prototypes/welcome' ? 'first' : 'app'}
+  data-slugs={JSON.stringify(slugs)}
+>
+  <div class="stack" data-gap="sm" data-when="form">
+    {/* Inside the app the page header carries the title. */}
+    {back === '/prototypes/welcome' && <h1 class="typography-heading-lg">Request a new organization</h1>}
+    <p class="typography-body-md">A workspace administrator reviews each one. You’ll be its first manager.</p>
+  </div>
+
+  <div class="stack" data-gap="lg" data-when="form">
+    <esa-text-field label="Organization name" size="md" required data-field="name"></esa-text-field>
+    <esa-select label="Type" size="md" options={types} required data-field="type"></esa-select>
+    <esa-text-field
+      label="Website"
+      placeholder="example.org"
+      help-text="Its own site, so an administrator can match it to your email."
+      size="md"
+      data-field="website"
+    ></esa-text-field>
+
+    <div class="firma2-organization-request-form__similar" data-similar>
+      <EsaAlertBox variant="info" title="Already here?">
+        <p class="typography-body-md">These look alike. If one is yours, ask to join it instead.</p>
+        <ul class="firma2-organization-request-form__list" data-similar-list></ul>
+      </EsaAlertBox>
+    </div>
+
+    <esa-textarea
+      label="Message (optional)"
+      help-text="What your organization does here."
+      size="md"
+      rows="3"
+      data-field="message"
+    ></esa-textarea>
+    <div class="cluster" data-gap="xs">
+      <EsaButton variant="primary" size="md" data-request-send>Send request</EsaButton>
+      <EsaButton variant="ghost" size="md" href={backHref}>Cancel</EsaButton>
+    </div>
+  </div>
+
+  <div class="stack" data-gap="lg" data-when="sent">
+    {back === '/prototypes/welcome'
+      ? <h1 class="typography-heading-lg" tabindex="-1" data-sent-title>Request sent</h1>
+      : <h2 class="typography-heading-lg" tabindex="-1" data-sent-title>Request sent</h2>}
+    <p class="typography-body-md">A workspace administrator will review it. We’ll email you when it’s answered.</p>
+    <div>
+      <EsaButton variant="secondary" size="md" href={backHref}>Back to organizations</EsaButton>
+    </div>
+  </div>
+</section>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-textarea';
+  import { createRequest } from '../../lib/access-requests';
+  import { currentPerson } from '../../lib/workspace-permissions';
+  import { similarOrganizations } from '../../data/firma2-access-requests';
+  import type { OrganizationType } from '../../data/firma2-directory';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+
+  document.querySelectorAll<HTMLElement>('.firma2-organization-request-form').forEach((root) => {
+    const field = (name: string) => root.querySelector<Field>(`[data-field="${name}"]`)!;
+    const name = field('name');
+    const type = field('type');
+    const website = field('website');
+    const message = field('message');
+    const similar = root.querySelector<HTMLElement>('[data-similar]')!;
+    const list = root.querySelector<HTMLElement>('[data-similar-list]')!;
+    const slugs: Record<string, string> = JSON.parse(root.dataset.slugs ?? '{}');
+    const welcome = root.dataset.welcome ?? '';
+    root.dataset.state = 'form';
+
+    // ?name=&type=&website= arrive filled in — how the guided flow hands over
+    // the organization it asks for. Values only after define.
+    const preset = new URLSearchParams(location.search);
+    Promise.all(['esa-text-field', 'esa-select'].map((tag) => customElements.whenDefined(tag))).then(() => {
+      if (preset.get('name')) name.value = preset.get('name')!;
+      if (preset.get('type')) type.value = preset.get('type')!;
+      if (preset.get('website')) website.value = preset.get('website')!;
+      if (preset.get('message')) message.value = preset.get('message')!;
+      lookAlikes();
+    });
+
+    function lookAlikes() {
+      const found = name.value.trim().length >= 3 ? similarOrganizations(name.value, website.value, true) : [];
+      similar.toggleAttribute('data-shown', found.length > 0);
+      list.replaceChildren(
+        ...found.map((org) => {
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = `${welcome}?organization=${encodeURIComponent(org)}`;
+          a.textContent = org;
+          a.dataset.slug = slugs[org] ?? '';
+          li.append(a);
+          return li;
+        }),
+      );
+    }
+    name.addEventListener('input', lookAlikes);
+    name.addEventListener('change', lookAlikes);
+    website.addEventListener('change', lookAlikes);
+
+    root.querySelector('[data-request-send]')?.addEventListener('click', () => {
+      name.errorText = name.value.trim() ? '' : 'Enter the organization’s name.';
+      type.errorText = type.value ? '' : 'Choose a type.';
+      if (name.errorText || type.errorText) return;
+      // The newcomer on first sign-in; inside the app, whoever is signed in.
+      const me = root.dataset.context === 'app' ? currentPerson() : { name: root.dataset.name ?? '', email: root.dataset.email ?? '' };
+      const made = createRequest({
+        kind: 'organization',
+        name: me.name,
+        email: me.email,
+        organization: name.value.trim(),
+        orgType: type.value as OrganizationType,
+        website: website.value.trim() || undefined,
+        asked: 'Contributor',
+        message: message.value.trim() || undefined,
+        via: 'welcome',
+      });
+      root.querySelector('[data-sent-title]')!.textContent = `Request sent for ${made.organization}`;
+      root.dataset.state = 'sent';
+      root.querySelector<HTMLElement>('[data-sent-title]')?.focus();
+    });
+  });
+</script>
+
+<style>
+  .firma2-organization-request-form h1,
+  .firma2-organization-request-form p {
+    margin: 0;
+  }
+  [data-sent-title] {
+    outline: none;
+  }
+  .firma2-organization-request-form__list {
+    margin: var(--spacing-200, 0.5rem) 0 0;
+    padding-inline-start: 1.25em;
+  }
+  /* One state at a time, by display rule — [hidden] loses to .stack. */
+  .firma2-organization-request-form__similar:not([data-shown]) {
+    display: none;
+  }
+  .firma2-organization-request-form[data-state='form'] [data-when='sent'],
+  .firma2-organization-request-form[data-state='sent'] [data-when='form'] {
+    display: none;
+  }
+</style>

@@ -52,6 +52,7 @@ import {
   type ProjectStage,
 } from './firma2-projects';
 import { applyPublishing, type Publishing } from './firma2-publish-history';
+import { workAreaShape } from './firma2-shapes';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -320,7 +321,7 @@ export interface ProjectPhoto {
 export interface AuditEntry {
   /** Rendered label — "12 August 2026". Stored formatted; see determinism above. */
   date: string;
-  /** Who made the change — one of the record's own contacts, or for a publish the steward or administrator who ran it. */
+  /** Who made the change — one of the record's own contacts, or for a publish the manager or administrator who ran it. */
   user: string;
   /** What changed, named by the record's own field vocabulary. One sentence. */
   change: string;
@@ -359,40 +360,15 @@ export interface ProjectDetail {
 // Geometry
 // ---------------------------------------------------------------------------
 
-// Normalized shapes in degrees, applied as offsets from a project's map center.
-// Hand-drawn once and reused, rather than 24 hand-typed rings that would each
-// be equally fictional: the honest part of the geography is the CENTER, which
-// is authored per project against the real watershed. At the zoom these render
-// at, roughly 0.01 degrees is a kilometre.
-const AREA_SHAPES: [number, number][][] = [
-  // A broad basin, wider than it is tall.
-  [[0.016, -0.030], [0.021, 0.004], [0.011, 0.028], [-0.008, 0.031], [-0.019, 0.012], [-0.017, -0.017], [-0.002, -0.032]],
-  // A narrow unit following a valley bottom.
-  [[0.024, -0.011], [0.019, 0.008], [0.001, 0.016], [-0.016, 0.013], [-0.023, -0.004], [-0.011, -0.017], [0.007, -0.019]],
-  // A lobed parcel with a notch — reads as a real boundary rather than a blob.
-  [[0.018, -0.021], [0.022, 0.009], [0.006, 0.014], [0.004, 0.027], [-0.013, 0.022], [-0.020, 0.001], [-0.009, -0.024]],
-];
+// Each work area's outline is generated to its own extent and kind by
+// workAreaShape (src/data/firma2-shapes.ts) — no shared templates. The honest
+// part of the geography is still the CENTER, authored per project against the
+// real watershed; `nudge` moves a project's second work area off its first.
 
-const REACH_SHAPES: [number, number][][] = [
-  // A meandering reach running roughly north–south.
-  [[0.028, -0.014], [0.017, -0.004], [0.008, -0.012], [-0.003, -0.006], [-0.012, 0.007], [-0.024, 0.011]],
-  // A reach running east–west with a tight bend.
-  [[0.009, -0.031], [0.004, -0.014], [-0.006, -0.006], [-0.004, 0.010], [0.005, 0.021], [0.003, 0.034]],
-  // A shallower, straighter reach — a leveed or channelized segment.
-  [[-0.021, -0.026], [-0.011, -0.013], [-0.002, -0.002], [0.008, 0.010], [0.019, 0.019], [0.027, 0.030]],
-];
-
-/** Translate a normalized shape onto a center, with an optional nudge so a
- *  project's second work area does not sit on top of its first. */
-const placeShape = (
-  shape: [number, number][],
-  center: [number, number],
-  nudge: [number, number] = [0, 0],
-): [number, number][] =>
-  shape.map(([dLat, dLng]) => [
-    Number((center[0] + dLat + nudge[0]).toFixed(5)),
-    Number((center[1] + dLng + nudge[1]).toFixed(5)),
-  ]);
+/** Lake Tahoe, where every tributary in the basin drains. The same point as
+ *  LAKE in firma2-geography.ts, which imports this file and so cannot be
+ *  imported back. */
+const BASIN_OUTLET: [number, number] = [39.09, -120.04];
 
 // ---------------------------------------------------------------------------
 // Milestone templates
@@ -908,11 +884,11 @@ interface AuthoredDetail {
   /** [lat, lng] on the real watershed the project is named for. */
   center: [number, number];
   zoom?: number;
-  /** Work areas: label, kind, which shape template, extent, and an optional nudge. */
+  /** Work areas: label, kind, extent, and an optional nudge. The outline is
+      generated from these (src/data/firma2-shapes.ts). */
   areas: {
     label: string;
     kind: 'area' | 'reach';
-    shape: 0 | 1 | 2;
     extent: number;
     nudge?: [number, number];
   }[];
@@ -928,11 +904,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Deer Creek Riparian Corridor Enhancement': {
     description:
       'Replanting native cottonwood, willow and valley oak along six miles of the lower Deer Creek corridor, on parcels where grazing has kept the streambank bare for decades. The shaded corridor is intended to lower summer water temperatures for the creek’s spring-run Chinook.',
-    center: [40.0231, -122.0654],
+    center: [38.84, -120.02],
     zoom: 12,
     areas: [
-      { label: 'Lower corridor planting reach', kind: 'reach', shape: 0, extent: 4.1 },
-      { label: 'Upland buffer unit', kind: 'area', shape: 1, extent: 62, nudge: [0.014, 0.022] },
+      { label: 'Lower corridor planting reach', kind: 'reach', extent: 4.1 },
+      { label: 'Upland buffer unit', kind: 'area', extent: 62, nudge: [0.014, 0.022] },
     ],
     measures: [
       ['Acres of riparian habitat restored', 'acres', 62, 'acres-riparian-habitat-restored'],
@@ -953,11 +929,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Scott River Fish Passage Barrier Removal': {
     description:
       'Removing a failing irrigation diversion and two undersized crossings that block coho access to eleven miles of Scott River tributary habitat. A roughened channel will replace the diversion while preserving the water right it serves.',
-    center: [41.5194, -122.9061],
+    center: [39.13, -120.21],
     zoom: 12,
     areas: [
-      { label: 'Diversion removal site', kind: 'area', shape: 2, extent: 9 },
-      { label: 'Reconnected tributary reach', kind: 'reach', shape: 1, extent: 11.3, nudge: [-0.018, 0.016] },
+      { label: 'Diversion removal site', kind: 'area', extent: 9 },
+      { label: 'Reconnected tributary reach', kind: 'reach', extent: 11.3, nudge: [-0.018, 0.016] },
     ],
     measures: [
       ['Fish passage barriers removed', 'barriers', 3, 'fish-passage-barriers-removed'],
@@ -975,11 +951,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Suisun Slough Tidal Marsh Enhancement': {
     description:
       'Breaching an exterior levee to return tidal exchange to 240 acres of subsided managed wetland at the edge of Suisun Slough. Sediment placement raises the interior to marsh-plain elevation before the breach so vegetation establishes rather than the basin converting to open water.',
-    center: [38.1547, -122.0402],
+    center: [38.905, -120.0],
     zoom: 12,
     areas: [
-      { label: 'Tidal restoration basin', kind: 'area', shape: 0, extent: 240 },
-      { label: 'Levee breach and transition zone', kind: 'area', shape: 1, extent: 31, nudge: [-0.021, -0.014] },
+      { label: 'Tidal restoration basin', kind: 'area', extent: 240 },
+      { label: 'Levee breach and transition zone', kind: 'area', extent: 31, nudge: [-0.021, -0.014] },
     ],
     measures: [
       ['Acres of tidal marsh restored', 'acres', 240, 'acres-wetland-meadow-restored'],
@@ -1000,11 +976,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Red Clover Valley Meadow Reconnection': {
     description:
       'Filling two miles of incised gully to reconnect Red Clover Creek with its meadow floodplain, raising the water table across 380 acres of degraded wet meadow. The rewetted meadow holds snowmelt into late summer and releases it to the Feather River below.',
-    center: [39.9548, -120.5342],
+    center: [38.76, -119.93],
     zoom: 12,
     areas: [
-      { label: 'Meadow restoration unit', kind: 'area', shape: 0, extent: 380 },
-      { label: 'Filled gully alignment', kind: 'reach', shape: 2, extent: 2.2, nudge: [0.008, 0.004] },
+      { label: 'Meadow restoration unit', kind: 'area', extent: 380 },
+      { label: 'Filled gully alignment', kind: 'reach', extent: 2.2, nudge: [0.008, 0.004] },
     ],
     measures: [
       ['Acres of montane meadow restored', 'acres', 380, 'acres-wetland-meadow-restored'],
@@ -1021,11 +997,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Cosumnes Floodplain Reconnection': {
     description:
       'Setting back three miles of agricultural levee on the lower Cosumnes to reopen 1,100 acres of seasonal floodplain, the rearing habitat that juvenile Chinook lose on a leveed river. Landowners retain farming on the terrace behind the new alignment.',
-    center: [38.2731, -121.4407],
+    center: [39.318, -120.265],
     zoom: 12,
     areas: [
-      { label: 'Reconnected floodplain', kind: 'area', shape: 0, extent: 1100 },
-      { label: 'Setback levee alignment', kind: 'reach', shape: 2, extent: 3.4, nudge: [0.012, -0.008] },
+      { label: 'Reconnected floodplain', kind: 'area', extent: 1100 },
+      { label: 'Setback levee alignment', kind: 'reach', extent: 3.4, nudge: [0.012, -0.008] },
     ],
     measures: [
       ['Acres of seasonal floodplain reconnected', 'acres', 1100, 'acres-floodplain-habitat'],
@@ -1043,10 +1019,10 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Bear River Gravel Augmentation': {
     description:
       'Placing spawning-sized gravel into two miles of Bear River downstream of a dam that has cut off the river’s natural sediment supply. Placement is staged across three high-flow seasons so the river distributes the material rather than the project shaping it.',
-    center: [39.1204, -121.2078],
+    center: [39.03, -120.18],
     zoom: 13,
     areas: [
-      { label: 'Gravel injection reach', kind: 'reach', shape: 0, extent: 2.1 },
+      { label: 'Gravel injection reach', kind: 'reach', extent: 2.1 },
     ],
     measures: [
       ['Stream miles of spawning habitat improved', 'miles', 2.1, 'stream-miles-instream-habitat'],
@@ -1063,11 +1039,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Yuba Headwaters Fuels Reduction': {
     description:
       'Thinning and prescribed burning across 4,200 acres of overstocked mixed-conifer forest in the North Yuba headwaters, above two communities and the reservoir that supplies them. Treatment is sequenced to build a connected fuel break rather than isolated units.',
-    center: [39.5748, -120.7161],
+    center: [39.33, -119.89],
     zoom: 11,
     areas: [
-      { label: 'Treatment unit — north ridge', kind: 'area', shape: 0, extent: 2400 },
-      { label: 'Treatment unit — reservoir slope', kind: 'area', shape: 2, extent: 1800, nudge: [-0.026, 0.024] },
+      { label: 'Treatment unit — north ridge', kind: 'area', extent: 2400 },
+      { label: 'Treatment unit — reservoir slope', kind: 'area', extent: 1800, nudge: [-0.026, 0.024] },
     ],
     measures: [
       ['Acres mechanically thinned', 'acres', 2900, 'acres-forest-fuels-reduction-treatment'],
@@ -1090,11 +1066,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Butte Creek Canyon Fuel Break': {
     description:
       'A nine-mile shaded fuel break along the Butte Creek canyon rim, tied into existing roads so it can be held during an incident. Post-treatment maintenance is contracted through the local fire safe council rather than left to the grant to renew.',
-    center: [39.7692, -121.7093],
+    center: [39.1, -119.89],
     zoom: 12,
     areas: [
-      { label: 'Fuel break alignment', kind: 'reach', shape: 2, extent: 9.2 },
-      { label: 'Canyon rim treatment unit', kind: 'area', shape: 1, extent: 640, nudge: [0.016, 0.018] },
+      { label: 'Fuel break alignment', kind: 'reach', extent: 9.2 },
+      { label: 'Canyon rim treatment unit', kind: 'area', extent: 640, nudge: [0.016, 0.018] },
     ],
     measures: [
       ['Miles of shaded fuel break completed', 'miles', 9.2, 'miles-fuel-break'],
@@ -1109,11 +1085,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Navarro River Large Wood Placement': {
     description:
       'Anchoring 140 engineered log structures across five miles of the Navarro mainstem and its tributaries, rebuilding the pool habitat lost to a century of stream cleaning. Wood was sourced from the adjacent conservation forest rather than trucked in.',
-    center: [39.1571, -123.5386],
+    center: [38.97, -120.19],
     zoom: 12,
     areas: [
-      { label: 'Mainstem wood placement reach', kind: 'reach', shape: 1, extent: 3.4 },
-      { label: 'Tributary placement reach', kind: 'reach', shape: 0, extent: 1.9, nudge: [0.019, 0.012] },
+      { label: 'Mainstem wood placement reach', kind: 'reach', extent: 3.4 },
+      { label: 'Tributary placement reach', kind: 'reach', extent: 1.9, nudge: [0.019, 0.012] },
     ],
     measures: [
       ['Stream miles treated with large wood', 'miles', 5.3, 'stream-miles-instream-habitat'],
@@ -1130,11 +1106,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Salinas River Arundo Removal': {
     description:
       'Removing giant reed from 1,050 acres of the Salinas River channel and replanting with native willow and mulefat, working from the top of the watershed down so treated reaches are not reinfested from upstream. Follow-up treatment runs three years past initial removal.',
-    center: [35.9412, -120.9721],
+    center: [38.885, -119.955],
     zoom: 11,
     areas: [
-      { label: 'Upper reach treatment corridor', kind: 'reach', shape: 2, extent: 12.5 },
-      { label: 'Confluence revegetation unit', kind: 'area', shape: 0, extent: 210, nudge: [-0.022, 0.019] },
+      { label: 'Upper reach treatment corridor', kind: 'reach', extent: 12.5 },
+      { label: 'Confluence revegetation unit', kind: 'area', extent: 210, nudge: [-0.022, 0.019] },
     ],
     measures: [
       ['Acres of arundo removed', 'acres', 1050],
@@ -1153,10 +1129,10 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Alameda Creek Culvert Retrofit': {
     description:
       'Replacing four undersized road crossings in the upper Alameda Creek watershed with bridges and open-bottom arches sized to pass a hundred-year flow. The retrofits reopen seven miles of habitat above the flood-control channel now being reconnected downstream.',
-    center: [37.5842, -121.8368],
+    center: [39.27, -119.945],
     zoom: 12,
     areas: [
-      { label: 'Crossing retrofit corridor', kind: 'reach', shape: 0, extent: 7.2 },
+      { label: 'Crossing retrofit corridor', kind: 'reach', extent: 7.2 },
     ],
     measures: [
       ['Crossings replaced', 'crossings', 4],
@@ -1177,7 +1153,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     center: [39.3277, -120.1834],
     zoom: 13,
     areas: [
-      { label: 'Bank stabilization reach', kind: 'reach', shape: 1, extent: 1.6 },
+      { label: 'Bank stabilization reach', kind: 'reach', extent: 1.6 },
     ],
     measures: [
       ['Stream miles of bank stabilized', 'miles', 1.6],
@@ -1194,11 +1170,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Elk River Sediment Reduction': {
     description:
       'Decommissioning 22 miles of legacy logging road and upgrading stream crossings in the Elk River watershed, where road-derived sediment has aggraded the lower river and flooded downstream residents. Work is currently deferred pending a landowner access agreement.',
-    center: [40.7089, -124.0271],
+    center: [39.23, -120.15],
     zoom: 12,
     areas: [
-      { label: 'Road decommissioning unit', kind: 'area', shape: 1, extent: 2100 },
-      { label: 'Crossing upgrade corridor', kind: 'reach', shape: 2, extent: 6.4, nudge: [0.017, -0.019] },
+      { label: 'Road decommissioning unit', kind: 'area', extent: 2100 },
+      { label: 'Crossing upgrade corridor', kind: 'reach', extent: 6.4, nudge: [0.017, -0.019] },
     ],
     measures: [
       ['Miles of road decommissioned', 'miles', 22, 'miles-road-decommissioned'],
@@ -1216,11 +1192,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Carmel Valley Steelhead Habitat': {
     description:
       'Rebuilding pool and spawning habitat across four miles of the Carmel River in the reach exposed by a dam removal upstream. Structures were placed after two winters of channel adjustment rather than immediately, so the design responded to where the river actually settled.',
-    center: [36.4841, -121.7328],
+    center: [39.197, -120.235],
     zoom: 12,
     areas: [
-      { label: 'Post-dam adjustment reach', kind: 'reach', shape: 0, extent: 4.0 },
-      { label: 'Floodplain planting unit', kind: 'area', shape: 2, extent: 44, nudge: [-0.015, 0.017] },
+      { label: 'Post-dam adjustment reach', kind: 'reach', extent: 4.0 },
+      { label: 'Floodplain planting unit', kind: 'area', extent: 44, nudge: [-0.015, 0.017] },
     ],
     measures: [
       ['Stream miles of habitat restored', 'miles', 4.0, 'stream-miles-instream-habitat'],
@@ -1238,11 +1214,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Owens Valley Spring Channel Restoration': {
     description:
       'Restoring flow and native vegetation to five spring-fed channels on the Owens Valley floor that were straightened for irrigation delivery. Design balances the restored channels against the delivery obligations the ditches still carry.',
-    center: [36.9612, -118.2094],
+    center: [39.3, -120.1],
     zoom: 12,
     areas: [
-      { label: 'Spring channel complex', kind: 'reach', shape: 1, extent: 5.8 },
-      { label: 'Wet meadow unit', kind: 'area', shape: 0, extent: 190, nudge: [0.013, 0.021] },
+      { label: 'Spring channel complex', kind: 'reach', extent: 5.8 },
+      { label: 'Wet meadow unit', kind: 'area', extent: 190, nudge: [0.013, 0.021] },
     ],
     measures: [
       ['Stream miles of spring channel restored', 'miles', 5.8],
@@ -1260,10 +1236,10 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Putah Creek Riparian Planting': {
     description:
       'Planting 14 acres of valley oak and sycamore riparian forest on three parcels along lower Putah Creek, filling the gaps between reaches restored under earlier phases. Volunteer crews from the adjacent university handled planting and three years of follow-up watering.',
-    center: [38.5127, -121.8341],
+    center: [38.975, -119.905],
     zoom: 13,
     areas: [
-      { label: 'Planting parcels', kind: 'area', shape: 2, extent: 14 },
+      { label: 'Planting parcels', kind: 'area', extent: 14 },
     ],
     measures: [
       ['Acres of riparian forest planted', 'acres', 14, 'acres-riparian-habitat-restored'],
@@ -1279,11 +1255,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'San Luis Rey Arroyo Toad Habitat': {
     description:
       'Clearing invasive tamarisk and restoring the braided sandy channel the arroyo toad breeds in across three miles of the upper San Luis Rey. Timing avoids the breeding season, which constrains work to a narrow late-summer window each year.',
-    center: [33.3421, -116.9134],
+    center: [39.04, -119.905],
     zoom: 12,
     areas: [
-      { label: 'Braided channel treatment reach', kind: 'reach', shape: 2, extent: 3.1 },
-      { label: 'Terrace tamarisk removal unit', kind: 'area', shape: 1, extent: 88, nudge: [0.014, -0.017] },
+      { label: 'Braided channel treatment reach', kind: 'reach', extent: 3.1 },
+      { label: 'Terrace tamarisk removal unit', kind: 'area', extent: 88, nudge: [0.014, -0.017] },
     ],
     measures: [
       ['Stream miles of breeding habitat restored', 'miles', 3.1, 'stream-miles-instream-habitat'],
@@ -1301,11 +1277,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Klamath Tributary Thermal Refugia': {
     description:
       'Protecting and enlarging cold-water refugia at eight tributary confluences on the middle Klamath, where mainstem temperatures now exceed what salmon can hold in through late summer. Each site combines shade planting with channel work that keeps the cold plume intact.',
-    center: [41.7913, -123.0442],
+    center: [38.87, -120.08],
     zoom: 11,
     areas: [
-      { label: 'Confluence refugia complex', kind: 'area', shape: 0, extent: 130 },
-      { label: 'Tributary shading reach', kind: 'reach', shape: 1, extent: 8.6, nudge: [-0.024, 0.021] },
+      { label: 'Confluence refugia complex', kind: 'area', extent: 130 },
+      { label: 'Tributary shading reach', kind: 'reach', extent: 8.6, nudge: [-0.024, 0.021] },
     ],
     measures: [
       ['Cold-water refugia sites enhanced', 'sites', 8],
@@ -1325,10 +1301,10 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Mokelumne Meadow Rewetting': {
     description:
       'Plug-and-pond treatment across 210 acres of incised meadow in the upper Mokelumne, raising the water table to within a foot of the surface through the growing season. The site sits above a reservoir that supplies two foothill districts.',
-    center: [38.5124, -120.0187],
+    center: [38.79, -120.03],
     zoom: 12,
     areas: [
-      { label: 'Meadow rewetting unit', kind: 'area', shape: 1, extent: 210 },
+      { label: 'Meadow rewetting unit', kind: 'area', extent: 210 },
     ],
     measures: [
       ['Acres of montane meadow rewetted', 'acres', 210, 'acres-wetland-meadow-restored'],
@@ -1345,11 +1321,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Pescadero Marsh Tidal Exchange': {
     description:
       'Restoring tidal exchange to Pescadero Marsh by replacing an undersized culvert under the coast highway and regrading the interior channel network, addressing the low-oxygen events that have repeatedly killed steelhead here. Deferred while the highway crossing is redesigned.',
-    center: [37.2612, -122.4074],
+    center: [38.915, -120.075],
     zoom: 13,
     areas: [
-      { label: 'Marsh channel network', kind: 'area', shape: 0, extent: 265 },
-      { label: 'Highway crossing replacement', kind: 'reach', shape: 2, extent: 0.4, nudge: [-0.012, -0.011] },
+      { label: 'Marsh channel network', kind: 'area', extent: 265 },
+      { label: 'Highway crossing replacement', kind: 'reach', extent: 0.4, nudge: [-0.012, -0.011] },
     ],
     measures: [
       ['Acres of tidal marsh reconnected', 'acres', 265, 'acres-wetland-meadow-restored'],
@@ -1367,10 +1343,10 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Battle Creek Diversion Screening': {
     description:
       'Screening eleven unscreened agricultural diversions on Battle Creek and its north fork to end juvenile salmonid entrainment, paired with measurement devices at each headgate. Screens are sized to the diverter’s existing right so no water delivery changes.',
-    center: [40.4127, -122.1483],
+    center: [39.075, -120.225],
     zoom: 12,
     areas: [
-      { label: 'Diversion screening corridor', kind: 'reach', shape: 0, extent: 14.8 },
+      { label: 'Diversion screening corridor', kind: 'reach', extent: 14.8 },
     ],
     measures: [
       ['Diversions screened', 'diversions', 11],
@@ -1388,11 +1364,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Cache Creek Floodplain Terracing': {
     description:
       'Grading inset floodplain terraces into 2.5 miles of over-widened Cache Creek channel left by a century of aggregate mining. The terraces are designed to inundate in a two-year flow, rebuilding riparian forest that the current channel is too incised to support.',
-    center: [38.7204, -122.1128],
+    center: [38.92, -119.9],
     zoom: 12,
     areas: [
-      { label: 'Terrace grading reach', kind: 'reach', shape: 1, extent: 2.5 },
-      { label: 'Riparian planting unit', kind: 'area', shape: 2, extent: 96, nudge: [0.016, 0.014] },
+      { label: 'Terrace grading reach', kind: 'reach', extent: 2.5 },
+      { label: 'Riparian planting unit', kind: 'area', extent: 96, nudge: [0.016, 0.014] },
     ],
     // NOTHING ASKED YET (hackathon team 6): a proposal is not yet answering any
     // performance measure — the program chooses which apply once it is funded.
@@ -1409,11 +1385,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Trinity River Side-Channel Construction': {
     description:
       'Excavating six perennial side channels totalling 3.8 miles along the Trinity between Lewiston and Douglas City, the rearing habitat a regulated flow regime no longer builds on its own. Each channel is fed at a stage that keeps it wetted through the summer base flow.',
-    center: [40.6748, -122.9331],
+    center: [39.18, -119.885],
     zoom: 12,
     areas: [
-      { label: 'Side-channel complex', kind: 'reach', shape: 2, extent: 3.8 },
-      { label: 'Floodplain lowering unit', kind: 'area', shape: 0, extent: 118, nudge: [-0.019, 0.018] },
+      { label: 'Side-channel complex', kind: 'reach', extent: 3.8 },
+      { label: 'Floodplain lowering unit', kind: 'area', extent: 118, nudge: [-0.019, 0.018] },
     ],
     measures: [
       ['Stream miles of side channel constructed', 'miles', 3.8, 'stream-miles-instream-habitat'],
@@ -1431,11 +1407,11 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Arroyo Seco Urban Greenway': {
     description:
       'Converting 2.8 miles of concrete-lined Arroyo Seco channel margin into a vegetated greenway with infiltration basins that capture street runoff before it reaches the river. Flood capacity in the channel is preserved; the treatment sits entirely on the terrace above it.',
-    center: [34.1121, -118.1874],
+    center: [39.27, -120.03],
     zoom: 13,
     areas: [
-      { label: 'Greenway corridor', kind: 'reach', shape: 0, extent: 2.8 },
-      { label: 'Infiltration basin cluster', kind: 'area', shape: 1, extent: 22, nudge: [-0.013, 0.012] },
+      { label: 'Greenway corridor', kind: 'reach', extent: 2.8 },
+      { label: 'Infiltration basin cluster', kind: 'area', extent: 22, nudge: [-0.013, 0.012] },
     ],
     measures: [
       ['Miles of urban greenway created', 'miles', 2.8, 'miles-trail-opened'],
@@ -1894,10 +1870,13 @@ const buildDetail = (project: Project): ProjectDetail => {
       kind: area.kind,
       extent: area.extent,
       extentUnit: area.kind === 'area' ? 'acres' : 'miles',
-      path: placeShape(
-        (area.kind === 'area' ? AREA_SHAPES : REACH_SHAPES)[area.shape],
-        authored.center,
-        area.nudge,
+      path: workAreaShape(
+        area.kind,
+        area.label,
+        area.extent,
+        [authored.center[0] + (area.nudge?.[0] ?? 0), authored.center[1] + (area.nudge?.[1] ?? 0)],
+        project.projectName,
+        BASIN_OUTLET,
       ),
     })),
     measures,

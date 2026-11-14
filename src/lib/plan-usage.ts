@@ -9,6 +9,7 @@
 import { projects } from '../data/firma2-projects';
 import { organizations, users } from '../data/firma2-directory';
 import { readAddedOrganizations } from './added-organizations';
+import { importedProjects } from './project-import';
 import { PLANS, readPlan, type Plan } from './workspace-plan';
 
 export type Metric = 'organizations' | 'projects' | 'contributors' | 'viewers' | 'storage';
@@ -30,7 +31,8 @@ const seats = (role: string): number => users.filter((u) => u.role === role && u
 /** How much the workspace uses. Contributors count administrators too: both edit. Suspended people don't count. */
 export const readUsage = (): Record<Metric, number> => ({
   organizations: organizations.length + readAddedOrganizations().length,
-  projects: projects.length,
+  // Imported projects count like any other: an import can't step around the cap.
+  projects: projects.length + importedProjects().length,
   contributors: seats('Administrator') + seats('Contributor'),
   viewers: seats('Viewer'),
   storage: STORAGE_USED_GB,

@@ -1,0 +1,121 @@
+---
+// PROTOTYPE HARNESS — /proto/public-project?p=<slug>&v=<n>. Throwaway: nothing
+// in production imports this route or src/proto/project-detail/. Deleted once
+// a direction is picked (emil-prototype Phase 7).
+//
+// Each variant is a real page (/proto/project-detail/<variant>/<slug>) in its
+// own iframe, all loaded up front and toggled by visibility, so switching is
+// instant and four copies of the record's scripts never share one document.
+//
+// bcn-lego-checked: prototype harness — the picker is emil-prototype's fixed chrome (PICKER.md, verbatim, deliberately not tokenized); the frames are bare iframes
+import { withBase } from '../../../lib/base';
+
+const VARIANTS = [
+  { key: 'current', label: 'Current' },
+  { key: 'wall', label: 'Wall' },
+];
+const base = withBase('/proto/public-project');
+---
+<!-- manifest:
+  layout: full-viewport iframe stack
+  sections:
+    - frames -> proto-shell (one per variant, via iframe)
+    - picker -> emil-prototype picker chrome (PICKER.md)
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Public project page — prototype</title>
+    <style is:global>
+      html, body { margin: 0; height: 100%; background: #fafafa; overflow: hidden; }
+      .proto-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; visibility: hidden; }
+      .proto-frame[data-active] { visibility: visible; }
+
+      .proto-picker {
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        z-index: 2147483647; display: flex; align-items: center; gap: 2px; padding: 4px;
+        border-radius: 999px; background: rgba(10, 10, 10, 0.82);
+        -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset, 0 8px 24px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.12);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; line-height: 1;
+        -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none;
+      }
+      .proto-picker-highlight { position: absolute; top: 4px; left: 0; height: 28px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); will-change: transform; }
+      .proto-picker[data-ready] .proto-picker-highlight { transition: transform 250ms cubic-bezier(0.23, 1, 0.32, 1), width 250ms cubic-bezier(0.23, 1, 0.32, 1); }
+      @media (prefers-reduced-motion: reduce) { .proto-picker[data-ready] .proto-picker-highlight { transition: none; } }
+      .proto-picker-item { position: relative; display: flex; align-items: center; height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: rgba(255, 255, 255, 0.55); font: inherit; cursor: pointer; transition: color 150ms ease-out; }
+      .proto-picker-item:hover { color: rgba(255, 255, 255, 0.85); }
+      .proto-picker-item:active { transform: scale(0.97); }
+      .proto-picker-item:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.4); outline-offset: 2px; }
+      .proto-picker-item[data-active] { color: #fff; }
+      .proto-picker-divider { width: 1px; height: 16px; margin: 0 4px; background: rgba(255, 255, 255, 0.12); }
+      .proto-picker-replay { padding: 0 10px; font-size: 14px; }
+      .proto-picker[data-position="top"] { bottom: auto; top: 24px; }
+    </style>
+  </head>
+  <body>
+    <div id="stage" data-base={base}>
+      {VARIANTS.map((v) => <iframe class="proto-frame" title={v.label} data-variant={v.key}></iframe>)}
+    </div>
+    <nav class="proto-picker" aria-label="Prototype variants">
+      <span class="proto-picker-highlight" aria-hidden="true"></span>
+      {VARIANTS.map((v) => <button class="proto-picker-item" type="button">{v.label}</button>)}
+    </nav>
+    <script>
+      const stage = document.getElementById('stage')!;
+      const base = stage.dataset.base!;
+      const frames = [...stage.querySelectorAll<HTMLIFrameElement>('.proto-frame')];
+      const picker = document.querySelector('.proto-picker')!;
+      const highlight = picker.querySelector<HTMLElement>('.proto-picker-highlight')!;
+      const items = [...picker.querySelectorAll<HTMLButtonElement>('.proto-picker-item')];
+      const params = new URLSearchParams(location.search);
+      const slug = params.get('p') || 'carmel-valley-steelhead-habitat';
+      let current = 0;
+
+      // Load the active frame first, the rest right after, so the first paint is fast.
+      const load = (f: HTMLIFrameElement) => { if (!f.src) f.src = `${base}/${f.dataset.variant}/${slug}`; };
+
+      function moveHighlight() {
+        const el = items[current];
+        highlight.style.width = el.offsetWidth + 'px';
+        highlight.style.transform = `translateX(${el.offsetLeft}px)`;
+      }
+
+      function setActive(i: number) {
+        if (i < 0 || i >= frames.length) return;
+        current = i;
+        items.forEach((el, j) => {
+          el.toggleAttribute('data-active', j === i);
+          if (j === i) el.setAttribute('aria-current', 'true');
+          else el.removeAttribute('aria-current');
+        });
+        frames.forEach((f, j) => f.toggleAttribute('data-active', j === i));
+        load(frames[i]);
+        moveHighlight();
+        const url = new URL(location.href);
+        url.searchParams.set('v', String(i + 1));
+        history.replaceState(null, '', url);
+      }
+
+      function onKey(key: string) {
+        const num = parseInt(key, 10);
+        if (num >= 1 && num <= frames.length) setActive(num - 1);
+        else if (key === 'ArrowRight') setActive((current + 1) % frames.length);
+        else if (key === 'ArrowLeft') setActive((current - 1 + frames.length) % frames.length);
+      }
+
+      items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+      window.addEventListener('resize', moveHighlight);
+      document.addEventListener('keydown', (e) => {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        onKey(e.key);
+      });
+      window.addEventListener('message', (e) => { if (e.data?.protoKey) onKey(e.data.protoKey); });
+
+      setActive((parseInt(params.get('v') || '', 10) || 1) - 1);
+      frames[current].addEventListener('load', () => frames.forEach(load), { once: true });
+      requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+    </script>
+  </body>
+</html>

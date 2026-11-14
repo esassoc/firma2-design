@@ -1,0 +1,347 @@
+---
+// firma2-update-changes — the Team 5 sandbox's change log and review queue.
+// Every logged change as a row: the field, its value before and after, who
+// proposed it and who resolved it, and — for an administrator — Approve,
+// Reject or Revert. Two readers:
+//
+//   scope="project"    one project's log: "Pending review", then "History".
+//                      A group with no rows is not drawn.
+//   scope="workspace"  the queue: every project's pending rows, each led by
+//                      the project's name as a link. Administrators only — a
+//                      project editor sees one line saying so.
+//
+// PORTED FROM ProjectFirma2 hackathon Team 5, "Streamlined Project Updates":
+// stories 0005 (stage edits for review), 0013 (the project's Changes section)
+// and 0014 (the Pending changes queue); ADR-0005 (staging and approving
+// updates — the staleness signal, revert as a new row) and ADR-0006 (one log
+// per domain, here one `domain` column). Their project-changes and
+// project-change-review tables become ruled rows here.
+//
+// NOT THIS SPOKE'S PUBLISH REVIEW. firma2-review-changes reviews a NET DIFF
+// per project at publish time: edits are already live and a manager sweeps
+// the folded result. Team 5 approves EACH CHANGE ROW BEFORE IT IS APPLIED —
+// a pending row is not on the record until someone approves it. The two sit
+// side by side only in this sandbox, so the owner can judge which to keep.
+//
+// RUNTIME ROWS. The log lives in this browser (src/lib/update-sandbox.ts), so
+// the rows are drawn by the script and redrawn on every sandbox change. The
+// legos are compile-time .astro, so each is authored once in a <template>
+// here and cloned per row, as firma2-proposal-list does.
+//
+// bcn-lego-checked: esa-badge (status, staleness, assistant), esa-button
+// (Approve / Reject / Revert, cloned from templates) and esa-empty-state are
+// legos, unchanged. The rows are a definition list of From and To on the
+// layout primitives, the idiom of firma2-review-changes — no esa- lego
+// compares two values of one field (esa-card and esa-stat are single-value),
+// and an AG Grid is for indexes that grow, while this queue clears as it is
+// decided. Beacon is not cloned on this machine. firma2-update-changes is the
+// reusable home for a per-change review log.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { UPDATES_BASE } from '../../data/firma2-project-updates';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  scope: 'project' | 'workspace';
+  /** Required for scope="project". */
+  slug?: string;
+  /** Level of the group headings (project scope). 2 under the page's h1; 3 when the page wraps this in its own h2 section. */
+  headingLevel?: 2 | 3;
+}
+
+const { scope, slug, headingLevel = 2 } = Astro.props;
+// Base-applied prefix for a project's sandbox page; the script appends the slug
+// (same shape as sandboxProjectHref, which takes a slug the server doesn't have).
+const config = { scope, slug: slug ?? null, projectBase: withBase(`${UPDATES_BASE}/projects/`), headingLevel };
+---
+<section class="firma2-update-changes stack" data-gap="xl" data-config={JSON.stringify(config)} aria-label={scope === 'workspace' ? 'Pending changes' : 'Changes'}>
+  <div class="firma2-update-changes__groups stack" data-gap="xl" data-groups></div>
+
+  <div data-empty="none" hidden><EsaEmptyState title="No changes yet" size="md" /></div>
+  <div data-empty="queue" hidden><EsaEmptyState title="Nothing waiting for review" size="md" /></div>
+  <div data-empty="locked" hidden><EsaEmptyState title="Only administrators review changes" size="md" /></div>
+
+  <p class="visually-hidden" role="status" aria-live="polite" data-announce></p>
+
+  <template data-badge="Pending"><EsaBadge value="Pending" variant="warning" size="sm" /></template>
+  <template data-badge="Applied"><EsaBadge value="Applied" variant="success" size="sm" /></template>
+  <template data-badge="Approved"><EsaBadge value="Approved" variant="success" size="sm" /></template>
+  <template data-badge="Rejected"><EsaBadge value="Rejected" variant="danger" size="sm" /></template>
+  <template data-badge="Reverted"><EsaBadge value="Reverted" variant="secondary" size="sm" /></template>
+  <template data-badge="stale"><EsaBadge value="Field changed since" variant="warning" size="sm" /></template>
+  <template data-badge="assistant"><EsaBadge value="Assistant" variant="info" size="sm" /></template>
+
+  <template data-action="approve"><EsaButton variant="primary" size="md" data-act="approve">Approve</EsaButton></template>
+  <template data-action="reject"><EsaButton variant="secondary" appearance="outline" size="md" data-act="reject">Reject</EsaButton></template>
+  <template data-action="revert"><EsaButton variant="secondary" appearance="outline" size="md" data-act="revert">Revert</EsaButton></template>
+</section>
+
+<style>
+  .firma2-update-changes [hidden] {
+    display: none !important;
+  }
+
+  .firma2-update-changes :global(.firma2-update-changes__heading) {
+    margin: 0;
+  }
+
+  .firma2-update-changes :global(.firma2-update-changes__list) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Ruled like firma2-review-changes: a hairline between rows, no card. */
+  .firma2-update-changes :global(.firma2-update-changes__row) {
+    display: grid;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-update-changes :global(.firma2-update-changes__row:last-child) {
+    border-block-end: 0;
+  }
+
+  .firma2-update-changes :global(.firma2-update-changes__label) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-200);
+    margin: 0;
+  }
+  .firma2-update-changes :global(.firma2-update-changes__project),
+  .firma2-update-changes :global(.firma2-update-changes__meta) {
+    margin: 0;
+  }
+  .firma2-update-changes :global(.firma2-update-changes__meta) {
+    color: var(--color-content-default-secondary);
+  }
+
+  /* From and To side by side, so the eye reads across one line. */
+  .firma2-update-changes :global(.firma2-update-changes__values) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--spacing-300) var(--spacing-600);
+    margin: 0;
+  }
+  .firma2-update-changes :global(.firma2-update-changes__values dt) {
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-update-changes :global(.firma2-update-changes__values dd) {
+    margin: var(--spacing-100) 0 0;
+    max-inline-size: 72ch;
+    overflow-wrap: anywhere;
+  }
+</style>
+
+<script>
+  import type { ChangeRow } from '../../data/firma2-project-updates';
+  import {
+    approveChange,
+    attachments,
+    canReview,
+    canRevert,
+    changesFor,
+    dayLabel,
+    isStale,
+    onSandboxChange,
+    pendingChanges,
+    rejectChange,
+    revertChange,
+  } from '../../lib/update-sandbox';
+  import { openLightbox } from '../../lib/lightbox';
+
+  type Act = 'approve' | 'reject' | 'revert';
+  interface Config {
+    scope: 'project' | 'workspace';
+    slug: string | null;
+    projectBase: string;
+    headingLevel: 2 | 3;
+  }
+
+  const DONE: Record<Act, string> = { approve: 'Approved', reject: 'Rejected', revert: 'Reverted' };
+  const RUN: Record<Act, (id: string) => void> = { approve: approveChange, reject: rejectChange, revert: revertChange };
+
+  document.querySelectorAll<HTMLElement>('.firma2-update-changes').forEach((root) => {
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const groupsBox = root.querySelector<HTMLElement>('[data-groups]')!;
+    const announce = root.querySelector<HTMLElement>('[data-announce]')!;
+    const empties = [...root.querySelectorAll<HTMLElement>('[data-empty]')];
+
+    const clone = (selector: string): HTMLElement | null =>
+      (root.querySelector<HTMLTemplateElement>(selector)?.content.firstElementChild?.cloneNode(true) as HTMLElement | undefined) ?? null;
+
+    // Every store string goes in through textContent — never innerHTML.
+    const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text?: string): HTMLElementTagNameMap[K] => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+
+    const showEmpty = (which: string | null): void => {
+      empties.forEach((e) => (e.hidden = e.dataset.empty !== which));
+    };
+
+    // A file name that is still a photo on the project opens it full size in
+    // the app-wide viewer (firma2-lightbox, mounted by BaseLayout); one removed
+    // since, or never decoded, stays text. Every other row's value is text.
+    const valueNode = (row: ChangeRow, label: string): Node => {
+      if (row.domain !== 'photo' || !label) return document.createTextNode(label);
+      const photo = attachments(row.slug, 'photo').find((a) => a.fileName === label && a.src);
+      if (!photo?.src) return document.createTextNode(label);
+      const link = el('a', 'firma2-update-changes__file', label);
+      link.href = photo.src;
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        openLightbox({ images: [{ src: photo.src!, caption: photo.caption || photo.fileName, date: dayLabel(photo.at) }], heading: 'Photo' });
+      });
+      return link;
+    };
+
+    const actionButton = (act: Act, row: ChangeRow): HTMLElement | null => {
+      const wrapper = clone(`template[data-action="${act}"]`);
+      const button = wrapper?.querySelector<HTMLButtonElement>('button');
+      if (!wrapper || !button) return null;
+      const verb = act[0].toUpperCase() + act.slice(1);
+      button.setAttribute('aria-label', `${verb} ${row.label}`);
+      button.dataset.id = row.id;
+      button.dataset.label = row.label;
+      return wrapper;
+    };
+
+    const rowNode = (row: ChangeRow, review: boolean): HTMLLIElement => {
+      const li = el('li', 'firma2-update-changes__row');
+      li.dataset.change = row.id;
+
+      const top = el('div', 'repel');
+      top.dataset.gap = 'md';
+      const text = el('div', 'stack');
+      text.dataset.gap = 'xs';
+
+      if (config.scope === 'workspace') {
+        const project = el('p', 'firma2-update-changes__project typography-label-md-strong');
+        const link = el('a', '', row.projectName);
+        link.href = `${config.projectBase}${encodeURIComponent(row.slug)}`;
+        project.append(link);
+        text.append(project);
+      }
+
+      const label = el('p', 'firma2-update-changes__label typography-label-md-strong');
+      label.append(el('span', '', row.label));
+      // On the queue every row is pending; the page says so once.
+      if (config.scope === 'project') {
+        const status = clone(`template[data-badge="${row.status}"]`);
+        if (status) label.append(status);
+      }
+      if (isStale(row)) {
+        const stale = clone('template[data-badge="stale"]');
+        if (stale) label.append(stale);
+      }
+      if (row.source === 'Assistant') {
+        const assistant = clone('template[data-badge="assistant"]');
+        if (assistant) label.append(assistant);
+      }
+      text.append(label);
+
+      // A live write was made, not proposed; a pending or reviewed row was proposed.
+      const madeLive = row.status === 'Applied' || (row.status === 'Reverted' && !row.resolvedBy) || !!row.revertOf;
+      text.append(el('p', 'firma2-update-changes__meta typography-body-sm', `${madeLive ? 'Changed' : 'Proposed'} by ${row.by} · ${dayLabel(row.at)}`));
+      if (row.status !== 'Pending' && row.resolvedBy && row.resolvedAt) {
+        text.append(el('p', 'firma2-update-changes__meta typography-body-sm', `${row.status} by ${row.resolvedBy} · ${dayLabel(row.resolvedAt)}`));
+      }
+      if (row.revertOf) {
+        text.append(el('p', 'firma2-update-changes__meta typography-body-sm', 'Reverts an earlier change'));
+      }
+      top.append(text);
+
+      if (review) {
+        const acts: Act[] = row.status === 'Pending' ? ['approve', 'reject'] : canRevert(row) ? ['revert'] : [];
+        if (acts.length) {
+          const buttons = el('div', 'cluster');
+          buttons.dataset.gap = 'sm';
+          acts.forEach((act) => {
+            const b = actionButton(act, row);
+            if (b) buttons.append(b);
+          });
+          top.append(buttons);
+        }
+      }
+      li.append(top);
+
+      const values = el('dl', 'firma2-update-changes__values');
+      ([
+        ['From', row.fromLabel],
+        ['To', row.toLabel],
+      ] as const).forEach(([term, value]) => {
+        const pair = el('div');
+        pair.append(el('dt', 'typography-label-md', term));
+        const dd = el('dd', 'typography-body-md');
+        dd.append(valueNode(row, value || '—'));
+        pair.append(dd);
+        values.append(pair);
+      });
+      li.append(values);
+      return li;
+    };
+
+    const listNode = (rows: ChangeRow[], review: boolean): HTMLOListElement => {
+      const list = el('ol', 'firma2-update-changes__list');
+      list.setAttribute('role', 'list');
+      list.append(...rows.map((r) => rowNode(r, review)));
+      return list;
+    };
+
+    const render = (): void => {
+      const review = canReview();
+      if (config.scope === 'workspace') {
+        if (!review) {
+          groupsBox.replaceChildren();
+          showEmpty('locked');
+          return;
+        }
+        const rows = pendingChanges();
+        groupsBox.replaceChildren(...(rows.length ? [listNode(rows, true)] : []));
+        showEmpty(rows.length ? null : 'queue');
+        return;
+      }
+
+      const all = config.slug ? changesFor(config.slug) : [];
+      const groups = [
+        { heading: 'Pending review', rows: all.filter((r) => r.status === 'Pending') },
+        { heading: 'History', rows: all.filter((r) => r.status !== 'Pending') },
+      ].filter((g) => g.rows.length);
+      groupsBox.replaceChildren(
+        ...groups.map((g) => {
+          const section = el('section', 'stack');
+          section.dataset.gap = 'sm';
+          // tabindex -1: a programmatic focus target when the last action leaves a group.
+          const h = el(config.headingLevel === 3 ? 'h3' : 'h2', 'firma2-update-changes__heading typography-title-sm-strong', g.heading);
+          h.tabIndex = -1;
+          section.append(h, listNode(g.rows, review));
+          return section;
+        }),
+      );
+      showEmpty(all.length ? null : 'none');
+    };
+
+    // The row acted on moves or leaves, so focus would fall to <body>: hand it
+    // to the action now at the same place in the list, else the first heading.
+    root.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]');
+      if (!button || !root.contains(button)) return;
+      const act = button.dataset.act as Act;
+      const id = button.dataset.id;
+      if (!id || !RUN[act]) return;
+      const before = [...root.querySelectorAll<HTMLButtonElement>('button[data-act]')].indexOf(button);
+      RUN[act](id); // The store's event re-renders synchronously.
+      announce.textContent = `${DONE[act]} ${button.dataset.label ?? ''}`.trim();
+      const after = [...root.querySelectorAll<HTMLButtonElement>('button[data-act]')];
+      const target = after[Math.min(before, after.length - 1)] ?? root.querySelector<HTMLElement>('.firma2-update-changes__heading');
+      target?.focus();
+    });
+
+    onSandboxChange(render);
+  });
+</script>

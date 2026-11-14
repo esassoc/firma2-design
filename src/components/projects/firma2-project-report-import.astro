@@ -1,8 +1,8 @@
 ---
 // firma2-project-report-import — "Import a report": the reporter's own
-// spreadsheet or paragraph, read against this project's measures, checked
-// row by row before anything is saved. Ported from ProjectFirma2 hackathon
-// team 6 ("Report from a document").
+// spreadsheet, paragraph or funder report, read against this project's
+// measures, checked row by row before anything is saved. Ported from
+// ProjectFirma2 hackathon team 6 ("Report from a document").
 //
 // THE THIRD DOOR. The measures card already has two ways to report: the
 // per-row Record (measure-first, for the fluent) and Record work
@@ -26,13 +26,33 @@
 // that teaches the reader to stop reading the badge — the one that says
 // "check this" has to stand out.
 //
-// SCRIPTED — see src/data/firma2-report-import.ts. Renders nothing for a
-// project without a fixture, rather than a button that cannot work.
+// A FUNDER REPORT ADDS THREE ROW STATES (2026-11-12; the data file has the
+// argument). NEEDS A DECISION arrives unticked with one reading written in.
+// NO MATCH arrives unticked and EMPTY: the report counts something else, so
+// nothing is written in, and a suggestion sits beside the row for the person
+// to take or ignore. A suggestion is never a decision. A figure stated TO
+// DATE is filed as the difference from the record, worked out here in code,
+// so reading the same report twice adds nothing. A report can also propose a
+// RECORD FIELD (the timeline), set through firma2:field-set like any restore.
+//
+// DROP A FILE ANYWHERE ON THE PROJECT. Dragging a readable file over the page
+// opens this sheet, whose own esa-file-upload is the visible target, and a
+// drop anywhere on the page reads it. Images, shapefiles and anything aimed
+// at another drop zone are left to the section that owns them.
+//
+// REAL WHEN THE READER IS RUNNING, SCRIPTED OTHERWISE. On a localhost page
+// with `node scripts/report-reader.mjs` running, a chosen or dropped file, or
+// pasted text, is sent to it with this project's measures and read by Claude;
+// the reader's header says who does what (the model reads and maps, code does
+// the arithmetic, this sheet checks the record). Everywhere else, including
+// the deployed site and the two sample buttons, the reading is the scripted
+// fixture in src/data/firma2-report-import.ts. Renders nothing for a project
+// without a fixture, rather than a button that cannot work.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
 import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
-import { IMPORT_FIXTURES, SAMPLE_SHEET_NAME, SAMPLE_TEXT } from '../../data/firma2-report-import';
+import { IMPORT_FIXTURES, SAMPLE_REPORT_NAME, SAMPLE_SHEET_NAME, SAMPLE_TEXT } from '../../data/firma2-report-import';
 
 interface Props {
   projectSlug: string;
@@ -40,12 +60,14 @@ interface Props {
   years: number[];
   /** Units by measure name, for the amount labels. */
   units: Record<string, string>;
+  /** Reported to date by measure name, for figures a report states as totals. */
+  reported?: Record<string, number>;
 }
 
-const { projectSlug, years, units } = Astro.props;
+const { projectSlug, years, units, reported = {} } = Astro.props;
 const fixture = IMPORT_FIXTURES[projectSlug];
 const sourceOptions = [
-  { label: 'Spreadsheet', value: 'sheet' },
+  { label: 'File', value: 'file' },
   { label: 'Paste text', value: 'text' },
 ];
 ---
@@ -55,8 +77,10 @@ const sourceOptions = [
     data-project-slug={projectSlug}
     data-years={JSON.stringify(years)}
     data-units={JSON.stringify(units)}
+    data-reported={JSON.stringify(reported)}
     data-fixture={JSON.stringify(fixture)}
-    data-sample-name={SAMPLE_SHEET_NAME}
+    data-sample-sheet={SAMPLE_SHEET_NAME}
+    data-sample-report={SAMPLE_REPORT_NAME}
   >
     <!-- bcn-lego-checked: every control is a lego (bcn-side-sheet,
          esa-button-toggle, esa-file-upload, esa-textarea, esa-checkbox,
@@ -68,16 +92,19 @@ const sourceOptions = [
         <!-- ===== READ ===== -->
         <div class="stack" data-gap="lg" data-step="read">
           <esa-button-toggle size="md" data-source data-options={JSON.stringify(sourceOptions)}></esa-button-toggle>
-          <div class="stack" data-gap="sm" data-source-panel="sheet">
-            <esa-file-upload label="Spreadsheet" accept=".xlsx,.xls,.csv" max-size-mb="5" data-file></esa-file-upload>
-            <div>
-              <EsaButton variant="ghost" size="sm" data-use-sample>Use sample log</EsaButton>
+          <div class="stack" data-gap="sm" data-source-panel="file">
+            <esa-file-upload label="Report or spreadsheet (.pdf, .docx, .xlsx, .xls or .csv)" accept=".pdf,.docx,.xlsx,.xls,.csv" max-size-mb="20" data-file></esa-file-upload>
+            <div class="cluster" data-gap="xs">
+              <EsaButton variant="ghost" size="sm" data-use-sample="sheet">Sample crew log</EsaButton>
+              {fixture.report && (
+                <EsaButton variant="ghost" size="sm" data-use-sample="report">Sample funder report</EsaButton>
+              )}
             </div>
           </div>
           <div data-source-panel="text" hidden>
             <esa-textarea label="Your report" rows="6" data-text value={SAMPLE_TEXT}></esa-textarea>
           </div>
-          <p class="typography-body-sm" data-read-error hidden>Choose a spreadsheet, or switch to Paste text.</p>
+          <p class="typography-body-sm" role="alert" data-read-error hidden></p>
         </div>
 
         <!-- ===== READING ===== -->
@@ -89,8 +116,16 @@ const sourceOptions = [
         <!-- ===== REVIEW ===== -->
         <div class="stack" data-gap="lg" data-step="review" hidden>
           <div class="repel">
-            <p class="typography-title" data-review-heading></p>
+            <div class="stack" data-gap="2xs">
+              <p class="typography-title" data-review-heading></p>
+              <p class="firma2-report-import__source typography-body-sm" data-review-file></p>
+            </div>
             <EsaButton variant="ghost" size="sm" icon="rotate-ccw" data-read-another>Read another</EsaButton>
+          </div>
+          <div data-other-project-block hidden>
+            <EsaAlertBox variant="warning" title="This report names another project">
+              <p data-other-project></p>
+            </EsaAlertBox>
           </div>
           <ul class="firma2-report-import__rows stack" data-gap="md" data-rows></ul>
           <div data-not-asked-block hidden>
@@ -116,6 +151,9 @@ const sourceOptions = [
     <template data-badge-medium><EsaBadge variant="warning" size="sm" value="Check this" /></template>
     <template data-badge-low><EsaBadge variant="danger" size="sm" value="Unsure" /></template>
     <template data-badge-on-file><EsaBadge variant="secondary" size="sm" value="Already on file" /></template>
+    <template data-badge-decide><EsaBadge variant="warning" size="sm" value="Needs a decision" /></template>
+    <template data-badge-no-match><EsaBadge variant="secondary" size="sm" value="No match" /></template>
+    <template data-suggestion-button><EsaButton variant="ghost" size="sm" data-use-suggestion>Use suggestion</EsaButton></template>
   </div>
 )}
 
@@ -174,7 +212,7 @@ const sourceOptions = [
   import type { ImportProposal, ImportReading } from '../../data/firma2-report-import';
 
   type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean; errorText?: string };
-  type Sheet = HTMLElement & { show: () => void; close: () => void };
+  type Sheet = HTMLElement & { open: boolean; show: () => void; close: () => void };
 
   /** Fired on `document` after entries are filed, so the measures table repaints. */
   const ENTRIES_CHANGE_EVENT = 'firma2:entries-change';
@@ -197,7 +235,10 @@ const sourceOptions = [
     const slug = root.dataset.projectSlug ?? '';
     const years: number[] = JSON.parse(root.dataset.years ?? '[]');
     const units: Record<string, string> = JSON.parse(root.dataset.units ?? '{}');
-    const fixture: { sheet: ImportReading; text: ImportReading } = JSON.parse(root.dataset.fixture ?? '{}');
+    const reported: Record<string, number> = JSON.parse(root.dataset.reported ?? '{}');
+    const fixture: { sheet: ImportReading; text: ImportReading; report?: ImportReading } = JSON.parse(
+      root.dataset.fixture ?? '{}',
+    );
 
     const source = $<Control>('[data-source]');
     const fileInput = $<Control>('[data-file]');
@@ -207,14 +248,29 @@ const sourceOptions = [
     const addWrap = $('[data-add-wrap]');
     const addLabel = $('[data-add]').querySelector('.esa-button__label')!;
 
-    let mode: 'sheet' | 'text' = 'sheet';
+    let mode: 'file' | 'text' = 'file';
     let fileName = '';
+    /** The chosen or dropped file itself; null for a sample. */
+    let file: File | null = null;
     let reading: ImportReading | null = null;
+
+    const NO_FILE = 'Choose a file, or switch to Paste text.';
+    const readError = (message: string | null) => {
+      const line = $('[data-read-error]');
+      line.textContent = message ?? '';
+      line.hidden = message === null;
+    };
 
     customElements.whenDefined('esa-button-toggle').then(() => {
       source.options = JSON.parse(source.dataset.options ?? '[]');
-      source.value = 'sheet';
+      source.value = 'file';
     });
+
+    const setMode = (next: 'file' | 'text') => {
+      mode = next;
+      root.querySelectorAll<HTMLElement>('[data-source-panel]').forEach((p) => (p.hidden = p.dataset.sourcePanel !== mode));
+      readError(null);
+    };
 
     const step = (name: 'read' | 'reading' | 'review') => {
       root.querySelectorAll<HTMLElement>('[data-step]').forEach((el) => (el.hidden = el.dataset.step !== name));
@@ -224,27 +280,94 @@ const sourceOptions = [
 
     const reset = () => {
       reading = null;
-      $('[data-read-error]').hidden = true;
+      readError(null);
       step('read');
     };
 
-    source.addEventListener('change', () => {
-      mode = String(source.value) === 'text' ? 'text' : 'sheet';
-      root.querySelectorAll<HTMLElement>('[data-source-panel]').forEach((p) => (p.hidden = p.dataset.sourcePanel !== mode));
-      $('[data-read-error]').hidden = true;
-    });
+    source.addEventListener('change', () => setMode(String(source.value) === 'text' ? 'text' : 'file'));
 
     fileInput.addEventListener('change', (event) => {
       const files = (event as CustomEvent<{ files: File[] }>).detail?.files ?? [];
-      fileName = files[0]?.name ?? '';
-      if (fileName) $('[data-read-error]').hidden = true;
+      file = files[0] ?? null;
+      fileName = file?.name ?? '';
+      if (fileName) readError(null);
     });
 
     // ---- reading ---------------------------------------------------------------
-    const read = (name: string) => {
-      reading = mode === 'sheet' ? fixture.sheet : fixture.text;
+    /** A document reads as the funder report, a spreadsheet as the crew log. */
+    const isDocument = (name: string): boolean => /\.(pdf|docx?)$/i.test(name);
+
+    // ---- the real reader (scripts/report-reader.mjs) ---------------------------
+    // Looked for only from a localhost page, so the public site never probes
+    // a visitor's machine.
+    const READER = 'http://localhost:4399';
+    const readerUp = async (): Promise<boolean> => {
+      if (!/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) return false;
+      try {
+        return (await fetch(`${READER}/health`, { signal: AbortSignal.timeout(700) })).ok;
+      } catch {
+        return false;
+      }
+    };
+
+    const base64 = (blob: Blob): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+
+    /** What the reader is told about this project: its measures, periods and the fields a report may set. */
+    const target = () => ({
+      project: fieldRaw('projectName') || document.title.split(' — ')[0],
+      periods: years,
+      measures: Object.entries(units).map(([name, unit]) => ({ name, unit, questions: reportedListsFor(name) })),
+      fields: [
+        {
+          key: 'timeline',
+          label: 'Timeline',
+          format: 'implementation start year and completion year as "YYYY,YYYY"',
+          value: fieldRaw('timeline'),
+        },
+      ],
+    });
+
+    const readForReal = async (name: string, text?: string): Promise<void> => {
+      const response = await fetch(`${READER}/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          ...(text === undefined ? { data: await base64(file!) } : { text }),
+          target: target(),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? 'The reader failed.');
+      reading = result.reading;
+      const other = $('[data-other-project-block]');
+      other.hidden = result.project.matches;
+      $('[data-other-project]').textContent = `It is about “${result.project.inReport}”.`;
+    };
+
+    const read = async (name: string) => {
       $('[data-reading-line]').textContent = `Reading ${name}…`;
+      $('[data-other-project-block]').hidden = true;
       step('reading');
+      const text = mode === 'text' ? String(textInput.value ?? '') : undefined;
+      if ((file || text !== undefined) && (await readerUp())) {
+        try {
+          await readForReal(name, text);
+          paintReview(name);
+          step('review');
+        } catch (error) {
+          step('read');
+          readError(`Couldn’t read ${name}. ${error instanceof Error ? error.message : ''}`.trim());
+        }
+        return;
+      }
+      reading = mode === 'text' ? fixture.text : isDocument(name) && fixture.report ? fixture.report : fixture.sheet;
       window.setTimeout(() => {
         paintReview(name);
         step('review');
@@ -252,9 +375,9 @@ const sourceOptions = [
     };
 
     $('[data-read]').addEventListener('click', () => {
-      if (mode === 'sheet') {
+      if (mode === 'file') {
         if (!fileName) {
-          $('[data-read-error]').hidden = false;
+          readError(NO_FILE);
           return;
         }
         read(fileName);
@@ -268,10 +391,14 @@ const sourceOptions = [
       }
     });
 
-    $('[data-use-sample]').addEventListener('click', () => {
-      fileName = root.dataset.sampleName ?? '';
-      read(fileName);
-    });
+    root.querySelectorAll<HTMLElement>('[data-use-sample]').forEach((button) =>
+      button.addEventListener('click', () => {
+        // A sample has no file behind it, so it always reads as the fixture.
+        file = null;
+        fileName = (button.dataset.useSample === 'report' ? root.dataset.sampleReport : root.dataset.sampleSheet) ?? '';
+        read(fileName);
+      }),
+    );
 
     $('[data-read-another]').addEventListener('click', reset);
 
@@ -288,9 +415,54 @@ const sourceOptions = [
 
     const badge = (name: string) => $<HTMLTemplateElement>(`[data-badge-${name}]`).innerHTML.trim();
 
+    const figure = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+
+    /** The record's total for a measure: its seeded figure plus what this browser has filed. */
+    const onRecord = (measure: string): number =>
+      (reported[measure] ?? 0) +
+      readEntries(slug)
+        .filter((e) => e.measureKey === `name:${measure}`)
+        .reduce((sum, e) => sum + e.amount, 0);
+
+    /** A record field's stored value, read off the row that shows it. */
+    const fieldRaw = (key: string): string =>
+      document.querySelector<HTMLElement>(`[data-editable-field][data-field="${CSS.escape(key)}"]`)?.dataset.raw ?? '';
+
+    /**
+     * What a proposal comes to against THIS record. Duplicates, and the
+     * difference a to-date total leaves, are facts about the record, so they
+     * are worked out here and never taken from the reading.
+     */
+    const resolve = (p: ImportProposal): { amount: number | null; conversion?: string; onFile: boolean; was?: string } => {
+      if (p.field) {
+        const raw = fieldRaw(p.field.key);
+        return { amount: null, onFile: raw === p.field.raw, was: raw.split(',').join('–') };
+      }
+      if (p.cumulative !== undefined) {
+        const held = onRecord(p.measure);
+        const rest = Math.round((p.cumulative - held) * 100) / 100;
+        return {
+          amount: rest > 0 ? rest : null,
+          onFile: rest <= 0,
+          conversion: `${figure.format(p.cumulative)} to date − ${figure.format(held)} on record = ${figure.format(Math.max(rest, 0))}`,
+        };
+      }
+      if (p.noMatch) {
+        // Nothing to compare until a person takes the suggestion; once they
+        // have, the figure they filed is on the record like any other.
+        const taken = p.noMatch.suggestion ? isOnFile({ ...p, amount: p.noMatch.suggestion.amount }) : false;
+        return { amount: null, onFile: taken };
+      }
+      return { amount: p.amount, conversion: p.conversion, onFile: isOnFile(p) };
+    };
+
     const paintCount = () => {
-      const n = rowsList.querySelectorAll('li:not([data-off])').length;
-      addLabel.textContent = n === 1 ? 'Add 1 entry' : `Add ${n} entries`;
+      const picked = [...rowsList.querySelectorAll<HTMLElement>('li:not([data-off])')];
+      const n = picked.length;
+      // "Entries" while every picked row is one; a record field makes it "updates".
+      const noun = picked.some((li) => li.hasAttribute('data-field-row')) ? ['update', 'updates'] : ['entry', 'entries'];
+      const verb = noun[0] === 'update' ? 'Apply' : 'Add';
+      addLabel.textContent = `${verb} ${n} ${n === 1 ? noun[0] : noun[1]}`;
       // Disabled tells the truth here — nothing is ticked — and the label says so.
       const add = $('[data-add]');
       add.toggleAttribute('disabled', n === 0);
@@ -299,37 +471,90 @@ const sourceOptions = [
 
     const paintReview = (name: string) => {
       if (!reading) return;
-      const n = reading.proposals.length;
-      $('[data-review-heading]').textContent = `${n} ${n === 1 ? 'entry' : 'entries'} found in ${name}`;
+      const resolved = reading.proposals.map((p) => ({ p, ...resolve(p) }));
+
+      // The heading is the tally a person acts on: what goes in as it stands,
+      // and what is waiting on them.
+      const waiting = (r: (typeof resolved)[number]) => !r.onFile && (r.p.decide || r.p.noMatch);
+      const tally = [
+        [resolved.filter((r) => !r.onFile && !waiting(r)).length, 'ready to add'],
+        [resolved.filter((r) => !r.onFile && r.p.decide).length, 'to decide'],
+        [resolved.filter((r) => !r.onFile && r.p.noMatch).length, 'no match'],
+        [resolved.filter((r) => r.onFile).length, 'already on file'],
+      ] as const;
+      $('[data-review-heading]').textContent = tally
+        .filter(([n]) => n > 0)
+        .map(([n, label]) => `${n} ${label}`)
+        .join(' · ');
+      $('[data-review-file]').textContent = name;
 
       rowsList.replaceChildren(
-        ...reading.proposals.map((p) => {
-          const onFile = isOnFile(p);
+        ...resolved.map(({ p, amount, conversion, onFile, was }) => {
+          const ticked = !onFile && !p.decide && !p.noMatch;
           const li = document.createElement('li');
           li.className = 'stack';
           li.dataset.gap = 'sm';
           li.dataset.proposal = p.id;
-          if (onFile) li.dataset.off = '';
+          if (!ticked) li.dataset.off = '';
+          if (p.field) li.dataset.fieldRow = '';
           const unit = units[p.measure] ?? '';
           const badges = [
             onFile ? badge('on-file') : '',
+            !onFile && p.decide ? badge('decide') : '',
+            !onFile && p.noMatch ? badge('no-match') : '',
             p.confidence === 'Medium' ? badge('medium') : '',
             p.confidence === 'Low' ? badge('low') : '',
           ].join('');
+          const suggestion = onFile ? undefined : p.noMatch?.suggestion;
           li.innerHTML = `
             <div class="repel">
-              <esa-checkbox data-pick label="${esc(`${p.measure} · ${periodName(p.year)}`)}"></esa-checkbox>
+              <esa-checkbox data-pick label="${esc(p.field ? p.field.label : `${p.measure} · ${periodName(p.year)}`)}"></esa-checkbox>
               <span class="cluster" data-gap="xs">${badges}</span>
             </div>
-            <div class="firma2-report-import__fields">
+            ${
+              p.field
+                ? `<p class="typography-body-md">${esc(p.field.display)}${
+                    was && !onFile ? ` <span class="firma2-report-import__source">Was ${esc(was)}</span>` : ''
+                  }</p>`
+                : `<div class="firma2-report-import__fields">
               <esa-text-field data-amount size="md" inputmode="decimal" label="${esc(unit ? `Amount (${unit})` : 'Amount')}"></esa-text-field>
               <esa-select data-year size="md" label="Reporting period"></esa-select>
-            </div>
+            </div>`
+            }
             <div class="stack" data-gap="2xs">
               <p class="firma2-report-import__source typography-body-sm">${esc(p.quote)}</p>
-              ${p.conversion ? `<p class="typography-body-sm">Converted: ${esc(p.conversion)}</p>` : ''}
+              ${conversion ? `<p class="typography-body-sm">${p.cumulative === undefined ? 'Converted: ' : ''}${esc(conversion)}</p>` : ''}
               ${p.note ? `<p class="typography-body-sm">${esc(p.note)}</p>` : ''}
-            </div>`;
+            </div>
+            ${
+              suggestion
+                ? `<div class="cluster" data-gap="xs">
+              <p class="typography-body-sm">Suggested: ${esc(`${figure.format(suggestion.amount)} ${unit}`.trim())}. ${esc(suggestion.basis)}.</p>
+              ${$<HTMLTemplateElement>('[data-suggestion-button]').innerHTML.trim()}
+            </div>`
+                : ''
+            }`;
+
+          if (p.field) {
+            customElements.whenDefined('esa-checkbox').then(() => {
+              const pick = li.querySelector<Control>('[data-pick]')!;
+              pick.checked = ticked;
+              pick.addEventListener('change', () => {
+                li.toggleAttribute('data-off', !pick.checked);
+                paintCount();
+              });
+            });
+            return li;
+          }
+
+          // Taking a suggestion is the person's act: it writes the figure in
+          // and ticks the row, and both can be undone on the row.
+          li.querySelector('[data-use-suggestion]')?.addEventListener('click', () => {
+            li.querySelector<Control>('[data-amount]')!.value = String(suggestion!.amount);
+            li.querySelector<Control>('[data-pick]')!.checked = true;
+            li.removeAttribute('data-off');
+            paintCount();
+          });
 
           const fields = li.querySelector<HTMLElement>('.firma2-report-import__fields')!;
           reportedListsFor(p.measure).forEach((list) => {
@@ -346,14 +571,14 @@ const sourceOptions = [
 
           customElements.whenDefined('esa-checkbox').then(() => {
             const pick = li.querySelector<Control>('[data-pick]')!;
-            pick.checked = !onFile;
+            pick.checked = ticked;
             pick.addEventListener('change', () => {
               li.toggleAttribute('data-off', !pick.checked);
               paintCount();
             });
           });
           customElements.whenDefined('esa-text-field').then(() => {
-            li.querySelector<Control>('[data-amount]')!.value = String(p.amount);
+            li.querySelector<Control>('[data-amount]')!.value = amount === null ? '' : String(amount);
           });
           customElements.whenDefined('esa-select').then(() => {
             const year = li.querySelector<Control>('[data-year]')!;
@@ -376,7 +601,8 @@ const sourceOptions = [
     $('[data-add]').addEventListener('click', () => {
       const picked = [...rowsList.querySelectorAll<HTMLElement>('li:not([data-off])')];
       let bad = false;
-      const entries = picked.map((li) => {
+      const fieldRows = picked.filter((li) => li.hasAttribute('data-field-row'));
+      const entries = picked.filter((li) => !li.hasAttribute('data-field-row')).map((li) => {
         const amountField = li.querySelector<Control>('[data-amount]')!;
         const amount = Number(String(amountField.value ?? '').replace(/,/g, ''));
         if (!Number.isFinite(amount) || amount <= 0) {
@@ -400,7 +626,14 @@ const sourceOptions = [
       });
       if (bad) return;
       entries.forEach((e) => addEntry(slug, e));
-      document.dispatchEvent(new Event(ENTRIES_CHANGE_EVENT));
+      if (entries.length) document.dispatchEvent(new Event(ENTRIES_CHANGE_EVENT));
+      // A record field goes in the way a restored draft does, so the row, its
+      // mirror in the strip and the change it announces all follow.
+      fieldRows.forEach((li) => {
+        const field = reading!.proposals.find((p) => p.id === li.dataset.proposal)?.field;
+        if (!field) return;
+        document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: { field: field.key, raw: field.raw } }));
+      });
       sheet.close();
       reset();
     });
@@ -416,6 +649,46 @@ const sourceOptions = [
       if (!(event.target as Element).closest('[data-open-report-import]')) return;
       reset();
       sheet.show();
+    });
+
+    // ---- drop a file anywhere on the project -----------------------------------
+    // Dragging a readable file over the page opens the sheet, so its own
+    // esa-file-upload is the target a person sees; a drop anywhere reads it.
+    // Images and shapefiles are not ours, and neither is anything aimed at
+    // another section's drop zone or at a text editor.
+    const READABLE_NAME = /\.(pdf|docx?|xlsx?|csv)$/i;
+    const READABLE_TYPE = /pdf|sheet|excel|csv|msword|wordprocessing/;
+
+    const carriesReadable = (event: DragEvent): boolean => {
+      const items = [...(event.dataTransfer?.items ?? [])].filter((item) => item.kind === 'file');
+      return items.some((item) => item.type === '' || READABLE_TYPE.test(item.type));
+    };
+    const aimedElsewhere = (event: DragEvent): boolean =>
+      event.composedPath().some(
+        (node) => node instanceof Element && node.matches('esa-file-upload, [contenteditable="true"], [data-drop-zone]'),
+      );
+
+    document.addEventListener('dragenter', (event) => {
+      if (!carriesReadable(event) || sheet.open) return;
+      reset();
+      sheet.show();
+    });
+    document.addEventListener('dragover', (event) => {
+      if (!carriesReadable(event) || aimedElsewhere(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    });
+    document.addEventListener('drop', (event) => {
+      if (!carriesReadable(event) || aimedElsewhere(event)) return;
+      event.preventDefault();
+      const dropped = [...(event.dataTransfer?.files ?? [])].find((f) => READABLE_NAME.test(f.name));
+      if (!dropped) return;
+      if (!sheet.open) sheet.show();
+      source.value = 'file';
+      setMode('file');
+      file = dropped;
+      fileName = dropped.name;
+      read(fileName);
     });
   });
 </script>

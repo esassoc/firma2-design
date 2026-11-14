@@ -1,0 +1,1022 @@
+---
+// firma2-project-import — many projects at once, from a program's own
+// spreadsheet. The engine is src/lib/project-import.ts; the sample workbook
+// and the fields a file can fill are src/data/firma2-project-import.ts.
+//
+// A BATCH EDIT, REVIEWED. The page answers the reviewer's questions in the
+// order they ask them: what will this file do (the summary line), what needs
+// me (To fix), what changes on projects that already exist (a before/after
+// diff), what gets created, and what stays out. Setup the importer rarely
+// touches — the file's sheet and heading row, each column's field, the matches
+// suggested for unfamiliar values — sits folded at the top, one click away,
+// and opens on its own when a required field has no column.
+//
+// ONE PAGE, NOT A WIZARD. Every decision repaints every section; changing a
+// column never sends anyone back through "Next".
+//
+// EACH DECISION IS ASKED ONCE. An unfamiliar value is matched once, in Values
+// with no match, for every row that uses it. A row blocked only by that value
+// stays listed under Rows with problems (so it can be skipped) but points up
+// to the match instead of asking again. A required field's value offers no
+// "Leave blank" — blank is never a valid answer there.
+//
+// A FIXED ROW STAYS PUT. Rows with problems keep their place after a fix and
+// turn to Fixed, so the reader's focus and position survive the repaint. The
+// list resets only when the sheet, heading row or columns change.
+//
+// VALUES ARE MATCHED, NEVER ADDED. A file that says "In construction" where
+// the workspace says "Implementation" would otherwise split every stage
+// roll-up in two (product brief §0). The one list an import may add to is lead
+// organizations, and only an administrator sees that option.
+//
+// REVERSIBLE. Everything one import wrote comes back out with Undo, so the
+// commit gets a count, not a warning. Imported projects are records, not
+// public pages — they wait for a publish like any other change.
+//
+// bcn-lego-checked: every control is a lego — esa-file-upload, esa-select,
+// esa-text-field, esa-checkbox, esa-button, esa-badge, esa-alert-box,
+// esa-collapsible, esa-empty-state, esa-loading-spinner, esa-confirm-dialog.
+// The tables are the shared firma2-settings-table (no esa- table lego exists;
+// esa-grid is documentation-only). The summary line is a sentence of in-page
+// links, not a control; no esa- lego states a batch's counts. Beacon is not cloned.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
+import Firma2HelpLink from '../shared/firma2-help-link.astro';
+import { SAMPLE_WORKBOOK } from '../../data/firma2-project-import';
+import { LIMITS } from '../../lib/plan-usage';
+import { withBase } from '../../lib/base';
+import '../settings/firma2-settings-table.css';
+
+const config = {
+  sample: SAMPLE_WORKBOOK,
+  hrefs: {
+    projects: withBase('/prototypes/projects'),
+    plan: withBase('/prototypes/workspace-settings/plan'),
+  },
+};
+const freeLimit = LIMITS.free.projects;
+---
+<div class="firma2-project-import" data-config={JSON.stringify(config)}>
+  <!-- ===== WITHHELD ===== -->
+  <div class="stack" data-gap="md" data-off="source" hidden>
+    <EsaEmptyState title="Projects come from your GIS" description="Change the project source to import from a file." />
+    <div class="firma2-project-import__center">
+      <EsaButton variant="secondary" size="md" tag="a" href={withBase('/prototypes/workspace-settings/project-source')}>Open Project source</EsaButton>
+    </div>
+  </div>
+  <div data-off="permission" hidden>
+    <EsaEmptyState title="You can’t import projects" description="Ask an administrator to import the file." />
+  </div>
+
+  <div data-on>
+    <!-- ===== PICK ===== -->
+    <div class="stack" data-gap="md" data-phase="pick">
+      {/* THE LIMITS, BEFORE THEM: the zone states the size; the label states
+          the types, which the zone does not. */}
+      <esa-file-upload label="Spreadsheet (.xlsx, .xls or .csv)" accept=".xlsx,.xls,.csv" max-size-mb="20" data-file></esa-file-upload>
+      <div class="cluster" data-gap="xs" data-align="center">
+        <EsaButton variant="secondary" size="md" data-sample>Use a sample spreadsheet</EsaButton>
+        <EsaButton variant="ghost" size="md" data-template>Download template</EsaButton>
+        <Firma2HelpLink article="importing">Learn about importing</Firma2HelpLink>
+      </div>
+    </div>
+
+    <!-- ===== READING / IMPORTING ===== -->
+    <div class="cluster" data-gap="sm" role="status" data-phase="busy" hidden>
+      <EsaLoadingSpinner size="sm" decorative />
+      <p class="typography-body-md" data-busy-line></p>
+    </div>
+
+    <!-- ===== REVIEW ===== -->
+    <div data-phase="review" hidden>
+      <div class="stack" data-gap="2xl">
+        <!-- What this file will do, and the one policy that changes it. -->
+        <div class="stack" data-gap="md">
+          <p class="typography-body-lg firma2-project-import__summary" data-summary aria-live="polite"></p>
+          <div class="firma2-project-import__pair">
+            <esa-select label="Rows that name an existing project" size="md" data-existing-policy></esa-select>
+          </div>
+        </div>
+
+        <!-- Setup, folded: right by default, one click away. -->
+        <div class="firma2-project-import__setup">
+          <div data-file-fold>
+            <EsaCollapsible title="File and columns" flush>
+              <div class="stack" data-gap="lg">
+                <div class="firma2-project-import__pair">
+                  <esa-select label="Sheet" size="md" data-sheet></esa-select>
+                  <esa-select label="Headings are in" size="md" data-header-row></esa-select>
+                </div>
+                <div class="firma2-settings-table-scroll">
+                  <table class="firma2-settings-table firma2-project-import__table">
+                    <thead><tr><th scope="col">In the file</th><th scope="col">First values</th><th scope="col" class="firma2-project-import__control-col">Import as</th></tr></thead>
+                    <tbody data-columns></tbody>
+                  </table>
+                </div>
+                <p class="typography-body-md">
+                  Missing a field? <a href={withBase('/prototypes/workspace-settings/custom-fields')}>Add it in Custom fields</a>, then read the file again.
+                </p>
+              </div>
+            </EsaCollapsible>
+          </div>
+          <div data-suggested-fold>
+            <EsaCollapsible title="Suggested matches" flush>
+              <div class="firma2-settings-table-scroll">
+                <table class="firma2-settings-table firma2-project-import__table">
+                  <thead><tr><th scope="col">Field</th><th scope="col">In the file</th><th scope="col" class="firma2-settings-table__num">Rows</th><th scope="col" class="firma2-project-import__control-col">Match to</th></tr></thead>
+                  <tbody data-values-suggested></tbody>
+                </table>
+              </div>
+            </EsaCollapsible>
+          </div>
+        </div>
+
+        <!-- ===== TO FIX ===== -->
+        <section class="stack firma2-project-import__section" data-gap="lg" id="pi-fix" aria-labelledby="pi-fix-h" data-fix-section>
+          <h2 class="typography-title-strong firma2-project-import__h" id="pi-fix-h" data-fix-heading>To fix</h2>
+          <div data-required-warning hidden>
+            <EsaAlertBox variant="warning" title="Required fields need a column">
+              <p class="typography-body-md" data-required-text></p>
+            </EsaAlertBox>
+          </div>
+          <div class="stack" data-gap="sm" data-needing-block>
+            <h3 class="typography-label-md-strong firma2-project-import__h">Values with no match</h3>
+            <div class="firma2-settings-table-scroll">
+              <table class="firma2-settings-table firma2-project-import__table">
+                <thead><tr><th scope="col">In the file</th><th scope="col">Field</th><th scope="col" class="firma2-settings-table__num">Rows</th><th scope="col" class="firma2-project-import__control-col">Match to</th></tr></thead>
+                <tbody data-values-needing></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="stack" data-gap="sm" data-rows-block>
+            <h3 class="typography-label-md-strong firma2-project-import__h">Rows with problems</h3>
+            <div class="firma2-settings-table-scroll">
+              <table class="firma2-settings-table firma2-project-import__table">
+                <thead><tr><th scope="col" class="firma2-settings-table__num">Row</th><th scope="col">Problem</th><th scope="col" class="firma2-project-import__control-col">Fix</th><th scope="col"><span class="firma2-project-import__sr">Skip</span></th></tr></thead>
+                <tbody data-fix></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <div data-limit hidden>
+          <EsaAlertBox variant="info" title={`Free includes ${freeLimit} projects`}>
+            <div class="stack" data-gap="sm">
+              <p class="typography-body-md" data-limit-text></p>
+              <span data-reader="admin" hidden><EsaButton variant="secondary" size="md" tag="a" href={config.hrefs.plan}>Compare plans</EsaButton></span>
+              <p class="typography-body-md" data-reader="member" hidden>Ask an administrator to upgrade.</p>
+            </div>
+          </EsaAlertBox>
+        </div>
+
+        <!-- ===== UPDATED ===== -->
+        <section class="stack firma2-project-import__section" data-gap="md" id="pi-updated" aria-labelledby="pi-updated-h" data-updated-section>
+          <h2 class="typography-title-strong firma2-project-import__h" id="pi-updated-h" data-updated-heading>Updated projects</h2>
+          <div class="firma2-settings-table-scroll" data-updated-table>
+            <table class="firma2-settings-table firma2-project-import__table firma2-project-import__diff" data-updated>
+              <thead><tr>
+                <th scope="col" class="firma2-settings-table__num">Row</th>
+                <th scope="col" data-aliasable>Project</th>
+                <th scope="col">Field</th>
+                <th scope="col">Now</th>
+                <th scope="col">After import</th>
+              </tr></thead>
+            </table>
+          </div>
+          <p class="typography-body-md firma2-project-import__muted" data-blank-note>Blank cells leave a project’s value as it is.</p>
+          <p class="typography-body-md firma2-project-import__muted" data-unchanged></p>
+        </section>
+
+        <!-- ===== NEW ===== -->
+        <section class="stack firma2-project-import__section" data-gap="md" id="pi-new" aria-labelledby="pi-new-h" data-new-section>
+          <h2 class="typography-title-strong firma2-project-import__h" id="pi-new-h" data-new-heading>New projects</h2>
+          <div class="firma2-settings-table-scroll">
+            <table class="firma2-settings-table firma2-project-import__table">
+              <thead><tr>
+                <th scope="col" class="firma2-settings-table__num">Row</th>
+                <th scope="col" data-aliasable>Project</th>
+                <th scope="col" data-aliasable>Lead organization</th>
+                <th scope="col">Stage</th>
+                <th scope="col">Timeline</th>
+                <th scope="col" class="firma2-settings-table__num">Estimated cost</th>
+              </tr></thead>
+              <tbody data-new></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ===== LEFT OUT ===== -->
+        <section class="stack firma2-project-import__section" data-gap="md" id="pi-left-out" aria-labelledby="pi-left-out-h" data-left-out-section>
+          <h2 class="typography-title-strong firma2-project-import__h" id="pi-left-out-h" data-left-out-heading>Left out</h2>
+          <div class="firma2-settings-table-scroll">
+            <table class="firma2-settings-table firma2-project-import__table">
+              <thead><tr><th scope="col" class="firma2-settings-table__num">Row</th><th scope="col" data-aliasable>Project</th><th scope="col">Why</th></tr></thead>
+              <tbody data-left-out></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ===== DONE ===== -->
+    <div class="stack" data-gap="md" data-phase="done" hidden>
+      <EsaAlertBox variant="success" title="Import finished">
+        <div class="stack" data-gap="xs">
+          <p class="typography-body-md" data-done-text></p>
+          <p class="typography-body-md">They stay off the public site until they’re published.</p>
+        </div>
+      </EsaAlertBox>
+      <div class="cluster" data-gap="xs">
+        <EsaButton variant="primary" size="md" tag="a" href={config.hrefs.projects} data-aliasable>View projects</EsaButton>
+        <EsaButton variant="secondary" size="md" data-undo>Undo import</EsaButton>
+        <span data-download-wrap><EsaButton variant="ghost" size="md" data-download-left-out>Download rows left out</EsaButton></span>
+      </div>
+    </div>
+
+    <!-- ===== UNDONE ===== -->
+    <div class="stack" data-gap="md" data-phase="undone" hidden>
+      <EsaAlertBox variant="info" title="Import undone">
+        <p class="typography-body-md" data-undone-text></p>
+      </EsaAlertBox>
+      <div class="cluster" data-gap="xs">
+        <EsaButton variant="secondary" size="md" data-again>Import another file</EsaButton>
+      </div>
+    </div>
+  </div>
+
+  <esa-confirm-dialog class="firma2-project-import__confirm" heading="Undo this import?" confirm-label="Undo import" cancel-label="Keep it" variant="warning"></esa-confirm-dialog>
+
+  <template data-badge-fixed><EsaBadge variant="success" size="sm" value="Fixed" /></template>
+</div>
+
+<style>
+  /* Layout primitives and legos set `display`, which beats the UA's [hidden].
+     :global so it reaches the rows and controls the script builds, which carry
+     no scope attribute. */
+  .firma2-project-import :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-project-import__h {
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .firma2-project-import__center {
+    display: flex;
+    justify-content: center;
+  }
+
+  /* The summary's counts change as decisions land; equal-width digits keep the
+     line from jiggling. Each count links to its section. */
+  .firma2-project-import__summary {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* An in-page jump lands below the pinned top bar, not under it. */
+  .firma2-project-import__section {
+    scroll-margin-top: var(--spacing-1200, 3rem);
+  }
+
+  /* The two folds read as one setup block: a rule above, between and below. */
+  .firma2-project-import__setup {
+    border-block: 1px solid var(--color-border-default);
+  }
+  .firma2-project-import__setup > :not([hidden]) + :not([hidden]) {
+    border-block-start: 1px solid var(--color-border-default);
+  }
+  .firma2-project-import__setup :global(.esa-collapsible__summary) {
+    min-height: 2.75rem;
+  }
+  .firma2-project-import__setup :global(.esa-collapsible__body) {
+    padding-block-end: var(--spacing-500);
+  }
+
+  /* Selects side by side, each at a readable width; they stack when narrow. */
+  .firma2-project-import__pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 22rem));
+    gap: var(--spacing-400);
+  }
+
+  /* Rows carrying a control centre on it. */
+  .firma2-project-import__table :global(td),
+  .firma2-project-import__table :global(th) {
+    vertical-align: middle;
+  }
+
+  .firma2-project-import__control-col {
+    width: 20rem;
+  }
+
+  .firma2-project-import :global(.firma2-project-import__muted) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-project-import__table :global(.firma2-project-import__nums) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-project-import__table :global(.firma2-project-import__examples) {
+    display: block;
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* DIFF — one row per changed field. The project's cells span its fields; the
+     old value is muted, the new one carries the weight of plain text. */
+  .firma2-project-import__diff :global(tbody td),
+  .firma2-project-import__diff :global(tbody th) {
+    vertical-align: top;
+    border-block-end: 0;
+  }
+  .firma2-project-import__diff :global(tbody + tbody tr:first-child > *) {
+    border-block-start: 1px solid var(--color-border-default);
+  }
+  .firma2-project-import__diff :global(tbody tr + tr > *) {
+    padding-block-start: 0;
+  }
+  .firma2-project-import__diff :global(.firma2-project-import__field) {
+    white-space: nowrap;
+  }
+  .firma2-project-import__diff :global(.firma2-project-import__long) {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 28rem;
+  }
+
+  /* PROBLEMS — the message leads; the project name is the meta line under it. */
+  .firma2-project-import__table :global(.firma2-project-import__problem) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-200);
+  }
+  .firma2-project-import__table :global(.firma2-project-import__problem + .firma2-project-import__problem),
+  .firma2-project-import__table :global(.firma2-project-import__fixes > * + *) {
+    margin-block-start: var(--spacing-300);
+  }
+  .firma2-project-import__table :global(.firma2-project-import__fixes > p) {
+    margin-block: 0;
+  }
+  .firma2-project-import__table :global(td.firma2-project-import__fixes) {
+    width: 20rem;
+    min-width: 20rem;
+  }
+
+  /* SKIP — the whole cell toggles, so the target is the row's height and the
+     cell's width, not the 20px box. */
+  .firma2-project-import__table :global(.firma2-project-import__skip) {
+    width: 1%;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .firma2-project-import__sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-file-upload';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-checkbox';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { IMPORT_FIELDS } from '../../data/firma2-project-import';
+  import type { ImportWorkbook } from '../../data/firma2-project-import';
+  import { projects as seedProjects } from '../../data/firma2-projects';
+  import { CURRENT_USER, organizationSlug } from '../../data/firma2-directory';
+  import type { Organization } from '../../data/firma2-directory';
+  import {
+    NEW_ORGANIZATION,
+    autoMap,
+    columnsOf,
+    commitImport,
+    dataRowsOf,
+    decisionKey,
+    distinctValues,
+    fieldOf,
+    formatMoney,
+    headerRowOf,
+    importedProjects,
+    isTotalRow,
+    parseCsv,
+    proposeRows,
+    undoImport,
+    unmappedRequired,
+    vocabularyValues,
+  } from '../../lib/project-import';
+  import type { DistinctValue, ImportBatch, ImportDecisions, Problem, RowOutcome } from '../../lib/project-import';
+  import { addOrganizations, removeAddedOrganizations } from '../../lib/added-organizations';
+  import { label } from '../../lib/vocabulary';
+  import { can, currentActor } from '../../lib/workspace-permissions';
+  import { readProjectSource } from '../../lib/work-areas';
+  import { limitOf } from '../../lib/plan-usage';
+  import { readPlan } from '../../lib/workspace-plan';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean; open?: boolean; message?: string };
+
+  /** Fired on `document` with the state the top bar's actions paint from. */
+  const STATE_EVENT = 'firma2:project-import-state';
+  const COMMIT_EVENT = 'firma2:project-import-commit';
+  const RESTART_EVENT = 'firma2:project-import-restart';
+  const READ_DELAY_MS = 800;
+  const WRITE_DELAY_MS = 900;
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  const n = (x: number) => x.toLocaleString('en-US');
+  const plural = (x: number, one: string, many: string) => `${n(x)} ${x === 1 ? one : many}`;
+  const fieldLabel = (key: string): string => label(fieldOf(key)?.label ?? key);
+  const list = (items: string[]): string =>
+    items.length <= 2 ? items.join(' and ') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  const fieldOrder = (key: string) => IMPORT_FIELDS.findIndex((f) => f.key === key);
+
+  // RFC 4180, as the Export card writes it.
+  const csvOf = (rows: string[][]): string =>
+    rows.map((cells) => cells.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const download = (fileName: string, text: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    Object.assign(document.createElement('a'), { href: url, download: fileName }).click();
+    URL.revokeObjectURL(url);
+  };
+
+  /**
+   * Keyed rows: an existing <tr> is kept (and updated) rather than rebuilt, so
+   * a control the reader is working in keeps its focus and its upgrade.
+   */
+  const reconcile = <T,>(tbody: HTMLElement, items: T[], keyOf: (item: T) => string, create: (item: T) => HTMLTableRowElement, update?: (tr: HTMLTableRowElement, item: T) => void) => {
+    const existing = new Map([...tbody.children].map((tr) => [(tr as HTMLElement).dataset.key ?? '', tr as HTMLTableRowElement]));
+    const next = items.map((item) => {
+      const key = keyOf(item);
+      const tr = existing.get(key) ?? create(item);
+      tr.dataset.key = key;
+      update?.(tr, item);
+      return tr;
+    });
+    next.forEach((tr, i) => {
+      if (tbody.children[i] !== tr) tbody.insertBefore(tr, tbody.children[i] ?? null);
+    });
+    while (tbody.children.length > next.length) tbody.lastElementChild!.remove();
+  };
+
+  const makeSelect = (attrs: Record<string, string>, options: { value: string; label: string }[], value: string): Control => {
+    const select = document.createElement('esa-select') as Control;
+    select.setAttribute('size', 'md');
+    Object.entries(attrs).forEach(([k, v]) => select.setAttribute(k, v));
+    customElements.whenDefined('esa-select').then(() => {
+      select.options = options;
+      select.value = value;
+    });
+    return select;
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-import').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: { sample: ImportWorkbook; hrefs: Record<string, string> } = JSON.parse(root.dataset.config ?? '{}');
+    const admin = currentActor().role === 'Administrator';
+    const confirm = $<Control>('.firma2-project-import__confirm');
+    const fileFold = $('[data-file-fold] details') as HTMLDetailsElement;
+    const fileFoldTitle = $('[data-file-fold] .esa-collapsible__title');
+    const suggestedFoldTitle = $('[data-suggested-fold] .esa-collapsible__title');
+
+    let workbook: ImportWorkbook | null = null;
+    let sheetIndex = 0;
+    let headerRow = 0;
+    let rows: RowOutcome[] = [];
+    let lastBatch: ImportBatch | null = null;
+    let leftOut: RowOutcome[] = [];
+    /** Rows that have needed a fix since the columns last changed, with every problem they showed. */
+    const flagged = new Map<number, Map<string, Problem>>();
+    const d: ImportDecisions = { mapping: [], values: new Map(), fixes: new Map(), skipped: new Set(), existing: 'update' };
+    const sheet = () => workbook!.sheets[sheetIndex];
+
+    // ---- phases ------------------------------------------------------------------
+    type Phase = 'pick' | 'busy' | 'review' | 'done' | 'undone';
+    let phase: Phase = 'pick';
+    const show = (next: Phase) => {
+      phase = next;
+      root.querySelectorAll<HTMLElement>('[data-phase]').forEach((el) => (el.hidden = el.dataset.phase !== next));
+      broadcast();
+    };
+
+    /** What goes in: new rows and rows that change an existing project. */
+    const going = () => rows.filter((r) => r.status === 'new' || r.status === 'update');
+    const overLimit = (): { limit: number; after: number } | null => {
+      const limit = limitOf('projects', readPlan());
+      if (limit === null) return null;
+      const after = seedProjects.length + importedProjects().length + rows.filter((r) => r.status === 'new').length;
+      return after > limit ? { limit, after } : null;
+    };
+    const broadcast = () => {
+      const total = going().length;
+      const created = rows.filter((r) => r.status === 'new').length;
+      const blocked = !!overLimit() || unmappedRequired(d.mapping).length > 0;
+      document.dispatchEvent(new CustomEvent(STATE_EVENT, { detail: { phase, created, updated: total - created, ready: phase === 'review' && total > 0 && !blocked } }));
+    };
+
+    // ---- withheld --------------------------------------------------------------------
+    const subscribed = readProjectSource() === 'subscribed';
+    const permitted = can('perm-import');
+    $('[data-off="source"]').hidden = !subscribed;
+    $('[data-off="permission"]').hidden = subscribed || permitted;
+    $('[data-on]').hidden = subscribed || !permitted;
+    root.querySelectorAll<HTMLElement>('[data-reader]').forEach((el) => (el.hidden = (el.dataset.reader === 'admin') !== admin));
+
+    // ---- reading -----------------------------------------------------------------------
+    const read = (fileName: string, load: Promise<ImportWorkbook>) => {
+      $('[data-busy-line]').textContent = `Reading ${fileName}…`;
+      show('busy');
+      Promise.all([load, new Promise((r) => window.setTimeout(r, READ_DELAY_MS))]).then(([wb]) => {
+        workbook = wb;
+        sheetIndex = Math.max(0, wb.sheets.reduce((best, s, i, all) => (dataRowsOf(s, headerRowOf(s.cells)).length > dataRowsOf(all[best], headerRowOf(all[best].cells)).length ? i : best), 0));
+        customElements.whenDefined('esa-select').then(() => {
+          const sheetSelect = $<Control>('[data-sheet]');
+          sheetSelect.options = wb.sheets.map((s, i) => ({ value: String(i), label: `${s.name} · ${plural(dataRowsOf(s, headerRowOf(s.cells)).filter((r) => !isTotalRow(r.cells)).length, 'row', 'rows')}` }));
+          sheetSelect.value = String(sheetIndex);
+          loadSheet();
+          show('review');
+        });
+      });
+    };
+
+    const csvWorkbook = (file: File): Promise<ImportWorkbook> =>
+      file.text().then((text) => ({ fileName: file.name, sheets: [{ name: file.name.replace(/\.csv$/i, ''), cells: parseCsv(text) }] }));
+
+    $('[data-file]').addEventListener('change', (event) => {
+      const file = (event as CustomEvent<{ files?: File[] }>).detail?.files?.[0];
+      if (!file) return;
+      // A CSV is read for real. Any workbook reads as the sample: no parser for
+      // .xlsx ships with this prototype.
+      read(file.name, /\.csv$/i.test(file.name) ? csvWorkbook(file) : Promise.resolve({ ...config.sample, fileName: file.name }));
+    });
+    $('[data-sample]').addEventListener('click', () => read(config.sample.fileName, Promise.resolve(config.sample)));
+
+    $('[data-template]').addEventListener('click', () => {
+      download('projectfirma-projects-template.csv', csvOf([IMPORT_FIELDS.map((f) => label(f.label))]));
+    });
+
+    /** A sheet (or a heading row) changes what every column is, so decisions start over. */
+    const loadSheet = (row?: number) => {
+      headerRow = row ?? headerRowOf(sheet().cells);
+      d.mapping = autoMap(columnsOf(sheet(), headerRow));
+      d.values.clear();
+      d.fixes.clear();
+      d.skipped.clear();
+      flagged.clear();
+      const headerSelect = $<Control>('[data-header-row]');
+      headerSelect.options = sheet().cells.slice(0, 10).map((_, i) => ({ value: String(i), label: `Row ${i + 1}` }));
+      headerSelect.value = String(headerRow);
+      $('[data-columns]').replaceChildren();
+      $('[data-values-needing]').replaceChildren();
+      $('[data-values-suggested]').replaceChildren();
+      $('[data-fix]').replaceChildren();
+      fileFold.open = false;
+      paint();
+    };
+
+    $('[data-sheet]').addEventListener('change', () => {
+      sheetIndex = Number($<Control>('[data-sheet]').value ?? 0);
+      loadSheet();
+    });
+    $('[data-header-row]').addEventListener('change', () => {
+      const next = Number($<Control>('[data-header-row]').value ?? 0);
+      if (next !== headerRow) loadSheet(next);
+    });
+
+    customElements.whenDefined('esa-select').then(() => {
+      const policy = $<Control>('[data-existing-policy]');
+      policy.options = [
+        { value: 'update', label: 'Update the project' },
+        { value: 'skip', label: 'Leave the row out' },
+      ];
+      policy.value = d.existing;
+      policy.addEventListener('change', () => {
+        d.existing = String(policy.value) === 'skip' ? 'skip' : 'update';
+        paint();
+      });
+    });
+
+    // ---- painting ----------------------------------------------------------------------
+    const fieldOptions = () => [
+      { value: '', label: 'Don’t import' },
+      ...IMPORT_FIELDS.map((f) => ({ value: f.key, label: f.required ? `${label(f.label)} (required)` : label(f.label) })),
+    ];
+
+    const paintColumns = () => {
+      const columns = columnsOf(sheet(), headerRow);
+      const data = dataRowsOf(sheet(), headerRow);
+      reconcile(
+        $('[data-columns]'),
+        columns.map((heading, col) => ({ heading, col })),
+        ({ col }) => String(col),
+        ({ heading, col }) => {
+          const tr = document.createElement('tr');
+          const examples = data.map((r) => (r.cells[col] ?? '').trim()).filter(Boolean).slice(0, 3);
+          tr.innerHTML = `<th scope="row" class="typography-body-md">${esc(heading)}</th><td class="typography-body-md">${examples.length ? `<span class="firma2-project-import__examples" title="${esc(examples.join(' · '))}">${esc(examples.join(' · '))}</span>` : '<span class="firma2-project-import__muted">Empty</span>'}</td><td></td>`;
+          const select = makeSelect({ 'aria-label': `Import “${heading}” as` }, fieldOptions(), d.mapping[col] ?? '');
+          select.dataset.col = String(col);
+          select.addEventListener('change', () => {
+            const key = String(select.value ?? '');
+            // A field takes one column: picking it here frees it elsewhere.
+            d.mapping.forEach((k, i) => {
+              if (key && k === key && i !== col) {
+                d.mapping[i] = '';
+                const other = root.querySelector<Control>(`[data-columns] [data-col="${i}"]`);
+                if (other) other.value = '';
+              }
+            });
+            d.mapping[col] = key;
+            // New columns mean new problems; the fixed-row list starts over.
+            flagged.clear();
+            paint();
+          });
+          tr.lastElementChild!.append(select);
+          return tr;
+        },
+      );
+      const missing = unmappedRequired(d.mapping);
+      $('[data-required-warning]').hidden = missing.length === 0;
+      $('[data-required-text]').textContent = missing.length
+        ? `Pick a column for ${list(missing.map((f) => label(f.label)))} under File and columns. Nothing imports without ${missing.length === 1 ? 'it' : 'them'}.`
+        : '';
+      // A missing required column is the one setup problem: open the fold on it.
+      if (missing.length) fileFold.open = true;
+      const used = d.mapping.filter(Boolean).length;
+      fileFoldTitle.textContent = `${workbook!.fileName} · ${n(used)} of ${plural(columns.length, 'column', 'columns')} imported`;
+    };
+
+    const valueOptions = (v: DistinctValue) => [
+      // Blank is never a valid answer for a required field.
+      ...(v.field.required ? [] : [{ value: '', label: 'Leave blank' }]),
+      ...(v.vocabulary === 'leadOrganization' && admin ? [{ value: NEW_ORGANIZATION, label: `Add “${v.value}” as a new organization` }] : []),
+      ...vocabularyValues(v.vocabulary).map((x) => ({ value: x, label: x })),
+    ];
+
+    const valueRow = (v: DistinctValue, fieldFirst: boolean) => {
+      const tr = document.createElement('tr');
+      const value = `<th scope="row" class="typography-body-md">${esc(v.value)}</th>`;
+      const field = `<td class="typography-body-md" data-field>${esc(label(v.field.label))}</td>`;
+      tr.innerHTML = `${fieldFirst ? field + value : value + field}<td class="typography-body-md firma2-settings-table__num" data-count></td><td data-select></td>`;
+      const select = makeSelect(
+        { 'aria-label': `Match “${v.value}” to`, placeholder: 'Pick a match' },
+        valueOptions(v),
+        d.values.get(v.key) ?? '',
+      );
+      select.addEventListener('change', () => {
+        d.values.set(v.key, String(select.value ?? ''));
+        paint();
+      });
+      tr.querySelector('[data-select]')!.append(select);
+      return tr;
+    };
+
+    const paintValues = () => {
+      const asked = distinctValues(sheet(), headerRow, d.mapping, d.skipped)
+        .filter((v) => !v.exact)
+        .sort((a, b) => fieldOrder(a.field.key) - fieldOrder(b.field.key) || a.value.localeCompare(b.value));
+      // A suggestion is pre-picked; an optional field with no match starts
+      // blank; a required one starts unanswered, and its rows wait for it.
+      asked.forEach((v) => {
+        if (d.values.has(v.key)) return;
+        if (v.suggested) d.values.set(v.key, v.suggested);
+        else if (!v.field.required) d.values.set(v.key, '');
+      });
+      const needing = asked.filter((v) => !v.suggested);
+      const suggested = asked.filter((v) => v.suggested);
+
+      reconcile($('[data-values-needing]'), needing, (v) => v.key, (v) => valueRow(v, false), (tr, v) => {
+        tr.querySelector('[data-count]')!.textContent = n(v.rows.length);
+      });
+      // Grouped by field: the field is said once, on its group's first row.
+      reconcile($('[data-values-suggested]'), suggested, (v) => v.key, (v) => valueRow(v, true), (tr, v) => {
+        tr.querySelector('[data-count]')!.textContent = n(v.rows.length);
+        const i = suggested.indexOf(v);
+        const first = i === 0 || suggested[i - 1].field.key !== v.field.key;
+        const cell = tr.querySelector<HTMLElement>('[data-field]')!;
+        cell.innerHTML = first ? esc(label(v.field.label)) : `<span class="firma2-project-import__sr">${esc(label(v.field.label))}</span>`;
+      });
+
+      $('[data-needing-block]').hidden = needing.length === 0;
+      $('[data-suggested-fold]').hidden = suggested.length === 0;
+      suggestedFoldTitle.textContent = `Suggested matches · ${n(suggested.length)}`;
+      return needing.filter((v) => v.field.required && !d.values.get(v.key)).length;
+    };
+
+    const toggleSkip = (row: number, on: boolean) => {
+      if (on) d.skipped.add(row);
+      else d.skipped.delete(row);
+      paint();
+    };
+
+    const paintFixes = () => {
+      // Remember every problem a row has shown, so a fixed row keeps its line.
+      rows.forEach((r) => {
+        if (!r.problems.length || (r.status !== 'fix' && r.status !== 'skipped')) return;
+        const seen = flagged.get(r.row) ?? new Map<string, Problem>();
+        r.problems.forEach((p) => seen.set(p.unmatched ? `match|${p.field.key}` : p.field.key, p));
+        flagged.set(r.row, seen);
+      });
+      const byRow = new Map(rows.map((r) => [r.row, r]));
+      const shown = [...flagged.keys()].filter((row) => byRow.has(row)).sort((a, b) => a - b).map((row) => byRow.get(row)!);
+      const fixedBadge = $<HTMLTemplateElement>('[data-badge-fixed]').innerHTML;
+
+      reconcile(
+        $('[data-fix]'),
+        shown,
+        (r) => String(r.row),
+        (r) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td class="typography-body-md firma2-settings-table__num">${r.row}</td><td class="typography-body-md" data-problems></td><td class="firma2-project-import__fixes" data-fixes></td><td class="firma2-project-import__skip" data-skip-cell></td>`;
+          const skip = document.createElement('esa-checkbox') as Control;
+          skip.setAttribute('label', 'Skip');
+          skip.setAttribute('aria-label', `Skip row ${r.row}`);
+          customElements.whenDefined('esa-checkbox').then(() => (skip.checked = d.skipped.has(r.row)));
+          skip.addEventListener('change', () => toggleSkip(r.row, !!skip.checked));
+          const cell = tr.querySelector<HTMLElement>('[data-skip-cell]')!;
+          cell.append(skip);
+          // The cell is the hit area; a click on the box itself already toggles.
+          cell.addEventListener('click', (event) => {
+            if (event.composedPath().includes(skip)) return;
+            skip.checked = !skip.checked;
+            toggleSkip(r.row, !!skip.checked);
+          });
+          return tr;
+        },
+        (tr, r) => {
+          const seen = flagged.get(r.row)!;
+          const open = new Map(r.problems.map((p) => [p.unmatched ? `match|${p.field.key}` : p.field.key, p]));
+          const skipped = d.skipped.has(r.row);
+          const fixed = r.status !== 'fix' && !skipped;
+          const nameLine = r.name !== `Row ${r.row}` ? `<span class="firma2-settings-table__meta">${esc(r.name)}</span>` : '';
+          tr.querySelector('[data-problems]')!.innerHTML =
+            [...seen.entries()]
+              .map(([key, p], i) => {
+                const current = open.get(key);
+                const text = esc((current ?? p).message);
+                const badge = i === 0 && fixed ? fixedBadge : '';
+                return `<span class="firma2-project-import__problem"><span class="${current && !skipped ? '' : 'firma2-project-import__muted'}">${text}</span>${badge}</span>`;
+              })
+              .join('') + nameLine;
+
+          const fixes = tr.querySelector<HTMLElement>('[data-fixes]')!;
+          const keep = new Map([...fixes.children].map((el) => [(el as HTMLElement).dataset.fix ?? '', el]));
+          // Same controls as last paint: leave them in place, so the one in focus keeps it.
+          const wanted = [...seen.keys()].map((key) => `${r.row}|${key}`);
+          // A skipped row hides its controls, never the cell — the row keeps its columns.
+          const hideControls = () => [...fixes.children].forEach((el) => ((el as HTMLElement).hidden = skipped));
+          if (wanted.length === keep.size && wanted.every((k) => keep.has(k))) {
+            hideControls();
+            return;
+          }
+          fixes.replaceChildren(
+            ...[...seen.entries()].map(([key, p]) => {
+              const k = `${r.row}|${key}`;
+              const kept = keep.get(k);
+              if (kept) return kept;
+              // An unmatched value is answered once, above, for every row that has it.
+              if (p.unmatched) {
+                const note = document.createElement('p');
+                note.className = 'typography-body-md firma2-project-import__muted';
+                note.dataset.fix = k;
+                note.textContent = 'Match it above';
+                return note;
+              }
+              const name = `${fieldLabel(p.field.key)}, row ${r.row}`;
+              const fixKey = `${r.row}|${p.field.key}`;
+              let control: Control;
+              if (p.field.vocabulary) {
+                control = makeSelect({ 'aria-label': name, placeholder: `Pick ${label(p.field.label).toLowerCase()}` }, vocabularyValues(p.field.vocabulary).map((x) => ({ value: x, label: x })), d.fixes.get(fixKey) ?? '');
+              } else {
+                control = document.createElement('esa-text-field') as Control;
+                control.setAttribute('size', 'md');
+                control.setAttribute('aria-label', name);
+                if (p.field.kind === 'year') control.setAttribute('inputmode', 'numeric');
+                customElements.whenDefined('esa-text-field').then(() => (control.value = d.fixes.get(fixKey) ?? p.raw));
+              }
+              control.dataset.fix = k;
+              control.addEventListener('change', () => {
+                d.fixes.set(fixKey, String(control.value ?? '').trim());
+                paint();
+              });
+              return control;
+            }),
+          );
+          hideControls();
+        },
+      );
+      $('[data-rows-block]').hidden = shown.length === 0;
+      return rows.filter((r) => r.status === 'fix').length;
+    };
+
+    const timeline = (r: RowOutcome) => {
+      const { implementationStartYear: a, completionYear: b } = r.values;
+      return a && b ? `${a}–${b}` : a ? `${a}–` : b ? `–${b}` : '—';
+    };
+
+    const paintNew = () => {
+      const fresh = rows.filter((r) => r.status === 'new');
+      $('[data-new]').innerHTML = fresh
+        .map((r) => {
+          const org = r.values.leadOrganization ?? '';
+          const isNewOrg = org && d.values.get(decisionKey('leadOrganization', org)) === NEW_ORGANIZATION;
+          return `<tr><td class="typography-body-md firma2-settings-table__num">${r.row}</td><th scope="row" class="typography-body-md">${esc(r.name)}</th><td class="typography-body-md">${esc(org)}${isNewOrg ? ' <span class="firma2-project-import__muted">(new)</span>' : ''}</td><td class="typography-body-md">${esc(r.values.stage ?? '')}</td><td class="typography-body-md firma2-project-import__nums">${timeline(r)}</td><td class="typography-body-md firma2-settings-table__num">${typeof r.values.estimatedTotalCost === 'number' ? formatMoney(r.values.estimatedTotalCost) : '—'}</td></tr>`;
+        })
+        .join('');
+      $('[data-new-section]').hidden = fresh.length === 0;
+      $('[data-new-heading]').textContent = `${label('New projects')} · ${n(fresh.length)}`;
+      return fresh.length;
+    };
+
+    const paintUpdated = () => {
+      const changed = rows.filter((r) => r.status === 'update');
+      const same = rows.filter((r) => r.status === 'same');
+      const cell = (text: string, long: boolean, muted: boolean) =>
+        `<td class="typography-body-md${muted ? ' firma2-project-import__muted' : ''}">${text ? (long ? `<span class="firma2-project-import__long" title="${esc(text)}">${esc(text)}</span>` : esc(text)) : '—'}</td>`;
+      // One tbody per project: its row and name lead the first line only.
+      const table = $('[data-updated]');
+      table.querySelectorAll('tbody').forEach((tb) => tb.remove());
+      table.insertAdjacentHTML('beforeend', changed
+        .map((r) => `<tbody>${r.changes
+          .map((c, i) => {
+            const long = !!c.note;
+            const from = long ? c.from : c.from === 'blank' ? '' : c.from;
+            const lead = i === 0
+              ? `<td class="typography-body-md firma2-settings-table__num">${r.row}</td><th scope="row" class="typography-body-md">${esc(r.name)}</th>`
+              : '<td></td><td></td>';
+            return `<tr>${lead}<td class="typography-body-md firma2-project-import__field">${esc(label(c.label))}</td>${cell(from, long, true)}${cell(c.to, long, false)}</tr>`;
+          })
+          .join('')}</tbody>`)
+        .join(''));
+      $('[data-updated-table]').hidden = changed.length === 0;
+      $('[data-blank-note]').hidden = changed.length === 0;
+      const unchanged = $('[data-unchanged]');
+      unchanged.hidden = same.length === 0;
+      unchanged.textContent = same.length ? `No changes: ${list(same.map((r) => `${r.name} (row ${r.row})`))}.` : '';
+      $('[data-updated-section]').hidden = changed.length + same.length === 0;
+      $('[data-updated-heading]').textContent = `Updated projects · ${n(changed.length)}`;
+      return { changed: changed.length, same: same.length };
+    };
+
+    const paintLeftOut = () => {
+      const out = rows.filter((r) => r.status === 'total' || r.status === 'skipped' || r.status === 'existing');
+      const why = (r: RowOutcome) => (r.status === 'total' ? 'A total row' : r.status === 'existing' ? 'Names an existing project' : 'Skipped');
+      $('[data-left-out]').innerHTML = out
+        .map((r) => `<tr><td class="typography-body-md firma2-settings-table__num">${r.row}</td><th scope="row" class="typography-body-md">${esc(r.name)}</th><td class="typography-body-md">${why(r)}</td></tr>`)
+        .join('');
+      $('[data-left-out-section]').hidden = out.length === 0;
+      $('[data-left-out-heading]').textContent = `Left out · ${n(out.length)}`;
+      return out.length;
+    };
+
+    const paintLimit = () => {
+      const over = overLimit();
+      $('[data-limit]').hidden = !over;
+      if (over) {
+        $('[data-limit-text]').textContent = `This import would bring the workspace to ${over.after} projects. Upgrade to Agency for unlimited projects, or skip ${over.after - over.limit} ${over.after - over.limit === 1 ? 'row' : 'rows'}.`;
+      }
+    };
+
+    const paintSummary = (c: { created: number; changed: number; same: number; toFix: number; out: number }) => {
+      const missing = unmappedRequired(d.mapping).length;
+      const link = (href: string, text: string) => `<a href="#${href}">${text}</a>`;
+      const parts = missing
+        ? [link('pi-fix', `${plural(missing, 'required field needs', 'required fields need')} a column`)]
+        : [
+            c.toFix && link('pi-fix', `${n(c.toFix)} to fix`),
+            c.created && link('pi-new', `${n(c.created)} new`),
+            c.changed && link('pi-updated', `${n(c.changed)} updated`),
+            c.same && link('pi-updated', `${n(c.same)} unchanged`),
+            c.out && link('pi-left-out', `${n(c.out)} left out`),
+          ].filter(Boolean) as string[];
+      $('[data-summary]').innerHTML = parts.length ? parts.join(' · ') : 'Nothing in this sheet to import.';
+    };
+
+    const paint = () => {
+      if (!workbook) return;
+      paintColumns();
+      // Values first: unasked suggestions become decisions before rows read them.
+      const unanswered = paintValues();
+      rows = unmappedRequired(d.mapping).length ? [] : proposeRows(sheet(), headerRow, d);
+      const toFix = paintFixes();
+      const missing = unmappedRequired(d.mapping).length;
+      // Stays while anything is listed — a fixed row keeps its place until the columns change.
+      $('[data-fix-section]').hidden = !missing && !unanswered && $('[data-needing-block]').hidden && $('[data-rows-block]').hidden;
+      $('[data-fix-heading]').textContent = toFix ? `To fix · ${n(toFix)}` : 'To fix';
+      const created = paintNew();
+      const { changed, same } = paintUpdated();
+      const out = paintLeftOut();
+      paintLimit();
+      paintSummary({ created, changed, same, toFix, out });
+      broadcast();
+    };
+
+    // In-page jumps scroll the inset sheet, not the window; focus the section for keyboards.
+    $('[data-summary]').addEventListener('click', (event) => {
+      const a = (event.target as HTMLElement).closest('a');
+      if (!a) return;
+      const target = root.querySelector<HTMLElement>(a.getAttribute('href')!);
+      if (!target) return;
+      event.preventDefault();
+      target.setAttribute('tabindex', '-1');
+      target.scrollIntoView({ block: 'start' });
+      target.focus({ preventScroll: true });
+    });
+
+    // ---- committing ---------------------------------------------------------------------
+    document.addEventListener(COMMIT_EVENT, () => {
+      if (phase !== 'review' || !going().length || overLimit()) return;
+      const writing = going();
+      leftOut = rows.filter((r) => r.status === 'fix' || r.status === 'skipped' || r.status === 'existing');
+      $('[data-busy-line]').textContent = `Importing ${plural(writing.length, 'project', 'projects')}…`;
+      show('busy');
+      window.setTimeout(() => {
+        // Lead organizations the importer chose to add, and only those a written row uses.
+        const used = new Set(writing.map((r) => r.values.leadOrganization));
+        const newOrgs = [...d.values.entries()]
+          .filter(([key, v]) => v === NEW_ORGANIZATION && key.startsWith('leadOrganization|'))
+          .map(([key]) => distinctValues(sheet(), headerRow, d.mapping, d.skipped).find((x) => x.key === key)?.value.trim() ?? '')
+          .filter((name) => name && used.has(name));
+        const today = new Date().toISOString().slice(0, 10);
+        addOrganizations(
+          newOrgs.map((name): Organization => ({
+            name, slug: organizationSlug(name), type: 'Nonprofit', website: '', description: '', primaryContact: '',
+            projectsLed: writing.filter((r) => r.values.leadOrganization === name).length, projectsFunded: 0, people: 0,
+            projects: writing.filter((r) => r.values.leadOrganization === name).length,
+            visibility: 'public', approvedDomains: [], created: today, programs: [], joining: 'approval', addedBy: CURRENT_USER.name,
+          })),
+        );
+        lastBatch = commitImport(workbook!.fileName, writing, newOrgs);
+        const created = writing.filter((r) => r.status === 'new').length;
+        const updated = writing.length - created;
+        const parts = [created && `${plural(created, 'project', 'projects')} created`, updated && `${plural(updated, 'project', 'projects')} updated`, newOrgs.length && `${plural(newOrgs.length, 'organization', 'organizations')} added`].filter(Boolean) as string[];
+        $('[data-done-text]').textContent = lastBatch ? `${list(parts)}.` : 'This browser is blocking storage, so nothing was kept.';
+        $('[data-download-wrap]').hidden = leftOut.length === 0;
+        const dl = $('[data-download-left-out]').querySelector('.esa-button__label');
+        if (dl) dl.textContent = `Download ${plural(leftOut.length, 'row', 'rows')} left out`;
+        show('done');
+      }, WRITE_DELAY_MS);
+    });
+
+    const reasonOf = (r: RowOutcome): string =>
+      r.status === 'existing' ? 'Names an existing project' : r.status === 'skipped' ? 'Skipped' : r.problems.map((p) => p.message).join('; ');
+
+    $('[data-download-left-out]').addEventListener('click', () => {
+      if (!workbook) return;
+      const headings = sheet().cells[headerRow] ?? [];
+      download(
+        `${workbook.fileName.replace(/\.[^.]+$/, '')}-left-out.csv`,
+        csvOf([['Row', 'Why it was left out', ...headings], ...leftOut.map((r) => [String(r.row), reasonOf(r), ...r.cells])]),
+      );
+    });
+
+    // ---- undo and restart -------------------------------------------------------------------
+    $('[data-undo]').addEventListener('click', () => {
+      if (!lastBatch) return;
+      const created = lastBatch.created.length;
+      const updated = lastBatch.updated.length;
+      const orgs = lastBatch.organizations.length;
+      confirm.message = [
+        created && `Removes ${plural(created, 'project', 'projects')}`,
+        updated && `puts ${plural(updated, 'project', 'projects')} back as they were`,
+        orgs && `removes ${plural(orgs, 'organization', 'organizations')} it added`,
+      ].filter(Boolean).join(', ').replace(/^./, (c) => c.toUpperCase()) + '.';
+      confirm.open = true;
+    });
+    confirm.addEventListener('confirm', () => {
+      if (!lastBatch) return;
+      const batch = undoImport(lastBatch.id);
+      if (batch) removeAddedOrganizations(batch.organizations);
+      $('[data-undone-text]').textContent = batch
+        ? `${list([batch.created.length && `${plural(batch.created.length, 'project', 'projects')} removed`, batch.updated.length && `${plural(batch.updated.length, 'project', 'projects')} restored`].filter(Boolean) as string[])}.`
+        : 'Nothing to undo.';
+      lastBatch = null;
+      show('undone');
+    });
+
+    const restart = () => {
+      workbook = null;
+      rows = [];
+      show('pick');
+    };
+    $('[data-again]').addEventListener('click', restart);
+    document.addEventListener(RESTART_EVENT, restart);
+
+    show('pick');
+  });
+</script>

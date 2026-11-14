@@ -54,10 +54,10 @@ export interface Firma2NavItem {
 // (An organization's Home, below, is a different place: that organization's.)
 export const navItems: Firma2NavItem[] = [
   // UNGROUPED, AT THE TOP: the reader's own starting points need no heading.
-  // My Projects is the editor's landing page (hackathon team 5), first: it is
-  // where someone who updates projects starts; Projects below is the portfolio.
-  { key: 'my-projects', label: 'My Projects', href: '/prototypes/my-projects', icon: 'home', aliasable: true },
-  { key: 'map', label: 'Map', href: '/prototypes/map', icon: 'map-pin' },
+  // Map is the editor's landing page (hackathon team 5's My Projects, renamed
+  // 2026-11-02 when its map-based view replaced the portfolio map): where
+  // someone who updates projects starts; Projects below is the portfolio.
+  { key: 'map', label: 'Map', href: '/prototypes/map', icon: 'map' },
 
   { key: 'projects', label: 'Projects', href: '/prototypes/projects', icon: 'folder', group: 'Workspace', aliasable: true },
   // No index route yet — only one page per classification — so the row is inert.
@@ -66,7 +66,9 @@ export const navItems: Firma2NavItem[] = [
   // performance measures, beside Classifications — the same two-page split
   // that entity has. The catalog stays in Workspace settings › Projects.
   { key: 'performance-measures', label: 'Performance measures', href: '/prototypes/performance-measures', icon: 'trending-up', group: 'Workspace', aliasable: true },
-  { key: 'progress-dashboard', label: 'Progress Dashboard', icon: 'layout-dashboard', group: 'Workspace' },
+  // The Progress Dashboard left this group on 2026-11-12 for a Dashboards group
+  // of its own (src/data/firma2-pages.ts, MAIN_DASHBOARD), where the dashboards
+  // an administrator adds sit beside it.
   // THE ADMINISTRATOR'S SWEEP (user, 2026-10-09): every change on every
   // project, and the queue of public pages that are behind. The same two
   // pages each organization has, at workspace scope.
@@ -211,8 +213,8 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   { key: 'ws-organization-settings', label: 'Settings', href: '/prototypes/workspace-settings/organization-settings', icon: 'settings', group: 'Your organization' },
 ];
 
-/** Where the top bar's home glyph goes: the rail's first row, the one with the home icon. */
-export const HOME_HREF = '/prototypes/my-projects';
+/** Where the top bar's home glyph goes: the rail's first row. */
+export const HOME_HREF = '/prototypes/map';
 
 /** Where Settings opens: the first row of its rail. */
 export const SETTINGS_HOME = '/prototypes/settings/preferences';
@@ -280,6 +282,8 @@ export const searchIndex: Firma2SearchEntry[] = [
   // and tells "Stages" apart from a page in the app. Back to app is a way out of
   // the settings rail, not a destination.
   { id: SETTINGS_HOME, title: 'Settings', subtitle: SETTINGS_SHORTCUT_HINT, category: 'Settings' },
+  // The changelog has no rail row; Help's footer and search are its doors.
+  { id: '/prototypes/changelog', title: 'What’s new', subtitle: 'Changelog', category: 'Pages' },
   ...workspaceSettingsNavItems
     .filter((item) => item.href && item.group)
     .map((item) => ({

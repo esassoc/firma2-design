@@ -37,12 +37,13 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import { seedEntries, NO_FOLDER_LABEL, DOCUMENT_ACCEPT } from '../../data/firma2-pages';
 import type { CustomFolder } from '../../data/firma2-pages';
 import { withBase } from '../../lib/base';
+import { DASHBOARD_TEMPLATES } from '../../data/firma2-dashboards';
 
 interface Props {
-  kind: 'page' | 'document' | 'folder';
+  kind: 'page' | 'document' | 'folder' | 'dashboard';
 }
 
-const ADD_LABEL = { page: 'Add page', document: 'Add document', folder: 'Add folder' } as const;
+const ADD_LABEL = { page: 'Add page', document: 'Add document', folder: 'Add folder', dashboard: 'Add dashboard' } as const;
 /** The largest file Add document takes — the same cap as a file in a page's text. */
 const MAX_MB = 25;
 
@@ -77,14 +78,29 @@ const folderOptions = [NO_FOLDER, ...seedFolders.map((f) => ({ value: f.id, labe
           ></esa-file-upload>
         )}
         <esa-text-field name="title" label="Title" size="md" required data-entry-name></esa-text-field>
-        <esa-select
-          name="folder"
-          label="Folder"
-          size="md"
-          options={JSON.stringify(folderOptions)}
-          data-seed={NO_FOLDER.value}
-          data-entry-folder
-        ></esa-select>
+        {/* A dashboard has its own group in the rail and is never filed in a folder. */}
+        {kind !== 'dashboard' && (
+          <esa-select
+            name="folder"
+            label="Folder"
+            size="md"
+            options={JSON.stringify(folderOptions)}
+            data-seed={NO_FOLDER.value}
+            data-entry-folder
+          ></esa-select>
+        )}
+        {/* A dashboard starts empty or as a copy of one that exists; either way
+            every chart on it can be changed afterwards. */}
+        {kind === 'dashboard' && (
+          <esa-select
+            name="template"
+            label="Start from"
+            size="md"
+            options={JSON.stringify(DASHBOARD_TEMPLATES.map((t) => ({ value: t.slug, label: t.name })))}
+            data-seed={DASHBOARD_TEMPLATES[0].slug}
+            data-entry-template
+          ></esa-select>
+        )}
       </>
     ) : (
       <esa-text-field name="name" label="Name" size="md" required data-entry-name></esa-text-field>
@@ -102,7 +118,7 @@ const folderOptions = [NO_FOLDER, ...seedFolders.map((f) => ({ value: f.id, labe
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-select';
   import '@esa/ecology/esa-file-upload';
-  import { pageRoute, documentRoute } from '../../data/firma2-pages';
+  import { pageRoute, documentRoute, dashboardRoute } from '../../data/firma2-pages';
   import { addEntry, newEntryId, readFolders } from '../../lib/custom-pages';
   import { putDocumentFile } from '../../lib/page-files';
   import { withBase } from '../../lib/base';
@@ -121,7 +137,7 @@ const folderOptions = [NO_FOLDER, ...seedFolders.map((f) => ({ value: f.id, labe
   };
 
   document.querySelectorAll<HTMLFormElement>('.firma2-page-create-form').forEach((form) => {
-    const kind = form.dataset.kind as 'page' | 'document' | 'folder';
+    const kind = form.dataset.kind as 'page' | 'document' | 'folder' | 'dashboard';
     const name = form.querySelector<Field>('[data-entry-name]')!;
     const folder = form.querySelector<Field>('[data-entry-folder]');
     const upload = form.querySelector<Upload>('[data-entry-file]');
@@ -148,6 +164,8 @@ const folderOptions = [NO_FOLDER, ...seedFolders.map((f) => ({ value: f.id, labe
 
     // Folders added in this browser join the seeds. Assigned only after define —
     // a property set on a not-yet-upgraded element shadows the lego's setter.
+    const template = form.querySelector<Field>('[data-entry-template]');
+    if (template) customElements.whenDefined('esa-select').then(() => (template.value = template.dataset.seed ?? ''));
     if (folder) {
       customElements.whenDefined('esa-select').then(() => {
         const none = JSON.parse(form.dataset.noFolder ?? '{}');
@@ -205,6 +223,14 @@ const folderOptions = [NO_FOLDER, ...seedFolders.map((f) => ({ value: f.id, labe
         }
         addEntry({ id, kind: 'document', title: value, folderId, file: { name: file.name, type: file.type, size: file.size } });
         window.location.assign(withBase(documentRoute(id)));
+        return;
+      }
+      if (kind === 'dashboard') {
+        const picked = form.querySelector<Field>('[data-entry-template]');
+        const template = picked?.value || picked?.dataset.seed || 'blank';
+        addEntry({ id, kind: 'dashboard', title: value, folderId, template });
+        // In edit mode: a dashboard made a moment ago is made to be filled.
+        window.location.assign(`${withBase(dashboardRoute(id, template))}&edit`);
         return;
       }
       addEntry({ id, kind: 'page', title: value, folderId });

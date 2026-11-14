@@ -165,3 +165,13 @@ A restoration workspace with three screens: **Basics** (name, type, lead organiz
 - Paid-tier gating follows the rule that a switched-off feature is truly removed.
 
 ## Comments
+
+### 2026-11-12 — Step display: the outline (decided from /proto/intake-steps, two rounds)
+
+- **Direction: a sticky outline beside the step.** Every step is a row: a status mark (check when done, open circle otherwise), the step's title wrapping to as many lines as it needs, and under it what the step still needs — "2 required left", "Optional" (no required questions, nothing answered), "Done". The last row is "Review and submit", counting "N required across the form" or "Ready to submit". The current row carries the sunken tint and semibold title. Back / Continue stay under the step.
+- Outline column 16rem, 4rem gutter, step column capped at 48rem; the page runs at default width. Below 64rem the outline stacks above the step (no stickiness).
+- Sticky under the top bar; a long outline scrolls inside itself (max-height to the fold) rather than running past it.
+- Replaces the "progress bar" in Surfaces above: the outline is the progress.
+- **Rejected, round 1:** the shipped row of ghost step buttons (wraps to three lines at six steps and says nothing about what is left); *Focus* — segmented progress line + "All steps" jump menu + sticky action bar (hides the list in a menu; segments are colour-only); *Document* — every screen on one page with a sticky "N required left" bar (long forms become one long scroll, screens stop meaning anything, conditional sections land mid-page).
+- **Rejected, round 2 (riffs on the outline):** *Questions* — each step also listing its open required questions as jumps (doubles the outline's height; on a big custom form it becomes a second copy of the form); *Collapsed* — the outline folded into a "Step 3 of 7 · 4 required left" disclosure above a single column (what's left is a tap away instead of always visible); *Scroll* — the outline as a scroll-spy beside one long page with Submit under it (loses the review step; the last short section can never become current).
+- Open: no `esa-` stepper/outline exists; the rows are spoke markup in firma2-intake-flow until one does (spec, Components: file /request-lego).

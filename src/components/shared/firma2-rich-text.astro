@@ -13,7 +13,8 @@
 // AN EMPTY LINE OFFERS WHAT CAN START THERE: heading, list, image, file — a
 // small toolbar beside the caret on a blank line (the Medium "+"). Images and
 // files also arrive by pasting or dropping them into the text. Select an image
-// and its toolbar is Alt text and Remove instead of the formatting; a
+// and its toolbar is Full size, Alt text and Remove instead of the
+// formatting (read-only, a click on an image opens it full size); a
 // file, Remove.
 //
 // AS A CANVAS (the `canvas` prop) it takes the grammar every builder shares —
@@ -125,6 +126,7 @@ const inserts = [
       <EsaButton variant="chrome" size="sm" iconOnly icon={t.icon} label={t.label} data-cmd={t.cmd} data-for="text" aria-pressed="false" />
     ))}
     {/* A selected image swaps the formatting for what an image can take. */}
+    <EsaButton variant="chrome" size="md" data-cmd="full-size" data-for="image">Full size</EsaButton>
     <EsaButton variant="chrome" size="md" data-cmd="alt" data-for="image">Alt text</EsaButton>
     <EsaButton variant="chrome" size="md" data-cmd="remove-image" data-for="image">Remove</EsaButton>
     {/* A selected file: the one thing a file can take here. */}
@@ -192,6 +194,7 @@ const inserts = [
   import type { Range } from '@tiptap/core';
   import Suggestion from '@tiptap/suggestion';
   import { atLimit } from '../../lib/plan-usage';
+  import { openLightbox } from '../../lib/lightbox';
   import { NodeSelection, TextSelection } from '@tiptap/pm/state';
   import type { Node as PMNode } from '@tiptap/pm/model';
   import Image from '@tiptap/extension-image';
@@ -530,6 +533,17 @@ const inserts = [
       blockquote: () => editor.chain().focus().toggleBlockquote().run(),
       link: () => openLink(),
       image: () => pickImages(),
+      'full-size': () => {
+        const { selection } = editor.state;
+        if (!(selection instanceof NodeSelection)) return;
+        const img = editor.view.nodeDOM(selection.from);
+        if (!(img instanceof HTMLImageElement)) return;
+        const all = [...root.querySelectorAll<HTMLImageElement>('[data-rich-text-editor] img')];
+        openLightbox({
+          images: all.map((i) => ({ src: i.currentSrc || i.src, caption: i.alt || undefined })),
+          index: Math.max(all.indexOf(img), 0),
+        });
+      },
       alt: () => openAlt(),
       'remove-image': () => editor.chain().focus().deleteSelection().run(),
       file: () => pickFiles(),
@@ -872,6 +886,13 @@ const inserts = [
        AFTER positioning, so the first placement measured a full-width flex row
        and centred it off the left edge of the screen. */
     width: max-content;
+    /* Before Tiptap moves it to <body> it is still a descendant of the page
+       pane, and a hidden 370px box at its static position widened the pane on
+       a phone. Pinned to the start edge and capped at its containing block,
+       it wraps instead; Tiptap's inline left/top override the inset once placed. */
+    inset-inline-start: 0;
+    max-inline-size: 100%;
+    flex-wrap: wrap;
     z-index: var(--z-popover, 1000);
     padding: var(--spacing-100, 4px);
     background: var(--color-background-elevation-raised, #fcfcfc);

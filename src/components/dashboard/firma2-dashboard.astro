@@ -1,0 +1,380 @@
+---
+// firma2-dashboard — the Progress Dashboard: a grid of tiles an administrator
+// assembles from the workspace's inventory (src/data/firma2-dashboard.ts) —
+// numbers in a row on top, charts in a twelve-column grid under it.
+//
+// DECIDED 2026-11-12, over five rounds of /proto/data-block (now deleted):
+//   - A DASHBOARD, NOT A PAGE WITH CHARTS IN IT. No prose around the tiles;
+//     it is scanned, not read. (Rejected: data blocks inside a custom page,
+//     with a sentence, a sheet or a search to state each chart's question.)
+//   - NO CARDS. No border around a tile, a section or a plot; space alone
+//     sets them apart.
+//   - ONE FILTER FOR EVERY TILE, and the tile's own sheet asks only what the
+//     tile shows. (Rejected: each tile choosing its own projects — "All
+//     projects" on every tile, and a new audience meant editing each one;
+//     and a tick-list of measures — fast, but no splits and no forms.)
+//   - THE FILTER IS FACETS, ADDED ON DEMAND. The bar holds "+ Filter" and the
+//     filters in use; a filter leaves when it is cleared. Values of one
+//     filter are alternatives, different filters must all hold. (Rejected: a
+//     saved-view field and saved-view tabs — nine views ran off the edge;
+//     every facet always on show — it cannot grow with custom fields; counts
+//     on every option; saving a combination as a named view.)
+//   - CHARTS ARE SIZED BY HAND: drag a chart's corner — across for width in
+//     whole columns, down for height — or set Width and Height in its sheet.
+//   - CHARTS ARE ORDERED BY HAND TOO: drag a tile by its grip, or use the
+//     grip's menu (Move earlier / later / to start / to end). Numbers reorder
+//     among numbers and charts among charts; a tile's form decides its row.
+//   - IT OPENS TO READ, LIKE A RECORD (firma2-record-mode): Edit brings out
+//     Add chart and each tile's grip (move, edit, duplicate, remove) and
+//     size corner; Update
+//     puts them away. The filter works in both — filtering is reading.
+//   - ANY FIGURE, NOT ONLY PERFORMANCE MEASURES: project counts, money, work
+//     areas, reporting and custom fields chart the same way.
+//
+// MORE THAN ONE (user, same day): the workspace's Progress Dashboard, and any
+// number added to Pages with Add dashboard, each from a template
+// (src/data/firma2-dashboards.ts).
+//
+// TILES ARE RENDERED AHEAD AND HIDDEN. A tile is .astro markup, which cannot
+// be made at runtime, so Add chart reveals the next one and its sheet opens
+// to say what it shows. The cap (the list below) is the prototype's.
+// Nothing is stored: a reload is the dashboard as built.
+//
+// bcn-lego-checked: firma2-dashboard-tile is the tile; the filters are
+// esa-filter-dropdown, added from an esa-dropdown-menu on an esa-button;
+// bcn-sortable-list (its grid layout) reorders the tiles;
+// bcn-radio-group is how a funder's results count; esa-empty-state the empty
+// dashboard. The number row is the .grid primitive; the chart grid is the one
+// bespoke rule (below), because .grid is auto-fit and cannot hold a tile that
+// spans a chosen number of columns. Beacon is not cloned.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2DashboardTile from './firma2-dashboard-tile.astro';
+import Firma2DashboardSheet from './firma2-dashboard-sheet.astro';
+import { dashboardDataset } from '../../data/firma2-dashboard';
+
+import type { DashboardTemplate } from '../../data/firma2-dashboards';
+
+interface Props {
+  /** What this dashboard opens with (src/data/firma2-dashboards.ts). */
+  template: DashboardTemplate;
+}
+
+const { template } = Astro.props;
+const dataset = dashboardDataset();
+---
+<script type="application/json" id="firma2-dashboard-data" set:html={JSON.stringify(dataset)} />
+
+<div class="firma2-dashboard stack" data-gap="2xl" data-dashboard data-scope={template.scope}>
+  <div class="stack" data-gap="md">
+    <div class="cluster" data-gap="sm">
+      {dataset.dimensions.map((d) => (
+        <span data-filter-wrap={d.key} style="display: none">
+          <esa-filter-dropdown name={d.key} label={d.label} size="md" multiple placeholder={`Search ${d.plural}`} data-filter={d.key}></esa-filter-dropdown>
+        </span>
+      ))}
+      <span data-filter-wrap="years" style="display: none">
+        <esa-filter-dropdown name="years" label="Years" size="md" data-filter-years></esa-filter-dropdown>
+      </span>
+      <esa-dropdown-menu position="below-start" data-filter-add>
+        <EsaButton variant="secondary" size="md" icon="plus">Filter</EsaButton>
+      </esa-dropdown-menu>
+      <span class="typography-body-md" aria-live="polite" data-filter-count></span>
+    </div>
+    <div data-attribution-wrap style="display: none">
+      <bcn-radio-group label="Count toward this funder" size="md" orientation="horizontal" data-attribution></bcn-radio-group>
+    </div>
+  </div>
+
+  {/* Tops line up. Bottom-aligning put the figures on one line but stepped
+      the titles like a staircase once the row wrapped (tried, 2026-11-12). */}
+  <bcn-sortable-list layout="grid" label="Numbers">
+    <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move" data-edit-only>Move</EsaButton></template>
+    <ol class="firma2-dashboard__list grid" data-gap="xl" style="--grid-min: 13rem; align-items: start" data-dashboard-numbers></ol>
+  </bcn-sortable-list>
+  <bcn-sortable-list layout="grid" label="Charts">
+    <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move" data-edit-only>Move</EsaButton></template>
+    <ol class="firma2-dashboard__list firma2-dashboard__charts" data-dashboard-charts>
+      {template.tiles.map((open, i) => <Firma2DashboardTile index={i} open={open} hidden={i >= template.shown} />)}
+    </ol>
+  </bcn-sortable-list>
+  <div style="display: none" data-dashboard-empty>
+    <EsaEmptyState title="No charts on this dashboard" description="Add a chart to start." />
+  </div>
+</div>
+
+<Firma2DashboardSheet />
+
+<style>
+  .firma2-dashboard__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  /* Twelve columns, so a chart can be a quarter, a third, a half or the full
+     width; each tile says how many it spans (--span, set from its size). */
+  .firma2-dashboard__charts {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--spacing-700, 3rem) var(--spacing-600, 2rem);
+    align-items: start;
+  }
+  .firma2-dashboard__charts > :global(.firma2-dashboard-tile) {
+    grid-column: span var(--span, 4);
+  }
+  /* Below the tablet gate there is one column and nothing to span. */
+  @media (max-width: 64rem) {
+    .firma2-dashboard__charts > :global(.firma2-dashboard-tile) {
+      grid-column: 1 / -1;
+    }
+  }
+</style>
+
+<script>
+  import '../../lib/dashboard-figure';
+  import '../shared/bcn-tile-grip';
+  import '../shared/bcn-sortable-list';
+  import '../shared/bcn-radio-group';
+  import '@esa/ecology/esa-filter-dropdown';
+  import '@esa/ecology/esa-dropdown-menu';
+  import { HEIGHT, attributionChoices, clampHeight, clampSpan, facetsOf, funderOf, projectsIn, scopeOf, valuesOf, yearChoices, type Attribution } from '../../lib/dashboard-model';
+  import { ds, storeFor } from '../../lib/dashboard-store';
+
+  type Option = { value: string; label: string };
+  type Field = HTMLElement & { options: Option[]; value: string | null };
+  type Filter = HTMLElement & { options: Option[]; _selected: string[]; _open: boolean; updateComplete: Promise<unknown> };
+  type Menu = HTMLElement & { items: { label: string; action: string }[] };
+
+  document.querySelectorAll<HTMLElement>('[data-dashboard]').forEach((dash) => {
+    const tiles = [...dash.querySelectorAll<HTMLElement>('[data-tile]')];
+    const numbers = dash.querySelector<HTMLElement>('[data-dashboard-numbers]')!;
+    const charts = dash.querySelector<HTMLElement>('[data-dashboard-charts]')!;
+    const empty = dash.querySelector<HTMLElement>('[data-dashboard-empty]')!;
+    const addChart = document.querySelector<HTMLElement>('[data-dashboard-add]');
+    const hidden = () => tiles.filter((t) => t.style.display === 'none');
+
+    // THE DASHBOARD'S FILTER: whose projects, from which year, and — for one
+    // funder — whether a project counts whole. Every tile takes all three.
+    const page: { scope: string; from: number; count: Attribution } = { scope: 'all', from: 0, count: 'full' };
+    const countField = dash.querySelector<Field>('[data-attribution]');
+    const countWrap = dash.querySelector<HTMLElement>('[data-attribution-wrap]');
+    const countLine = dash.querySelector<HTMLElement>('[data-filter-count]');
+    const apply = (tile: HTMLElement) => storeFor(tile).set({ scope: page.scope, from: page.from, attribution: page.count });
+    const push = () => {
+      const funder = funderOf(page.scope) !== '';
+      if (!funder) page.count = 'full';
+      if (countWrap) countWrap.style.display = funder ? '' : 'none';
+      if (countField && countField.value !== page.count) countField.value = page.count;
+      if (countLine) countLine.textContent = page.scope === 'all' ? '' : `${projectsIn(ds, page.scope)} of ${ds.projects.length} projects`;
+      tiles.forEach(apply);
+    };
+
+    // A change to the dashboard's makeup — what Update confirms. Filtering is
+    // not one. The event is the one firma2-record-mode already listens for.
+    const touched = () => document.dispatchEvent(new CustomEvent('firma2:field-save', { detail: { field: 'dashboard', raw: '' } }));
+
+    const sync = () => {
+      const shown = tiles.filter((t) => t.style.display !== 'none');
+      numbers.style.display = shown.some((t) => t.parentElement === numbers) ? '' : 'none';
+      charts.style.display = shown.some((t) => t.parentElement === charts) ? '' : 'none';
+      empty.style.display = shown.length ? 'none' : '';
+      if (addChart) addChart.style.display = hidden().length ? '' : 'none';
+    };
+
+    // A TILE SITS WITH ITS FORM — numbers in the top row, charts in the grid —
+    // and a chart is as wide as its size says.
+    tiles.forEach((tile) =>
+      storeFor(tile).subscribe((s) => {
+        tile.dataset.kind = s.kind;
+        tile.style.setProperty('--span', String(s.span));
+        // The grip's menu names the tile ("Move Spent").
+        tile.dataset.sortLabel = tile.querySelector('[data-figure-title]')?.textContent ?? '';
+        const home = s.kind === 'number' ? numbers : charts;
+        if (tile.parentElement !== home) {
+          // Its grip belongs to the list it is leaving; the new list makes its own.
+          tile.querySelector('[data-sort-grip]')?.remove();
+          home.append(tile);
+          sync();
+        }
+      }),
+    );
+
+    addChart?.addEventListener('click', () => {
+      const tile = hidden()[0];
+      if (!tile) return;
+      tile.style.display = '';
+      tile.dataset.sortKey = tile.dataset.tile;
+      const store = storeFor(tile);
+      store.reset();
+      (store.get().kind === 'number' ? numbers : charts).append(tile);
+      apply(tile);
+      sync();
+      // A new chart opens its sheet: what it shows is the next thing to say.
+      document.dispatchEvent(new CustomEvent('firma2:tile-edit', { detail: tile }));
+      touched();
+      tile.scrollIntoView({ block: 'nearest' });
+    });
+    // A TILE'S ACTS COME FROM ITS GRIP'S MENU (bcn-sortable-list shows the
+    // tile's data-sort-actions above the moves and lets them bubble here).
+    dash.addEventListener('menu-action', (e) => {
+      const tile = (e.target as HTMLElement).closest<HTMLElement>('[data-tile]');
+      const action = (e as CustomEvent<string>).detail;
+      if (!tile) return;
+      if (action === 'edit') document.dispatchEvent(new CustomEvent('firma2:tile-edit', { detail: tile }));
+      if (action === 'remove') {
+        tile.style.display = 'none';
+        delete tile.dataset.sortKey;
+        sync();
+        document.dispatchEvent(new CustomEvent('firma2:tile-removed', { detail: tile }));
+        touched();
+      }
+      if (action === 'duplicate') {
+        const copy = hidden()[0];
+        if (!copy) return;
+        copy.style.display = '';
+        copy.dataset.sortKey = copy.dataset.tile;
+        // The same question and size, placed right after the one it copies.
+        storeFor(copy).set({ ...storeFor(tile).get() });
+        tile.after(copy);
+        sync();
+        touched();
+        document.dispatchEvent(new CustomEvent('firma2:tile-edit', { detail: copy }));
+      }
+    });
+
+    // ---- sizing a chart ---------------------------------------------------
+    // The corner follows the pointer in whole steps: a column of the twelve
+    // across, 40px down. Escape puts the size back.
+    tiles.forEach((tile) => {
+      const store = storeFor(tile);
+      let start: { span: number; height: number; column: number } | null = null;
+      tile.addEventListener('bcn-grip-start', () => {
+        const gap = parseFloat(getComputedStyle(charts).columnGap) || 0;
+        const s = store.get();
+        start = { span: s.span, height: s.height, column: (charts.getBoundingClientRect().width + gap) / 12 };
+        tile.setAttribute('data-resizing', '');
+      });
+      tile.addEventListener('bcn-grip-move', (e) => {
+        if (!start) return;
+        const { dx, dy } = (e as CustomEvent<{ dx: number; dy: number }>).detail;
+        const span = clampSpan(start.span + dx / start.column);
+        const height = clampHeight(start.height + dy);
+        const s = store.get();
+        if (span !== s.span || height !== s.height) store.set({ span, height });
+      });
+      tile.addEventListener('bcn-grip-end', () => {
+        start = null;
+        tile.removeAttribute('data-resizing');
+        touched();
+      });
+      tile.addEventListener('bcn-grip-cancel', () => {
+        if (start) store.set({ span: start.span, height: start.height });
+        start = null;
+        tile.removeAttribute('data-resizing');
+      });
+      tile.addEventListener('bcn-grip-step', (e) => {
+        const { dx, dy } = (e as CustomEvent<{ dx: number; dy: number }>).detail;
+        const s = store.get();
+        store.set({ span: clampSpan(s.span + dx), height: clampHeight(s.height + dy * HEIGHT.step) });
+        touched();
+      });
+    });
+    dash.addEventListener('sort-change', touched);
+
+    // ---- the filters ------------------------------------------------------
+    // The bar holds only the filters in use; the rest wait in "+ Filter".
+    const picked = new Map<string, string[]>();
+    const fields = [...dash.querySelectorAll<Filter>('[data-filter]')];
+    const yearsField = dash.querySelector<Filter>('[data-filter-years]');
+    const addFilter = dash.querySelector<Menu>('[data-filter-add]');
+    const wrapOf = (key: string) => dash.querySelector<HTMLElement>(`[data-filter-wrap="${key}"]`);
+    const inUse = (key: string) => wrapOf(key)?.style.display !== 'none';
+    const setMenu = () => {
+      if (!addFilter) return;
+      addFilter.items = [...ds.dimensions.map((d) => ({ label: d.label, action: d.key })), { label: 'Years', action: 'years' }].filter((item) => !inUse(item.action));
+      addFilter.style.display = addFilter.items.length ? '' : 'none';
+    };
+    addFilter?.addEventListener('menu-action', (e) => {
+      const wrap = wrapOf((e as CustomEvent<string>).detail);
+      const field = wrap?.querySelector<Filter>('esa-filter-dropdown');
+      if (!wrap || !field) return;
+      wrap.style.display = '';
+      // Lands just before "+ Filter", in the order filters were added.
+      addFilter.before(wrap);
+      setMenu();
+      // Straight into choosing: a filter with nothing picked is half an act.
+      void field.updateComplete.then(() => field.shadowRoot?.querySelector<HTMLElement>('button')?.click());
+    });
+
+    // A FILTER LEAVES WHEN IT IS CLEARED — but not out from under the reader:
+    // it goes on the next click after its list has closed with nothing picked.
+    const emptied = new Set<string>();
+    document.addEventListener('click', () =>
+      setTimeout(() => {
+        emptied.forEach((key) => {
+          const wrap = wrapOf(key);
+          const field = wrap?.querySelector<Filter>('esa-filter-dropdown');
+          if (!wrap || !field || field._selected.length || field._open) return;
+          wrap.style.display = 'none';
+          emptied.delete(key);
+          setMenu();
+        });
+      }),
+    );
+
+    fields.forEach((field) =>
+      field.addEventListener('selection-change', (e) => {
+        const key = field.dataset.filter!;
+        const value = (e as CustomEvent<{ value?: string[] }>).detail.value ?? [];
+        if (value.length) {
+          picked.set(key, [...value]);
+          emptied.delete(key);
+        } else {
+          picked.delete(key);
+          emptied.add(key);
+        }
+        page.scope = scopeOf(picked);
+        push();
+      }),
+    );
+    yearsField?.addEventListener('selection-change', (e) => {
+      const value = (e as CustomEvent<{ value?: string }>).detail.value;
+      page.from = Number(value ?? 0);
+      if (value) emptied.delete('years');
+      else emptied.add('years');
+      push();
+    });
+    countField?.addEventListener('change', () => {
+      if (!countField.value || countField.value === page.count) return;
+      page.count = countField.value as Attribution;
+      push();
+    });
+
+    const ready = ['bcn-radio-group', 'esa-filter-dropdown', 'esa-dropdown-menu'].map((n) => customElements.whenDefined(n));
+    void Promise.all(ready).then(() => {
+      if (countField) {
+        countField.options = attributionChoices.map(({ value, label }) => ({ value, label }));
+        countField.value = page.count;
+      }
+      fields.forEach((field) => {
+        field.options = valuesOf(ds, field.dataset.filter!).map((v) => ({ value: v, label: v }));
+      });
+      if (yearsField) yearsField.options = yearChoices.map(({ value, label }) => ({ value, label }));
+      // A dashboard can open already filtered (its template's scope): those
+      // filters are on the bar, picked, as if the reader had added them.
+      facetsOf(dash.dataset.scope ?? 'all').forEach((values, key) => {
+        const wrap = wrapOf(key);
+        const field = wrap?.querySelector<Filter>('esa-filter-dropdown');
+        if (!wrap || !field) return;
+        picked.set(key, values);
+        field._selected = [...values];
+        wrap.style.display = '';
+        addFilter?.before(wrap);
+      });
+      page.scope = scopeOf(picked);
+      setMenu();
+      push();
+    });
+    sync();
+  });
+</script>

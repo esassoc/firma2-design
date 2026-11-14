@@ -13,12 +13,12 @@
 // new, by email" are one question — who? — answered two ways, so they are one
 // esa-input-tag: its suggestions are the workspace's other people, and anything
 // typed that is not one of them is an email to invite. The placeholder says
-// "Name or email"; the error catches a newcomer typed by a non-steward.
+// "Name or email"; the error catches a newcomer typed by a non-manager.
 //
-// STEWARDS ARE MARKED HERE, AND MADE HERE. Steward is Linear's team owner: a
+// MANAGERS ARE MARKED HERE, AND MADE HERE. Manager is Linear's team owner: a
 // flag on one membership, not a workspace role, so the page that lists the
-// membership is where it is given — "Make steward" in a Contributor's "…", and
-// a quiet badge beside the role once they are one. Administrators steward every
+// membership is where it is given — "Make manager" in a Contributor's "…", and
+// a quiet badge beside the role once they are one. Administrators manage every
 // organization already, so their row carries no badge and no item; a Viewer
 // cannot be one, as a Linear guest cannot own a team.
 //
@@ -30,7 +30,7 @@
 // this organization's members — whoever Access › Manage members allows. Typing
 // a new address also brings a stranger into the WORKSPACE, which Security ›
 // Invite people governs. The two settings meet here, and Linear's rule settles
-// it: stewards (administrators included) can always invite into their own
+// it: managers (administrators included) can always invite into their own
 // organization; anyone else can add only people already in the workspace.
 //
 // REMOVING NEVER ORPHANS A CONTRIBUTOR. A Contributor needs an organization;
@@ -40,11 +40,11 @@
 // who belongs elsewhere too ends only this membership.
 //
 // ROLES ARE NOT CHANGED HERE. A role is workspace-wide and a person may belong
-// to several organizations, so one organization's steward does not set it; an
+// to several organizations, so one organization's manager does not set it; an
 // administrator does, on Users. Adding someone already in the workspace keeps
 // their role — the Role field applies to the people you invite.
 //
-// ADMINISTRATORS ARE OUT OF A STEWARD'S REACH. Their rows carry a "…" only for
+// ADMINISTRATORS ARE OUT OF A MANAGER'S REACH. Their rows carry a "…" only for
 // a reader who is an administrator too.
 //
 // YOUR OWN ROW HAS NO REMOVE. Taking yourself out is the danger zone's Leave,
@@ -65,7 +65,8 @@
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaBadge from '@esa/ecology/esa-badge.astro';
 import './firma2-settings-table.css';
-import { membersOf, users, grantableRoles, isSteward, CURRENT_USER } from '../../data/firma2-directory';
+import Firma2InheritedAccess from './firma2-inherited-access.astro';
+import { membersOf, users, grantableRoles, isManager, CURRENT_USER } from '../../data/firma2-directory';
 import type { Organization } from '../../data/firma2-directory';
 
 interface Props {
@@ -74,18 +75,18 @@ interface Props {
 
 const { organization: org } = Astro.props;
 
-// The reader stewards this organization — flagged on it, or an administrator —
+// The reader manages this organization — flagged on it, or an administrator —
 // so they can invite people who aren't in the workspace yet.
 const me = users.find((u) => u.email === CURRENT_USER.email);
-const canInvite = !!me && isSteward(me, org.name);
+const canInvite = !!me && isManager(me, org.name);
 const readerIsAdmin = me?.role === 'Administrator';
 
 const members = membersOf(org.name).map((m) => ({
   name: m.name,
   email: m.email,
   role: m.role,
-  // Administrators steward every organization; only the flag is shown.
-  steward: m.role === 'Contributor' && m.stewardOf.includes(org.name),
+  // Administrators manage every organization; only the flag is shown.
+  manager: m.role === 'Contributor' && m.managerOf.includes(org.name),
   invited: m.status === 'Invited',
   you: m.email === CURRENT_USER.email,
   // How many organizations they keep if removed from this one.
@@ -107,13 +108,17 @@ const candidates = users
 const DEFAULT_ROLE = 'Viewer';
 ---
 <section
-  class="firma2-organization-members"
+  class="firma2-organization-members stack"
+  data-gap="md"
   data-organization={org.name}
   data-default-role={DEFAULT_ROLE}
   data-roles={JSON.stringify(grantableRoles)}
   data-candidates={JSON.stringify(candidates)}
   data-can-invite={canInvite ? '' : undefined}
 >
+  {/* Who edits this organization's projects without being on this list. */}
+  <Firma2InheritedAccess scope="organization" organization={org} />
+  <div class="firma2-settings-table-scroll">
   <table class="firma2-settings-table firma2-settings-table--actions firma2-organization-members__table" aria-label={`Members of ${org.name}`}>
     <thead>
       <tr>
@@ -125,7 +130,7 @@ const DEFAULT_ROLE = 'Viewer';
     </thead>
     <tbody data-members-body>
       {members.map((m) => (
-        <tr data-member={m.email} data-name={m.name} data-role={m.role} data-elsewhere={m.elsewhere} data-steward={m.steward ? '' : undefined} data-invited={m.invited ? '' : undefined}>
+        <tr data-member={m.email} data-name={m.name} data-role={m.role} data-elsewhere={m.elsewhere} data-manager={m.manager ? '' : undefined} data-invited={m.invited ? '' : undefined}>
           <th scope="row">
             <span class="cluster" data-gap="xs">
               <span>{m.name}{m.you && <span class="firma2-organization-members__you"> (you)</span>}</span>
@@ -137,7 +142,7 @@ const DEFAULT_ROLE = 'Viewer';
           <td>
             <span class="cluster" data-gap="xs" data-slot="role-cell">
               <span data-slot="role">{m.role}</span>
-              {m.steward && <span data-slot="steward"><EsaBadge value="Steward" variant="secondary" size="sm" /></span>}
+              {m.manager && <span data-slot="manager"><EsaBadge value="Manager" variant="secondary" size="sm" /></span>}
             </span>
           </td>
           <td class="firma2-settings-table__act">
@@ -151,6 +156,7 @@ const DEFAULT_ROLE = 'Viewer';
       ))}
     </tbody>
   </table>
+  </div>
 
   {/* The row every added person is cloned from: the same markup as above, with
       empty slots the script fills. */}
@@ -177,9 +183,9 @@ const DEFAULT_ROLE = 'Viewer';
     </tr>
   </template>
 
-  {/* The badge "Make steward" adds to a row, from the same lego the server rows use. */}
-  <template data-steward-template>
-    <span data-slot="steward"><EsaBadge value="Steward" variant="secondary" size="sm" /></span>
+  {/* The badge "Make manager" adds to a row, from the same lego the server rows use. */}
+  <template data-manager-template>
+    <span data-slot="manager"><EsaBadge value="Manager" variant="secondary" size="sm" /></span>
   </template>
 
   <esa-dialog class="firma2-organization-members__add" heading="Add members" size="md" show-close-button>
@@ -216,6 +222,7 @@ const DEFAULT_ROLE = 'Viewer';
   import '@esa/ecology/esa-confirm-dialog';
   import '@esa/ecology/esa-dropdown-menu';
   import '@esa/ecology/esa-snackbar-container';
+  import { readRequests, CHANGED } from '../../lib/access-requests';
 
   type Option = { value: string; label: string; name: string; role: string; elsewhere: number };
   type Dialog = HTMLElement & { show(): void; close(): void; updateComplete: Promise<unknown> };
@@ -238,7 +245,7 @@ const DEFAULT_ROLE = 'Viewer';
 
     const body = root.querySelector<HTMLElement>('[data-members-body]');
     const template = root.querySelector<HTMLTemplateElement>('[data-member-template]');
-    const stewardTemplate = root.querySelector<HTMLTemplateElement>('[data-steward-template]');
+    const managerTemplate = root.querySelector<HTMLTemplateElement>('[data-manager-template]');
     const dialog = root.querySelector<Dialog>('.firma2-organization-members__add');
     const people = root.querySelector<InputTag>('[data-members-people]');
     const role = root.querySelector<Select>('[data-members-role]');
@@ -293,7 +300,7 @@ const DEFAULT_ROLE = 'Viewer';
       }
       const newcomer = canInvite ? undefined : picked.find((v) => !known.has(v.toLowerCase()));
       if (newcomer) {
-        people.errorText = `Ask a steward to invite ${newcomer}.`;
+        people.errorText = `Ask a manager to invite ${newcomer}.`;
         return;
       }
       const already = picked.find((v) => present.has(v.toLowerCase()));
@@ -345,21 +352,21 @@ const DEFAULT_ROLE = 'Viewer';
     // ---- The row menu -------------------------------------------------------
 
     // Each row's "…" names what it changes. A Contributor who has accepted can
-    // be made a steward, or stop being one; an invitation can be sent again;
+    // be made a manager, or stop being one; an invitation can be sent again;
     // then the act that ends the membership, or the invitation. Items are a property,
     // so they land after define — for the server rows now, and for each added
-    // row as it is cloned — and again whenever stewardship changes.
+    // row as it is cloned — and again whenever a manager is made or removed.
     function fillMenu(row: HTMLElement) {
       const menu = row.querySelector<Menu>('esa-dropdown-menu');
       if (!menu) return;
       const invited = row.hasAttribute('data-invited');
-      const canSteward = !invited && row.dataset.role === 'Contributor';
+      const canBeManager = !invited && row.dataset.role === 'Contributor';
       void customElements.whenDefined('esa-dropdown-menu').then(() => {
         menu.items = [
-          ...(canSteward
-            ? [row.hasAttribute('data-steward')
-                ? { label: 'Remove as steward', action: 'steward-off' }
-                : { label: 'Make steward', action: 'steward-on' }]
+          ...(canBeManager
+            ? [row.hasAttribute('data-manager')
+                ? { label: 'Remove as manager', action: 'manager-off' }
+                : { label: 'Make manager', action: 'manager-on' }]
             : []),
           ...(invited ? [{ label: 'Resend invitation', action: 'resend' }] : []),
           invited
@@ -370,6 +377,21 @@ const DEFAULT_ROLE = 'Viewer';
     }
     body.querySelectorAll<HTMLElement>('tr[data-member]').forEach(fillMenu);
 
+    // ---- Approved requests --------------------------------------------------
+
+    // A request approved in the band above (or on Users, or before a reload)
+    // is a member now. Rows follow the store, so the two lists never disagree.
+    function joinApproved() {
+      const present = memberEmails();
+      for (const r of readRequests()) {
+        if (r.kind !== 'join' || r.status !== 'approved' || r.organization !== org || present.has(r.email)) continue;
+        addRow({ name: r.name, email: r.email, role: r.granted ?? r.asked, invited: false, elsewhere: 0 });
+        candidates = candidates.filter((c) => c.value !== r.email);
+      }
+    }
+    joinApproved();
+    window.addEventListener(CHANGED, joinApproved);
+
     // ---- Resend -------------------------------------------------------------
 
     body.addEventListener('menu-action', (event) => {
@@ -378,25 +400,25 @@ const DEFAULT_ROLE = 'Viewer';
       if (row) toasts?.show({ message: `Invitation resent to ${row.dataset.name ?? ''}.`, variant: 'success' });
     });
 
-    // ---- Steward ------------------------------------------------------------
+    // ---- Manager ------------------------------------------------------------
 
     // No confirmation either way: both are one click back, and nothing the
-    // steward did while one is undone by taking it away.
+    // manager did while one is undone by taking it away.
     body.addEventListener('menu-action', (event) => {
       const action = (event as CustomEvent<string>).detail;
-      if (action !== 'steward-on' && action !== 'steward-off') return;
+      if (action !== 'manager-on' && action !== 'manager-off') return;
       const row = (event.target as Element).closest<HTMLElement>('tr[data-member]');
       const cell = row?.querySelector('[data-slot="role-cell"]');
       if (!row || !cell) return;
       const name = row.dataset.name ?? '';
-      if (action === 'steward-on') {
-        row.dataset.steward = '';
-        if (stewardTemplate) cell.append(stewardTemplate.content.cloneNode(true));
-        toasts?.show({ message: `${name} is now a steward.`, variant: 'success' });
+      if (action === 'manager-on') {
+        row.dataset.manager = '';
+        if (managerTemplate) cell.append(managerTemplate.content.cloneNode(true));
+        toasts?.show({ message: `${name} is now a manager.`, variant: 'success' });
       } else {
-        delete row.dataset.steward;
-        cell.querySelector('[data-slot="steward"]')?.remove();
-        toasts?.show({ message: `${name} is no longer a steward.`, variant: 'success' });
+        delete row.dataset.manager;
+        cell.querySelector('[data-slot="manager"]')?.remove();
+        toasts?.show({ message: `${name} is no longer a manager.`, variant: 'success' });
       }
       fillMenu(row);
     });

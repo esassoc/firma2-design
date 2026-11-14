@@ -1,0 +1,123 @@
+---
+// firma2-organization-invite-link — one organization's invite link
+// (.scratch/access-requests/spec.md, decision 13). It replaced the workspace-
+// wide link, which named no organization and so admitted people to nothing
+// the public couldn't already see.
+//
+// USING THE LINK IS AN INVITATION. Whoever opens it joins this organization
+// at once, with the role the manager chose here: no request, no approval. That
+// is why only managers see it (the Members page already shows it to them only)
+// and why Reset exists: a link pasted somewhere it shouldn't be is closed by
+// replacing it.
+//
+// NOTHING HIGHER THAN CONTRIBUTOR, the rule every way in follows: Joins as
+// offers Viewer and Contributor only, Viewer first — least privilege by
+// default, as the Add members dialog.
+//
+// The address is built from this page's own origin, so it is a real-looking
+// link in any deployment; the token is invented and opens nothing.
+//
+// bcn-lego-checked: firma2-rail-section is the section; esa-text-field (read
+// only) holds the link, esa-select the role, esa-button Copy and Reset,
+// esa-confirm-dialog asks before Reset, esa-snackbar-container reports — all
+// composed unchanged. `.stack` / `.cluster` lay it out; no <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { grantableRoles, type Organization } from '../../data/firma2-directory';
+
+interface Props {
+  organization: Organization;
+}
+
+const { organization } = Astro.props;
+// Viewer first: the safe end, and the default.
+const roles = JSON.stringify([...grantableRoles].reverse().map((r) => ({ value: r, label: r })));
+---
+<Firma2RailSection title="Invite link">
+  <div class="firma2-organization-invite-link stack" data-gap="md" data-slug={organization.slug}>
+    <div class="cluster" data-gap="xs" data-align="end">
+      <esa-text-field
+        label="Link"
+        size="md"
+        readonly
+        data-invite-url
+      ></esa-text-field>
+      <EsaButton variant="secondary" size="md" data-invite-copy>Copy link</EsaButton>
+    </div>
+    <esa-select
+      label="Joins as"
+      help-text="Anyone with the link joins without approval."
+      size="md"
+      options={roles}
+      data-invite-role
+    ></esa-select>
+    <div>
+      <EsaButton variant="ghost" size="md" data-invite-reset>Reset link</EsaButton>
+    </div>
+  </div>
+  <esa-confirm-dialog
+    class="firma2-organization-invite-link__confirm"
+    variant="danger"
+    heading="Reset the invite link?"
+    message="The current link stops working. People who already joined stay."
+    confirm-label="Reset link"
+    cancel-label="Keep link"
+  ></esa-confirm-dialog>
+  <esa-snackbar-container class="firma2-organization-invite-link__toasts"></esa-snackbar-container>
+</Firma2RailSection>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-snackbar-container';
+
+  type Field = HTMLElement & { value: string };
+  type Confirm = HTMLElement & { show(): void };
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
+
+  // Deterministic per organization until reset, then a fresh one.
+  const tokenFor = (seed: string) => {
+    let h = 7;
+    for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return h.toString(36).slice(0, 7);
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-organization-invite-link').forEach((root) => {
+    const slug = root.dataset.slug ?? '';
+    const section = root.parentElement!;
+    const url = root.querySelector<Field>('[data-invite-url]')!;
+    const role = root.querySelector<Field>('[data-invite-role]')!;
+    const confirm = section.querySelector<Confirm>('.firma2-organization-invite-link__confirm')!;
+    const toasts = section.querySelector<Toasts>('.firma2-organization-invite-link__toasts');
+    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+    let resets = 0;
+    const link = () => `${location.origin}${base}/join/${slug}-${tokenFor(`${slug}:${resets}`)}`;
+
+    // Values only after define, or they shadow the legos' setters.
+    Promise.all([customElements.whenDefined('esa-text-field'), customElements.whenDefined('esa-select')]).then(() => {
+      url.value = link();
+      role.value = 'Viewer';
+    });
+
+    root.querySelector('[data-invite-copy]')?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(url.value);
+        toasts?.show({ message: 'Link copied.', variant: 'success' });
+      } catch {
+        toasts?.show({ message: 'Couldn’t copy. Select the link and copy it.', variant: 'warning' });
+      }
+    });
+
+    role.addEventListener('change', () => {
+      toasts?.show({ message: `New people join as ${role.value === 'Contributor' ? 'Contributors' : 'Viewers'}.`, variant: 'success' });
+    });
+
+    root.querySelector('[data-invite-reset]')?.addEventListener('click', () => confirm.show());
+    confirm.addEventListener('confirm', () => {
+      resets += 1;
+      url.value = link();
+      toasts?.show({ message: 'Link reset. The old one no longer works.', variant: 'success' });
+    });
+  });
+</script>

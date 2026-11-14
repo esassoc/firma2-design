@@ -4,7 +4,7 @@
 //
 // A SWEEP IS DONE IN ONE SITTING, so the primary act is "Publish and next":
 // publish what is on screen and open the next project still waiting, without
-// a trip back to the list. Skip moves on without publishing — a steward who
+// a trip back to the list. Skip moves on without publishing — a manager who
 // left a comment and wants the editor to fix something first. On the last
 // project, the primary is plain Publish.
 //
@@ -17,11 +17,18 @@
 // showing (src/lib/publish-store.ts), not "the record as of now". If another
 // tab publishes or reverts on this project while the page is open, Publish
 // stops and firma2-review-status asks for a reload, so a page nobody checked
-// cannot slip out under the steward's name.
+// cannot slip out under the manager's name.
+//
+// UNDO. A publish goes through src/lib/publish-undo.ts, which remembers what
+// it replaced: the next page's toast offers Undo, and the review page's
+// publish history keeps "Undo publish" on the newest publish until anything
+// newer happens to the project.
 //
 // WHO CAN. Publishing follows the Security threshold "Publish projects"
-// (stewards and administrators by default). Below it the buttons do not
-// render, and firma2-review-status says who can.
+// (managers and administrators by default), and an unverified lead
+// organization's projects publish only through an administrator
+// (src/lib/publish-permission.ts). Below either, the buttons do not render,
+// and firma2-review-status says who can.
 //
 // bcn-lego-checked: both actions are esa-button; this component is their
 // wiring. No bespoke markup; the <style> only restates [hidden].
@@ -31,6 +38,8 @@ import { withBase } from '../../lib/base';
 interface Props {
   slug: string;
   name: string;
+  /** The project's lead organization — an unverified one publishes only through an administrator. */
+  leadOrganization: string;
   /** Every change key the diff renders. */
   keys: string[];
   /** Queue orders, pending slugs oldest first: the workspace's, and each reader organization's. */
@@ -39,13 +48,14 @@ interface Props {
   others: Record<string, { keys: string[]; name: string }>;
 }
 
-const { slug, name, keys, queues, others } = Astro.props;
+const { slug, name, leadOrganization, keys, queues, others } = Astro.props;
 ---
 <span
   class="firma2-review-actions cluster"
   data-gap="sm"
   data-slug={slug}
   data-name={name}
+  data-lead={leadOrganization}
   data-keys={JSON.stringify(keys)}
   data-queues={JSON.stringify(queues)}
   data-others={JSON.stringify(others)}
@@ -64,8 +74,9 @@ const { slug, name, keys, queues, others } = Astro.props;
 </style>
 
 <script>
-  import { PUBLISHING_KEY, pendingKeys, publish, readPublishing } from '../../lib/publish-store';
-  import { can } from '../../lib/workspace-permissions';
+  import { PUBLISHING_KEY, pendingKeys, readPublishing } from '../../lib/publish-store';
+  import { publishWithUndo } from '../../lib/publish-undo';
+  import { publishBlock } from '../../lib/publish-permission';
   import { CURRENT_USER } from '../../data/firma2-directory';
   import { TODAY_ISO } from '../../data/firma2-publish-history';
 
@@ -80,7 +91,7 @@ const { slug, name, keys, queues, others } = Astro.props;
     const suffix = from ? `?from=${encodeURIComponent(from)}` : '';
 
     // The next project still waiting, after this one in the queue's order —
-    // then any earlier one the steward skipped past.
+    // then any earlier one the manager skipped past.
     const nextSlug = (): string | null => {
       const state = readPublishing();
       const at = order.indexOf(slug);
@@ -96,14 +107,15 @@ const { slug, name, keys, queues, others } = Astro.props;
 
     const paint = () => {
       const next = nextSlug();
-      const allowed = can('perm-publish');
+      const blocked = publishBlock(root.dataset.lead ?? '');
+      const allowed = blocked === null;
       root.hidden = pending.length === 0 || !allowed;
       // data-* lands on the lego's native <button>; the label is its own span,
       // and the outer span is what takes the row's space.
       publishButton.querySelector('.esa-button__label')!.textContent = next ? 'Publish and next' : 'Publish';
       skipButton.closest<HTMLElement>('.esa-button')!.hidden = !next;
       document.dispatchEvent(new CustomEvent('firma2:review-state', {
-        detail: { slug, pending: pending.length, allowed, next: next ? { href: hrefOf(next), name: others[next].name } : null },
+        detail: { slug, pending: pending.length, allowed, blocked, lead: root.dataset.lead ?? '', next: next ? { href: hrefOf(next), name: others[next].name } : null },
       }));
     };
 
@@ -131,8 +143,11 @@ const { slug, name, keys, queues, others } = Astro.props;
         return;
       }
       const next = nextSlug();
-      publish(slug, { iso: TODAY_ISO, by: CURRENT_USER.name, keys: pending });
+      publishWithUndo(slug, { iso: TODAY_ISO, by: CURRENT_USER.name, keys: pending });
       sessionStorage.setItem('firma2:review-toast', `Published ${name}`);
+      // The page that published is gone by the time the toast shows; the
+      // next one offers Undo for this project (firma2-review-status).
+      sessionStorage.setItem('firma2:review-undo', JSON.stringify({ slug, name }));
       if (next) window.location.assign(hrefOf(next));
       else window.location.reload();
     });

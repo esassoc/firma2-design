@@ -54,7 +54,22 @@ export interface CustomDocument {
 }
 
 /** What a folder holds — a page or a document. */
-export type CustomItem = CustomPage | CustomDocument;
+/**
+ * A dashboard added to Pages (user, 2026-11-12: "allow ability to add multiple
+ * progress dashboards … kind of how custom pages can be created"). It is
+ * added, renamed and deleted as a page is, from the Dashboards group. `template` names
+ * what it started from (src/data/firma2-dashboards.ts) — and, in this
+ * prototype, which prerendered set of tiles its route serves.
+ */
+export interface CustomDashboard {
+  id: string;
+  kind: 'dashboard';
+  title: string;
+  folderId?: string;
+  template: string;
+}
+
+export type CustomItem = CustomPage | CustomDocument | CustomDashboard;
 
 export type CustomEntry = CustomFolder | CustomItem;
 
@@ -96,6 +111,8 @@ export const seedEntries: CustomEntry[] = [
       src: '/documents/riparian-planting-guide.pdf',
     },
   },
+  { id: 'funding-and-spending', kind: 'dashboard', title: 'Funding and spending', template: 'funding-and-spending' },
+  { id: 'salmon-recovery-progress', kind: 'dashboard', title: 'Salmon recovery progress', template: 'salmon-recovery' },
   {
     id: 'funding-calendar',
     kind: 'page',
@@ -113,6 +130,15 @@ export const NO_FOLDER_LABEL = 'No folder';
 /** The rail group the entries sit under. */
 export const PAGES_GROUP = 'Pages';
 
+/**
+ * Dashboards have a group of their own in the rail (user, 2026-11-12, over
+ * filing them in Pages): the workspace's Progress Dashboard first, then every
+ * dashboard added. They are stored with the pages — one list, one set of
+ * rename and delete — but are never filed in a folder.
+ */
+export const DASHBOARDS_GROUP = 'Dashboards';
+export const MAIN_DASHBOARD = { key: 'progress-dashboard', label: 'Progress Dashboard', href: '/prototypes/progress-dashboard' };
+
 /** Where a page is opened. Base-less, like every route in firma2-nav. */
 export const pageRoute = (id: string): string => `/prototypes/pages/page?id=${encodeURIComponent(id)}`;
 
@@ -120,8 +146,11 @@ export const pageRoute = (id: string): string => `/prototypes/pages/page?id=${en
 export const documentRoute = (id: string): string => `/prototypes/pages/document?id=${encodeURIComponent(id)}`;
 
 /** Where either kind is opened. */
-export const itemRoute = (item: Pick<CustomItem, 'id' | 'kind'>): string =>
-  item.kind === 'document' ? documentRoute(item.id) : pageRoute(item.id);
+export const dashboardRoute = (id: string, template: string): string =>
+  `/prototypes/pages/dashboard/${encodeURIComponent(template)}?id=${encodeURIComponent(id)}`;
+
+export const itemRoute = (item: Pick<CustomItem, 'id' | 'kind'> & { template?: string }): string =>
+  item.kind === 'dashboard' ? dashboardRoute(item.id, item.template ?? 'blank') : item.kind === 'document' ? documentRoute(item.id) : pageRoute(item.id);
 
 /** What Add document takes. PDF first: it is the one the site reads in place. */
 export const DOCUMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf,.odt,.ods,.odp';

@@ -1,0 +1,162 @@
+---
+// PROTOTYPE VARIANT — "Studio". Throwaway (emil-prototype).
+//
+// AXIS: every knob, beside a live map. The model of kepler.gl, Mapbox Studio
+// and Felt's layer panel: a panel of layers, one open at a time, and the map
+// repainting under the pointer as a slider moves. Nothing opens over the map
+// and nothing is saved by a button.
+//
+// bcn-lego-checked: prototype variant. The controls are all legos
+// (esa-button-toggle, esa-color-picker, esa-range-slider, esa-switch-toggle,
+// built in kit.ts); the layout is .sidebar + .stack. The one piece without a
+// lego is the disclosure row — the catalog has no accordion — so it is the
+// native <details name>, which brings the exclusive-open behaviour, the
+// keyboard model and the expanded state with it. Beacon is not cloned.
+---
+<section class="proto-studio" data-proto-variant hidden>
+  <div class="sidebar proto-studio__frame" data-side="start" style="--sidebar-width: 23rem; --sidebar-content-min: 50%">
+    <div class="proto-studio__panel stack" data-gap="xl">
+      <h1 class="typography-heading-sm proto-studio__title">Map layers</h1>
+      <div data-basemap></div>
+      <div class="stack" data-gap="2xs" data-layers></div>
+    </div>
+    <div class="proto-studio__map" data-canvas role="img" aria-label="Preview of the workspace map"></div>
+  </div>
+</section>
+
+<style>
+  .proto-studio__frame {
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .proto-studio__panel {
+    padding: var(--spacing-600) var(--spacing-500);
+    max-block-size: calc(100dvh - 6rem);
+    overflow-y: auto;
+    position: relative;
+  }
+
+  .proto-studio__title {
+    margin: 0;
+  }
+
+  .proto-studio__map {
+    position: sticky;
+    inset-block-start: 0;
+    min-block-size: calc(100dvh - 6rem);
+    isolation: isolate;
+  }
+
+  .proto-studio :global(details) {
+    border-radius: var(--radius-md, 0.5rem);
+  }
+
+  .proto-studio :global(details[open]) {
+    background: var(--color-background-elevation-sunken, #f5f5f5);
+  }
+
+  .proto-studio :global(summary) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    min-block-size: 2.75rem;
+    padding-inline: var(--spacing-300);
+    border-radius: var(--radius-md, 0.5rem);
+    cursor: pointer;
+    list-style: none;
+    touch-action: manipulation;
+  }
+
+  .proto-studio :global(summary::-webkit-details-marker) {
+    display: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .proto-studio :global(details:not([open]) > summary:hover) {
+      background: var(--color-background-elevation-sunken, #f5f5f5);
+    }
+  }
+
+  .proto-studio :global(summary:focus-visible) {
+    outline: 2px solid var(--color-border-focus, currentColor);
+    outline-offset: -2px;
+  }
+
+  .proto-studio :global(.proto-studio__name) {
+    flex: 1;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .proto-studio :global(.proto-studio__off) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .proto-studio :global(.proto-studio__body) {
+    padding: var(--spacing-300) var(--spacing-300) var(--spacing-500);
+  }
+</style>
+
+<script>
+  import { BASEMAPS, box, layerKnobs, lego, onGeoChange, onShown, patchLayer, patchMapStyle, readLayers, readMapStyle, styleable, swatch, workKnobs, workSwatch } from './kit';
+
+  document.querySelectorAll<HTMLElement>('.proto-studio').forEach((root) => {
+    const list = root.querySelector<HTMLElement>('[data-layers]')!;
+
+    root.querySelector('[data-basemap]')!.append(
+      lego('esa-button-toggle', { label: 'Base map', size: 'md' }, { options: BASEMAPS, value: readMapStyle().basemap }, (el) => patchMapStyle({ basemap: el.value as never })),
+    );
+
+    // Rows are built once and only their swatches follow the store: rebuilding
+    // an open row on every write would pull the slider out from under a drag.
+    const row = (key: string, name: string, mark: () => HTMLElement, body: () => HTMLElement, muted = false) => {
+      const details = document.createElement('details');
+      details.name = 'proto-studio';
+      details.dataset.key = key;
+      const summary = document.createElement('summary');
+      const label = document.createElement('span');
+      label.className = `typography-body-md proto-studio__name${muted ? ' proto-studio__off' : ''}`;
+      label.textContent = name;
+      summary.append(mark(), label);
+      details.append(summary);
+      // The knobs mount on first open: nine colour pickers at once is a slow panel.
+      details.addEventListener('toggle', () => {
+        if (details.open && details.children.length === 1) details.append(box('proto-studio__body', null, body()));
+      });
+      return details;
+    };
+
+    list.append(
+      row('work', 'Work areas', workSwatch, workKnobs),
+      ...readLayers().map((layer) =>
+        row(
+          layer.id,
+          layer.name,
+          () => swatch(layer),
+          () =>
+            box(
+              'stack',
+              'md',
+              lego('esa-switch-toggle', { label: 'Available on maps' }, { checked: layer.active }, (el) => patchLayer(layer.id, { active: Boolean(el.checked) })),
+              styleable(layer) ? layerKnobs(layer) : Object.assign(document.createElement('p'), { className: 'typography-body-md', textContent: 'The publisher sets this layer’s colors.' }),
+            ),
+          !layer.active,
+        ),
+      ),
+    );
+
+    onGeoChange(() => {
+      list.querySelector('[data-key="work"] .proto-swatch')?.replaceWith(workSwatch());
+      readLayers().forEach((layer) => {
+        const details = list.querySelector(`[data-key="${layer.id}"]`);
+        details?.querySelector('.proto-swatch')?.replaceWith(swatch(layer));
+        details?.querySelector('.proto-studio__name')?.classList.toggle('proto-studio__off', !layer.active);
+      });
+    });
+
+    onShown(root, root.querySelector<HTMLElement>('[data-canvas]')!);
+  });
+</script>

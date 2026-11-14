@@ -37,10 +37,25 @@
 // asking "show me my completed ones" should find the option and an honest empty
 // state, not a missing option.
 //
+// TWO MODES, ONE CONSTRUCTION. `mode="open"` (the default) is everything
+// above: one link per card, the peek button, size · timeline. `mode="update"`
+// is Team 5's card AS THEY BUILT IT, kept for the sandbox at
+// /prototypes/team-5 so the owner can judge it: the name a plain heading (no
+// stretched link, no peek), five labelled facts — Lead, Timeline, Estimated
+// cost, Place, Last update — the description clamped to two lines (full text
+// on hover), and two actions at the foot, Update first (the reason a reporter
+// came) then Open. Last update reads the newest sandbox change for the
+// project when there is one. Only the cards the sandbox's seat may edit are
+// shown (editableSlugs), re-applied on every sandbox change, composed with
+// search and stage, and the count counts that set. Search, stage, count,
+// plate, grid and empty state are shared, not forked.
+//
 // bcn-lego-checked: esa-card, esa-pill, esa-button (Clear
-// filters), esa-text-field, esa-select, esa-empty-state, esa-icon. The
+// filters; Update and Open in update mode), esa-text-field, esa-select,
+// esa-empty-state, esa-icon. The
 // plate is Leaflet (no map lego — see firma2-project-map); the grid and facts
-// are layout primitives and <dl>s.
+// are layout primitives and <dl>s; update mode's fact list is a two-column
+// <dl> grid and its action row a .cluster.
 // Beacon is not cloned here.
 import EsaCard from '@esa/ecology/esa-card.astro';
 import Firma2ProjectPeekButton from './firma2-project-peek-button.astro';
@@ -56,7 +71,16 @@ import { projectSize } from '../../lib/geo';
 import { asDate, relativeDays } from '../../lib/format';
 import { TODAY } from '../../data/firma2-directory';
 import { stageSettings } from '../../data/firma2-workspace-settings';
+import { currencyFormatter } from '../../lib/format';
+import { sandboxProjectHref, sandboxUpdateHref } from '../../data/firma2-project-updates';
 
+interface Props {
+  /** `open` (default): the card is one link to the project. `update`: Team 5's card for the sandbox. */
+  mode?: 'open' | 'update';
+}
+
+const { mode = 'open' } = Astro.props;
+const update = mode === 'update';
 
 // "Updated 3 days ago" within 90 days of the fixture's today, the date itself
 // as MM/DD/YY past that — recent work reads as recent, old work as a date.
@@ -82,12 +106,19 @@ const cards = [...projects]
       href: withBase(projectHref(p)),
       seed: seedWorkAreas(p),
       size: projectSize(seedWorkAreas(p)),
+      // Update mode only: Team 5's facts. The audit date is stored as
+      // "12 August 2026", the same form dayLabel() writes at runtime.
+      cost: currencyFormatter.format(p.estimatedTotalCost),
+      description: detail.projectDescription,
+      updatedOn: detail.audit[0]?.date ?? 'No updates yet',
+      updateHref: withBase(sandboxUpdateHref(projectSlug(p))),
+      openHref: withBase(sandboxProjectHref(projectSlug(p))),
     };
   });
 
 const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s) => ({ value: s, label: s }))];
 ---
-<div class="firma2-my-projects stack" data-gap="xl" data-stage-options={JSON.stringify(stageOptions)}>
+<div class="firma2-my-projects stack" data-gap="xl" data-stage-options={JSON.stringify(stageOptions)} data-mode={update ? 'update' : undefined}>
   <div class="firma2-my-projects__controls">
     <esa-text-field
       class="firma2-my-projects__search"
@@ -113,6 +144,7 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
         data-stage={c.stage}
         data-search-text={`${c.name} ${c.lead} ${c.county}`.toLowerCase()}
         data-seed={JSON.stringify(c.seed)}
+        hidden={update ? true : undefined}
       >
         <EsaCard class="firma2-my-projects__card" variant="elevated" padding="none">
           <div class="firma2-my-projects__layout">
@@ -126,7 +158,41 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
                   <EsaIcon slot="icon" name="" size="xs" paths={stageSettings.find((x) => x.key === c.stage)?.iconPaths} />
                 </EsaPill>
               </div>
-              <div class="firma2-my-projects__heading">
+              {update ? (
+                <>
+                  <h2 class="typography-title-strong firma2-my-projects__name">{c.name}</h2>
+                  <dl class="firma2-my-projects__facts typography-body-sm">
+                    <div class="firma2-my-projects__fact">
+                      <dt>Lead</dt>
+                      <dd>{c.lead}</dd>
+                    </div>
+                    <div class="firma2-my-projects__fact">
+                      <dt>Timeline</dt>
+                      <dd>{c.timeline}</dd>
+                    </div>
+                    <div class="firma2-my-projects__fact">
+                      <dt>Estimated cost</dt>
+                      <dd>{c.cost}</dd>
+                    </div>
+                    <div class="firma2-my-projects__fact">
+                      <dt>Place</dt>
+                      <dd>{c.county}</dd>
+                    </div>
+                    <div class="firma2-my-projects__fact">
+                      <dt>Last update</dt>
+                      <dd data-last-update={c.updatedOn}>{c.updatedOn}</dd>
+                    </div>
+                  </dl>
+                  {c.description && (
+                    <p class="typography-body-sm firma2-my-projects__description" title={c.description}>{c.description}</p>
+                  )}
+                  <div class="cluster firma2-my-projects__actions" data-gap="sm">
+                    <EsaButton variant="primary" size="md" icon="pencil" tag="a" href={c.updateHref} aria-label={`Update ${c.name}`}>Update</EsaButton>
+                    <EsaButton variant="secondary" appearance="outline" size="md" icon="arrow-right" tag="a" href={c.openHref} aria-label={`Open ${c.name}`}>Open</EsaButton>
+                  </div>
+                </>
+              ) : (
+              <><div class="firma2-my-projects__heading">
                 <div class="firma2-my-projects__title">
                   <h2 class="typography-title-strong firma2-my-projects__name">
                     <a class="firma2-my-projects__link" href={c.href}>{c.name}</a>
@@ -153,7 +219,8 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
                   <dt class="visually-hidden">Last update</dt>
                   <dd>{c.lastUpdate}</dd>
                 </div>
-              </dl>
+              </dl></>
+              )}
             </div>
           </div>
         </EsaCard>
@@ -258,10 +325,6 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
     inset: 0;
   }
 
-  .firma2-my-projects__map :global(.leaflet-control-attribution) {
-    font-size: 0.625rem;
-  }
-
   .firma2-my-projects__no-map {
     position: absolute;
     inset: 0;
@@ -361,7 +424,15 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
     outline: none;
   }
 
-  .firma2-my-projects__cell:hover :global(.esa-card) {
+  /* Update mode's card is not a link (its two buttons are), so it gives no
+     whole-card hover cue. */
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-my-projects:not([data-mode='update']) .firma2-my-projects__cell:hover :global(.esa-card) {
+      border-color: var(--color-border-default-strong, #8d8d8d);
+    }
+  }
+
+  .firma2-my-projects:not([data-mode='update']) .firma2-my-projects__cell:active :global(.esa-card) {
     border-color: var(--color-border-default-strong, #8d8d8d);
   }
 
@@ -379,6 +450,49 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
   .firma2-my-projects__center {
     display: flex;
     justify-content: center;
+  }
+
+  /* ---- update mode: Team 5's card as built ---------------------------- */
+
+  /* Label / value rows: five short facts, the labels the quiet half. A
+     two-column grid, each row's wrapper `display: contents`. */
+  .firma2-my-projects__facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: var(--spacing-400);
+    row-gap: var(--spacing-100);
+    margin: 0;
+  }
+
+  .firma2-my-projects__fact {
+    display: contents;
+  }
+
+  .firma2-my-projects__fact dt {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-my-projects__fact dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* Two lines of the description; the whole of it rides on `title`. */
+  .firma2-my-projects__description {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* At the foot, so every card's buttons sit on one line across a row. */
+  .firma2-my-projects__actions {
+    --justify: flex-end;
+    margin-block-start: auto;
+    padding-block-start: var(--spacing-200);
   }
 </style>
 
@@ -400,6 +514,10 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
     const search = $<Control>('[data-search]');
     const stage = $<Control>('[data-stage]');
     const cells = [...root.querySelectorAll<HTMLElement>('[data-card]')];
+    // Update mode: the sandbox seat's editable slugs, set once the sandbox
+    // store has loaded. Null means every card (open mode).
+    const update = root.dataset.mode === 'update';
+    let allowed: Set<string> | null = null;
 
     // Each stage pill leads with its stage's icon; redraw it from the Stages
     // page's saved edits, as the Projects grid does, so the two always agree.
@@ -421,14 +539,17 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
       const q = String(search.value ?? '').trim().toLowerCase();
       const s = String(stage.value ?? '');
       let shown = 0;
+      let total = 0;
       cells.forEach((cell) => {
-        const ok = (!q || (cell.dataset.searchText ?? '').includes(q)) && (!s || cell.dataset.stage === s);
+        const mine = !allowed || allowed.has(cell.dataset.slug ?? '');
+        const ok = mine && (!q || (cell.dataset.searchText ?? '').includes(q)) && (!s || cell.dataset.stage === s);
         cell.hidden = !ok;
+        if (mine) total += 1;
         if (ok) shown += 1;
       });
-      const noun = label(shown === 1 && cells.length === 1 ? 'project' : 'projects');
+      const noun = label(shown === 1 && total === 1 ? 'project' : 'projects');
       $('[data-count]').textContent =
-        shown === cells.length ? `${cells.length} ${noun}` : `${shown} of ${cells.length} ${label('projects')}`;
+        shown === total ? `${total} ${noun}` : `${shown} of ${total} ${label('projects')}`;
       $('[data-empty]').hidden = shown > 0;
       $('[data-grid]').hidden = shown === 0;
       requestAnimationFrame(() => plates.forEach((p) => p.map?.invalidateSize()));
@@ -453,8 +574,11 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
 
     const drawSize = (cell: HTMLElement, areas: MapWorkArea[]) => {
       const size = projectSize(areas);
-      cell.querySelector<HTMLElement>('[data-size-label]')!.textContent = size.label;
-      cell.querySelector<HTMLElement>('[data-size]')!.textContent = size.text;
+      // Update mode's card has no size fact (Team 5 showed Place instead).
+      const label = cell.querySelector<HTMLElement>('[data-size-label]');
+      const text = cell.querySelector<HTMLElement>('[data-size]');
+      if (label) label.textContent = size.label;
+      if (text) text.textContent = size.text;
     };
 
     const drawPlate = async (plate: (typeof plates)[number]) => {
@@ -515,6 +639,27 @@ const stageOptions = [{ value: '', label: 'All stages' }, ...STAGE_ORDER.map((s)
       }),
     );
 
-    filter();
+    if (!update) {
+      filter();
+      return;
+    }
+
+    // ---- update mode: whose cards, and when each was last updated ---------
+    // Loaded only here, so open mode never ships the sandbox store. The
+    // cards render hidden, so a project editor never sees every project
+    // flash past before their own three.
+    void Promise.all([import('../../lib/update-sandbox'), import('../../data/firma2-project-updates')]).then(
+      ([{ onSandboxChange, readSettings, changesFor, dayLabel }, { editableSlugs }]) =>
+        onSandboxChange(() => {
+          allowed = new Set(editableSlugs(readSettings().role));
+          cells.forEach((cell) => {
+            const dd = cell.querySelector<HTMLElement>('[data-last-update]');
+            if (!dd) return;
+            const latest = changesFor(cell.dataset.slug ?? '')[0];
+            dd.textContent = latest ? dayLabel(latest.at) : (dd.dataset.lastUpdate ?? '');
+          });
+          filter();
+        }),
+    );
   });
 </script>

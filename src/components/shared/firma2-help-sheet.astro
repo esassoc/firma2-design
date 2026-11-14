@@ -1,0 +1,201 @@
+---
+// firma2-help-sheet — Help, docked beside the page it helps with. Opened from
+// the utility bar's Help button, from any "Learn about…" link
+// (firma2-help-link), or by a `?help=<article>` URL.
+//
+// The brief's questions (docs/product-brief.md §5):
+//
+// 1. ONE QUESTION: "How does this part of ProjectFirma work again?"
+// 2. READERS: the returning reporter, who logs in a few times a year to file
+//    finished work and has forgotten the rules since the last visit. Hardest:
+//    the occasional partner who has never had the vocabulary at all.
+// 3. SERIES/SCALAR: two short lists, articles and glossary terms, filtered
+//    by one search field. An article is a few paragraphs.
+// 4. IRREVERSIBLE: nothing; it reads.
+// 5. CUT: a help center, contact support and video tours (none exist), and
+//    "Read more" links from glossary terms to articles.
+//
+// CONTEXT FIRST. Opened with no article named, the sheet opens the article
+// whose paths match the current route (articleForPath, longest prefix), so
+// Help on the import page opens Importing. A page with no match opens the
+// index. The index is always one Back away.
+//
+// A SHEET, NOT A MODAL (memory: side-sheets-dock): bcn-side-sheet docks it on
+// the page, so the screen being explained stays in view and live beside it.
+// Mounted once by AppLayout, inside the app frame, where the sheet reserves
+// its room. It is never inside a <template>, so its script runs.
+//
+// Everything is rendered at build and filtered by hiding, so no markup is
+// built from strings at runtime.
+//
+// bcn-lego-checked: bcn-side-sheet (the spoke's docked esa-side-dialog) is the
+// surface; esa-text-field the search; esa-button Back and What's new;
+// esa-empty-state the no-match state. The lists are plain <ul>/<dl> with
+// typography composites. No esa- lego is a help browser; Beacon is not cloned.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { HELP_ARTICLES } from '../../data/firma2-help';
+import { GLOSSARY } from '../../data/firma2-glossary';
+import { withBase } from '../../lib/base';
+
+const fold = (s: string) => s.toLowerCase();
+---
+<bcn-side-sheet class="firma2-help-sheet" heading="Help" size="md" position="right" data-firma2-help>
+  <div class="stack" data-gap="lg">
+    <esa-text-field type="search" label="Search help" size="md" data-help-search></esa-text-field>
+
+    <div class="stack" data-gap="md" data-help-reader hidden>
+      <div><EsaButton variant="ghost" size="md" icon="arrow-left" data-help-back>All help</EsaButton></div>
+      {HELP_ARTICLES.map((a) => (
+        <article class="stack" data-gap="sm" data-help-body={a.slug} hidden>
+          <h3 class="typography-title-strong firma2-help-sheet__title">{a.title}</h3>
+          {a.body.map((p) => <p class="typography-body-md">{p}</p>)}
+        </article>
+      ))}
+    </div>
+
+    <div class="stack" data-gap="xl" data-help-index>
+      <section class="stack" data-gap="sm" data-help-group>
+        <h3 class="typography-title-sm-strong firma2-help-sheet__title">Articles</h3>
+        <ul class="stack firma2-help-sheet__list" data-gap="xs" role="list">
+          {HELP_ARTICLES.map((a) => (
+            <li data-help-item data-search={fold(`${a.title} ${a.body.join(' ')}`)}>
+              <a class="typography-body-md" href={`?help=${a.slug}`} data-help-article={a.slug}>{a.title}</a>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section class="stack" data-gap="sm" data-help-group>
+        <h3 class="typography-title-sm-strong firma2-help-sheet__title">Glossary</h3>
+        <dl class="stack firma2-help-sheet__list" data-gap="md">
+          {GLOSSARY.map((g) => (
+            <div class="stack" data-gap="2xs" data-help-item data-search={fold(`${g.term} ${g.definition}`)}>
+              <dt class="typography-label-md-strong">{g.term}</dt>
+              <dd class="typography-body-md">{g.definition}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <div data-help-empty hidden>
+        <EsaEmptyState size="sm" title="Nothing matches" />
+      </div>
+    </div>
+  </div>
+
+  <div slot="footer" class="cluster" data-gap="xs">
+    <EsaButton variant="secondary" size="md" tag="a" href={withBase('/prototypes/changelog')}>What’s new</EsaButton>
+  </div>
+</bcn-side-sheet>
+
+<style>
+  /* Layout utilities set display, which outranks the UA's [hidden]
+     (memory: esa-hidden-attribute-trap). */
+  .firma2-help-sheet :global([hidden]) {
+    display: none !important;
+  }
+  .firma2-help-sheet__title {
+    margin: 0;
+  }
+  .firma2-help-sheet__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .firma2-help-sheet__list dd,
+  .firma2-help-sheet p {
+    margin: 0;
+  }
+  .firma2-help-sheet__list dd {
+    color: var(--color-content-default-secondary, #646464);
+  }
+</style>
+
+<script>
+  import '../shared/bcn-side-sheet';
+  import '@esa/ecology/esa-text-field';
+  import { articleForPath } from '../../data/firma2-help';
+
+  type Sheet = HTMLElement & { show(): void; close(): void; open: boolean };
+  type Field = HTMLElement & { value: string };
+
+  const sheet = document.querySelector<Sheet>('[data-firma2-help]');
+
+  if (sheet) {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => sheet.querySelector<T>(sel)!;
+    const all = <T extends HTMLElement = HTMLElement>(sel: string) => Array.from(sheet.querySelectorAll<T>(sel));
+    const search = $<Field>('[data-help-search]');
+    const reader = $('[data-help-reader]');
+    const index = $('[data-help-index]');
+
+    // The route without the deploy base, so it matches the articles' paths.
+    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+    const route = base && location.pathname.startsWith(base) ? location.pathname.slice(base.length) || '/' : location.pathname;
+    const here = articleForPath(route)?.slug ?? '';
+
+    const showArticle = (slug: string): boolean => {
+      const body = all('[data-help-body]').find((el) => el.dataset.helpBody === slug);
+      if (!body) return false;
+      all('[data-help-body]').forEach((el) => (el.hidden = el !== body));
+      reader.hidden = false;
+      index.hidden = true;
+      return true;
+    };
+
+    const showIndex = (): void => {
+      reader.hidden = true;
+      index.hidden = false;
+    };
+
+    const filter = (): void => {
+      const q = (search.value ?? '').trim().toLowerCase();
+      if (q) showIndex();
+      let shown = 0;
+      all('[data-help-group]').forEach((group) => {
+        const items = Array.from(group.querySelectorAll<HTMLElement>('[data-help-item]'));
+        let inGroup = 0;
+        items.forEach((item) => {
+          const ok = !q || (item.dataset.search ?? '').includes(q);
+          item.hidden = !ok;
+          if (ok) inGroup += 1;
+        });
+        group.hidden = inGroup === 0;
+        shown += inGroup;
+      });
+      $('[data-help-empty]').hidden = shown > 0;
+    };
+
+    /** Open the sheet: at `slug`, else at this page's article, else the index. */
+    const open = (slug?: string): void => {
+      if (!(slug && showArticle(slug)) && !(here && !slug && showArticle(here))) showIndex();
+      void customElements.whenDefined('bcn-side-sheet').then(() => sheet.show());
+    };
+
+    search.addEventListener('change', filter);
+    search.addEventListener('input', filter);
+    $('[data-help-back]').addEventListener('click', () => {
+      showIndex();
+      $<HTMLElement>('[data-help-index] a')?.focus();
+    });
+
+    // The utility bar's Help button toggles; links and ?help= open.
+    window.addEventListener('firma2:help-open', (event) => {
+      const detail = (event as CustomEvent<{ article?: string; toggle?: boolean } | undefined>).detail;
+      if (detail?.toggle && sheet.open) sheet.close();
+      else open(detail?.article);
+    });
+
+    // Every "Learn about…" link on any page, and the sheet's own article links:
+    // one delegated listener, so a link inside a cloned <template> works too.
+    document.addEventListener('click', (event) => {
+      const link = (event.target as Element | null)?.closest<HTMLElement>('[data-help-article]');
+      if (!link || (event as MouseEvent).metaKey || (event as MouseEvent).ctrlKey) return;
+      event.preventDefault();
+      open(link.dataset.helpArticle);
+    });
+
+    const asked = new URLSearchParams(location.search).get('help');
+    if (asked !== null) open(asked || undefined);
+  }
+</script>

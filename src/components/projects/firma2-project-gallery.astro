@@ -30,16 +30,19 @@
 // real tenant stores with an upload and the thing this section actually
 // demonstrates.
 //
-// THE LIGHTBOX (user-directed 2026-08-25). A tile is a 234px index of a
-// photograph, not the photograph; hovering (or keyboard-focusing) a tile
-// raises one quiet expand control, and opening it hands the photo a modal
-// viewer at screen size — esa-dialog, so Esc, the scrim, light-dismiss, focus
-// containment and the close button are the lego's, not reimplemented here.
-// The viewer is a CAROUSEL over the record's own photo list: chevrons and
-// arrow keys walk it, wrapping at the ends, with the caption, date and the
-// "N of M" position under the frame. One dialog per gallery, re-pointed by
-// script — its skeleton is authored HERE as markup; the script only swaps
-// src and textContent, never builds elements.
+// THE LIGHTBOX (user-directed 2026-08-25; shared 2026-11-12). A tile is a
+// 234px index of a photograph, not the photograph; clicking it, or the quiet
+// expand control hover and keyboard focus raise, opens the photo at screen
+// size in firma2-lightbox — the app-wide viewer BaseLayout mounts — as a
+// carousel over this record's photos with caption, date and "N of M".
+//
+// FEATURED (2026-11-12): one photo per record leads its public page. The
+// Featured tile wears a quiet badge; every other tile gets a star control
+// beside the expand one (edit mode only), revealed the same way. Which photo
+// it is lives in src/data/firma2-featured-photos.ts (the seed) and this
+// browser's choice (src/lib/featured-photo.ts). The slug comes from the
+// `slug` prop, else from the record page's route; with neither (a peek on
+// the index) the gallery shows no Featured controls.
 //
 // bcn-lego-checked: no esa- lego renders an image grid, a lightbox or a
 // carousel — walked the catalog (`ls node_modules/@esa/ecology/src/
@@ -53,6 +56,7 @@ import EsaCard from '@esa/ecology/esa-card.astro';
 import '../shared/firma2-card-section.css';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
 import type { ProjectPhoto } from '../../data/firma2-project-detail';
 import { photoSrc } from '../../lib/project-photos';
 
@@ -62,9 +66,11 @@ interface Props {
   /** Omit the section's Add affordance — the public project page renders
       this same section for readers who cannot edit. */
   readonly?: boolean;
+  /** The project's slug, for its Featured photo. Omitted, the record page's route supplies it. */
+  slug?: string;
 }
 
-const { photos, readonly = false } = Astro.props;
+const { photos, readonly = false, slug } = Astro.props;
 
 const srcFor = (photo: ProjectPhoto): string => photoSrc(photo, 640, 480);
 const fullFor = (photo: ProjectPhoto): string => photoSrc(photo, 1600, 1200, 70);
@@ -86,7 +92,7 @@ const hasCarousel = photos.length > 1;
          description is the recovery action, not an apology for the feature. -->
     <EsaEmptyState size="sm" title="No photos yet" />
   ) : (
-    <ul class="firma2-project-gallery grid" data-gap="md" role="list">
+    <ul class="firma2-project-gallery grid" data-gap="md" role="list" data-featurable={readonly ? undefined : ''} data-slug={slug}>
       {photos.map((photo, i) => (
         <li>
           <figure class="firma2-project-gallery__figure">
@@ -99,6 +105,7 @@ const hasCarousel = photos.length > 1;
                   requests and none should compete with the record itself. */}
               <img
                 class="firma2-project-gallery__image"
+                data-no-lightbox
                 src={srcFor(photo)}
                 alt=""
                 width="640"
@@ -122,10 +129,26 @@ const hasCarousel = photos.length > 1;
                 label={`View photo: ${photo.caption}`}
                 data-lightbox-open={String(i)}
               />
+              {!readonly && (
+                <span class="firma2-project-gallery__feature" data-feature-wrap hidden>
+                  <EsaButton
+                    variant="secondary"
+                    size="sm"
+                    iconOnly
+                    icon="star"
+                    label={`Make featured: ${photo.caption}`}
+                    data-feature={String(i)}
+                    data-edit-only
+                  />
+                </span>
+              )}
             </div>
             <figcaption class="firma2-project-gallery__caption">
               <span class="typography-body-sm">{photo.caption}</span>
-              <span class="firma2-project-gallery__date typography-meta">{photo.date}</span>
+              <span class="cluster" data-gap="xs" data-align="center">
+                <span class="firma2-project-gallery__date typography-meta">{photo.date}</span>
+                {!readonly && <span data-featured-badge hidden><EsaBadge variant="secondary" value="Featured" size="sm" /></span>}
+              </span>
             </figcaption>
           </figure>
         </li>
@@ -134,70 +157,13 @@ const hasCarousel = photos.length > 1;
   )}
 
   {hasPhotos && (
-    <>
-      {/* THE VIEWER — one dialog, re-pointed to whichever photo opened it.
-          heading="Photos" names the dialog for a screen reader and puts the
-          lego's own close button in reach; everything below the header is the
-          photograph at the largest size the viewport allows, with the record's
-          caption under it where the tile put it. The chevrons ride the frame's
-          edges (the carousel idiom), wrap at the ends, and only exist at all
-          when there is more than one photo — a one-photo "carousel" is a
-          button that goes nowhere. */}
-      <esa-dialog class="firma2-project-gallery__lightbox" heading="Photos" show-close-button>
-        <figure class="firma2-project-gallery__stage-figure">
-          <div class="firma2-project-gallery__stage">
-            <img
-              class="firma2-project-gallery__stage-image"
-              data-lightbox-image
-              src={fullFor(photos[0])}
-              alt=""
-              width="1600"
-              height="1200"
-              decoding="async"
-            />
-            {hasCarousel && (
-              <>
-                <EsaButton
-                  class="firma2-project-gallery__nav firma2-project-gallery__nav--prev"
-                  variant="secondary"
-                  size="md"
-                  iconOnly
-                  icon="chevron-left"
-                  label="Previous photo"
-                  data-lightbox-prev
-                />
-                <EsaButton
-                  class="firma2-project-gallery__nav firma2-project-gallery__nav--next"
-                  variant="secondary"
-                  size="md"
-                  iconOnly
-                  icon="chevron-right"
-                  label="Next photo"
-                  data-lightbox-next
-                />
-              </>
-            )}
-          </div>
-          <figcaption class="firma2-project-gallery__stage-caption repel" data-gap="md">
-            <span class="firma2-project-gallery__stage-text">
-              <span class="typography-body-md" data-lightbox-caption></span>
-              <span class="firma2-project-gallery__date typography-meta" data-lightbox-date></span>
-            </span>
-            {hasCarousel && (
-              <span class="firma2-project-gallery__count typography-meta" data-lightbox-count></span>
-            )}
-          </figcaption>
-        </figure>
-      </esa-dialog>
-
-      <script
-        type="application/json"
-        data-lightbox-photos
-        set:html={JSON.stringify(
-          photos.map((photo) => ({ full: fullFor(photo), caption: photo.caption, date: photo.date })),
-        )}
-      />
-    </>
+    <script
+      type="application/json"
+      data-lightbox-photos
+      set:html={JSON.stringify(
+        photos.map((photo) => ({ src: fullFor(photo), caption: photo.caption, date: photo.date })),
+      )}
+    />
   )}
 </EsaCard>
 
@@ -277,9 +243,13 @@ const hasCarousel = photos.length > 1;
     opacity: 0;
   }
 
-  .firma2-project-gallery__frame:hover :global(.firma2-project-gallery__expand),
   .firma2-project-gallery__frame :global(.firma2-project-gallery__expand:focus-within) {
     opacity: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-project-gallery__frame:hover :global(.firma2-project-gallery__expand) {
+      opacity: 1;
+    }
   }
 
   /* No hover, no reveal moment — the control is simply there. */
@@ -300,157 +270,77 @@ const hasCarousel = photos.length > 1;
     color: var(--color-content-default-secondary, #60655f);
   }
 
-  /* ── The viewer ────────────────────────────────────────────────────────── */
-
-  /* fit-content, because the photograph is what sizes this dialog: the image
-     states its own bounds below (viewport-derived, 4:3 held), and the lego's
-     fixed 480px default would either letterbox it or crop it. The hook is the
-     lego's published re-skin surface, not a reach into its shadow. */
-  .firma2-project-gallery__lightbox {
-    --dialog-width: fit-content;
-  }
-
-  .firma2-project-gallery__stage-figure {
-    margin: 0;
-    padding: var(--spacing-400, 1rem);
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-300, 0.75rem);
-  }
-
-  .firma2-project-gallery__stage {
-    position: relative;
-  }
-
-  /* As large as the viewport honestly allows while the whole dialog — header,
-     caption row included — stays on screen. The height bound starts from the
-     lego's own 85vh dialog ceiling and SUBTRACTS the ~12rem the header bar,
-     the caption row and the paddings spend, then converts to width through
-     the 4:3 ratio — budgeting the image against the viewport alone was the
-     first version, and the dialog's overflow:hidden answered by clipping the
-     caption off the bottom. A fixed aspect means every photo in the carousel
-     lands in the IDENTICAL box, so paging never resizes the dialog — the
-     stable-frame rule, applied to a surface whose content changes on every
-     click. */
-  .firma2-project-gallery__stage-image {
-    display: block;
-    inline-size: min(86vw, calc((85vh - 14rem) * 4 / 3), 64rem);
-    /* Explicit, because the width/height ATTRIBUTES map to presentational
-       width/height styles on a replaced element — without this line the
-       attribute's 1200px wins over the aspect-ratio and the frame renders
-       portrait. Same trap the grid tile hit, same fix. */
-    block-size: auto;
-    aspect-ratio: 4 / 3;
-    object-fit: cover;
-    border-radius: var(--radius-sm, 4px);
-    background: var(--color-background-elevation-sunken, #f4f5f4);
-  }
-
-  /* The chevrons ride the frame's vertical center — the carousel idiom, where
-     the eye already is. Solid secondary buttons rather than chrome ghosts:
-     a transparent glyph over a photograph has whatever contrast the sky
-     happens to give it. :global() for the same wrapper-scope reason as the
-     expand control. */
-  .firma2-project-gallery__stage :global(.firma2-project-gallery__nav) {
+  /* The star sits opposite the expand control and is revealed with it. */
+  .firma2-project-gallery__frame .firma2-project-gallery__feature {
     position: absolute;
-    inset-block-start: 50%;
-    translate: 0 -50%;
+    inset-block-start: var(--spacing-200, 0.5rem);
+    inset-inline-start: var(--spacing-200, 0.5rem);
+    opacity: 0;
+  }
+  .firma2-project-gallery__frame .firma2-project-gallery__feature:focus-within {
+    opacity: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-project-gallery__frame:hover .firma2-project-gallery__feature {
+      opacity: 1;
+    }
+  }
+  @media (hover: none) {
+    .firma2-project-gallery__frame .firma2-project-gallery__feature {
+      opacity: 1;
+    }
+  }
+  .firma2-project-gallery [hidden] {
+    display: none !important;
   }
 
-  .firma2-project-gallery__stage :global(.firma2-project-gallery__nav--prev) {
-    inset-inline-start: var(--spacing-300, 0.75rem);
-  }
-
-  .firma2-project-gallery__stage :global(.firma2-project-gallery__nav--next) {
-    inset-inline-end: var(--spacing-300, 0.75rem);
-  }
-
-  .firma2-project-gallery__stage-caption {
-    align-items: baseline;
-  }
-
-  .firma2-project-gallery__stage-text {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-050, 0.125rem);
-  }
-
-  .firma2-project-gallery__count {
-    color: var(--color-content-default-secondary, #60655f);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
+  /* The photo itself opens the viewer too (see the script). */
+  .firma2-project-gallery__image { cursor: zoom-in; }
 </style>
 
 <script>
-  import '@esa/ecology/esa-dialog';
+  import { openLightbox, type LightboxImage } from '../../lib/lightbox';
+  import { FEATURED_EVENT, readFeatured, slugFromLocation, writeFeatured } from '../../lib/featured-photo';
 
-  type Dialog = HTMLElement & { show: () => void; close: () => void; open: boolean };
+  // FEATURED: paint which tile leads the public page, and let the others take over.
+  document.querySelectorAll<HTMLElement>('.firma2-project-gallery[data-featurable]').forEach((list) => {
+    const slug = list.dataset.slug || slugFromLocation();
+    if (!slug) return;
+    const tiles = Array.from(list.querySelectorAll<HTMLElement>(':scope > li'));
+    const paint = () => {
+      const featured = readFeatured(slug, tiles.length);
+      tiles.forEach((tile, i) => {
+        const badge = tile.querySelector<HTMLElement>('[data-featured-badge]');
+        const wrap = tile.querySelector<HTMLElement>('[data-feature-wrap]');
+        if (badge) badge.hidden = i !== featured;
+        if (wrap) wrap.hidden = i === featured;
+      });
+    };
+    list.querySelectorAll<HTMLElement>('[data-feature]').forEach((button) => {
+      button.addEventListener('click', () => writeFeatured(slug, Number(button.getAttribute('data-feature')) || 0));
+    });
+    window.addEventListener(FEATURED_EVENT, (event) => {
+      if ((event as CustomEvent<{ slug: string }>).detail?.slug === slug) paint();
+    });
+    paint();
+  });
 
-  interface LightboxPhoto {
-    full: string;
-    caption: string;
-    date: string;
-  }
-
-  // One gallery per page today (the project detail route); document scope is
-  // the same seam the record-actions sheet uses. The payload is server-
-  // rendered JSON — the script re-points a skeleton authored as markup and
-  // never constructs an element.
-  const lightbox = document.querySelector<Dialog>('.firma2-project-gallery__lightbox');
+  // The viewer is firma2-lightbox, mounted once by BaseLayout; the gallery
+  // only hands it this record's photos and where to start. Document scope,
+  // because the proto mosaic carries data-lightbox-open on its own tiles.
   const payload = document.querySelector<HTMLScriptElement>('[data-lightbox-photos]');
 
-  if (lightbox && payload) {
-    const photos = JSON.parse(payload.textContent ?? '[]') as LightboxPhoto[];
-    const image = lightbox.querySelector<HTMLImageElement>('[data-lightbox-image]');
-    const caption = lightbox.querySelector<HTMLElement>('[data-lightbox-caption]');
-    const date = lightbox.querySelector<HTMLElement>('[data-lightbox-date]');
-    const count = lightbox.querySelector<HTMLElement>('[data-lightbox-count]');
-    let index = 0;
-
-    const render = (): void => {
-      const photo = photos[index];
-      if (!photo || !image) return;
-      image.src = photo.full;
-      if (caption) caption.textContent = photo.caption;
-      if (date) date.textContent = photo.date;
-      if (count) count.textContent = `${index + 1} of ${photos.length}`;
-      // The neighbors warm the cache while the current photo is being looked
-      // at, so paging swaps instantly instead of restating the network.
-      [index + 1, index - 1].forEach((n) => {
-        const neighbor = photos[(n + photos.length) % photos.length];
-        if (neighbor) new Image().src = neighbor.full;
-      });
-    };
-
-    const step = (delta: number): void => {
-      index = (index + delta + photos.length) % photos.length;
-      render();
-    };
+  if (payload) {
+    const photos = JSON.parse(payload.textContent ?? '[]') as LightboxImage[];
+    const show = (index: number): void => openLightbox({ images: photos, index, heading: 'Photos' });
 
     document.querySelectorAll<HTMLElement>('[data-lightbox-open]').forEach((opener) => {
-      opener.addEventListener('click', () => {
-        index = Number(opener.getAttribute('data-lightbox-open')) || 0;
-        render();
-        lightbox.show();
-      });
+      opener.addEventListener('click', () => show(Number(opener.getAttribute('data-lightbox-open')) || 0));
     });
-
-    lightbox.querySelector('[data-lightbox-prev]')?.addEventListener('click', () => step(-1));
-    lightbox.querySelector('[data-lightbox-next]')?.addEventListener('click', () => step(1));
-
-    // Arrow keys page the carousel while the dialog is open — the keyboard
-    // twin of the chevrons, listening on the dialog host so it works wherever
-    // focus sits inside (Esc and Tab stay the lego's business).
-    lightbox.addEventListener('keydown', (event) => {
-      if (photos.length < 2 || !lightbox.open) return;
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        step(1);
-      } else if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        step(-1);
-      }
+    // A click on the photo is the same as its expand button. The button stays
+    // the keyboard path, so the image itself takes no tab stop.
+    document.querySelectorAll<HTMLImageElement>('.firma2-project-gallery__image').forEach((image, i) => {
+      image.addEventListener('click', () => show(i));
     });
   }
 </script>

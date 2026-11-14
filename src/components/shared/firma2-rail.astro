@@ -22,6 +22,21 @@
 // strip that keeps it: the way back is where the way out was. Callers whose
 // first row is text give it room with --firma2-rail-toggle-room.
 //
+// OR THE CONTROL IS IN THE RECORD BAR (user, 2026-10-22, after Linear).
+// `external` takes the corner toggle away: the record rail on the project and
+// measure pages is opened, closed and switched between modes by icons at the
+// trailing end of the record's own bar (firma2-record-bar, a row under the
+// app's top bar — not the top bar itself), through firma2-rail-modes, as
+// Linear's sidebar is. Closed, an external rail leaves nothing behind — no
+// strip, because the way back is in that bar, which never scrolls away. Its content
+// may be split into MODES: children marked [data-rail-mode-panel="<key>"],
+// one shown at a time while pinned and all of them stacked once unpinned.
+// Every other rail keeps its corner.
+//
+// NO BORDER (user, 2026-10-22). The rail sits on the page's own surface with
+// nothing but the gutter between it and the main column — no hairline, no
+// second tone.
+//
 // TWO MODES, ONE CONTROL.
 //   default   a companion that lasts as long as the page (record rail, side
 //             panel). The button collapses it to the strip and back. The
@@ -30,6 +45,10 @@
 //             button takes it down to the strip and then out of the page
 //             (`hidden`), and the caller opens it again. Without this a
 //             dismissed peek would leave a strip behind for good.
+//
+// A SHEET TAKES THE RAIL'S PLACE (user, 2026-10-21): never two docked columns.
+// An opening bcn-side-sheet sets data-sheet-over here, which takes the rail
+// out of the page while the sheet stands in its slot, and removes it on close.
 //
 // THE CONSTRUCTION is the record rail's, which documented every load-bearing
 // half at length (git history of firma2-record-rail.astro): sticky under the
@@ -78,6 +97,8 @@ interface Props {
   unpinAt: number;
   /** One-thing-at-a-time rail: the toggle closes it rather than leaving a strip. */
   closes?: boolean;
+  /** Controlled from the page's top bar (firma2-rail-modes): no corner toggle, and closed is gone, not a strip. */
+  external?: boolean;
   /** Start out of the page (a closes rail with nothing to show yet). */
   hidden?: boolean;
   /** Landmark name, when the rail does not open on its own heading. */
@@ -97,6 +118,7 @@ const {
   storageKey,
   unpinAt,
   closes = false,
+  external = false,
   hidden = false,
   ariaLabel,
   ariaLabelledby,
@@ -109,24 +131,28 @@ const {
   data-rail
   data-unpin-at={unpinAt}
   data-closes={closes ? '' : undefined}
+  data-external={external ? '' : undefined}
   aria-label={ariaLabel}
   aria-labelledby={ariaLabelledby}
   hidden={hidden}
   style={`--_rail-width: var(${sizeVar}, ${width}); --_rail-floor: ${floor}`}
 >
-  <!-- The toggle: inside the rail, top-trailing corner, on the first row. -->
-  <div class="firma2-rail__toggle">
-    <EsaButton
-      variant="chrome"
-      iconOnly
-      icon="panel-right"
-      label={`${closes ? 'Close' : 'Collapse'} ${label}`}
-      size="md"
-      data-rail-toggle
-      aria-expanded="true"
-      aria-controls={id}
-    />
-  </div>
+  <!-- The toggle: inside the rail, top-trailing corner, on the first row.
+       An external rail's toggle is in the page's top bar instead. -->
+  {!external && (
+    <div class="firma2-rail__toggle">
+      <EsaButton
+        variant="chrome"
+        iconOnly
+        icon="panel-right"
+        label={`${closes ? 'Close' : 'Collapse'} ${label}`}
+        size="md"
+        data-rail-toggle
+        aria-expanded="true"
+        aria-controls={id}
+      />
+    </div>
+  )}
 
   <div class="firma2-rail__inner stack" data-gap="xl">
     <slot />
@@ -145,21 +171,26 @@ const {
 
 <style>
   .firma2-rail {
-    /* The pane's padding (esa-app-shell's literal), reached through so the
+    /* The pane's padding (AppLayout's --firma2-pane-padding), reached through so the
        rail sits flush in the pane's corner. */
-    --_bleed: var(--spacing-500, 1.5rem);
+    --_bleed: var(--firma2-pane-padding, var(--spacing-500, 1.5rem));
     /* Shut, the rail is a strip just wide enough to hold its 40px toggle
        with --spacing-200 either side. */
     --_collapsed: calc(2.5rem + 2 * var(--spacing-200, 0.5rem) + var(--border-width-default, 1px));
 
+    /* Under the app bar, and under a record's own bar when the page has one
+       (firma2-record-bar publishes its height; 0 elsewhere). */
+    --_above: calc(var(--firma2-band-height, 48px) + var(--firma2-record-bar-height, 0px));
     position: sticky;
-    top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px));
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--_above));
     align-self: start;
-    block-size: calc(var(--firma2-fold, 100dvh) - var(--firma2-band-height, 48px));
+    block-size: calc(var(--firma2-fold, 100dvh) - var(--_above));
     display: flex;
     flex-direction: column;
     z-index: calc(var(--z-header, 200) + 1);
-    margin-block-start: calc(var(--_bleed) * -1);
+    /* Up through the pane's top padding to meet the app bar — unless a record
+       bar is what it meets (--firma2-rail-lift: 0). */
+    margin-block-start: calc(var(--firma2-rail-lift, var(--_bleed)) * -1);
     margin-inline-end: calc(var(--_bleed) * -1);
     padding: var(--_bleed);
     /* Overrides `.sidebar > :first-child`'s basis and grow. The min() keeps a
@@ -176,7 +207,6 @@ const {
     box-sizing: border-box;
     overflow: visible;
     background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
-    border-inline-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
     transition:
       flex-basis var(--transition-base, 200ms ease),
       padding var(--transition-base, 200ms ease);
@@ -217,6 +247,19 @@ const {
     flex-grow: 0;
     padding-inline: var(--spacing-200, 0.5rem);
   }
+  /* An external rail closes to nothing: its way back is in the top bar. */
+  .firma2-rail[data-external][collapsed] {
+    flex-basis: 0;
+    padding-inline: 0;
+    overflow: hidden;
+  }
+
+  /* MODES: one panel at a time while pinned; all of them, stacked, once the
+     rail has wrapped under the content and there is no bar to switch them. */
+  .firma2-rail:not([data-unpinned]) :global([data-rail-mode-panel]:not([data-active])) {
+    display: none;
+  }
+
   /* Content leaves on the click and comes back only once the track has
      finished growing (data-opening, held by the script) — content in flow
      would hold the track at its min-content width and leave nothing to ease. */
@@ -235,7 +278,6 @@ const {
     margin-inline-end: 0;
     padding: 0;
     background: none;
-    border-inline-start: none;
     transition: none;
   }
   .firma2-rail[data-unpinned][hidden] {
@@ -243,6 +285,11 @@ const {
   }
   .firma2-rail[data-unpinned] .firma2-rail__inner {
     overflow: visible;
+  }
+  /* A bcn-side-sheet has taken this rail's place (see that file); its
+     collapsed state is left alone, so it returns as it was. */
+  .firma2-rail[data-sheet-over] {
+    display: none;
   }
   .firma2-rail[data-unpinned] :is(bcn-edge-handle, .firma2-rail__toggle) {
     display: none;
@@ -333,7 +380,11 @@ const {
       } else shut();
     });
     rail.addEventListener('firma2:rail-open', (event) => {
-      if (event.target === rail) open();
+      if (event.target !== rail) return;
+      open();
+      // A companion rail opened from outside (the top bar) remembers it, as
+      // its own toggle's click does.
+      if (!closes) handle?.persist?.();
     });
     rail.addEventListener('firma2:rail-close', (event) => {
       if (event.target === rail) shut();

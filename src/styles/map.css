@@ -1,0 +1,319 @@
+/* bcn-lego-checked: ecology has no map lego (esa-map is a non-functional
+   reference page — see firma2-project-map's header). Beacon is not cloned here.
+   This is the ONE home for how every Leaflet surface in the spoke looks: the
+   controls, tooltips, popups, attribution and the shape/marker treatments that
+   CSS can reach. src/lib/leaflet.ts imports it and tags every map it creates
+   `.firma2-map`, so these rules apply to all ten maps and nothing else.
+
+   Specificity: Leaflet's own stylesheet is injected at runtime, AFTER this one,
+   and its touch rules are `.leaflet-touch .leaflet-bar a` (0,2,1). Every rule
+   below is anchored on `.firma2-map.leaflet-container` so it wins on
+   specificity, not on load order. */
+
+.firma2-map {
+  /* The ring around a marker and the casing under a line. Light in both
+     schemes — a pale halo lifts a coloured mark off a dark basemap the same way
+     it lifts it off a light one (Apple Maps, Google Maps, Felt all do this). */
+  --firma2-map-halo: var(--color-background-elevation-floating, #fff);
+  --firma2-map-shadow: rgb(0 0 0 / 0.28);
+}
+
+:root[data-scheme='dark'] .firma2-map {
+  --firma2-map-halo: var(--color-content-default, #eee);
+  --firma2-map-shadow: rgb(0 0 0 / 0.6);
+}
+
+/* ---- the surface ------------------------------------------------------------ */
+
+.firma2-map.leaflet-container {
+  /* One neutral step off the page while tiles arrive, not Leaflet's #ddd. */
+  background: var(--color-background-elevation-sunken, #f0f0f0);
+  /* Leaflet hardcodes 12px Helvetica; re-home everything on the body-sm role. */
+  font-family: var(--typography-body-sm-font-family);
+  font-size: var(--typography-body-sm-font-size);
+  line-height: var(--typography-body-sm-line-height);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tiles overlap by a pixel (createMap) and paint normally. Leaflet 1.9 hides
+   seams with `plus-lighter`, which only works when tiles abut exactly — at a
+   fractional zoom they do not, and the doubled edge burns a white grid in. */
+.firma2-map.leaflet-container img.leaflet-tile {
+  mix-blend-mode: normal;
+}
+
+/* Place names sit ABOVE the work areas so a fill never buries a town. The pane
+   is created in createMap; it must never take a click meant for a shape. */
+.firma2-map .leaflet-labels-pane {
+  pointer-events: none;
+}
+
+/* ---- shapes ---------------------------------------------------------------
+   CSS beats SVG presentation attributes, so these rules can restyle what
+   Leaflet painted. Resting values stay in shapeStyle() (setStyle writes
+   attributes, and a resting CSS value would silently override every
+   highlight/dim a map sets in script). Only hover and the casings live here. */
+
+.firma2-map .firma2-map-area,
+.firma2-map .firma2-map-reach {
+  transition-property: fill-opacity, stroke-width;
+  transition-duration: var(--duration-150, 150ms);
+  transition-timing-function: ease-out;
+}
+
+/* A reach is a line over roads and rivers that are also lines; a thin halo
+   (cartographic casing) is what keeps it reading as the subject. */
+.firma2-map .firma2-map-reach {
+  filter: drop-shadow(0 0 1px var(--firma2-map-halo)) drop-shadow(0 0 0.5px var(--firma2-map-halo));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .firma2-map .firma2-map-area.leaflet-interactive:hover {
+    fill-opacity: 0.32;
+    stroke-width: 3px;
+  }
+
+  .firma2-map .firma2-map-reach.leaflet-interactive:hover {
+    stroke-width: 6px;
+  }
+}
+
+/* SELECTED FOLLOWS THE SHAPE. A clicked shape takes focus, and the browser
+   draws its focus outline around the element's bounding box — a rectangle
+   around a polygon, which reads as "you selected a box". The indicator moves
+   onto the shape itself: a heavier edge and a stronger wash, held until focus
+   leaves (a click on the map moves focus to the map container).
+   a11y-checked: the focus indicator is NOT removed, it is replaced in the same
+   rule by a geometry-following stroke/fill emphasis (stroke-width 2→4px, fill
+   0.18→0.36), which is a larger visible change than the 5px box outline it
+   replaces. Shapes carry no tabindex (Leaflet 1.9), so focus only ever arrives
+   by pointer; keyboard users reach the same records through the list beside
+   every map. In forced-colors mode stroke emphasis is flattened, so the system
+   outline comes back there. */
+/* Any clickable shape — reference-layer boundaries included, which carry no
+   class of their own — gets the generic emphasis; the kinds below refine it. */
+.firma2-map path.leaflet-interactive:focus {
+  outline: none;
+  stroke-width: 3px;
+  stroke-opacity: 1;
+}
+
+.firma2-map .firma2-map-area.leaflet-interactive:focus {
+  outline: none;
+  fill-opacity: 0.36;
+  stroke-width: 4px;
+}
+
+.firma2-map .firma2-map-reach.leaflet-interactive:focus {
+  outline: none;
+  stroke-width: 7px;
+}
+
+.firma2-map .firma2-map-dot.leaflet-interactive:focus {
+  outline: none;
+  transform: scale(1.3);
+}
+
+@media (forced-colors: active) {
+  .firma2-map path.leaflet-interactive:focus {
+    outline: auto;
+  }
+}
+
+/* ---- markers ----------------------------------------------------------------
+   A filled dot in a light ring on a soft shadow: the marker reads as an object
+   resting on the map rather than a sticker printed into it. The ring is forced
+   here (not by the style object) so every dot in the product is ringed alike. */
+
+.firma2-map .firma2-map-dot {
+  stroke: var(--firma2-map-halo);
+  stroke-opacity: 1;
+  filter: drop-shadow(0 1px 1.5px var(--firma2-map-shadow));
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform var(--duration-150, 150ms) ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .firma2-map .firma2-map-dot.leaflet-interactive:hover {
+    transform: scale(1.25);
+  }
+}
+
+/* ---- controls ---------------------------------------------------------------
+   Zoom, layers and the spoke's own control bars (work-area tools) share one
+   floating group: md control size (40px, the control-size rule and the desktop
+   hit-area floor), radius-md, floating surface, hairline, elevation. */
+
+.firma2-map.leaflet-container .leaflet-bar {
+  overflow: hidden;
+  border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-background-elevation-floating, #fcfcfc);
+  background-clip: border-box;
+  box-shadow: var(--elevation-2, 0 2px 12px rgb(0 0 0 / 0.08));
+  color: var(--color-content-default, #202020);
+}
+
+.firma2-map.leaflet-container .leaflet-bar a,
+.firma2-map.leaflet-container .leaflet-bar button {
+  display: grid;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  line-height: 40px;
+  border-radius: 0;
+  border-block-end: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  background: var(--color-background-elevation-floating, #fcfcfc);
+  color: var(--color-content-default, #202020);
+  font: inherit;
+  transition-property: color, background-color;
+  transition-duration: var(--duration-150, 150ms);
+  transition-timing-function: ease-out;
+}
+
+.firma2-map.leaflet-container .leaflet-bar a:last-child,
+.firma2-map.leaflet-container .leaflet-bar button:last-child {
+  border-block-end: 0;
+}
+
+.firma2-map.leaflet-container .leaflet-bar :is(a, button) svg {
+  transition: transform var(--duration-150, 150ms) ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .firma2-map.leaflet-container .leaflet-bar :is(a, button):hover {
+    background-color: var(--color-background-default-hover, #f0f0f0);
+  }
+}
+
+.firma2-map.leaflet-container .leaflet-bar :is(a, button):active svg {
+  transform: scale(0.96);
+}
+
+.firma2-map.leaflet-container .leaflet-bar a.leaflet-disabled {
+  background: var(--color-background-elevation-floating, #fcfcfc);
+  color: var(--color-content-disabled, #bbb);
+}
+
+/* The layers control (src/lib/leaflet.ts): a leaflet-bar button opening an
+   esa-popover with the base-map radios and the layer checkboxes. The button is
+   the bar's own; only the panel's inner spacing is set here. Leaflet's font
+   shorthand on the container is reset so the legos take the house type. */
+.firma2-map.leaflet-container .firma2-layers {
+  font: inherit;
+}
+
+.firma2-map.leaflet-container .firma2-layers__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-500, 1.5rem);
+  min-inline-size: 13rem;
+  padding: var(--spacing-100, 0.25rem);
+  cursor: auto;
+}
+
+.firma2-map.leaflet-container .firma2-layers__panel > [hidden] {
+  display: none;
+}
+
+/* ---- attribution -------------------------------------------------------------
+   Required credit, not content: quiet, translucent, tucked into its corner. */
+
+.firma2-map.leaflet-container .leaflet-control-attribution {
+  padding: 2px var(--spacing-200, 0.5rem);
+  border-start-start-radius: var(--radius-sm, 0.25rem);
+  background: color-mix(in srgb, var(--color-background-elevation-floating, #fcfcfc) 72%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--color-content-default-secondary, #646464);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.firma2-map.leaflet-container .leaflet-control-attribution a {
+  color: inherit;
+}
+
+/* ---- tooltips -----------------------------------------------------------------
+   One tooltip for every map: the floating surface, no arrow (it tracks the
+   cursor, so a pointer is noise), a small lift off the mark. The class is
+   global because Leaflet mounts tooltips in the map's tooltip pane. */
+
+.firma2-map .firma2-map-tip {
+  padding: var(--spacing-150, 0.375rem) var(--spacing-250, 0.625rem);
+  border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  border-radius: var(--radius-sm, 0.25rem);
+  background: var(--color-background-elevation-floating, #fcfcfc);
+  box-shadow: var(--elevation-2, 0 2px 12px rgb(0 0 0 / 0.08));
+  color: var(--color-content-default, #202020);
+  font: inherit;
+  white-space: nowrap;
+}
+
+.firma2-map .firma2-map-tip::before {
+  display: none;
+}
+
+.firma2-map .firma2-map-tip.leaflet-tooltip-top {
+  margin-block-start: -10px;
+}
+
+.firma2-map .firma2-map-tip.leaflet-tooltip-bottom {
+  margin-block-start: 10px;
+}
+
+/* A reference layer's printed names (Map layers settings › Label shapes): bare
+   text in the layer's line colour, haloed in the page surface so it reads on
+   any base map. No box — a box per shape would bury the map. */
+.firma2-map .firma2-map-shape-label {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--color-content-default, #202020);
+  font: inherit;
+  font-weight: var(--font-weight-medium, 500);
+  white-space: nowrap;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 3px var(--color-background-elevation-floating, #fcfcfc);
+}
+
+.firma2-map .firma2-map-shape-label::before {
+  display: none;
+}
+
+/* ---- popups ------------------------------------------------------------------- */
+
+.firma2-map.leaflet-container .leaflet-popup-content-wrapper {
+  border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-background-elevation-floating, #fcfcfc);
+  box-shadow: var(--elevation-3, 0 4px 20px rgb(0 0 0 / 0.12));
+  color: var(--color-content-default, #202020);
+}
+
+.firma2-map.leaflet-container .leaflet-popup-tip {
+  background: var(--color-background-elevation-floating, #fcfcfc);
+  box-shadow: none;
+}
+
+.firma2-map.leaflet-container .leaflet-popup-content {
+  margin: var(--spacing-300, 0.75rem) var(--spacing-400, 1rem);
+  font: inherit;
+}
+
+.firma2-map.leaflet-container .leaflet-popup-content a {
+  color: var(--color-content-link, #2a7e3b);
+}
+
+.firma2-map.leaflet-container a.leaflet-popup-close-button {
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  display: grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--radius-sm, 0.25rem);
+  color: var(--color-content-default-secondary, #646464);
+}

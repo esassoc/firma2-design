@@ -23,6 +23,29 @@ export interface Prototype {
 }
 
 export const prototypes: Prototype[] = [
+  // ProjectFirma2's hackathon team 5 (project updates), rebuilt on this
+  // spoke's components and kept apart from the rest so each feature can be
+  // kept or dropped. Browser-local; the assistant is scripted.
+  {
+    slug: 'team-5-sandbox',
+    title: 'Team 5 sandbox',
+    description: 'Project updates as the hackathon team built them',
+    route: '/prototypes/team-5',
+    createdAt: '2026-11-12',
+    status: 'in-progress',
+  },
+  // A guided, clickable walk through the access-request screens — sign in,
+  // ask, get approved, request a new organization, catch a look-alike —
+  // switching between the newcomer and an administrator as the journey does.
+  // Spec: .scratch/access-requests/spec.md.
+  {
+    slug: 'access-requests-flow',
+    title: 'Getting access',
+    description: 'Ask to join, approve, add an organization',
+    route: '/prototypes/sign-in?flow=access-requests',
+    createdAt: '2026-11-02',
+    status: 'in-progress',
+  },
   // Ported from ProjectFirma2's hackathon team 3 (customizations): a tenant's
   // difference expressed as data — classifications build pages, one colour
   // brands everything. Project types and classifications merged 2026-10-02.
@@ -52,11 +75,12 @@ export const prototypes: Prototype[] = [
     status: 'in-progress',
   },
   // Ported from ProjectFirma2's hackathon team 5 (project updates).
+  // Renamed Map on 2026-11-02: the map-based view became the whole page.
   {
     slug: 'my-projects',
-    title: 'My Projects',
-    description: 'Projects you can update, with a map',
-    route: '/prototypes/my-projects',
+    title: 'Map',
+    description: 'Your projects on a full-screen map',
+    route: '/prototypes/map',
     createdAt: '2026-10-03',
     status: 'in-progress',
   },
@@ -70,13 +94,14 @@ export const prototypes: Prototype[] = [
     createdAt: '2026-10-02',
     status: 'in-progress',
   },
+  // Archived 2026-11-02 when the map-based My Projects took over the Map row.
   {
     slug: 'portfolio-map',
     title: 'Portfolio map',
     description: 'Every project on one map',
-    route: '/prototypes/map',
+    route: '/prototypes/archive/portfolio-map',
     createdAt: '2026-10-02',
-    status: 'in-progress',
+    status: 'archived',
   },
   {
     slug: 'gis-subscriptions',
@@ -111,6 +136,14 @@ export const prototypes: Prototype[] = [
     status: 'in-progress',
   },
   {
+    slug: 'import-projects',
+    title: 'Import projects',
+    description: 'Bring in projects from a spreadsheet',
+    route: '/prototypes/projects/import',
+    createdAt: '2026-11-02',
+    status: 'in-progress',
+  },
+  {
     slug: 'project-source',
     title: 'Project source',
     description: 'Create projects here or sync them from GIS',
@@ -132,7 +165,7 @@ export const prototypes: Prototype[] = [
   {
     slug: 'report-import',
     title: 'Report from a document',
-    description: 'Report from a crew log or pasted report',
+    description: 'Report from a crew log, pasted text or funder report',
     route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement',
     createdAt: '2026-10-01',
     status: 'in-progress',

@@ -1,0 +1,104 @@
+---
+// PROTOTYPE VARIANT — "Themes". Throwaway (emil-prototype).
+//
+// AXIS: one decision for the whole map. The model of ArcGIS Online's basemap
+// gallery and "choose a style", and of Felt's themes: an administrator is not
+// asked for a line width, they are asked which map they want. A theme sets the
+// base map, the work areas and every reference layer together, in colours
+// already checked against that base map. A layer then takes one of five named
+// styles and one named colour. It stays a settings page — reading width, the
+// preview on top — with two selects per layer where the baseline has six
+// controls.
+//
+// bcn-lego-checked: prototype variant. firma2-rail-section for the layers,
+// bcn-radio-group (the spoke's described radios) for the theme, esa-select
+// for a layer's style and colour, .stack/.grid/.frame for layout. Nothing
+// bespoke; Beacon is not cloned.
+import EsaContainer from '@esa/ecology/esa-container.astro';
+import Firma2PageHeader from '../../components/shared/firma2-page-header.astro';
+import Firma2RailSection from '../../components/shared/firma2-rail-section.astro';
+import { CONTENT_READING } from '../../lib/content-width';
+---
+<section class="proto-themes" data-proto-variant hidden>
+  <EsaContainer maxWidth={CONTENT_READING}>
+    <div class="stack" data-gap="2xl">
+      <Firma2PageHeader title="Map layers" />
+      <div class="proto-themes__map" data-canvas role="img" aria-label="Preview of the workspace map"></div>
+      <div data-theme></div>
+      <Firma2RailSection title="Reference layers">
+        <div class="stack" data-gap="lg" data-layers></div>
+      </Firma2RailSection>
+    </div>
+  </EsaContainer>
+</section>
+
+<style>
+  .proto-themes {
+    padding-block: var(--spacing-800) var(--spacing-1000, 5rem);
+  }
+
+  .proto-themes__map {
+    block-size: 22rem;
+    border-radius: var(--radius-lg, 0.75rem);
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .proto-themes :global(.proto-themes__layer) {
+    --grid-min: 12rem;
+    align-items: end;
+  }
+
+  .proto-themes :global(.proto-themes__name) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    min-block-size: 2.5rem;
+    min-inline-size: 0;
+  }
+</style>
+
+<script>
+  import '../../components/shared/bcn-radio-group';
+  import { MAP_SWATCHES, STYLE_PRESETS, THEMES, applyTheme, box, lego, onGeoChange, onShown, patchLayer, presetOf, readLayers, styleable, swatch, themeOf } from './kit';
+
+  document.querySelectorAll<HTMLElement>('.proto-themes').forEach((root) => {
+    const $ = (sel: string) => root.querySelector<HTMLElement>(sel)!;
+
+    const theme = lego('bcn-radio-group', { label: 'Theme', size: 'md' }, { options: THEMES, value: themeOf() }, (el) => applyTheme(String(el.value)));
+    $('[data-theme]').append(theme);
+
+    // A colour or a style set elsewhere (the other variants) may match no
+    // preset; the select then shows it as "Custom" rather than lying.
+    const withCustom = (options: { value: string; label: string }[], value: string) => (options.some((o) => o.value === value) ? options : [...options, { value, label: 'Custom' }]);
+
+    const paint = () => {
+      theme.value = themeOf();
+      $('[data-layers]').replaceChildren(
+        ...readLayers()
+          .filter((l) => l.active)
+          .map((layer) => {
+            const name = box('proto-themes__name typography-body-md', null, ...(styleable(layer) ? [swatch(layer)] : []), layer.name);
+            if (!styleable(layer)) return box('grid proto-themes__layer', 'md', name, Object.assign(document.createElement('p'), { className: 'typography-body-md', textContent: 'Publisher’s colors' }));
+            const preset = presetOf(layer) || 'custom';
+            return box(
+              'grid proto-themes__layer',
+              'md',
+              name,
+              lego('esa-select', { label: `Style of ${layer.name}`, size: 'md' }, { options: withCustom(STYLE_PRESETS, preset), value: preset }, (el) => {
+                const pick = STYLE_PRESETS.find((p) => p.value === el.value);
+                if (pick) patchLayer(layer.id, pick.patch);
+              }),
+              lego('esa-select', { label: `Color of ${layer.name}`, size: 'md' }, { options: withCustom(MAP_SWATCHES, layer.stroke), value: layer.stroke }, (el) => {
+                if (String(el.value).startsWith('#')) patchLayer(layer.id, { stroke: String(el.value), fill: String(el.value) });
+              }),
+            );
+          }),
+      );
+    };
+    paint();
+    onGeoChange(paint);
+
+    onShown(root, $('[data-canvas]'));
+  });
+</script>

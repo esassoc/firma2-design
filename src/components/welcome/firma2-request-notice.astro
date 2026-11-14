@@ -1,0 +1,156 @@
+---
+// firma2-request-notice — the signed-in person's access requests, at the top
+// of every app page: one quiet line while any wait, and the answer once one
+// comes back (user, 2026-11-02: "What happens after they request access? How
+// can they get back to that page?").
+//
+// WAITING: one info line, not dismissable — it leaves on its own when the
+// request is answered or withdrawn, and its link is the way back to the
+// request (Join an organization, where Withdraw lives). Several waiting fold
+// into one line with a count: a consultant asking two organizations should not
+// get two banners.
+//
+// ANSWERED: one box per answer, dismissable, shown until dismissed — the
+// in-app half of "told when approved or declined, and why" (story 11; the
+// email half is not built). The reason is quoted when the answerer gave one.
+// No names: an answer comes from the organization, never a named manager
+// (user, same day — requesters never learn who manages).
+//
+// NOT ON THE JOIN PAGE: that page lists the same requests in full.
+//
+// bcn-lego-checked: esa-alert-box (info / success, dismissable) is the whole
+// surface. The prototypes are real rendered alert boxes, hidden and cloned —
+// not <template>s, because a lego script first rendered inside a template
+// never runs (its dismiss would be dead). The only CSS hides the prototypes
+// and spaces the stack from the page below.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import { withBase } from '../../lib/base';
+---
+<div class="firma2-request-notice stack" data-gap="sm" data-join={withBase('/prototypes/join')} data-empty>
+  <div class="firma2-request-notice__protos" aria-hidden="true">
+    <div data-proto="pending">
+      <EsaAlertBox variant="info">
+        <span data-slot="text"></span> <a data-slot="link"></a>
+      </EsaAlertBox>
+    </div>
+    <div data-proto="approved">
+      <EsaAlertBox variant="success" dismissable><span data-slot="text"></span></EsaAlertBox>
+    </div>
+    <div data-proto="declined">
+      <EsaAlertBox variant="info" dismissable><span data-slot="text"></span></EsaAlertBox>
+    </div>
+  </div>
+  <div class="stack" data-gap="sm" data-notices></div>
+</div>
+
+<script>
+  import { readRequests, CHANGED } from '../../lib/access-requests';
+  import { currentPerson } from '../../lib/workspace-permissions';
+  import type { AccessRequest } from '../../data/firma2-access-requests';
+
+  const SEEN_KEY = 'firma2:request-notices-seen:v1';
+  const readSeen = (): string[] => {
+    try {
+      return JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]');
+    } catch {
+      return [];
+    }
+  };
+  const markSeen = (id: string): void => {
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify([...new Set([...readSeen(), id])]));
+    } catch {
+      // Blocked storage: the answer shows again next page, which is the safe failure.
+    }
+  };
+
+  const quote = (r: AccessRequest) => (r.reason ? ` “${r.reason}”` : '');
+
+  const answerText = (r: AccessRequest): string => {
+    if (r.kind === 'organization') {
+      return r.status === 'approved'
+        ? `${r.organization} was added. You’re its manager.`
+        : `Your request for ${r.organization} was declined.${quote(r)}`;
+    }
+    if (r.status === 'declined') return `${r.organization} declined your request.${quote(r)}`;
+    return (r.granted ?? r.asked) === 'Contributor'
+      ? `You joined ${r.organization}. You can edit its projects.`
+      : `You joined ${r.organization}. You’re following its projects.`;
+  };
+
+  const pendingText = (waiting: AccessRequest[]): string => {
+    if (waiting.length > 1) return `${waiting.length} requests waiting for approval.`;
+    const r = waiting[0];
+    return r.kind === 'organization'
+      ? `Waiting for approval of your new organization, ${r.organization}.`
+      : `Waiting for approval to join ${r.organization}.`;
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-request-notice').forEach((root) => {
+    const list = root.querySelector<HTMLElement>('[data-notices]')!;
+    const join = root.dataset.join ?? '';
+    const onJoinPage = location.pathname.replace(/\/$/, '').endsWith('/prototypes/join');
+    const proto = (kind: string) =>
+      root.querySelector<HTMLElement>(`[data-proto="${kind}"] .esa-alert-box`)!.cloneNode(true) as HTMLElement;
+
+    function render() {
+      if (onJoinPage) return;
+      const email = currentPerson().email;
+      const mine = readRequests().filter((r) => r.email === email);
+      const waiting = mine.filter((r) => r.status === 'pending');
+      const seen = readSeen();
+      const answered = mine.filter((r) => (r.status === 'approved' || r.status === 'declined') && !seen.includes(r.id));
+
+      const boxes: HTMLElement[] = answered.map((r) => {
+        const box = proto(r.status);
+        box.dataset.request = r.id;
+        box.querySelector('[data-slot="text"]')!.textContent = answerText(r);
+        return box;
+      });
+      if (waiting.length) {
+        const box = proto('pending');
+        box.querySelector('[data-slot="text"]')!.textContent = pendingText(waiting);
+        const link = box.querySelector<HTMLAnchorElement>('[data-slot="link"]')!;
+        link.href = join;
+        link.textContent = waiting.length > 1 ? 'View requests' : 'View request';
+        boxes.push(box);
+      }
+      list.replaceChildren(...boxes);
+      root.toggleAttribute('data-empty', boxes.length === 0);
+    }
+
+    // DISMISS IS HANDLED HERE, NOT BY THE LEGO. esa-alert-box's delegated
+    // dismiss listener references FOCUSABLE_SELECTOR, a frontmatter import its
+    // client script never receives, so it throws before hiding the box (hub
+    // bug, found 2026-11-02). Capture on the list, stop the event, and do the
+    // two things that matter: remember the answer was seen, and keep focus on
+    // the page — the next notice's control, else the content pane.
+    list.addEventListener(
+      'click',
+      (event) => {
+        const box = (event.target as Element).closest('[data-esa-alert-dismiss]')?.closest<HTMLElement>('.esa-alert-box');
+        if (!box?.dataset.request) return;
+        event.stopPropagation();
+        markSeen(box.dataset.request);
+        render();
+        const next = list.querySelector<HTMLElement>('a, button') ?? document.querySelector<HTMLElement>('.esa-app-shell__content');
+        next?.focus();
+      },
+      true,
+    );
+
+    render();
+    window.addEventListener(CHANGED, render);
+    window.addEventListener('storage', render);
+  });
+</script>
+
+<style>
+  .firma2-request-notice__protos,
+  .firma2-request-notice[data-empty] {
+    display: none;
+  }
+  .firma2-request-notice {
+    margin-block-end: var(--spacing-500, 1.5rem);
+  }
+</style>

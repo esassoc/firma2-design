@@ -16,10 +16,17 @@
 // over them — the same resolver the studio's preview runs, because the
 // preview IS this page, in a frame.
 //
-// SAME SECTIONS AS THE STEWARD'S PAGE where they read cleanly: the timeline,
+// SAME SECTIONS AS THE MANAGER'S PAGE where they read cleanly: the timeline,
 // photos and map are the project page's own components in their `readonly`
 // mode. Funding, expenditures and measures get plain public tables, because
-// their steward versions are editors.
+// their manager versions are editors.
+//
+// IT LEADS WITH THE FEATURED PHOTO (2026-11-12): the public's question is
+// "is it real?", and a picture of the ground answers it before any number.
+// The record's Featured photo (firma2-featured-photos seed, or this browser's
+// choice from the record's Photos section) sits under the title, wide. A
+// project with no photos, or whose type hides Photos, leads with its facts.
+// SIMPLIFICATION: the choice shows at once rather than waiting for a publish.
 //
 // WITHHELD, NOT HIDDEN — in production. The hackathon's sharpest point: a
 // section switched off is pruned from the data the page is served, so it
@@ -29,6 +36,8 @@ import EsaCard from '@esa/ecology/esa-card.astro';
 import Firma2ProjectTimeline from '../projects/firma2-project-timeline.astro';
 import Firma2ProjectGallery from '../projects/firma2-project-gallery.astro';
 import Firma2ProjectMap from '../projects/firma2-project-map.astro';
+import Firma2VerifiedMark from '../shared/firma2-verified-mark.astro';
+import { organizations } from '../../data/firma2-directory';
 import type { ProjectDetail } from '../../data/firma2-project-detail';
 import type { PublishedSnapshot } from '../../data/firma2-publish-history';
 import { projectSlug } from '../../data/firma2-projects';
@@ -43,6 +52,9 @@ import {
 } from '../../data/firma2-project-types';
 import type { FieldRow } from '../../data/firma2-project-types';
 import { currencyFormatter } from '../../lib/format';
+import { photoSrc } from '../../lib/project-photos';
+import { seededFeatured } from '../../data/firma2-featured-photos';
+import '../settings/firma2-settings-table.css';
 
 interface Props {
   detail: ProjectDetail;
@@ -59,6 +71,7 @@ interface Props {
 
 const { detail, published } = Astro.props;
 const { project } = detail;
+const leadOrg = organizations.find((o) => o.name === project.leadOrganization);
 const projectType = projectTypeFor(project);
 const years = `${project.implementationStartYear}–${project.completionYear}`;
 const fmt = (n: number) => n.toLocaleString('en-US');
@@ -114,6 +127,13 @@ const orderIndex = new Map(resolved.map((r, i) => [r.section.key, i]));
 const hiddenAtBuild = new Set(resolved.filter((r) => !r.visible).map((r) => r.section.key));
 const label = (key: string) => PAGE_SECTIONS.find((s) => s.key === key)?.label ?? key;
 const spent = detail.expenditures.filter((e) => e.spent > 0);
+
+// The Featured photo, wide. Every candidate's URL rides along so this
+// browser's choice can swap in without a rebuild.
+const slug = projectSlug(project);
+const featuredAt = seededFeatured(slug, detail.photos.length);
+const leadPhotos = detail.photos.map((photo) => ({ src: photoSrc(photo, 1600, 686, 70), caption: photo.caption, date: photo.date }));
+const lead = featuredAt >= 0 && !hiddenAtBuild.has('gallery') ? leadPhotos[featuredAt] : undefined;
 ---
 <!-- bcn-lego-checked: sections are esa-card legos and the project page's own
      section components; the classes lay out the hero, the rail/main split and
@@ -139,11 +159,21 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
     </div>
   </header>
 
+  {lead && (
+    <figure class="firma2-public-project__featured" data-featured-slug={slug} data-featured-photos={JSON.stringify(leadPhotos)}>
+      {/* alt="" because the caption under it says what it shows. */}
+      <img class="firma2-public-project__featured-image" src={lead.src} alt="" width="1600" height="686" decoding="async" fetchpriority="high" data-featured-image />
+      <figcaption class="typography-body-sm firma2-public-project__featured-caption"><span data-featured-caption>{lead.caption}</span> · <span data-featured-date>{lead.date}</span></figcaption>
+    </figure>
+  )}
+
   <div class="firma2-public-project__body">
     <aside class="firma2-public-project__rail stack" data-gap="lg" data-aliasable-labels>
       <EsaCard title="Key facts">
         <dl class="firma2-public-project__facts">
-          <div><dt>Lead organization</dt><dd>{project.leadOrganization}</dd></div>
+          {/* The public's one way to tell a real organization from a lookalike
+              (decision 6): its verified domain, beside its name. */}
+          <div><dt>Lead organization</dt><dd>{project.leadOrganization}{leadOrg && <> <Firma2VerifiedMark organization={leadOrg} /></>}</dd></div>
           <div><dt>County</dt><dd><span {...pending('county', shown.county, current.county)}>{shown.county}</span> County</dd></div>
           <div><dt>Timeline</dt><dd {...pending('timeline', shown.years, current.years)}>{shown.years}</dd></div>
           <div><dt>Estimated cost</dt><dd {...pending('estimatedTotalCost', shown.cost, current.cost)}>{shown.cost}</dd></div>
@@ -165,7 +195,8 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
 
       <div data-section="measures" data-aliasable-title style={`order:${orderIndex.get('measures')}`} hidden={hiddenAtBuild.has('measures')}>
         <EsaCard title={label('measures')}>
-          <table class="firma2-public-project__table">
+          <div class="firma2-settings-table-scroll">
+            <table class="firma2-public-project__table">
             <thead><tr><th scope="col">Measure</th><th scope="col">Delivered</th><th scope="col">Last reported</th></tr></thead>
             <tbody>
               {detail.measures.map((m) => {
@@ -180,12 +211,14 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
               })}
             </tbody>
           </table>
+          </div>
         </EsaCard>
       </div>
 
       <div data-section="funding" data-aliasable-title style={`order:${orderIndex.get('funding')}`} hidden={hiddenAtBuild.has('funding')}>
         <EsaCard title={label('funding')}>
-          <table class="firma2-public-project__table">
+          <div class="firma2-settings-table-scroll">
+            <table class="firma2-public-project__table">
             <thead><tr><th scope="col">Source</th><th scope="col">From</th><th scope="col">Amount</th></tr></thead>
             <tbody>
               {detail.funding.map((f) => {
@@ -198,6 +231,7 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
               })}
             </tbody>
           </table>
+          </div>
         </EsaCard>
       </div>
 
@@ -206,7 +240,8 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
           {spent.length === 0 ? (
             <p class="typography-body-md">Nothing spent yet.</p>
           ) : (
-            <table class="firma2-public-project__table">
+            <div class="firma2-settings-table-scroll">
+              <table class="firma2-public-project__table">
               <thead><tr><th scope="col">Year</th><th scope="col">Spent</th></tr></thead>
               <tbody>
                 {spent.map((e) => (
@@ -214,6 +249,7 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </EsaCard>
       </div>
@@ -267,6 +303,30 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
     width: var(--spacing-300);
     height: var(--spacing-300);
     border-radius: var(--radius-sm);
+  }
+
+  /* The Featured photo: the body's width and inset, wide and short enough
+     that the facts still start on the first screen. */
+  .firma2-public-project__featured {
+    max-width: 76rem;
+    margin: var(--spacing-600) auto 0;
+    padding-inline: var(--spacing-600);
+    box-sizing: border-box;
+    display: grid;
+    gap: var(--spacing-200);
+  }
+  .firma2-public-project__featured-image {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    aspect-ratio: 7 / 3;
+    max-block-size: 26rem;
+    object-fit: cover;
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-background-elevation-sunken, #f4f5f4);
+  }
+  .firma2-public-project__featured-caption {
+    color: var(--color-text-secondary);
   }
 
   .firma2-public-project__body {
@@ -373,6 +433,21 @@ const spent = detail.expenditures.filter((e) => e.spent > 0);
       if (isProjectTypeKey(event.key)) resolve();
       if (event.key === TENANT_BRAND_KEY) applyBrand(readBrand());
     });
+  });
+</script>
+
+<script>
+  // THE FEATURED PHOTO, as this browser last chose it on the record.
+  import { readFeatured } from '../../lib/featured-photo';
+
+  document.querySelectorAll<HTMLElement>('[data-featured-slug]').forEach((figure) => {
+    const photos: { src: string; caption: string; date: string }[] = JSON.parse(figure.dataset.featuredPhotos ?? '[]');
+    const photo = photos[readFeatured(figure.dataset.featuredSlug ?? '', photos.length)];
+    const img = figure.querySelector<HTMLImageElement>('[data-featured-image]');
+    if (!photo || !img || img.getAttribute('src') === photo.src) return;
+    img.src = photo.src;
+    figure.querySelector('[data-featured-caption]')!.textContent = photo.caption;
+    figure.querySelector('[data-featured-date]')!.textContent = photo.date;
   });
 </script>
 

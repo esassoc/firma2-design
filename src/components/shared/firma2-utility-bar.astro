@@ -14,7 +14,7 @@
 // bcn-lego-checked: no esa- lego is a frame foot — esa-app-bar is a page-top
 // bar with a 72px minimum and esa-app-shell has no footer slot (same gap the
 // account strip documents). Every control inside is a lego: EsaButton chrome,
-// esa-dropdown-menu for Recent and Help, esa-dialog + EsaKbd for Shortcuts.
+// esa-dropdown-menu for Recent, the docked firma2-help-sheet for Help, esa-dialog + EsaKbd for Shortcuts.
 // Beacon is not cloned in this checkout. The strip adds placement only.
 //
 // ECOLOGY DEVIATION: the buttons are the top bar's compact md (32px) — the
@@ -23,6 +23,7 @@
 // non-standard (user, 2026-10-21). Same /request-lego as firma2-top-bar.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaKbd from '@esa/ecology/esa-kbd.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
 
 // THE SHORTCUTS THE APP ACTUALLY HAS — each row names where its handler lives,
 // so the list cannot advertise a key nothing listens for. `mod` renders ⌘ and
@@ -57,12 +58,21 @@ const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] 
   {/* The product credit, leading; quieter than the controls (user, 2026-10-21). */}
   <p class="typography-body-sm firma2-utility-bar__credit">ProjectFirma by ESA</p>
   <div class="cluster firma2-utility-bar__tools" data-gap="xs" data-justify="end" data-align="center">
+    {/* WHO YOU ARE STANDING IN FOR. A `?as=` switch is kept by the browser, so
+        it outlives the link that set it and quietly hides acts the reader's
+        own role has (New project). While one is in force the strip names it
+        and offers the way back; the default reader never sees this. Hidden
+        during a walkthrough, whose own panel already says who you are. */}
+    <span class="cluster firma2-utility-bar__acting" data-gap="xs" data-align="center" data-utility-acting hidden>
+      <EsaBadge value="" variant="warning" size="sm" />
+      <EsaButton variant="chrome" size="md" data-utility-acting-reset>Back to Administrator</EsaButton>
+    </span>
     <esa-dropdown-menu position="above-end" data-utility-recent>
       <EsaButton variant="chrome" size="md" icon="history">Recent</EsaButton>
     </esa-dropdown-menu>
-    <esa-dropdown-menu position="above-end" data-utility-help>
-      <EsaButton variant="chrome" size="md" icon="circle-question-mark">Help</EsaButton>
-    </esa-dropdown-menu>
+    {/* Help opens the docked Help sheet (firma2-help-sheet), at this page's
+        article when it has one. */}
+    <EsaButton variant="chrome" size="md" icon="circle-question-mark" data-utility-help>Help</EsaButton>
     <EsaButton variant="chrome" size="md" icon="keyboard" data-utility-shortcuts>Shortcuts</EsaButton>
   </div>
 
@@ -103,6 +113,7 @@ const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] 
   import '@esa/ecology/esa-dropdown-menu';
   import '@esa/ecology/esa-dialog';
   import type { EsaMenuItem } from '@esa/ecology/esa-dropdown-menu';
+  import { actingLabel, clearActingAs } from '../../lib/workspace-permissions';
 
   type Menu = HTMLElement & { items: EsaMenuItem[] };
   type Dialog = HTMLElement & { show(): void; close(): void; open: boolean };
@@ -133,18 +144,10 @@ const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] 
     /* private window — Recent just shows what it can */
   }
 
-  const HELP: EsaMenuItem[] = [
-    // Not built: dimmed like an unbuilt nav row, so the menu says what will be here.
-    { label: 'Help center', action: 'help-center', disabled: true },
-    { label: "What's new", action: 'whats-new', disabled: true },
-    { label: 'Contact support', action: 'contact-support', disabled: true },
-  ];
-
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
   document.querySelectorAll<HTMLElement>('[data-firma2-utility-bar]').forEach((bar) => {
     const recent = bar.querySelector<Menu>('[data-utility-recent]');
-    const help = bar.querySelector<Menu>('[data-utility-help]');
     const dialog = bar.querySelector<Dialog>('[data-utility-shortcuts-dialog]');
     const others = visits.filter((v) => v.href !== here).slice(0, LIMIT);
 
@@ -154,7 +157,9 @@ const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] 
           ? others.map((v) => ({ label: v.title, action: `recent:${v.href}` }))
           : [{ label: 'No recent pages', action: 'recent-empty', disabled: true }];
       }
-      if (help) help.items = HELP;
+    });
+    bar.querySelector('[data-utility-help]')?.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('firma2:help-open', { detail: { toggle: true } }));
     });
     recent?.addEventListener('menu-action', (event) => {
       const action = (event as CustomEvent<string>).detail;
@@ -162,6 +167,24 @@ const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] 
     });
 
     if (!isMac) bar.querySelectorAll('[data-mod]').forEach((el) => (el.textContent = 'Ctrl'));
+
+    const acting = bar.querySelector<HTMLElement>('[data-utility-acting]');
+    const who = actingLabel();
+    // A `?flow=` URL is a walkthrough starting: its panel may not have saved yet.
+    let walking = new URLSearchParams(location.search).has('flow');
+    try {
+      walking ||= !!sessionStorage.getItem('firma2:flow:v1');
+    } catch {
+      /* blocked storage: no walkthrough can be running */
+    }
+    if (acting && who && !walking) {
+      acting.querySelector('.esa-badge__text')!.textContent = `Acting as ${who}`;
+      acting.hidden = false;
+    }
+    acting?.querySelector('[data-utility-acting-reset]')?.addEventListener('click', () => {
+      clearActingAs();
+      location.reload();
+    });
 
     const show = (): void => {
       void customElements.whenDefined('esa-dialog').then(() => dialog?.show());
@@ -227,6 +250,15 @@ const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] 
      space-between and held a gap open after them. */
   .firma2-utility-bar > esa-dialog {
     position: absolute;
+  }
+
+  /* A display rule on the cluster outranks the UA's [hidden]; this puts it back. */
+  .firma2-utility-bar__acting[hidden] {
+    display: none;
+  }
+  /* The trailing gap that sets the persona apart from the workspace tools. */
+  .firma2-utility-bar__acting {
+    margin-inline-end: var(--spacing-300, 0.75rem);
   }
 
   /* The credit gives way before the controls do. */

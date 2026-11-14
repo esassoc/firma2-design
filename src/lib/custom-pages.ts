@@ -10,7 +10,7 @@
 // Every access is wrapped: storage can be missing or throw (private windows,
 // blocked site data), and the rail must still render — it just forgets.
 
-import { seedEntries, itemRoute, PAGES_GROUP } from '../data/firma2-pages';
+import { seedEntries, itemRoute, PAGES_GROUP, DASHBOARDS_GROUP, MAIN_DASHBOARD } from '../data/firma2-pages';
 import type { CustomEntry, CustomFolder, CustomItem, CustomPage, CustomDocument, DocumentFile } from '../data/firma2-pages';
 import { withBase } from './base';
 import { deletePageFiles } from './page-files';
@@ -254,7 +254,8 @@ const EMPTY_FOLDER = 'No pages yet';
  * here, because these rows are appended after AppLayout's own base pass.
  */
 export const pagesNavItems = (entries: CustomEntry[], activeId?: string): PagesNavItem[] => {
-  const pages = entries.filter((e): e is CustomItem => e.kind !== 'folder');
+  // Dashboards have their own group (dashboardNavItems).
+  const pages = entries.filter((e): e is CustomItem => e.kind !== 'folder' && e.kind !== 'dashboard');
   const folderIds = new Set(entries.filter((e) => e.kind === 'folder').map((e) => e.id));
   const pageRow = (p: CustomItem, nested: boolean): PagesNavItem => ({
     key: `${p.kind}:${p.id}`,
@@ -280,14 +281,27 @@ export const pagesNavItems = (entries: CustomEntry[], activeId?: string): PagesN
         children: inside.length ? inside.map((p) => pageRow(p, true)) : [{ label: EMPTY_FOLDER, disabled: true }],
       }];
     }
+    if (e.kind === 'dashboard') return [];
     // A page whose folder is gone falls back to the top level rather than vanishing.
     return e.folderId && folderIds.has(e.folderId) ? [] : [pageRow(e, false)];
   });
 };
 
+/**
+ * The Dashboards group's rows: the workspace's Progress Dashboard, then every
+ * dashboard added, in the order they were made. `mainActive` marks the first;
+ * `activeId` an added one.
+ */
+export const dashboardNavItems = (entries: CustomEntry[], activeId?: string, mainActive = false): PagesNavItem[] => [
+  { key: MAIN_DASHBOARD.key, label: MAIN_DASHBOARD.label, href: withBase(MAIN_DASHBOARD.href), icon: 'layout-dashboard', group: DASHBOARDS_GROUP, active: mainActive, disabled: false },
+  ...entries
+    .filter((e): e is CustomItem => e.kind === 'dashboard')
+    .map((d) => ({ key: `dashboard:${d.id}`, label: d.title, href: withBase(itemRoute(d)), icon: 'layout-dashboard', group: DASHBOARDS_GROUP, active: d.id === activeId, disabled: false })),
+];
+
 /** The page or document a rail row's href opens, if it is one. */
 export const pageIdFromHref = (href: string | null | undefined): string | undefined => {
-  if (!href || !/\/prototypes\/pages\/(page|document)\b/.test(href)) return undefined;
+  if (!href || !/\/prototypes\/pages\/(page|document|dashboard)\b/.test(href)) return undefined;
   return new URL(href, location.href).searchParams.get('id') ?? undefined;
 };
 

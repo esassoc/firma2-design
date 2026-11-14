@@ -1,0 +1,695 @@
+---
+// firma2-update-form — the reporter's update screen (/projects/:id/update):
+// everything this project can be updated on, one Save for the lot. Ported
+// from ProjectFirma2 hackathon Team 5, "Streamlined Project Updates"
+// (stories 0008 propose-from-words, 0011 the update screen, 0017 one
+// composer + changed-only filter).
+//
+// ONE COMMIT, ALL OR NOTHING. The record page saves per field; this screen
+// does not, on purpose (Team 5's header): a reporter answering a season's
+// worth of questions is doing one job, and per-field autosave cannot tell
+// "I did half" from "I gave up". Any invalid row refuses the whole press.
+//
+// ONE COMPOSER. Words (typed or spoken) and files go in the same box. Staged
+// files are not sent until Save, same contract as every box below; each one
+// says where it will go.
+//
+// PROPOSALS LAND IN THE BOXES. The form is the review: a proposal is written
+// into the target's own field, the evidence quoted under it with a Discard
+// that puts back what the box said before. A value still equal to an
+// undiscarded proposal commits as source 'Assistant', anything else 'Direct'.
+//
+// CHANGED-ONLY BY DEFAULT (0017). Rows touched this session stay visible even
+// once discarded back to the stored value, so a row never vanishes under the
+// cursor; an errored row is always visible.
+//
+// SCRIPTED. Reading uses assistantScript(slug) (src/data/firma2-project-
+// updates.ts): a `words` proposal matches when its cue is in the text, a
+// `document` proposal when a readable document is staged. Nothing is
+// improvised and nothing is saved by reading. State goes through
+// src/lib/update-sandbox.ts; the assistant switch is read live.
+//
+// CHANGED FROM TEAM 5: no esa-card (this is a form — headings + layout
+// primitives); controls pinned to md; status lines are visible text plus the
+// kit's shared announcer instead of per-line aria-live (accessibility skill);
+// every field is named by the lego's own visible `label` (the words box too:
+// esa-textarea does not forward a host aria-label to its inner textarea) and
+// "Was …" rides help-text, so both are wired to the input; intro copy cut to
+// the one fact about Save.
+//
+// bcn-lego-checked: every control is a lego (esa-textarea, esa-text-field,
+// esa-switch-toggle, esa-file-list for the staged files, EsaButton,
+// EsaEmptyState, EsaLoadingSpinner). The bespoke CSS is the composer's
+// drag-over outline: esa-file-upload is its own drop box with its own file
+// rows, and Team 5 merged the drop target INTO the words box, so the box is
+// the drop zone and Attach files is its keyboard route. Beacon is not cloned
+// on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
+import { withBase } from '../../lib/base';
+import {
+  UPDATE_GROUP_ORDER,
+  assistantScript,
+  sandboxProjectHref,
+  updateScreenTargets,
+} from '../../data/firma2-project-updates';
+import type { UpdateTarget } from '../../data/firma2-project-updates';
+
+interface Props {
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const targets = updateScreenTargets(slug);
+const groups = UPDATE_GROUP_ORDER.map((label) => ({ label, targets: targets.filter((t) => t.group === label) })).filter(
+  (g) => g.targets.length > 0,
+);
+const projectHref = withBase(sandboxProjectHref(slug));
+const config = { slug, targets, script: assistantScript(slug) ?? null };
+
+/** The row's name: the unit is spoken only where the box does not already wear it. */
+const labelOf = (t: UpdateTarget): string =>
+  t.unit && t.unit !== '$' && t.kind !== 'Measure' ? `${t.label} (${t.unit})` : t.label;
+const isNumeric = (t: UpdateTarget): boolean => t.kind !== 'Field' || t.unit === '$';
+const isYear = (t: UpdateTarget): boolean => t.id === 'field:ImplementationStartYear' || t.id === 'field:CompletionYear';
+const idBase = `update-${slug}`;
+---
+<div class="firma2-update-form stack" data-gap="xl" data-config={JSON.stringify(config)}>
+  <!-- ===== YOUR UPDATE ===== -->
+  <section class="stack" data-gap="sm" aria-labelledby={`${idBase}-composer`}>
+    <h2 class="typography-title-strong firma2-update-form__heading" id={`${idBase}-composer`}>Your update</h2>
+    <p class="typography-body-md firma2-update-form__secondary">Nothing is saved until you press Save updates.</p>
+
+    <div class="firma2-update-form__composer stack" data-gap="sm" data-composer>
+      <div data-assistant-only>
+        <esa-textarea
+          size="md"
+          rows="3"
+          auto-resize
+          label="Describe your update"
+          placeholder="This season we planted 2 acres, and the total came in around $430,000…"
+          data-words></esa-textarea>
+      </div>
+      <p class="typography-body-md" data-assistant-off hidden>
+        The assistant is off in this workspace, so drop or attach photos and documents here.
+      </p>
+
+      <esa-file-list removable downloadable="false" data-staged hidden></esa-file-list>
+
+      <div class="cluster" data-gap="sm">
+        <EsaButton variant="secondary" appearance="outline" size="md" icon="paperclip" data-attach>Attach files</EsaButton>
+        <!-- Wrappers carry `hidden`: esa-button's own display rule beats [hidden]. -->
+        <span data-speak-wrap hidden>
+          <EsaButton variant="secondary" appearance="outline" size="md" aria-pressed="false" data-speak>Speak</EsaButton>
+        </span>
+        <span data-assistant-only>
+          <EsaButton variant="secondary" appearance="outline" size="md" disabled data-read>Read my update</EsaButton>
+        </span>
+        <span data-assistant-only data-sample-wrap>
+          <EsaButton variant="ghost" size="md" data-sample>Use a sample update</EsaButton>
+        </span>
+      </div>
+    </div>
+
+    <div class="cluster" data-gap="xs" data-reading hidden>
+      <EsaLoadingSpinner size="sm" decorative />
+      <p class="typography-body-md">Reading…</p>
+    </div>
+    <p class="typography-body-md" data-speech-error hidden>Dictation stopped.</p>
+    <p class="typography-body-md" data-read-outcome hidden>Nothing read yet.</p>
+    <p class="typography-body-md" data-unplaced hidden>Nothing unplaced.</p>
+    <p class="typography-body-md firma2-update-form__secondary" data-attached hidden>Already on this project:</p>
+  </section>
+
+  {groups.length === 0 ? (
+    <EsaEmptyState title="Nothing to update" size="md" />
+  ) : (
+    <div class="stack" data-gap="xl">
+      <!-- ===== THE FILTER ===== -->
+      <div class="stack" data-gap="xs">
+        <div class="cluster" data-gap="md">
+          <esa-switch-toggle size="md" label="Only show fields with changes" checked data-changed-only></esa-switch-toggle>
+          <p class="typography-body-md firma2-update-form__secondary" data-summary>
+            {`0 of ${targets.length} ${targets.length === 1 ? 'field' : 'fields'} changed`}
+          </p>
+        </div>
+        <p class="typography-body-md" data-nothing-changed>
+          {`No fields have changed yet. Turn off Only show fields with changes to see all ${targets.length}.`}
+        </p>
+      </div>
+
+      <!-- ===== THE TARGETS ===== -->
+      {groups.map((group, g) => (
+        <section class="stack" data-gap="md" data-group hidden aria-labelledby={`${idBase}-group-${g}`}>
+          <h2 class="typography-title-strong firma2-update-form__heading" id={`${idBase}-group-${g}`}>{group.label}</h2>
+          <div class="stack" data-gap="lg">
+            {group.targets.map((t) => (
+              <div class="stack" data-gap="xs" data-row={t.id} hidden>
+                {t.multiline ? (
+                  <esa-textarea size="md" rows="4" auto-resize label={labelOf(t)} data-field></esa-textarea>
+                ) : (
+                  <esa-text-field
+                    size="md"
+                    label={labelOf(t)}
+                    prefix={t.unit === '$' ? '$' : undefined}
+                    suffix={t.kind === 'Measure' ? t.unit : undefined}
+                    inputmode={isYear(t) ? 'numeric' : isNumeric(t) ? 'decimal' : undefined}
+                    data-field></esa-text-field>
+                )}
+                <div class="cluster firma2-update-form__evidence" data-gap="sm" data-evidence hidden>
+                  <p class="typography-body-sm firma2-update-form__secondary" data-evidence-text>Suggested.</p>
+                  <EsaButton variant="secondary" appearance="outline" size="md" aria-label={`Discard suggested ${t.label}`} data-discard>
+                    Discard
+                  </EsaButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <!-- ===== ONE COMMIT ===== -->
+      <div class="cluster" data-gap="sm">
+        <EsaButton variant="primary" size="md" data-save>Save updates</EsaButton>
+        <EsaButton variant="secondary" appearance="outline" size="md" href={projectHref}>Cancel</EsaButton>
+        <p class="typography-body-md" data-save-note hidden>Nothing has changed yet, so there’s nothing to save.</p>
+        <p class="typography-body-md" data-saved hidden>
+          <span data-saved-line>Changes saved.</span>
+          <a href={projectHref}>View project</a>
+        </p>
+      </div>
+    </div>
+  )}
+</div>
+
+<style>
+  /* Layout primitives and legos set `display`, which beats the UA's [hidden].
+     Everything here toggles `hidden`, so it has to win inside this component. */
+  .firma2-update-form [hidden] {
+    display: none !important;
+  }
+
+  .firma2-update-form__heading {
+    margin: 0;
+  }
+
+  .firma2-update-form p {
+    margin: 0;
+  }
+
+  .firma2-update-form__secondary {
+    color: var(--color-content-default-secondary);
+  }
+
+  /* The composer is the drop zone; it only draws itself while a file is over it. */
+  .firma2-update-form__composer {
+    border-radius: var(--radius-sm);
+    outline: var(--border-width-200, 2px) dashed transparent;
+    outline-offset: var(--spacing-200);
+  }
+
+  .firma2-update-form__composer[data-dragging] {
+    outline-color: var(--color-border-brand);
+  }
+
+  .firma2-update-form__evidence {
+    align-items: center;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-file-list';
+  import { announce } from '@esa/ecology/announcer';
+  import {
+    READABLE_DOCUMENT,
+    formatTargetValue,
+    isImageName,
+    normalizeDraft,
+    validateTarget,
+  } from '../../data/firma2-project-updates';
+  import type { AssistantScript, UpdateTarget } from '../../data/firma2-project-updates';
+  import {
+    attachments,
+    commitUpdate,
+    currentValue,
+    onSandboxChange,
+    readFile,
+    readSettings,
+  } from '../../lib/update-sandbox';
+  import type { NewFile, UpdateEntry } from '../../lib/update-sandbox';
+
+  type Field = HTMLElement & { value: string; errorText: string; helpText: string; focus: () => void };
+  type Switch = HTMLElement & { checked: boolean };
+  type StagedListEl = HTMLElement & { files: { name: string }[] };
+
+  interface Row {
+    target: UpdateTarget;
+    el: HTMLElement;
+    field: Field;
+    draft: string;
+    /** Edited or proposed this session — stays visible until reload or Save. */
+    touched: boolean;
+    /** A standing proposal: its value, its evidence, and the draft it replaced. */
+    proposal?: { value: string; evidence: string; before: string };
+    error?: string;
+  }
+
+  /** A staged file: a real File, or the sample's virtual document (no File). */
+  interface Staged {
+    name: string;
+    file?: File;
+  }
+
+  const READ_DELAY_MS = 900;
+  const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+  const isPhoto = (s: Staged): boolean => (s.file?.type.startsWith('image/') ?? false) || isImageName(s.name);
+  const isReadable = (s: Staged): boolean => !isPhoto(s) && READABLE_DOCUMENT.test(s.name);
+  /** Where a staged file goes. With the assistant off, nothing is read. */
+  const whereItGoes = (s: Staged, assistantOn: boolean): string =>
+    isPhoto(s) ? 'added to photos on Save' : assistantOn && isReadable(s) ? 'read, then attached on Save' : 'attached on Save';
+
+  /** EsaButton is a wrapper span around the real button: disable both. */
+  const setDisabled = (button: HTMLButtonElement, disabled: boolean): void => {
+    button.disabled = disabled;
+    button.closest('.esa-button')?.classList.toggle('esa-button--disabled', disabled);
+  };
+  const setLabel = (button: HTMLElement, text: string): void => {
+    const label = button.querySelector('.esa-button__label');
+    if (label) label.textContent = text;
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-update-form').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string): T | null => root.querySelector<T>(sel);
+    const { slug, targets, script }: { slug: string; targets: UpdateTarget[]; script: AssistantScript | null } = JSON.parse(
+      root.dataset.config ?? '{}',
+    );
+
+    const words = $<Field>('[data-words]')!;
+    const composer = $('[data-composer]')!;
+    const stagedList = $<StagedListEl>('[data-staged]')!;
+    const attachButton = $<HTMLButtonElement>('[data-attach]')!;
+    const speakWrap = $('[data-speak-wrap]')!;
+    const speakButton = $<HTMLButtonElement>('[data-speak]')!;
+    const readButton = $<HTMLButtonElement>('[data-read]')!;
+    const sampleWrap = $('[data-sample-wrap]')!;
+    const readingLine = $('[data-reading]')!;
+    const speechError = $('[data-speech-error]')!;
+    const readOutcome = $('[data-read-outcome]')!;
+    const unplacedLine = $('[data-unplaced]')!;
+    const attachedLine = $('[data-attached]')!;
+    const changedOnlySwitch = $<Switch>('[data-changed-only]');
+    const summary = $('[data-summary]');
+    const nothingChanged = $('[data-nothing-changed]');
+    const saveButton = $<HTMLButtonElement>('[data-save]');
+    const saveNote = $('[data-save-note]');
+    const saved = $('[data-saved]');
+    const savedLine = $('[data-saved-line]');
+
+    let staged: Staged[] = [];
+    let changedOnly = true;
+    let reading = false;
+    let listening = false;
+    let assistantOn = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let recognition: any = null;
+
+    // The keyboard route into the drop zone: a picker the Attach button opens.
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.multiple = true;
+    picker.accept = 'image/*,.pdf,.docx,.xlsx,.csv,.txt';
+    picker.hidden = true;
+    root.append(picker);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    const rows: Row[] = targets
+      .map((target) => {
+        const el = root.querySelector<HTMLElement>(`[data-row="${CSS.escape(target.id)}"]`);
+        if (!el) return null;
+        return { target, el, field: el.querySelector<Field>('[data-field]')!, draft: '', touched: false } as Row;
+      })
+      .filter((r): r is Row => r !== null);
+
+    const current = (row: Row): string => currentValue(slug, row.target);
+    const isChanged = (row: Row): boolean => normalizeDraft(row.target, row.draft) !== current(row);
+
+    // ---- painting --------------------------------------------------------------
+    const paintRow = (row: Row): void => {
+      const was = current(row);
+      row.field.helpText = isChanged(row) ? (was === '' ? 'Was empty' : `Was ${formatTargetValue(row.target, was)}`) : '';
+      row.field.errorText = row.error ?? '';
+      const evidence = row.el.querySelector<HTMLElement>('[data-evidence]')!;
+      evidence.hidden = !row.proposal;
+      if (row.proposal) evidence.querySelector('[data-evidence-text]')!.textContent = `“${row.proposal.evidence}”`;
+    };
+
+    const summaryText = (): string => {
+      const changed = rows.filter(isChanged).length;
+      return `${changed} of ${plural(rows.length, 'field', 'fields')} changed`;
+    };
+
+    const refresh = (): void => {
+      let visible = 0;
+      rows.forEach((row) => {
+        row.el.hidden = changedOnly && !isChanged(row) && !row.touched && !row.error;
+        if (!row.el.hidden) visible++;
+      });
+      root.querySelectorAll<HTMLElement>('[data-group]').forEach((group) => {
+        group.hidden = !group.querySelector('[data-row]:not([hidden])');
+      });
+      if (summary) summary.textContent = summaryText();
+      if (nothingChanged) {
+        nothingChanged.hidden = !(changedOnly && visible === 0);
+        const all = `Turn off Only show fields with changes to see all ${rows.length}.`;
+        nothingChanged.textContent = staged.length
+          ? `No fields have changed yet, but the ${plural(staged.length, 'file', 'files')} you added will still be saved. ${all}`
+          : `No fields have changed yet. ${all}`;
+      }
+    };
+
+    const paintStaged = (): void => {
+      stagedList.files = staged.map((s) => ({ name: `${s.name} — ${whereItGoes(s, assistantOn)}` }));
+      stagedList.hidden = staged.length === 0;
+    };
+
+    const paintRead = (): void => {
+      const text = String(words.value ?? '').trim();
+      const docs = staged.some(isReadable);
+      setLabel(readButton, docs ? 'Read my update and documents' : 'Read my update');
+      setDisabled(readButton, reading || listening || (!text && !docs));
+    };
+
+    const paintAttached = (): void => {
+      const names = attachments(slug).map((a) => a.fileName);
+      attachedLine.hidden = names.length === 0;
+      attachedLine.textContent = `Already on this project: ${names.join(', ')}`;
+    };
+
+    const clearOutcomes = (): void => {
+      if (saveNote) saveNote.hidden = true;
+      if (saved) saved.hidden = true;
+    };
+
+    const setDraft = (row: Row, value: string): void => {
+      row.draft = value;
+      row.field.value = value;
+    };
+
+    // ---- the assistant switch ----------------------------------------------------
+    const paintAssistant = (): void => {
+      assistantOn = readSettings().assistant;
+      root.querySelectorAll<HTMLElement>('[data-assistant-only]').forEach((el) => (el.hidden = !assistantOn));
+      $('[data-assistant-off]')!.hidden = assistantOn;
+      sampleWrap.hidden = !assistantOn || !script;
+      speakWrap.hidden = !assistantOn || !SpeechCtor;
+      if (!assistantOn) {
+        recognition?.abort();
+        [readOutcome, unplacedLine, speechError, readingLine].forEach((el) => (el.hidden = true));
+      }
+    };
+
+    // ---- staging files -------------------------------------------------------------
+    const stage = (files: Staged[]): void => {
+      if (!files.length) return;
+      staged = [...staged, ...files];
+      clearOutcomes();
+      paintStaged();
+      paintRead();
+      refresh();
+    };
+
+    attachButton.addEventListener('click', () => picker.click());
+    picker.addEventListener('change', () => {
+      stage(Array.from(picker.files ?? []).map((file) => ({ name: file.name, file })));
+      // Cleared so choosing the same file twice still fires a change.
+      picker.value = '';
+    });
+
+    const hasFiles = (e: DragEvent): boolean => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    composer.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      // Without this the browser opens the file and the page — and every draft — is lost.
+      e.preventDefault();
+      composer.setAttribute('data-dragging', '');
+    });
+    composer.addEventListener('dragleave', (e) => {
+      if (!composer.contains(e.relatedTarget as Node | null)) composer.removeAttribute('data-dragging');
+    });
+    composer.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      composer.removeAttribute('data-dragging');
+      stage(Array.from(e.dataTransfer?.files ?? []).map((file) => ({ name: file.name, file })));
+    });
+
+    stagedList.addEventListener('remove', (e) => {
+      const { index } = (e as CustomEvent<{ index: number }>).detail;
+      staged = staged.filter((_, i) => i !== index);
+      paintStaged();
+      paintRead();
+      refresh();
+    });
+
+    // ---- words -------------------------------------------------------------------
+    words.addEventListener('change', () => {
+      clearOutcomes();
+      paintRead();
+    });
+
+    const paintSpeak = (): void => {
+      setLabel(speakButton, listening ? 'Stop listening' : 'Speak');
+      speakButton.setAttribute('aria-pressed', String(listening));
+      paintRead();
+    };
+
+    speakButton.addEventListener('click', () => {
+      if (listening) {
+        recognition?.stop();
+        return;
+      }
+      if (!SpeechCtor) return;
+      const r = new SpeechCtor();
+      r.lang = 'en-US';
+      r.continuous = true;
+      r.interimResults = true;
+      const base = String(words.value ?? '').trim() ? `${String(words.value).trimEnd()} ` : '';
+      speechError.hidden = true;
+      // Results accumulate across the session, so rebuild the whole transcript each time.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      r.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+        words.value = base + transcript.trim();
+        paintRead();
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      r.onerror = (event: any) => {
+        if (event.error === 'aborted') return;
+        speechError.textContent =
+          event.error === 'not-allowed' || event.error === 'service-not-allowed'
+            ? 'Microphone access is blocked. Allow it in the address bar, then try again.'
+            : event.error === 'no-speech'
+              ? 'Nothing was heard. Try again closer to the microphone.'
+              : 'Dictation stopped. Keep typing, or try again.';
+        speechError.hidden = false;
+      };
+      r.onend = () => {
+        listening = false;
+        recognition = null;
+        paintSpeak();
+      };
+      recognition = r;
+      listening = true;
+      paintSpeak();
+      r.start();
+    });
+
+    $('[data-sample]')?.addEventListener('click', () => {
+      if (!script) return;
+      words.value = script.sampleUpdate;
+      if (!staged.some((s) => !s.file && s.name === script.documentName)) stage([{ name: script.documentName }]);
+      clearOutcomes();
+      paintRead();
+    });
+
+    // ---- reading (scripted) ----------------------------------------------------------
+    const read = (): void => {
+      const text = String(words.value ?? '');
+      const docs = staged.some(isReadable);
+      let filled = 0;
+      (script?.proposals ?? []).forEach((p) => {
+        const matched = p.from === 'words' ? !!p.cue && text.includes(p.cue) : docs;
+        const row = rows.find((r) => r.target.id === p.targetId);
+        if (!matched || !row) return;
+        // A second read keeps the first "before", so Discard always returns to the reporter's own value.
+        const before = row.proposal ? row.proposal.before : row.draft;
+        row.proposal = { value: p.value, evidence: p.evidence, before };
+        row.touched = true;
+        row.error = undefined;
+        setDraft(row, p.value);
+        paintRow(row);
+        filled++;
+      });
+
+      readOutcome.textContent = filled
+        ? `Filled in ${plural(filled, 'field', 'fields')}. Check each value before saving.`
+        : 'Nothing in that matched a field on this project. Try naming a figure, a year or a funding source, or fill in the fields below.';
+      readOutcome.hidden = false;
+      const unplaced = !!script && text.toLowerCase().includes(script.unplacedCue.toLowerCase());
+      unplacedLine.textContent = unplaced ? script!.unplacedNote : '';
+      unplacedLine.hidden = !unplaced;
+
+      // A read that filled something turns the filter back on: the job is now "is this right?".
+      if (filled && !changedOnly) {
+        changedOnly = true;
+        if (changedOnlySwitch) changedOnlySwitch.checked = true;
+      }
+      refresh();
+      announce([readOutcome.textContent, unplaced ? unplacedLine.textContent : ''].filter(Boolean).join(' '));
+    };
+
+    readButton.addEventListener('click', () => {
+      if (reading || readButton.disabled) return;
+      reading = true;
+      readOutcome.hidden = true;
+      unplacedLine.hidden = true;
+      readingLine.hidden = false;
+      paintRead();
+      window.setTimeout(() => {
+        reading = false;
+        readingLine.hidden = true;
+        read();
+        paintRead();
+      }, READ_DELAY_MS);
+    });
+
+    // ---- the rows --------------------------------------------------------------------
+    rows.forEach((row) => {
+      row.field.addEventListener('change', (e) => {
+        row.draft = String((e as CustomEvent<{ value: string }>).detail?.value ?? row.field.value ?? '');
+        // Typed in, so the row stays even if cleared back — filtering it out would take focus with it.
+        row.touched = true;
+        row.error = undefined;
+        clearOutcomes();
+        paintRow(row);
+        refresh();
+      });
+      row.el.querySelector('[data-discard]')?.addEventListener('click', () => {
+        if (!row.proposal) return;
+        setDraft(row, row.proposal.before);
+        row.proposal = undefined;
+        paintRow(row);
+        refresh();
+      });
+    });
+
+    changedOnlySwitch?.addEventListener('change', (e) => {
+      changedOnly = !!(e as CustomEvent<{ checked: boolean }>).detail?.checked;
+      refresh();
+      announce(changedOnly ? `Showing changed fields. ${summaryText()}.` : `Showing all ${rows.length} fields.`);
+    });
+
+    // ---- one commit ------------------------------------------------------------------
+    const startYear = rows.find((r) => r.target.id === 'field:ImplementationStartYear');
+    const endYear = rows.find((r) => r.target.id === 'field:CompletionYear');
+
+    const commit = async (): Promise<void> => {
+      if (!saveButton || !saveNote || !saved || !savedLine) return;
+      clearOutcomes();
+      const changed = rows.filter(isChanged);
+      rows.forEach((r) => (r.error = undefined));
+
+      if (!changed.length && !staged.length) {
+        rows.forEach(paintRow);
+        saveNote.hidden = false;
+        announce(saveNote.textContent ?? '');
+        return;
+      }
+
+      changed.forEach((r) => {
+        r.error = validateTarget(r.target, r.draft) ?? undefined;
+      });
+      if (startYear && endYear && (isChanged(startYear) || isChanged(endYear)) && !startYear.error && !endYear.error) {
+        const start = Number(normalizeDraft(startYear.target, startYear.draft));
+        const end = Number(normalizeDraft(endYear.target, endYear.draft));
+        if (end < start) endYear.error = `Enter ${start} or later. The project starts in ${start}.`;
+      }
+
+      const errored = rows.filter((r) => r.error);
+      rows.forEach(paintRow);
+      refresh();
+      if (errored.length) {
+        errored[0].field.focus();
+        return;
+      }
+
+      setDisabled(saveButton, true);
+      setLabel(saveButton, 'Saving…');
+      const entries: UpdateEntry[] = changed.map((r) => {
+        const to = normalizeDraft(r.target, r.draft);
+        const fromAssistant = !!r.proposal && to === normalizeDraft(r.target, r.proposal.value);
+        return { targetId: r.target.id, to, source: fromAssistant ? 'Assistant' : 'Direct' };
+      });
+      const files: NewFile[] = await Promise.all(
+        staged.map((s) => (s.file ? readFile(s.file) : Promise.resolve({ fileName: s.name, kind: 'document' as const }))),
+      );
+      const result = commitUpdate(slug, entries, files);
+
+      // Filed: the screen starts over from the new current values.
+      staged = [];
+      words.value = '';
+      rows.forEach((r) => {
+        r.touched = false;
+        r.proposal = undefined;
+        r.error = undefined;
+        setDraft(r, current(r));
+        paintRow(r);
+      });
+      [readOutcome, unplacedLine].forEach((el) => (el.hidden = true));
+      paintStaged();
+      paintRead();
+      refresh();
+      setLabel(saveButton, 'Save updates');
+      setDisabled(saveButton, false);
+
+      savedLine.textContent = result.pending
+        ? `${plural(result.pending, 'change', 'changes')} sent for review.`
+        : `${plural(result.applied, 'change', 'changes')} saved.`;
+      saved.hidden = false;
+      announce(savedLine.textContent);
+    };
+
+    saveButton?.addEventListener('click', () => void commit());
+
+    // ---- start, and follow the sandbox -----------------------------------------------
+    Promise.all(
+      ['esa-textarea', 'esa-text-field', 'esa-switch-toggle', 'esa-file-list'].map((tag) => customElements.whenDefined(tag)),
+    ).then(() => {
+      rows.forEach((row) => {
+        setDraft(row, current(row));
+        paintRow(row);
+      });
+      if (changedOnlySwitch) changedOnlySwitch.checked = changedOnly;
+      paintStaged();
+      onSandboxChange(() => {
+        // Untouched rows follow the record (an approval, another tab); edited ones keep the reporter's draft.
+        rows.forEach((row) => {
+          if (!row.touched && !row.proposal) setDraft(row, current(row));
+          paintRow(row);
+        });
+        paintAssistant();
+        paintStaged();
+        paintAttached();
+        paintRead();
+        refresh();
+      });
+    });
+  });
+</script>

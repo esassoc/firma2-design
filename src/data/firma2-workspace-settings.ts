@@ -215,12 +215,9 @@ export interface SecurityPermission {
   value: string;
 }
 
-export const workspaceSecurity = {
-  inviteLinkOn: true,
-  // Invented token; Reset swaps it client-side.
-  inviteLink: `${workspaceGeneral.address}/join/k7q2-m9xd-4tpw`,
-  idleTimeout: '7d',
-};
+// No workspace invite link: each organization has its own, on its Members page
+// (.scratch/access-requests/spec.md, decision 13) — a link that named no
+// organization could only admit Viewers, and left nobody to answer for them.
 
 export const SIGN_IN_METHODS: SecuritySwitch[] = [
   { key: 'signin-microsoft', label: 'Microsoft', on: true },
@@ -228,29 +225,20 @@ export const SIGN_IN_METHODS: SecuritySwitch[] = [
   { key: 'signin-email', label: 'Email and password', on: true },
 ];
 
-export const SIGN_IN_RULES: SecuritySwitch[] = [
-  { key: 'two-step', label: 'Two-step verification', hint: 'Required for everyone.', on: false },
-];
-
-export const IDLE_TIMEOUTS: SecurityChoice[] = [
-  { value: '8h', label: '8 hours' },
-  { value: '1d', label: '1 day' },
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
-];
-
 /** Who may take each workspace-wide action — the roles in rank order, widening. */
 export const PERMISSION_AUDIENCES: SecurityChoice[] = [
   { value: 'admins', label: 'Only administrators' },
-  { value: 'stewards', label: 'Administrators and stewards' },
+  { value: 'managers', label: 'Administrators and managers' },
   { value: 'editors', label: 'Administrators and contributors' },
 ];
 
 // Workspace-wide acts only. What each role may edit and approve is fixed by the
 // role itself (docs/roles-and-permissions.md), so it has no setting here.
+// Adding an organization is not on the list: only administrators do it, and it
+// never widens (spec decision 11) — a name proves nothing, so who may vouch for
+// a new one is not a threshold to loosen.
 export const SECURITY_PERMISSIONS: SecurityPermission[] = [
-  { key: 'perm-invite', label: 'Invite people', hint: 'Stewards can always invite to their own organization.', value: 'admins' },
-  { key: 'perm-organizations', label: 'Add organizations', value: 'stewards' },
+  { key: 'perm-invite', label: 'Invite people', hint: 'Managers can always invite to their own organization.', value: 'admins' },
   { key: 'perm-projects', label: 'Create projects', value: 'editors' },
   // Goals are the initiative's to set, so administrators by default; a
   // workspace that has its program staff set up goals opens it wider.
@@ -260,10 +248,10 @@ export const SECURITY_PERMISSIONS: SecurityPermission[] = [
   { key: 'perm-targets', label: 'Set project targets', hint: 'Project editors can still report.', value: 'admins' },
   // QA/QC happens at publish (user, 2026-10-09): editors change their records
   // freely, and the public sees a project only once someone trusted to check it
-  // has published it. Stewards and administrators by default.
-  { key: 'perm-publish', label: 'Publish projects', value: 'stewards' },
+  // has published it. Managers and administrators by default.
+  { key: 'perm-publish', label: 'Publish projects', value: 'managers' },
   { key: 'perm-import', label: 'Import data', value: 'admins' },
-  { key: 'perm-export', label: 'Export data', value: 'stewards' },
+  { key: 'perm-export', label: 'Export data', value: 'managers' },
   { key: 'perm-api', label: 'Create API tokens', value: 'admins' },
 ];
 
@@ -290,7 +278,7 @@ export const customPagesSettings = {
 // same ladder on both pages.
 export const CUSTOM_PAGE_PERMISSIONS: SecurityPermission[] = [
   { key: 'pages-create', label: 'Create pages', value: 'editors' },
-  { key: 'pages-edit', label: 'Edit any page', hint: 'Authors can always edit their own.', value: 'stewards' },
+  { key: 'pages-edit', label: 'Edit any page', hint: 'Authors can always edit their own.', value: 'managers' },
   { key: 'pages-delete', label: 'Delete pages', value: 'admins' },
 ];
 

@@ -1,0 +1,164 @@
+---
+// firma2-rail-modes — the icons at the trailing end of a record's own bar
+// (firma2-record-bar, under the app's top bar) that
+// open, close and switch the page's rail, the way Linear's sidebar icons sit at
+// the top right of its project page (user, 2026-10-22).
+//
+// ONE ICON PER MODE, NO SEPARATE CLOSE. Each icon shows the rail in its mode;
+// the icon of the mode already showing closes it. The pressed icon is the mode
+// on screen, so the group is also the rail's state, read at a glance. A rail
+// with one mode (the measure page) gets one icon, which is then simply the
+// rail's toggle.
+//
+// IT LIVES IN THE RECORD BAR because that row never scrolls away and a closed rail
+// leaves nothing behind: the way back has to be somewhere that is always
+// there (firma2-rail `external`).
+//
+// A SHEET IN THE RAIL'S PLACE (bcn-side-sheet — History, Review changes)
+// leaves no icon pressed, since neither mode is on screen. Pressing one closes
+// the sheet and shows that mode; closing the sheet brings the rail back as it
+// was, which the sheet already does.
+//
+// UNPINNED (the track has wrapped under the content, tablet and phone) the
+// group steps out: the rail is a plain block under the page with every mode
+// stacked, so there is nothing to open, close or switch.
+//
+// REMEMBERED PER READER: the mode here, under the rail's storage key; open or
+// closed by the rail's own edge handle, under the same key.
+//
+// ECOLOGY DEVIATION, flagged to the user 2026-10-22: the icons are esa-button
+// size xs at the user's request, below the house rule that every control is md.
+//
+// bcn-lego-checked: esa-button chrome iconOnly, with its own pressed state
+// (`esa-button--active` + aria-pressed), is each icon — esa-button-toggle is a
+// labelled segmented control that always holds one value, and this group must
+// be able to hold none (closed, or a sheet in the rail's place). Layout is
+// `.cluster`. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+interface Mode {
+  key: string;
+  /** The tooltip and accessible name — "Details", "Map". */
+  label: string;
+  icon: string;
+}
+
+interface Props {
+  /** The rail's id (firma2-record-rail's is "firma2-record-rail"). */
+  rail: string;
+  modes: Mode[];
+  /** Where the chosen mode is remembered; the rail's own storage key. */
+  storageKey: string;
+}
+
+const { rail, modes, storageKey } = Astro.props;
+---
+<div
+  class="firma2-rail-modes cluster"
+  data-gap="2xs"
+  role="group"
+  aria-label="Side panel"
+  data-rail-modes
+  data-rail-target={rail}
+  data-storage-key={storageKey}
+  data-default={modes[0]?.key}
+>
+  {modes.map((m) => (
+    <EsaButton
+      variant="chrome"
+      size="xs"
+      iconOnly
+      icon={m.icon}
+      label={m.label}
+      data-rail-mode={m.key}
+      aria-controls={rail}
+      aria-pressed="false"
+    />
+  ))}
+</div>
+
+<style>
+  .firma2-rail-modes {
+    flex-wrap: nowrap;
+  }
+  /* No rail to drive once it has wrapped under the content. */
+  .firma2-rail-modes[data-unpinned] {
+    display: none;
+  }
+</style>
+
+<script>
+  type Sheet = HTMLElement & { open: boolean; close(): void };
+
+  document.querySelectorAll<HTMLElement>('[data-rail-modes]').forEach((group) => {
+    const rail = document.getElementById(group.dataset.railTarget ?? '');
+    if (!rail) return;
+    const buttons = [...group.querySelectorAll<HTMLElement>('[data-rail-mode]')];
+    const keys = buttons.map((b) => b.dataset.railMode!);
+    const storage = `firma2-rail-mode:${group.dataset.storageKey}`;
+
+    const stored = (() => {
+      try {
+        return localStorage.getItem(storage);
+      } catch {
+        return null;
+      }
+    })();
+    let mode = stored && keys.includes(stored) ? stored : group.dataset.default ?? keys[0];
+
+    const show = (key: string): void => {
+      mode = key;
+      rail.querySelectorAll<HTMLElement>('[data-rail-mode-panel]').forEach((panel) => {
+        panel.toggleAttribute('data-active', panel.dataset.railModePanel === key);
+      });
+      try {
+        localStorage.setItem(storage, key);
+      } catch {
+        /* private window: the mode is not remembered, nothing else changes */
+      }
+      sync();
+    };
+
+    const sync = (): void => {
+      const open = !rail.hasAttribute('collapsed') && !rail.hasAttribute('data-sheet-over') && !rail.hidden;
+      buttons.forEach((b) => {
+        const on = open && b.dataset.railMode === mode;
+        b.setAttribute('aria-pressed', String(on));
+        b.closest('.esa-button')?.classList.toggle('esa-button--active', on);
+      });
+      // A docked sheet in the rail's slot narrows the page enough to unpin
+      // the rail it replaced; that is not the rail wrapping under the content,
+      // and the icons are how the reader gets the rail back.
+      const unpinned = rail.hasAttribute('data-unpinned') && !rail.hasAttribute('data-sheet-over');
+      group.toggleAttribute('data-unpinned', unpinned);
+      // The record bar steps out with nothing to show (firma2-record-bar).
+      group.closest('[data-record-bar]')?.toggleAttribute('data-idle', unpinned);
+    };
+
+    buttons.forEach((b) => {
+      b.addEventListener('click', () => {
+        const key = b.dataset.railMode!;
+        const sheets = [...document.querySelectorAll<Sheet>('bcn-side-sheet')].filter((s) => s.open);
+        if (sheets.length) {
+          // A sheet stands in the rail's slot: it goes, this mode comes back.
+          sheets.forEach((s) => s.close());
+          show(key);
+          rail.dispatchEvent(new CustomEvent('firma2:rail-open'));
+          return;
+        }
+        if (!rail.hasAttribute('collapsed') && key === mode) {
+          rail.dispatchEvent(new CustomEvent('firma2:rail-close'));
+          return;
+        }
+        show(key);
+        rail.dispatchEvent(new CustomEvent('firma2:rail-open'));
+      });
+    });
+
+    new MutationObserver(sync).observe(rail, {
+      attributes: true,
+      attributeFilter: ['collapsed', 'data-sheet-over', 'data-unpinned', 'hidden'],
+    });
+    show(mode);
+  });
+</script>

@@ -1,0 +1,295 @@
+---
+// firma2-lightbox — any image, full size, over a dimmed page. Mounted ONCE by
+// BaseLayout, so every page has it and no component draws a viewer of its own.
+//
+// TWO WAYS IN.
+//   1. Click (or Enter/Space on) any image on the page. Images that already
+//      have a job are left alone: inside a link, a button, a peek row, a map,
+//      a rich text being edited (its image toolbar has Full size instead), or
+//      anything marked [data-no-lightbox]. Images under 48px are icons, not
+//      pictures, and are skipped too. Eligible images get tabindex, a button
+//      role and a zoom-in cursor, so they are reachable without a mouse.
+//      Siblings in the same [data-lightbox-group] — or the same rich text —
+//      become a carousel. A larger source can ride the image element as
+//      data-full-src.
+//   2. openLightbox({ images, index, heading }) from src/lib/lightbox.ts —
+//      for a component that holds its own list (firma2-project-gallery).
+//
+// esa-dialog is the shell: Esc, the scrim, light-dismiss, focus containment and
+// the close button are the lego's. The script only re-points src and text on a
+// skeleton authored here; it never builds elements.
+//
+// bcn-lego-checked: no esa- lego renders a lightbox or carousel — walked
+// `ls node_modules/@esa/ecology/src/components/` (2026-11-12): esa-dialog is
+// the surface, esa-button (iconOnly) every control. The bespoke part is the
+// stage (image bounds + chevron placement) and the carousel wiring, lifted
+// from firma2-project-gallery, which now uses this. Beacon is not cloned on
+// this machine. firma2-lightbox is the reusable home.
+import EsaButton from '@esa/ecology/esa-button.astro';
+---
+<esa-dialog class="firma2-lightbox" heading="Image" show-close-button data-lightbox-viewer>
+  <figure class="firma2-lightbox__figure">
+    <div class="firma2-lightbox__stage">
+      {/* alt is set per image by the script, from the caption. */}
+      <img class="firma2-lightbox__image" data-lightbox-image alt="" decoding="async" />
+      <EsaButton
+        class="firma2-lightbox__nav firma2-lightbox__nav--prev"
+        variant="secondary"
+        size="md"
+        iconOnly
+        icon="chevron-left"
+        label="Previous image"
+        data-lightbox-prev
+      />
+      <EsaButton
+        class="firma2-lightbox__nav firma2-lightbox__nav--next"
+        variant="secondary"
+        size="md"
+        iconOnly
+        icon="chevron-right"
+        label="Next image"
+        data-lightbox-next
+      />
+    </div>
+    <figcaption class="firma2-lightbox__caption repel" data-gap="md" data-lightbox-caption-row>
+      <span class="firma2-lightbox__text">
+        <span class="typography-body-md" data-lightbox-caption></span>
+        <span class="firma2-lightbox__meta typography-meta" data-lightbox-date></span>
+      </span>
+      <span class="firma2-lightbox__meta firma2-lightbox__count typography-meta" data-lightbox-count></span>
+    </figcaption>
+  </figure>
+</esa-dialog>
+
+<style is:global>
+  /* The photograph sizes the dialog; the lego's 480px default would crop it.
+     --dialog-width is the lego's published re-skin hook. */
+  .firma2-lightbox {
+    --dialog-width: fit-content;
+    /* The theme turns dialog backdrops off (theme-firma2.css). A viewer is
+       the exception: the page dims so the image is the only thing lit. The
+       lego reads this token on its ::backdrop, which inherits from the host
+       in Chrome 122+, Safari 17.4+, Firefox 120+. */
+    --color-background-overlay-backdrop: var(--color-black-a-10, rgba(0, 0, 0, 0.72));
+  }
+
+  .firma2-lightbox__figure {
+    margin: 0;
+    padding: var(--spacing-400, 1rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-300, 0.75rem);
+  }
+
+  .firma2-lightbox__stage {
+    position: relative;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* One image: its own shape, as large as the viewport allows with the header
+     and caption still on screen (the lego caps the dialog at 85vh). */
+  .firma2-lightbox__image {
+    display: block;
+    max-inline-size: min(86vw, 64rem);
+    max-block-size: calc(85vh - 15rem);
+    inline-size: auto;
+    block-size: auto;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-background-elevation-sunken, #f4f5f4);
+  }
+
+  /* A carousel: every image lands in the SAME 4:3 box, so paging never
+     resizes the dialog; a differently shaped image letterboxes inside it. */
+  .firma2-lightbox[data-carousel] .firma2-lightbox__image {
+    inline-size: min(86vw, calc((85vh - 14rem) * 4 / 3), 64rem);
+    max-block-size: none;
+    aspect-ratio: 4 / 3;
+    object-fit: contain;
+  }
+
+  /* Solid buttons, not ghosts: a bare glyph over a photo has whatever contrast
+     the sky gives it. */
+  .firma2-lightbox__stage .firma2-lightbox__nav {
+    position: absolute;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+  }
+  .firma2-lightbox__stage .firma2-lightbox__nav--prev { inset-inline-start: var(--spacing-300, 0.75rem); }
+  .firma2-lightbox__stage .firma2-lightbox__nav--next { inset-inline-end: var(--spacing-300, 0.75rem); }
+  .firma2-lightbox:not([data-carousel]) .firma2-lightbox__nav { display: none; }
+  /* The spoke's outline secondary (BaseLayout) is transparent; over a photo
+     the chevron needs its own ground. Hover keeps the outline's brand wash. */
+  html[data-theme] .firma2-lightbox .firma2-lightbox__nav > .esa-button__native:not(:hover) {
+    background: var(--color-background-elevation-raised, #fff);
+  }
+
+  .firma2-lightbox__caption { align-items: baseline; }
+  .firma2-lightbox__caption[data-empty] { display: none; }
+
+  .firma2-lightbox__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-050, 0.125rem);
+  }
+
+  .firma2-lightbox__meta {
+    color: var(--color-content-default-secondary, #60655f);
+  }
+
+  .firma2-lightbox__count {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Set by the script on every image it made openable. */
+  img[data-lightbox-able] { cursor: zoom-in; }
+  .firma2-rich-text[data-readonly] img { cursor: zoom-in; }
+</style>
+
+<script>
+  import '@esa/ecology/esa-dialog';
+  import { LIGHTBOX_OPEN, type LightboxImage, type LightboxOpen } from '../../lib/lightbox';
+
+  type Dialog = HTMLElement & { show: () => void; close: () => void; open: boolean };
+
+  const viewer = document.querySelector<Dialog>('[data-lightbox-viewer]');
+
+  if (viewer) {
+    const image = viewer.querySelector<HTMLImageElement>('[data-lightbox-image]')!;
+    const captionRow = viewer.querySelector<HTMLElement>('[data-lightbox-caption-row]')!;
+    const caption = viewer.querySelector<HTMLElement>('[data-lightbox-caption]')!;
+    const date = viewer.querySelector<HTMLElement>('[data-lightbox-date]')!;
+    const count = viewer.querySelector<HTMLElement>('[data-lightbox-count]')!;
+    let images: LightboxImage[] = [];
+    let index = 0;
+
+    const render = (): void => {
+      const current = images[index];
+      if (!current) return;
+      image.src = current.src;
+      image.alt = current.caption ?? '';
+      caption.textContent = current.caption ?? '';
+      date.textContent = current.date ?? '';
+      const many = images.length > 1;
+      count.textContent = many ? `${index + 1} of ${images.length}` : '';
+      captionRow.toggleAttribute('data-empty', !current.caption && !current.date && !many);
+      // Warm the neighbours so paging swaps instantly.
+      if (many) {
+        [index + 1, index - 1].forEach((n) => {
+          const neighbor = images[(n + images.length) % images.length];
+          if (neighbor) new Image().src = neighbor.src;
+        });
+      }
+    };
+
+    const step = (delta: number): void => {
+      if (images.length < 2) return;
+      index = (index + delta + images.length) % images.length;
+      render();
+    };
+
+    const open = ({ images: list, index: start = 0, heading }: LightboxOpen): void => {
+      if (!list.length) return;
+      images = list;
+      index = Math.min(Math.max(start, 0), list.length - 1);
+      viewer.toggleAttribute('data-carousel', list.length > 1);
+      viewer.setAttribute('heading', heading ?? (list.length > 1 ? 'Images' : 'Image'));
+      render();
+      viewer.show();
+    };
+
+    document.addEventListener(LIGHTBOX_OPEN, (event) => open((event as CustomEvent<LightboxOpen>).detail));
+
+    viewer.querySelector('[data-lightbox-prev]')?.addEventListener('click', () => step(-1));
+    viewer.querySelector('[data-lightbox-next]')?.addEventListener('click', () => step(1));
+    viewer.addEventListener('keydown', (event) => {
+      if (!viewer.open) return;
+      if (event.key === 'ArrowRight') { event.preventDefault(); step(1); }
+      else if (event.key === 'ArrowLeft') { event.preventDefault(); step(-1); }
+    });
+
+    // ── Any image on the page ────────────────────────────────────────────
+
+    // Where an image's click already means something else.
+    const TAKEN = [
+      'a', 'button', '[role="button"]:not(img)', 'label', 'summary',
+      '[data-peek-row]', '[data-no-lightbox]', '.leaflet-container',
+      '[data-lightbox-viewer]', '[contenteditable="true"]', 'template',
+    ].join(', ');
+    const MIN_SIZE = 48;
+
+    const isOpenable = (img: HTMLImageElement): boolean => {
+      if (img.closest(TAKEN)) return false;
+      const width = img.getBoundingClientRect().width || img.width;
+      return width === 0 || width >= MIN_SIZE;
+    };
+
+    const toImage = (img: HTMLImageElement): LightboxImage => {
+      const figure = img.closest('figure');
+      const figcaption = figure?.querySelector('figcaption')?.textContent?.trim();
+      return {
+        src: img.dataset.fullSrc || img.currentSrc || img.src,
+        caption: figcaption || img.alt || undefined,
+      };
+    };
+
+    const openFrom = (img: HTMLImageElement): void => {
+      const group = img.closest('[data-lightbox-group], [data-rich-text]');
+      const set = group
+        ? [...group.querySelectorAll<HTMLImageElement>('img')].filter(isOpenable)
+        : [img];
+      open({ images: set.map(toImage), index: Math.max(set.indexOf(img), 0) });
+    };
+
+    // Keyboard reach: openable images become buttons named after their alt.
+    const enhance = (): void => {
+      document.querySelectorAll<HTMLImageElement>('img').forEach((img) => {
+        const able = isOpenable(img);
+        if (able) {
+          const label = img.alt ? `View full size: ${img.alt}` : 'View full size';
+          if (img.getAttribute('aria-label') !== label) img.setAttribute('aria-label', label);
+          if (img.hasAttribute('data-lightbox-able')) return;
+          img.setAttribute('data-lightbox-able', '');
+          img.tabIndex = 0;
+          img.setAttribute('role', 'button');
+        } else if (!able && img.hasAttribute('data-lightbox-able')) {
+          img.removeAttribute('data-lightbox-able');
+          img.removeAttribute('tabindex');
+          img.removeAttribute('role');
+          img.removeAttribute('aria-label');
+        }
+      });
+    };
+
+    let queued = false;
+    const queueEnhance = (): void => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; enhance(); });
+    };
+    enhance();
+    window.addEventListener('load', queueEnhance);
+    new MutationObserver(queueEnhance).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['contenteditable', 'src', 'alt'],
+    });
+
+    document.addEventListener('click', (event) => {
+      const img = (event.target as Element | null)?.closest?.('img');
+      if (!(img instanceof HTMLImageElement) || !isOpenable(img)) return;
+      event.preventDefault();
+      openFrom(img);
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const img = event.target;
+      if (!(img instanceof HTMLImageElement) || !img.hasAttribute('data-lightbox-able') || !isOpenable(img)) return;
+      event.preventDefault();
+      openFrom(img);
+    });
+  }
+</script>

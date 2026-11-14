@@ -80,6 +80,9 @@ const { slug } = Astro.props;
 // browser's target edits (src/lib/measure-reach.ts). Matched by `kpi`, or by
 // name for rows that carry none.
 const projectSlugs = projects.map(projectSlug);
+// Which classifications each project carries — a measure reaches the projects
+// whose classifications track it (firma2-project-measures, "Only what applies").
+const projectClasses = Object.fromEntries(projects.map((p) => [projectSlug(p), p.classifications]));
 const seedTargets: Record<string, SeedTarget[]> = {};
 for (const project of projects) {
   for (const row of getProjectDetail(project).measures) {
@@ -99,6 +102,7 @@ for (const project of projects) {
   data-slug={slug}
   data-history={JSON.stringify(seededMeasureHistory())}
   data-projects={JSON.stringify(projectSlugs)}
+  data-project-classes={JSON.stringify(projectClasses)}
   data-seed-targets={JSON.stringify(seedTargets)}
 >
   <div class="firma2-measure-editor__form stack" data-gap="2xl" data-editor-form>
@@ -165,6 +169,22 @@ for (const project of projects) {
     <Firma2RailSection title="What is counted">
       <div class="stack" data-gap="md">
         <p class="firma2-measure-editor__note typography-body-sm" data-structure-note>Unit and whether values add up lock once published.</p>
+        <!-- WHERE THE FIGURE COMES FROM (2026-11-12): typed by reporters, or
+             worked out by a method from what each project already holds. An
+             estimated measure takes its method's unit and needs no reporter
+             guidance — nobody reports it. Locks with the unit. -->
+        <esa-select
+          data-field="source"
+          label="Where the figure comes from"
+          size="md"
+        ></esa-select>
+        <esa-select
+          data-field="estimateMethod"
+          label="Method"
+          size="md"
+          placeholder="Pick a method"
+          hidden
+        ></esa-select>
         <esa-select
           data-field="unit"
           label="Unit"
@@ -295,6 +315,10 @@ for (const project of projects) {
     withDraft,
   } from '../../lib/measure-draft';
   import { mountSchemaBoard, newBreakdownId } from '../../lib/schema-board';
+  import { MEASURE_SOURCES, sourceOf } from '../../data/firma2-performance-measures';
+  import type { MeasureSource } from '../../data/firma2-performance-measures';
+  import { ESTIMATE_METHODS, getEstimateMethod } from '../../data/firma2-estimate-methods';
+  import { withSource, writeSourceChoice } from '../../lib/measure-source';
 
   type Control = HTMLElement & { value?: unknown; options?: unknown; disabled?: boolean };
 
@@ -349,6 +373,25 @@ for (const project of projects) {
     if (unitField) unitField.options = UNITS.map((u) => ({ label: u, value: u }));
     if (ruleField) ruleField.options = COUNTING_RULES.map((r) => ({ label: r.optionLabel, value: r.id }));
     if (decimalsField) decimalsField.options = DECIMALS_LABELS.map((label, i) => ({ label, value: String(i) }));
+    const sourceField = field('source');
+    const methodField = field('estimateMethod');
+    if (sourceField) sourceField.options = MEASURE_SOURCES.map((s) => ({ label: s.label, value: s.id }));
+    if (methodField) methodField.options = ESTIMATE_METHODS.map((m) => ({ label: `${m.name} (${m.unit})`, value: m.id }));
+    const readSource = (): MeasureSource => (str(sourceField?.value) === 'estimated' ? 'estimated' : 'reported');
+
+    /**
+     * AN ESTIMATED MEASURE: the method picker shows, the unit follows the
+     * method (and cannot be set apart from it), and reporter guidance goes —
+     * nobody reports the figure.
+     */
+    const paintSource = () => {
+      const estimated = readSource() === 'estimated';
+      if (methodField) methodField.hidden = !estimated;
+      const guidance = field('reporterGuidance');
+      if (guidance) guidance.hidden = estimated;
+      const method = estimated ? getEstimateMethod(str(methodField?.value)) : undefined;
+      if (method && unitField && str(unitField.value) !== method.unit) unitField.value = method.unit;
+    };
 
     // The breakdowns: headings and option rows, the Tags board's pattern.
     // Every edit, add, move or removal there lands here as a save.
@@ -376,6 +419,8 @@ for (const project of projects) {
         breakdowns: board.breakdowns(),
         reporterGuidance: str(field('reporterGuidance')?.value),
         status,
+        source: readSource(),
+        estimateMethod: readSource() === 'estimated' ? str(methodField?.value) || undefined : undefined,
       };
     };
 
@@ -396,6 +441,16 @@ for (const project of projects) {
       title.className = 'firma2-measure-editor__preview-title typography-label-md';
       title.textContent = measureDisplayName(record);
       card.append(title);
+
+      // Nothing to preview for an estimated measure: no reporter sees a form.
+      if (sourceOf(record) === 'estimated') {
+        const none = document.createElement('p');
+        none.className = 'typography-body-md';
+        none.textContent = 'Reporters never enter this. Each project shows its estimate.';
+        card.append(none);
+        paintBurden(preview.querySelector<HTMLElement>('[data-reporter-burden]'), reporterBurden(0));
+        return;
+      }
 
       const period = document.createElement('esa-select') as Control;
       period.setAttribute('label', 'Reporting period');
@@ -474,8 +529,16 @@ for (const project of projects) {
 
     // ---- save: every change, no Save button --------------------------------
     const save = () => {
+      paintSource();
       const record = readForm();
       persistMeasure(record);
+      // The source rides in its own store (src/lib/measure-source.ts); a
+      // choice equal to the seed's is cleared rather than kept.
+      const seed = seedMeasures.find((m) => m.slug === slug);
+      const same = seed
+        ? sourceOf(seed) === record.source && seed.estimateMethod === record.estimateMethod
+        : record.source === 'reported';
+      writeSourceChoice(slug, same ? null : { source: record.source ?? 'reported', estimateMethod: record.estimateMethod });
       emitMeasureChange(record);
       paintStatus();
       paintSimilar();
@@ -525,6 +588,7 @@ for (const project of projects) {
         'Reporter guidance': 'reporterGuidance',
         Unit: 'unit',
         'Whether values add up': 'countingRule',
+        Method: 'estimateMethod',
       };
       const needed = new Set(status === 'Draft' ? outstanding.map((f) => FIELD_FOR[f.label]) : []);
       Object.values(FIELD_FOR).forEach((name) => {
@@ -561,7 +625,9 @@ for (const project of projects) {
       // Published: the counted structure is fixed.
       const locked = status !== 'Draft';
       root.toggleAttribute('data-structure-locked', locked);
-      [unitField, ruleField].forEach((f) => f && (f.disabled = locked));
+      [unitField, ruleField, sourceField, methodField].forEach((f) => f && (f.disabled = locked));
+      // The method decides the unit; it is not set apart from it.
+      if (unitField && readSource() === 'estimated') unitField.disabled = true;
       // RETIRED IS READ-ONLY (user, 2026-10-09): it takes no new figures, and
       // editing its words or lists would rewrite what past figures meant.
       // Reactivate is the one act left.
@@ -581,6 +647,12 @@ for (const project of projects) {
 
     // ---- reach: every project, and the ones committed by a target ------------
     const projectSlugs = JSON.parse(root.dataset.projects ?? '[]') as string[];
+    const projectClasses = JSON.parse(root.dataset.projectClasses ?? '{}') as Record<string, string[]>;
+    /** The projects this measure is asked of: those a classification tracking it is on. */
+    const reachedProjects = (): number => {
+      const goals = goalsTracking(slug).map((g) => g.name);
+      return projectSlugs.filter((p) => (projectClasses[p] ?? []).some((c) => goals.includes(c))).length;
+    };
     const seedTargets = JSON.parse(root.dataset.seedTargets ?? '{}') as Record<string, SeedTarget[]>;
     const committed = () => projectsWithTarget(slug, seedTargets[slug] ?? [], projectSlugs);
     const plural = (n: number, one: string, many: string) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
@@ -615,6 +687,9 @@ for (const project of projects) {
       unitField!.value = record.unit ?? '';
       decimalsField!.value = String(record.decimalPlaces);
       ruleField!.value = record.countingRule ?? '';
+      if (sourceField) sourceField.value = sourceOf(record);
+      if (methodField) methodField.value = record.estimateMethod ?? '';
+      paintSource();
 
       board.setLocked(record.status !== 'Draft');
       board.setFrozen(record.status === 'Retired');
@@ -637,7 +712,7 @@ for (const project of projects) {
     // Values are assigned only after define — a `.value` set on a not-yet-
     // upgraded element shadows the lego's setter for good.
     Promise.all(['esa-text-field', 'esa-textarea', 'esa-select'].map((t) => customElements.whenDefined(t))).then(() =>
-      paint(withDraft(slug)),
+      paint(withSource(withDraft(slug))),
     );
 
     // ---- live edits ----------------------------------------------------------
@@ -661,9 +736,10 @@ for (const project of projects) {
     document.querySelector('[data-measure-actions] [data-editor-publish]')?.addEventListener('click', () => {
       if (!publishDialog) return setStatus('Published');
       const record = readForm();
-      const n = projectSlugs.length;
+      const n = reachedProjects();
       publishDialog.heading = `Publish “${measureDisplayName(record)}”?`;
-      publishDialog.message = `It goes on all ${plural(n, 'project', 'projects')}, locks the unit and whether values add up, and can’t be unpublished.`;
+      const where = n === 0 ? 'It goes on no project until a classification tracks it' : `It goes on the ${plural(n, 'project', 'projects')} its classifications cover`;
+      publishDialog.message = `${where}, locks the unit and whether values add up, and can’t be unpublished.`;
       publishDialog.show();
     });
     publishDialog?.addEventListener('resolved', (e) => {

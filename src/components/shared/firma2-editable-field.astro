@@ -170,6 +170,15 @@ interface Props {
    * blank should simply read blank (the project rows all omit it).
    */
   placeholder?: string;
+  /**
+   * control="select" only: one line per option on when to pick it, keyed by
+   * option — the list's own guidance (src/lib/vocabulary-guidance.ts). While
+   * the row is open, the line for the value it holds shows as the select's
+   * helper text, and follows the value. A caller may rewrite `data-guidance`
+   * at runtime (an administrator's edits live in the browser). Additive: a row
+   * without it behaves exactly as before.
+   */
+  guidance?: Record<string, string>;
 }
 
 const {
@@ -189,6 +198,7 @@ const {
   required = false,
   href,
   placeholder,
+  guidance,
 } = Astro.props;
 
 // The display's unset state, decided the same way the script re-decides it on
@@ -262,6 +272,7 @@ const hintId = `f2-edit-hint-${field}`;
   data-member-cards={Object.keys(memberCards).length ? JSON.stringify(memberCards) : undefined}
   data-member-hrefs={Object.keys(memberHrefs).length ? JSON.stringify(memberHrefs) : undefined}
   data-placeholder={placeholder || undefined}
+  data-guidance={guidance && Object.keys(guidance).length ? JSON.stringify(guidance) : undefined}
   data-label-hidden={labelHidden ? '' : undefined}
   data-adopt-display={adopts ? '' : undefined}
   hidden={adopts || undefined}
@@ -679,19 +690,26 @@ const hintId = `f2-edit-hint-${field}`;
      ↗ open-link (a sibling floating inside the same box) does not blink the
      ring off mid-gesture. The bare :hover fallback covers the page-title
      shape, whose body is display:contents and generates no hoverable box. */
-  .firma2-editable-field__display:hover,
-  .firma2-editable-field__body:hover .firma2-editable-field__display {
-    border-color: var(--form-border-color, #cecece);
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field__display:hover,
+    .firma2-editable-field__body:hover .firma2-editable-field__display {
+      border-color: var(--form-border-color, #cecece);
+    }
   }
   /* LOCKED: the value is kept elsewhere, so the row is read, not edited — no
      ring on hover and no text cursor inviting a click. Focus still shows: the
      button stays in the tab order, announcing the value and why it is fixed. */
   .firma2-editable-field[data-locked] .firma2-editable-field__display,
-  .firma2-editable-field[data-locked] .firma2-editable-field__body:hover .firma2-editable-field__display,
-  :global(html[data-record-mode='view']) .firma2-editable-field .firma2-editable-field__display,
-  :global(html[data-record-mode='view']) .firma2-editable-field .firma2-editable-field__body:hover .firma2-editable-field__display {
+  :global(html[data-record-mode='view']) .firma2-editable-field .firma2-editable-field__display {
     border-color: transparent;
     cursor: default;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field[data-locked] .firma2-editable-field__body:hover .firma2-editable-field__display,
+    :global(html[data-record-mode='view']) .firma2-editable-field .firma2-editable-field__body:hover .firma2-editable-field__display {
+      border-color: transparent;
+      cursor: default;
+    }
   }
   :global(.firma2-editable-field__locked-note) {
     margin: var(--spacing-100) 0 0;
@@ -735,9 +753,13 @@ const hintId = `f2-edit-hint-${field}`;
   .firma2-editable-field__open[hidden] {
     display: none;
   }
-  .firma2-editable-field__body:hover .firma2-editable-field__open,
   .firma2-editable-field__body:focus-within .firma2-editable-field__open {
     opacity: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field__body:hover .firma2-editable-field__open {
+      opacity: 1;
+    }
   }
   .firma2-editable-field[data-editing] .firma2-editable-field__open {
     display: none;
@@ -802,17 +824,24 @@ const hintId = `f2-edit-hint-${field}`;
     outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
     outline-offset: var(--focus-ring-offset, 2px);
   }
-  .firma2-editable-field__member-link:hover :global(.esa-pill) {
-    border-color: var(--color-border-default, #cecece);
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field__member-link:hover :global(.esa-pill) {
+      border-color: var(--color-border-default, #cecece);
+    }
   }
   /* The label underlines on hover — the one cue every reader already knows
      means "this text goes somewhere", worth customizing into the pill because
      nothing else on a chip says LINK rather than badge. On focus too, so the
      keyboard sees the same promise the pointer does. */
-  .firma2-editable-field__member-link:hover :global(.esa-pill__label),
   .firma2-editable-field__member-link:focus-visible :global(.esa-pill__label) {
     text-decoration: underline;
     text-underline-offset: 2px;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field__member-link:hover :global(.esa-pill__label) {
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
   }
 
   /* The fallback shape for a set with no pages behind it: the member is a
@@ -1366,20 +1395,36 @@ const hintId = `f2-edit-hint-${field}`;
    * here too. An OPEN row is left alone: a restore must never re-seed a field
    * out from under whatever is being typed into it.
    */
-  const setField = (field: string, raw: string): void => {
-    const row = document.querySelector<HTMLElement>(
-      `[data-editable-field][data-field="${CSS.escape(field)}"]`,
+  const rowsFor = (field: string): HTMLElement[] =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        `[data-editable-field][data-field="${CSS.escape(field)}"]`,
+      ),
     );
-    if (!row || isEditing(row)) return;
+
+  /**
+   * Paint one row from a raw value, through the same format branches a commit
+   * uses. `announce` is false for a MIRROR paint — see mirrorSave — so a value
+   * that was already announced once by the row that committed it is not
+   * announced a second time by every row that merely repeats it.
+   */
+  const paintRow = (row: HTMLElement, raw: string, announce = true): void => {
+    if (isEditing(row)) return;
     const display = valueOf(row);
     if (!display) return;
     const changed = raw !== row.dataset.raw;
     row.dataset.raw = raw;
+    // A quiet mirror still retires its ↗ door when the value changed, for the
+    // reason announceSave retires the origin's: the link pointed at the OLD
+    // value's page.
+    if (changed && !announce) {
+      row.querySelectorAll('[data-field-open]').forEach((door) => door.setAttribute('hidden', ''));
+    }
     const control = row.dataset.control ?? 'text';
     if (control === 'year-range') {
       const [start = '', end = ''] = raw.split(',').map((s) => s.trim());
       paintYearRange(display, start, end);
-      if (changed) announceSave(row, `${start}–${end}`);
+      if (changed && announce) announceSave(row, `${start}–${end}`);
     } else if (control === 'multi-select') {
       let members: string[] = [];
       try {
@@ -1391,15 +1436,23 @@ const hintId = `f2-edit-hint-${field}`;
       paintMembers(row, display, members);
       if (members.length === 0) paintText(row, display, '');
       else display.classList.remove('firma2-editable-field__value--unset');
-      if (changed) announceSave(row, members.join(', '));
+      if (changed && announce) announceSave(row, members.join(', '));
     } else if (row.dataset.format === 'currency') {
       const amount = Number(raw);
       display.textContent = Number.isFinite(amount) ? currencyFormatter.format(amount) : raw;
-      if (changed) announceSave(row, display.textContent ?? '');
+      if (changed && announce) announceSave(row, display.textContent ?? '');
     } else {
       paintText(row, display, raw);
-      if (changed) announceSave(row, raw);
+      if (changed && announce) announceSave(row, raw);
     }
+  };
+
+  // EVERY row of the field, not the first: a field may be rendered twice on one
+  // page (the project record repeats four Key facts in a strip under its title,
+  // Linear-style, and keeps them in the rail). The first row announces; the rest
+  // are mirrors of it and stay quiet, or one restore would announce N times.
+  const setField = (field: string, raw: string): void => {
+    rowsFor(field).forEach((row, i) => paintRow(row, raw, i === 0));
   };
 
   const onFieldSet = (event: Event): void => {
@@ -1407,6 +1460,22 @@ const hintId = `f2-edit-hint-${field}`;
     if (typeof detail.field === 'string' && typeof detail.raw === 'string') {
       setField(detail.field, detail.raw);
     }
+  };
+
+  /**
+   * A ROW THAT COMMITTED REPAINTS ITS TWINS. Same field, other rows, same raw
+   * value, no second announcement — the committing row has already said it once
+   * and every listener (breadcrumb, tab title, the publish state) heard it. The
+   * twin is skipped while it is open: a restore must never re-seed a field out
+   * from under whatever is being typed into it, and neither must a sibling.
+   */
+  const mirrorSave = (event: Event): void => {
+    const origin = event.target as HTMLElement | null;
+    const detail = (event as CustomEvent<{ field?: unknown; raw?: unknown }>).detail ?? {};
+    if (!origin || typeof detail.field !== 'string' || typeof detail.raw !== 'string') return;
+    rowsFor(detail.field)
+      .filter((row) => row !== origin)
+      .forEach((row) => paintRow(row, detail.raw as string, false));
   };
 
   /**
@@ -1698,6 +1767,7 @@ const hintId = `f2-edit-hint-${field}`;
     document.addEventListener('click', onClick);
     document.addEventListener('keydown', onKeydown, true);
     document.addEventListener('firma2:field-set', onFieldSet);
+    document.addEventListener('firma2:field-save', mirrorSave);
     document.addEventListener('astro:page-load', () => hydrate());
     // Rows that arrive AFTER load — the project peek sheet clones a record's
     // rows out of a <template>, whose content the load-time hydrate() can
@@ -1710,4 +1780,37 @@ const hintId = `f2-edit-hint-${field}`;
     });
   }
   hydrate();
+</script>
+
+<script>
+  // GUIDANCE UNDER AN OPEN SELECT (the `guidance` prop). Kept apart from the
+  // choreography above so a row without guidance runs none of it: while a row
+  // carrying [data-guidance] is open, its select's helper text is the line for
+  // the value it holds; closing clears it. Watched, not called, because rows
+  // open from several paths (click, Enter, a commit opening the next row).
+  type GuidedSelect = HTMLElement & { value?: unknown; helpText?: string };
+  const guidanceOf = (row: HTMLElement): Record<string, string> => {
+    try {
+      return JSON.parse(row.dataset.guidance ?? '{}');
+    } catch {
+      return {};
+    }
+  };
+  const paintGuidance = (row: HTMLElement) => {
+    const input = row.querySelector<GuidedSelect>('[data-field-input]');
+    if (!input || row.dataset.control !== 'select') return;
+    const open = row.hasAttribute('data-editing');
+    const value = String(input.value ?? row.dataset.raw ?? '');
+    input.helpText = open ? (guidanceOf(row)[value] ?? '') : '';
+  };
+  new MutationObserver((records) => {
+    records.forEach((r) => {
+      const row = r.target as HTMLElement;
+      if (row.hasAttribute('data-guidance')) paintGuidance(row);
+    });
+  }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-editing'] });
+  document.addEventListener('change', (event) => {
+    const row = (event.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-editable-field][data-guidance]');
+    if (row) paintGuidance(row);
+  });
 </script>

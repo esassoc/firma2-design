@@ -1,0 +1,167 @@
+---
+// PROTOTYPE riff C — Wall. Axis: PHOTOS WOVEN THROUGH THE NUMBERS.
+// Keeps the rail and the document. Replaces the facts strip and the photo
+// card with one bento at the top where photographs and big figures share a
+// grid: the lead photo large, then a figure, a photo, a figure — each number
+// sitting beside a picture of the ground it counts. Below, the sections run
+// as one unboxed document (hairlines, no card frames).
+//
+// bcn-lego-checked: prototype-only — figures are esa-stat, photos are the prototype mosaic tile (lightbox is the gallery's esa-dialog); the interleaved grid and tile surface are prototype CSS
+import EsaStat from '@esa/ecology/esa-stat.astro';
+import Firma2ProjectDescription from '../../components/projects/firma2-project-description.astro';
+import Firma2ProjectMeasures from '../../components/projects/firma2-project-measures.astro';
+import Firma2ProjectExpenditures from '../../components/projects/firma2-project-expenditures.astro';
+import Firma2ProjectFunding from '../../components/projects/firma2-project-funding.astro';
+import Firma2ProjectTimeline from '../../components/projects/firma2-project-timeline.astro';
+import Firma2ProjectGallery from '../../components/projects/firma2-project-gallery.astro';
+import Firma2ProjectComments from '../../components/projects/firma2-project-comments.astro';
+import ProtoLightboxHost from './proto-lightbox-host.astro';
+import { projectSlug } from '../../data/firma2-projects';
+import type { ProjectDetail } from '../../data/firma2-project-detail';
+import { photoSrc } from '../../lib/project-photos';
+
+interface Props { detail: ProjectDetail }
+const { detail } = Astro.props;
+const slug = projectSlug(detail.project);
+const p = detail.project;
+
+const pct = (part: number, whole: number) => (whole > 0 ? Math.min(100, Math.round((part / whole) * 100)) : 0);
+const num = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
+const usdShort = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2 });
+const spent = detail.expenditures.filter((y) => y.status !== 'upcoming').reduce((s, y) => s + y.spent, 0);
+const next = detail.milestones.find((m) => m.status === 'current') ?? detail.milestones.find((m) => m.status === 'upcoming');
+
+type Tile =
+  | { kind: 'photo'; i: number; lead?: boolean }
+  | { kind: 'stat'; value: string; label: string; sub?: string }
+  | { kind: 'text'; label: string; title: string; meta: string };
+
+const stats: Tile[] = [
+  { kind: 'stat', value: usdShort(spent), label: `Spent of ${usdShort(p.estimatedTotalCost)}` },
+  ...detail.measures.slice(0, 3).map((m): Tile => ({
+    kind: 'stat',
+    value: `${pct(m.reported, m.expected)}%`,
+    label: m.name,
+    sub: `${num(m.reported)} of ${num(m.expected)} ${m.unit}`,
+  })),
+  ...(next ? [{ kind: 'text', label: 'Next milestone', title: next.title, meta: next.date } as Tile] : []),
+];
+const photos = detail.photos.map((_, i): Tile => ({ kind: 'photo', i, lead: i === 0 }));
+// Lead photo first, then alternate figure / photo until both run out.
+const tiles: Tile[] = [];
+if (photos.length) tiles.push(photos.shift()!);
+while (stats.length || photos.length) {
+  if (stats.length) tiles.push(stats.shift()!);
+  if (photos.length) tiles.push(photos.shift()!);
+}
+---
+<div class="proto-wall">
+  {tiles.map((t) =>
+    t.kind === 'photo' ? (
+      <button
+        class:list={['proto-wall__photo', t.lead && 'proto-wall__photo--lead']}
+        type="button"
+        data-lightbox-open={String(t.i)}
+        aria-label={`View photo: ${detail.photos[t.i].caption}`}
+      >
+        <img src={photoSrc(detail.photos[t.i], t.lead ? 1200 : 640, t.lead ? 900 : 640, 70)} alt="" loading={t.lead ? 'eager' : 'lazy'} decoding="async" />
+      </button>
+    ) : t.kind === 'stat' ? (
+      <div class="proto-wall__tile"><EsaStat value={t.value} label={t.label} sub={t.sub} /></div>
+    ) : (
+      <div class="proto-wall__tile stack" data-gap="xs">
+        <span class="typography-label-md proto-wall__muted">{t.label}</span>
+        <span class="typography-title-strong">{t.title}</span>
+        <span class="typography-body-sm proto-wall__muted">{t.meta}</span>
+      </div>
+    ),
+  )}
+</div>
+{detail.photos.length > 0 && <ProtoLightboxHost photos={detail.photos} />}
+
+<div class="proto-wall-doc">
+  <Firma2ProjectDescription description={detail.projectDescription} />
+  <Firma2ProjectMeasures measures={detail.measures} projectSlug={slug} />
+  <div class="proto-wall-doc__pair">
+    <Firma2ProjectExpenditures
+      expenditures={detail.expenditures}
+      estimatedTotalCost={p.estimatedTotalCost}
+      estimatedAnnualOperatingCost={p.estimatedAnnualOperatingCost}
+      projectSlug={slug}
+    />
+    <Firma2ProjectFunding funding={detail.funding} estimatedTotalCost={p.estimatedTotalCost} />
+  </div>
+  <Firma2ProjectTimeline milestones={detail.milestones} />
+  {detail.photos.length === 0 && <Firma2ProjectGallery photos={detail.photos} />}
+  <Firma2ProjectComments comments={detail.comments} />
+</div>
+
+<style>
+  .proto-wall {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: minmax(9.5rem, auto);
+    grid-auto-flow: row dense;
+    gap: var(--spacing-300, 0.75rem);
+  }
+  .proto-wall__photo--lead { grid-column: span 2; grid-row: span 2; }
+
+  .proto-wall__tile {
+    min-inline-size: 0;
+    padding: var(--spacing-400, 1rem);
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-background-elevation-sunken, #f4f5f4);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .proto-wall__muted { color: var(--color-content-default-secondary, #60655f); }
+
+  .proto-wall__photo {
+    position: relative;
+    min-inline-size: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+    background: var(--color-background-elevation-sunken, #f4f5f4);
+    cursor: zoom-in;
+  }
+  .proto-wall__photo:focus-visible {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, currentColor);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+  .proto-wall__photo img {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    outline: 1px solid rgb(0 0 0 / 0.1);
+    outline-offset: -1px;
+    border-radius: inherit;
+    transition: transform 300ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .proto-wall__photo:hover img { transform: scale(1.03); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .proto-wall__photo img { transition: none; }
+  }
+
+  @media (max-width: 45rem) {
+    .proto-wall { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  .proto-wall-doc { display: flex; flex-direction: column; }
+  .proto-wall-doc > :global(*),
+  .proto-wall-doc__pair {
+    padding-block: var(--spacing-600, 2rem);
+    border-block-start: 1px solid var(--color-border-default-subtle, rgb(0 0 0 / 0.08));
+  }
+  .proto-wall-doc > :global(*:first-child) { border-block-start: 0; padding-block-start: var(--spacing-300, 0.75rem); }
+  .proto-wall-doc__pair { display: flex; flex-direction: column; gap: var(--spacing-600, 2rem); }
+  .proto-wall-doc__pair > :global(*) { padding: 0; border: 0; }
+  .proto-wall-doc :global(.esa-card) { --_card-padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
+  .proto-wall-doc :global(.esa-card__header) { padding-block-start: 0; }
+</style>

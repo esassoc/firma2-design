@@ -7,12 +7,12 @@
 // member. Organization permissions is about everyone INSIDE it: which of the
 // members may change what. Separate headings, because an administrator answers
 // them at different times — the first once, at setup; the second whenever a
-// steward leaves.
+// manager leaves.
 //
-// LINEAR'S TEAM PERMISSIONS. Each act is "all members" or "only stewards" (its
+// LINEAR'S TEAM PERMISSIONS. Each act is "all members" or "only managers" (its
 // team owners), and nothing is inherited from the workspace's own settings.
 // Two acts are not on the list because they never widen: making the
-// organization private, and naming another steward.
+// organization private, and naming another manager.
 //
 // SELECTS THROUGHOUT. Radios were tried for the two choices of three and cut
 // (user call): one control type down the page reads as one form, matches
@@ -23,12 +23,15 @@
 // shows only the one it holds. So each access select's help-text states what
 // the SELECTED option means, and the script below swaps it on change.
 //
-// DEFAULTS: Public; invitation required; every permission stewards-only — the
-// safe end of each permission, since widening is one edit and narrowing after
+// THE ORGANIZATION'S OWN ANSWERS seed the two access selects — its visibility
+// and how people join, as the directory holds them. A new organization starts
+// Public with Approval required (.scratch/access-requests/spec.md, decisions 5
+// and 30): anyone can ask, a manager decides. Every permission starts
+// managers-only — the safe end, since widening is one edit and narrowing after
 // the fact cannot take back what was already changed.
 //
 // APPROVED EMAIL DOMAINS sit between the two, as their own section
-// (firma2-organization-domains): a way in, so they follow access, and steward-
+// (firma2-organization-domains): a way in, so they follow access, and manager-
 // only.
 //
 // No Save: each control commits on change, the spoke's one model.
@@ -38,8 +41,16 @@
 // the fields; no bespoke flex and no <style> block.
 import Firma2RailSection from '../shared/firma2-rail-section.astro';
 import Firma2OrganizationDomains from './firma2-organization-domains.astro';
+import Firma2InheritedAccess from './firma2-inherited-access.astro';
 import { visibilityChoices, joiningChoices, currentOrganization } from '../../data/firma2-directory';
-import type { AccessChoice } from '../../data/firma2-directory';
+import type { AccessChoice, Organization } from '../../data/firma2-directory';
+
+interface Props {
+  /** Whose access this is; the signed-in reader's organization by default. */
+  organization?: Organization;
+}
+
+const org = Astro.props.organization ?? currentOrganization();
 
 interface ChoiceGroup {
   name: string;
@@ -52,20 +63,20 @@ interface ChoiceGroup {
 const visibility: ChoiceGroup = {
   name: 'visibility',
   label: 'Who can see this organization and its projects',
-  value: 'public',
+  value: org.visibility,
   choices: visibilityChoices,
 };
 
 const joining: ChoiceGroup = {
   name: 'joining',
   label: 'How people join',
-  value: 'invite',
+  value: org.joining,
   choices: joiningChoices,
 };
 
 const audience = JSON.stringify([
   { value: 'members', label: 'All organization members' },
-  { value: 'stewards', label: 'Only stewards' },
+  { value: 'managers', label: 'Only managers' },
 ]);
 
 // The actions, in the order an organization grows into them: its settings, then
@@ -74,10 +85,9 @@ const permissions = [
   { name: 'perm-settings', label: 'Manage settings', hint: 'Includes this page.' },
   { name: 'perm-pinned', label: 'Manage pinned projects' },
   { name: 'perm-landing', label: 'Manage the default view' },
-  { name: 'perm-members', label: 'Manage members', hint: 'Only stewards invite people new to the workspace.' },
+  { name: 'perm-members', label: 'Manage members', hint: 'Only managers invite people new to the workspace.' },
 ];
 
-const org = currentOrganization();
 const hintFor = (g: ChoiceGroup) => g.choices.find((c) => c.value === g.value)?.hint || undefined;
 const optionsFor = (g: ChoiceGroup) => JSON.stringify(g.choices.map(({ value, label }) => ({ value, label })));
 const hintsFor = (g: ChoiceGroup) => JSON.stringify(Object.fromEntries(g.choices.map((c) => [c.value, c.hint])));
@@ -103,6 +113,7 @@ const hintsFor = (g: ChoiceGroup) => JSON.stringify(Object.fromEntries(g.choices
 
   <Firma2RailSection title="Organization permissions">
     <div class="stack" data-gap="md">
+      <Firma2InheritedAccess scope="organization-permissions" organization={org} />
       {permissions.map((p) => (
         <esa-select
           name={p.name}
@@ -110,7 +121,7 @@ const hintsFor = (g: ChoiceGroup) => JSON.stringify(Object.fromEntries(g.choices
           help-text={p.hint}
           size="md"
           options={audience}
-          data-seed="stewards"
+          data-seed="managers"
         ></esa-select>
       ))}
     </div>

@@ -152,12 +152,45 @@ export const UNITS = [
   'pounds', 'tons', 'tons per year',
   // water
   'acre-feet per year',
+  // carbon
+  'tonnes CO2e per year',
   // effort and money
   'hours', 'dollars',
   // condition readings
   'percent', 'degrees Celsius', 'cubic feet per second', 'parts per million',
 ] as const;
 export type MeasureUnit = (typeof UNITS)[number];
+
+/**
+ * The units a work area's own geometry can answer: an extent in acres, a
+ * length in miles or feet. A measure in one of these shows the figure the
+ * project's mapped shapes add up to beside whatever a person reported — a
+ * fact derived from the shapes, labelled as such, never a stand-in for the
+ * reported figure (product brief, "Only compare two things the record
+ * actually holds"). Everything else (counts, mass, money, readings) has no
+ * shape to measure.
+ */
+export type GeometricQuantity = 'area' | 'length';
+
+export const geometricQuantity = (unit: string | undefined): GeometricQuantity | null =>
+  unit === 'acres' || unit === 'square feet' ? 'area' : unit === 'miles' || unit === 'linear feet' ? 'length' : null;
+
+/**
+ * WHERE A MEASURE'S FIGURE COMES FROM (docs/measure-model.md, "Where a value
+ * comes from"). `reported` is the default and the only source the evidence
+ * catalogs knew: a person types it. `estimated` is the fourth source — a
+ * METHOD works it out from what the record already holds (the work areas,
+ * the practice, the region), so nobody types it and nobody can. Absent means
+ * reported, so every seed and every older draft keeps its meaning.
+ */
+export type MeasureSource = 'reported' | 'estimated';
+
+export const MEASURE_SOURCES: { id: MeasureSource; label: string }[] = [
+  { id: 'reported', label: 'Reporters enter it' },
+  { id: 'estimated', label: 'Estimated by a method' },
+];
+
+export const sourceOf = (m: Pick<PerformanceMeasureDefinition, 'source'>): MeasureSource => m.source ?? 'reported';
 
 // ---------------------------------------------------------------------------
 // Reporting periods — tenant-wide, real dates, always shown by NAME
@@ -231,6 +264,10 @@ export interface PerformanceMeasureDefinition {
   /** Instruction shown at the moment a value is entered. */
   reporterGuidance: string;
   status: MeasureStatus;
+  /** Who supplies the figure. Absent: a reporter (see MeasureSource). */
+  source?: MeasureSource;
+  /** An `estimated` measure's method (src/data/firma2-estimate-methods.ts). */
+  estimateMethod?: string;
 }
 
 export const measures: PerformanceMeasureDefinition[] = [
@@ -500,6 +537,27 @@ export const measures: PerformanceMeasureDefinition[] = [
     reporterGuidance: 'Report miles the day the route opens to the public, not when construction ends.',
     status: 'Published',
   },
+  {
+    // THE ESTIMATED MEASURE (2026-11-12, after FieldDoc's model-run
+    // estimates): nobody types this figure. Its method multiplies each mapped
+    // area by a coefficient for the project's practice in the region the area
+    // sits in. Tracked by the two practices the method has coefficients for,
+    // so it is asked only of projects that use one.
+    slug: 'carbon-sequestered',
+    claim: 'Our climate funder wants a yearly carbon figure for the planting and rewetting we do.',
+    name: 'Carbon stored per year',
+    definition:
+      'Estimated tonnes of carbon dioxide equivalent taken up each year by the planted or rewetted ground, from the mapped area, the practice and the region.',
+    classifications: ['Native planting', 'Meadow & marsh rewetting'],
+    unit: 'tonnes CO2e per year',
+    decimalPlaces: 0,
+    countingRule: 'sum',
+    breakdowns: owned(),
+    reporterGuidance: '',
+    status: 'Published',
+    source: 'estimated',
+    estimateMethod: 'planting-rewetting-carbon',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -586,7 +644,12 @@ export const outstandingFields = (m: PerformanceMeasureDefinition): OutstandingF
   const missing: OutstandingField[] = [];
   if (!m.name.trim()) missing.push({ label: 'Measure name' });
   if (!m.definition.trim()) missing.push({ label: 'Definition' });
-  if (!m.reporterGuidance.trim()) missing.push({ label: 'Reporter guidance' });
+  // An estimated measure has no reporter to guide; it needs its method.
+  if (sourceOf(m) === 'estimated') {
+    if (!m.estimateMethod) missing.push({ label: 'Method' });
+  } else if (!m.reporterGuidance.trim()) {
+    missing.push({ label: 'Reporter guidance' });
+  }
   if (!m.unit) missing.push({ label: 'Unit' });
   if (!m.countingRule) missing.push({ label: 'Whether values add up' });
   return missing;

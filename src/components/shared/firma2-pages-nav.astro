@@ -14,6 +14,18 @@
 // document and Add folder. All three are PAGES, not dialogs, like every other
 // add in this spoke.
 //
+// THE DASHBOARDS GROUP IS THIS COMPONENT'S TOO (2026-11-12): the workspace's
+// Progress Dashboard, then every dashboard added. Its heading carries a + that
+// goes straight to Add dashboard, and each added row the same "…" — Edit,
+// Rename, Copy link, Delete. Dashboards are stored with the pages but are
+// never filed in a folder and never dragged.
+//
+// THE DASHBOARDS GROUP FOLDS (user, 2026-11-12): a chevron beside its heading
+// hides the group's rows and brings them back, remembered per browser. It
+// opens on its own when the page being read is one of its dashboards — the
+// rule folders follow — and the icon strip always shows the rows, since the
+// strip has no heading to unfold them from.
+//
 // EACH FOLDER ROW CARRIES A "…" the same way, revealed on hover or focus:
 // Add page and Add document (each with this folder already chosen), Rename
 // folder and Delete folder. Deleting a folder never deletes its pages:
@@ -67,6 +79,16 @@ import EsaButton from '@esa/ecology/esa-button.astro';
     <EsaButton variant="chrome" size="xs" iconOnly icon="plus" label="Add to Pages" />
   </esa-dropdown-menu>
 </template>
+<template data-dashboards-add>
+  <span slot="dashboards-action">
+    <EsaButton variant="chrome" size="xs" iconOnly icon="plus" label="Add dashboard" />
+  </span>
+</template>
+<template data-dashboards-fold>
+  <span class="firma2-pages-nav__fold" slot="dashboards-toggle">
+    <EsaButton variant="chrome" size="xs" iconOnly icon="chevron-down" label="Collapse Dashboards" />
+  </span>
+</template>
 <template data-row-rename>
   <esa-text-field class="firma2-pages-nav__rename" size="md"></esa-text-field>
 </template>
@@ -109,10 +131,10 @@ import EsaButton from '@esa/ecology/esa-button.astro';
   import '@esa/ecology/esa-confirm-dialog';
   import { iconSvg } from '@esa/ecology/icon-registry';
   import './bcn-sortable-list';
-  import { PAGES_GROUP, NO_FOLDER_LABEL, pageRoute, itemRoute } from '../../data/firma2-pages';
+  import { PAGES_GROUP, DASHBOARDS_GROUP, MAIN_DASHBOARD, NO_FOLDER_LABEL, pageRoute, itemRoute } from '../../data/firma2-pages';
   import type { CustomEntry } from '../../data/firma2-pages';
   import {
-    arrange, findItem, findDocument, movePage, pageIdFromHref, pagesNavItems, readEntries, readFolders, readPagesEnabled, readTree,
+    arrange, dashboardNavItems, findItem, findDocument, movePage, pageIdFromHref, pagesNavItems, readEntries, readFolders, readPagesEnabled, readTree,
     removeFolder, removePage, renameFolder, takeJustAdded, updatePage,
   } from '../../lib/custom-pages';
   import type { PagesNavItem } from '../../lib/custom-pages';
@@ -127,7 +149,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
   type Confirm = Dialog & { message: string; confirmLabel: string };
   type Radio = HTMLElement & { options: { value: string; label: string }[]; value: string | null };
   type Toasts = HTMLElement & { show(o: { message: string; variant: string }): void };
-  type Kind = 'folder' | 'page' | 'document';
+  type Kind = 'folder' | 'page' | 'document' | 'dashboard';
 
   // Icons are registry names (Lucide's), drawn by drawMenuIcons.
   const ROW_MENUS: Record<Kind, { label: string; action: string; icon: string; variant?: string }[]> = {
@@ -151,8 +173,16 @@ import EsaButton from '@esa/ecology/esa-button.astro';
       { label: 'Move document', action: 'move', icon: 'folder-input' },
       { label: 'Delete document', action: 'delete', icon: 'trash-2', variant: 'danger' },
     ],
+    // A dashboard sits in the Dashboards group, never in a folder, so it has
+    // no Move. Edit opens it with its charts ready to change.
+    dashboard: [
+      { label: 'Edit dashboard', action: 'edit', icon: 'pencil' },
+      { label: 'Rename dashboard', action: 'rename', icon: 'text-cursor-input' },
+      { label: 'Copy link', action: 'copy', icon: 'link' },
+      { label: 'Delete dashboard', action: 'delete', icon: 'trash-2', variant: 'danger' },
+    ],
   };
-  const NOUN: Record<Kind, string> = { folder: 'folder', page: 'page', document: 'document' };
+  const NOUN: Record<Kind, string> = { folder: 'folder', page: 'page', document: 'document', dashboard: 'dashboard' };
 
   // The Move dialog's value for "no folder" — esa-radio-group needs a string.
   const TOP = 'top';
@@ -164,10 +194,10 @@ import EsaButton from '@esa/ecology/esa-button.astro';
   };
 
   const counted = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
-  const movedCopy = (pages: number, docs: number): string => {
-    if (!pages && !docs) return '';
-    if (pages + docs === 1) return `Its ${pages ? 'page' : 'document'} moves to the top of Pages.`;
-    const what = [pages && counted(pages, 'page'), docs && counted(docs, 'document')].filter(Boolean).join(' and ');
+  const movedCopy = (pages: number, docs: number, dashboards = 0): string => {
+    if (!pages && !docs && !dashboards) return '';
+    if (pages + docs + dashboards === 1) return `Its ${pages ? 'page' : docs ? 'document' : 'dashboard'} moves to the top of Pages.`;
+    const what = [pages && counted(pages, 'page'), docs && counted(docs, 'document'), dashboards && counted(dashboards, 'dashboard')].filter(Boolean).join(' and ');
     return `Its ${what} move to the top of Pages.`;
   };
 
@@ -179,6 +209,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
   const ADD_ROUTES: Record<string, string> = {
     'add-page': '/prototypes/pages/new',
     'add-document': '/prototypes/pages/new-document',
+    'add-dashboard': '/prototypes/pages/new-dashboard',
     'add-folder': '/prototypes/pages/new-folder',
   };
   // Each add returns to the page it was started from (`from`). A folder's
@@ -190,6 +221,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
   // Which group headings carry a +, and the slot each one projects.
   const HEADING_ACTIONS = [
     { group: PAGES_GROUP, slot: 'pages-action' },
+    { group: DASHBOARDS_GROUP, slot: 'dashboards-action' },
   ];
   const ADD_MENU = [
     { label: 'Add page', action: 'add-page' },
@@ -219,6 +251,15 @@ import EsaButton from '@esa/ecology/esa-button.astro';
     }
     :host([collapsed]) slot[name$='-action'] { display: none; }
 
+    /* A HEADING THAT FOLDS ITS GROUP: the chevron sits right after the label,
+       so the + keeps the trailing edge. Rows are hidden, not removed — the
+       rail's items stay whole, and only an open rail folds. */
+    :host(:not([collapsed])) .group-heading[data-firma2-toggle] { justify-content: flex-start; gap: var(--spacing-100, 4px); }
+    .group-heading[data-firma2-toggle] slot[name$='-action']::slotted(*) { margin-inline-start: auto; }
+    ::slotted([slot$='-toggle']) { flex: none; margin-block: calc(-1 * var(--spacing-200, 8px)); }
+    :host([collapsed]) slot[name$='-toggle'] { display: none; }
+    :host(:not([collapsed])) li[data-firma2-folded] { display: none; }
+
     /* THE ROW "…" sits over the row's trailing edge — on a folder just inside
        the chevron, on a page in the same column, so the "…" line up down the
        rail. It shows only while its own row is hovered or focused, or its menu
@@ -234,10 +275,12 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 
        The product rows' "…" (firma2-nav-arrange) are styled here too: any
        [data-row-menu] slotted into a row. A row with a chevron (a folder, or a
-       product parent row: data-firma2-row="parent") keeps the narrower margin. */
+       product parent row: data-firma2-row="parent") keeps the narrower margin.
+       Only while the rail is open: collapsed, the lego zeroes the label, and a
+       margin left on it shoved every 72px-strip icon off the rail's left edge. */
     li:has(> slot[data-firma2-row]) { position: relative; }
-    li:has(> slot[data-firma2-row]) > .link .label { margin-inline-end: var(--spacing-800, 2rem); }
-    li:has(> slot[data-firma2-row]:not([data-firma2-row='folder'], [data-firma2-row='parent'])) > .link .label { margin-inline-end: calc(var(--spacing-800, 2rem) + 16px); }
+    :host(:not([collapsed])) li:has(> slot[data-firma2-row]) > .link .label { margin-inline-end: var(--spacing-800, 2rem); }
+    :host(:not([collapsed])) li:has(> slot[data-firma2-row]:not([data-firma2-row='folder'], [data-firma2-row='parent'])) > .link .label { margin-inline-end: calc(var(--spacing-800, 2rem) + 16px); }
     slot[data-firma2-row]::slotted([data-row-menu]) {
       position: absolute;
       inset-block-start: 0;
@@ -247,7 +290,9 @@ import EsaButton from '@esa/ecology/esa-button.astro';
       align-items: center;
     }
     li.child > slot[data-firma2-row]::slotted([data-row-menu]) { height: 36px; }
-    li:not(:has(> .link:hover, > .link:focus-visible, > slot:hover)) > slot[data-firma2-row]::slotted(:not([open]):not(:focus-within)),
+    @media (hover: hover) and (pointer: fine) {
+      li:not(:has(> .link:hover, > .link:focus-visible, > slot:hover)) > slot[data-firma2-row]::slotted(:not([open]):not(:focus-within)) { opacity: 0; }
+    }
     :host([data-firma2-dragging]) slot[data-firma2-row]::slotted(*) { opacity: 0; }
     :host([collapsed]) slot[data-firma2-row] { display: none; }
     /* The rename field, slotted beside the "…": placed by the script so its
@@ -272,6 +317,29 @@ import EsaButton from '@esa/ecology/esa-button.astro';
       slot.name = name;
       heading.appendChild(slot);
     });
+    // The fold chevron's slot goes straight after the label, before the +.
+    const folding = headings.find((h) => h.querySelector('.group-label')?.textContent?.trim() === DASHBOARDS_GROUP);
+    if (folding && !folding.querySelector('slot[name="dashboards-toggle"]')) {
+      folding.dataset.firma2Toggle = '';
+      const slot = document.createElement('slot');
+      slot.name = 'dashboards-toggle';
+      folding.querySelector('.group-label')?.after(slot);
+    }
+  }
+
+  const FOLD_KEY = 'firma2:dashboards-folded';
+  /** Hides or shows the Dashboards group's rows: every li from its heading to the next. */
+  function applyFold(root: ShadowRoot, folded: boolean): void {
+    const heading = Array.from(root.querySelectorAll<HTMLElement>('.group-heading')).find(
+      (h) => h.querySelector('.group-label')?.textContent?.trim() === DASHBOARDS_GROUP,
+    );
+    // Lit reuses row elements by position, so a mark left from before can sit
+    // on a row of another group: clear them all, then mark this group's.
+    root.querySelectorAll('li[data-firma2-folded]').forEach((li) => li.removeAttribute('data-firma2-folded'));
+    if (!heading || !folded) return;
+    for (let li = heading.nextElementSibling; li && !li.classList.contains('group-heading'); li = li.nextElementSibling) {
+      li.setAttribute('data-firma2-folded', '');
+    }
   }
 
   // Which kind each page-or-document id is — a row's href names the id but not
@@ -318,7 +386,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
     // ---- rows: seeds plus this browser's adds, edits, deletes and order ----
     // The page being read is marked by the page view's own element, so this
     // never has to know that page's route.
-    const reading = document.querySelector<HTMLElement>('[data-custom-page], [data-custom-document]');
+    const reading = document.querySelector<HTMLElement>('[data-custom-page], [data-custom-document], [data-custom-dashboard]');
     const activeId = reading ? new URLSearchParams(location.search).get('id') ?? undefined : undefined;
 
     // A folder opens on its own when you are reading one of its pages, or when
@@ -330,7 +398,10 @@ import EsaButton from '@esa/ecology/esa-button.astro';
       const entries = readEntries();
       // Custom pages switched off in settings: no group, so no heading and no +.
       const rows = readPagesEnabled() ? pagesNavItems(entries, activeId) : [];
-      rail.items = [...rail.items.filter((i) => i.group !== PAGES_GROUP), ...rows];
+      // Dashboards keep their group whether or not custom pages are on.
+      const onMain = location.pathname.replace(/\/$/, '').endsWith(MAIN_DASHBOARD.href);
+      const dashboards = dashboardNavItems(entries, activeId, onMain);
+      rail.items = [...rail.items.filter((i) => i.group !== PAGES_GROUP && i.group !== DASHBOARDS_GROUP), ...dashboards, ...rows];
       const open = rows
         .filter((r) => r.children?.some((c) => c.active) || r.label === openLabel)
         .map((r) => r.label);
@@ -398,7 +469,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
       target = { kind, id, name };
       const action = (event as CustomEvent<string>).detail;
 
-      if (action === 'add-page' || action === 'add-document') {
+      if (action === 'add-page' || action === 'add-document' || action === 'add-dashboard') {
         location.assign(addRoute(action, { folder: id }));
       } else if (action === 'download') {
         const doc = findDocument(id);
@@ -411,6 +482,10 @@ import EsaButton from '@esa/ecology/esa-button.astro';
         a.href = href;
         a.download = doc.file.name;
         a.click();
+      } else if (action === 'edit' && kind === 'dashboard') {
+        // The dashboard's own Edit: the same switch its top bar carries.
+        if (id === activeId) document.querySelector<HTMLElement>('[data-mode-edit]')?.click();
+        else location.assign(`${itemUrl(id)}&edit`);
       } else if (action === 'edit') {
         if (id === activeId) focusText();
         else location.assign(`${withBase(pageRoute(id))}&edit`);
@@ -433,11 +508,12 @@ import EsaButton from '@esa/ecology/esa-button.astro';
           confirmDelete.message = movedCopy(
             inside.filter((e) => e.kind === 'page').length,
             inside.filter((e) => e.kind === 'document').length,
+            inside.filter((e) => e.kind === 'dashboard').length,
           );
           confirmDelete.confirmLabel = 'Delete folder';
-        } else if (kind === 'document') {
+        } else if (kind === 'document' || kind === 'dashboard') {
           confirmDelete.message = 'It’s deleted for everyone and can’t be undone.';
-          confirmDelete.confirmLabel = 'Delete document';
+          confirmDelete.confirmLabel = `Delete ${NOUN[kind]}`;
         } else {
           confirmDelete.message = 'It’s deleted for everyone and can’t be undone.';
           confirmDelete.confirmLabel = 'Delete page';
@@ -466,7 +542,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
       await field.updateComplete;
       const input = field.shadowRoot?.querySelector<HTMLInputElement>('input');
       if (!input) return;
-      input.setAttribute('aria-label', kind === 'folder' ? 'Folder name' : kind === 'document' ? 'Document title' : 'Page title');
+      input.setAttribute('aria-label', kind === 'folder' ? 'Folder name' : kind === 'document' ? 'Document title' : kind === 'dashboard' ? 'Dashboard title' : 'Page title');
 
       // The field wears the label's type, so the name does not change size
       // as it becomes editable, and an opaque fill over the rail's tint.
@@ -600,7 +676,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
           const icon = document.createElement('span');
           icon.className = 'firma2-pages-nav__order-icon';
           icon.setAttribute('aria-hidden', 'true');
-          icon.innerHTML = iconSvg(entry?.kind === 'folder' ? 'folder' : entry?.kind === 'document' ? 'file-text' : 'file', 18) ?? '';
+          icon.innerHTML = iconSvg(entry?.kind === 'folder' ? 'folder' : entry?.kind === 'dashboard' ? 'layout-dashboard' : entry?.kind === 'document' ? 'file-text' : 'file', 18) ?? '';
           const label = document.createElement('span');
           // The page being moved is the one row set in bold.
           label.className = id === draft!.id ? 'typography-label-md-strong' : 'typography-body-md';
@@ -689,7 +765,8 @@ import EsaButton from '@esa/ecology/esa-button.astro';
         (n): n is HTMLAnchorElement => n instanceof HTMLAnchorElement && root.contains(n),
       );
       const id = pageIdFromHref(link?.getAttribute('href'));
-      if (!link || !id || !event.dataTransfer) return;
+      // A dashboard is not filed in Pages; dragged, it is only a link.
+      if (!link || !id || !event.dataTransfer || kindsById.get(id) === 'dashboard') return;
       dragId = id;
       event.dataTransfer.effectAllowed = 'move';
       // Dropped outside the rail it is still a link, as any link would be.
@@ -718,7 +795,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
           rect = parent.querySelector<HTMLElement>(':scope > .link')?.getBoundingClientRect();
         }
       }
-      if (!rect || (!entry && !into)) return hideMarker();
+      if (!rect || (!entry && !into) || entry?.kind === 'dashboard') return hideMarker();
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 
@@ -789,12 +866,47 @@ import EsaButton from '@esa/ecology/esa-button.astro';
       if (ADD_ROUTES[action]) location.assign(addRoute(action));
     });
 
+    // ---- the + on the Dashboards heading: one thing to add, so a button ----
+    const addDashboard = document.querySelector<HTMLTemplateElement>('template[data-dashboards-add]')?.content.firstElementChild?.cloneNode(true) as HTMLElement | undefined;
+    if (addDashboard) {
+      rail.appendChild(addDashboard);
+      addDashboard.addEventListener('click', () => location.assign(addRoute('add-dashboard')));
+    }
+
+    // ---- the chevron that folds the Dashboards group ----
+    // Reading one of its dashboards opens the group, without forgetting that
+    // it was folded: the next page that is not a dashboard finds it folded.
+    const readingDashboard = Boolean(document.querySelector('[data-custom-dashboard]')) || location.pathname.replace(/\/$/, '').endsWith(MAIN_DASHBOARD.href);
+    let folded = !readingDashboard && localStorage.getItem(FOLD_KEY) === '1';
+    const fold = document.querySelector<HTMLTemplateElement>('template[data-dashboards-fold]')?.content.firstElementChild?.cloneNode(true) as HTMLElement | undefined;
+    const showFold = (): void => {
+      const button = fold?.querySelector('button');
+      fold?.toggleAttribute('data-folded', folded);
+      button?.setAttribute('aria-expanded', String(!folded));
+      button?.setAttribute('aria-label', folded ? 'Expand Dashboards' : 'Collapse Dashboards');
+      button?.setAttribute('title', folded ? 'Expand Dashboards' : 'Collapse Dashboards');
+      applyFold(root, folded);
+    };
+    if (fold) {
+      rail.appendChild(fold);
+      fold.addEventListener('click', () => {
+        folded = !folded;
+        try {
+          localStorage.setItem(FOLD_KEY, folded ? '1' : '0');
+        } catch {
+          /* not remembered; the group still folds */
+        }
+        showFold();
+      });
+    }
+
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(HEADING_CSS);
     root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
     const place = () => {
       placeSlot(root);
       placeRowSlots(root, idsByName);
+      showFold();
     };
     rail.updateComplete?.then(place);
     new MutationObserver(place).observe(root, { childList: true, subtree: true, characterData: true });
@@ -804,6 +916,20 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 </script>
 
 <style>
+  /* The fold chevron points down while its group is open and sideways while
+     it is folded. Transform only, so nothing around it moves. */
+  .firma2-pages-nav__fold :global(svg) {
+    transition: transform 150ms ease-out;
+  }
+  .firma2-pages-nav__fold[data-folded] :global(svg) {
+    transform: rotate(-90deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-pages-nav__fold :global(svg) {
+      transition: none;
+    }
+  }
+
   /* bcn-lego-checked: no esa- lego draws a drop position (esa-file-upload's
      drop zone is a whole-surface target, not a line between rows), and
      esa-sidebar-nav has no drag support; Beacon is not cloned here. The

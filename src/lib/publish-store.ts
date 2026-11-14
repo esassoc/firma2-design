@@ -1,4 +1,4 @@
-// Publishing, made to persist in this browser — what a steward published or
+// Publishing, made to persist in this browser — what a manager published or
 // reverted during a review, and each organization's review schedule.
 //
 // THE SEEDED STATE IS THE BUILD'S. firma2-publish-history says when every
@@ -7,7 +7,7 @@
 // the review page and the public page can all agree after a Publish. Clear the
 // key and the demo is back to its seed.
 //
-// A PUBLISH RECORDS WHAT WAS REVIEWED. It stores the change keys the steward
+// A PUBLISH RECORDS WHAT WAS REVIEWED. It stores the change keys the manager
 // had in front of them, not "everything as of now": if the record moved while
 // they were reading, the newer change is not swept into a page nobody checked.
 //

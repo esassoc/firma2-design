@@ -4,9 +4,10 @@
 // to on each, what it has reported against each one, and — when a reader
 // asks — what it reported in each period.
 //
-// EVERY PUBLISHED MEASURE IS ASKED OF EVERY PROJECT (PM 2, reconciled
-// 2026-10-09). There is no choosing step: the project's own seeded rows come
-// first, then every published catalog measure. A TARGET — one number for the
+// EVERY PUBLISHED MEASURE THAT APPLIES IS ASKED (PM 2, reconciled 2026-10-09;
+// narrowed 2026-11-12 to the measures the project's classifications track —
+// see "Only what applies" below). There is no choosing step: the project's
+// own seeded rows come first, then the applicable catalog measures. A TARGET — one number for the
 // project's life, never per period — is what commits the project; a row with
 // none reads "no target yet". Periods are shown by their NAME
 // (REPORTING_PERIODS), and every target and entry write lands in the change
@@ -88,6 +89,32 @@ import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import type { PerformanceMeasure } from '../../data/firma2-project-detail';
 import { isClosedPeriod } from '../../data/firma2-project-detail';
 import { periodName } from '../../data/firma2-performance-measures';
+import type { MapWorkArea, Region } from '../../data/firma2-geography';
+
+// VALUES THE RECORD WORKS OUT ITSELF (2026-11-12, after FieldDoc). Three
+// additions, each optional so the section's other callers keep today's
+// behaviour:
+//
+//   MEASURED. A measure in acres, miles or feet gets a quiet row under it:
+//   what the project's mapped work areas add up to, with the provenance line
+//   "Measured from the work areas". What a person reported stays the row's
+//   figure and wins; the measured one stays visible beside it as reference,
+//   and is never divided into it (brief: "Only compare two things the record
+//   actually holds"). While nothing is reported, Use this figure turns the
+//   measured value into a field, in place, for the person to confirm or
+//   correct — the catch-up case: a finished project logged after the fact.
+//
+//   ESTIMATED. A measure whose source is a METHOD
+//   (src/data/firma2-estimate-methods.ts) shows the method's figure, worked
+//   out from the work areas, the practice and the region — or, when an input
+//   is missing, what is missing. Nobody types it: it takes no Record, no
+//   target, and stays out of the Report view and the due line. "How this was
+//   estimated" opens the method, its edition, the inputs and coefficients.
+//
+//   ONLY WHAT APPLIES. A catalog measure is offered on a project only when a
+//   classification the project carries tracks it (src/lib/measure-goals.ts).
+//   Before this, every published measure was a row on every project, folded
+//   behind "Other measures". Rows with a target or figures are never hidden.
 
 interface Props {
   /** The project's measures, in the order the project reports them. */
@@ -98,9 +125,15 @@ interface Props {
    * degrade to a read-only section rather than breaking.
    */
   projectSlug?: string;
+  /** The project's seeded work areas — the floor this browser's edits sit on. Omitted: nothing is measured or estimated. */
+  workAreas?: MapWorkArea[];
+  /** The regions an estimate looks its coefficients up by. */
+  regions?: Pick<Region, 'id' | 'name' | 'ring'>[];
+  /** The project's classifications. Omitted: every published measure is offered, as before. */
+  classifications?: string[];
 }
 
-const { measures, projectSlug = '' } = Astro.props;
+const { measures, projectSlug = '', workAreas, regions = [], classifications } = Astro.props;
 
 // THE AXIS IS READ OFF THE FIRST MEASURE because every measure carries the same
 // one — buildMeasures() builds all of them from the project's single window. Not
@@ -147,6 +180,8 @@ const longestName = Math.max(0, ...measures.map((measure) => measure.name.length
 // The document-first door, offered only where a reading exists to show.
 const canImport = Boolean(IMPORT_FIXTURES[projectSlug]);
 const unitsByName = Object.fromEntries(measures.map((measure) => [measure.name, measure.unit]));
+// Reported to date, for a report that states a total instead of a period's figure.
+const reportedByName = Object.fromEntries(measures.map((measure) => [measure.name, measure.reported]));
 // The clone source for rows added in the browser, when the record has none to
 // clone — a project nobody has asked anything yet (team 6's empty state).
 const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0, reported: 0, series: [] };
@@ -195,7 +230,15 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       data-has-years={hasYears ? '' : undefined}
     ></esa-button-toggle>
 
-    <div class="firma2-project-measures__body stack" data-gap="md" data-firma2-pm-section data-project-slug={projectSlug}>
+    <div
+      class="firma2-project-measures__body stack"
+      data-gap="md"
+      data-firma2-pm-section
+      data-project-slug={projectSlug}
+      data-work-areas={workAreas ? JSON.stringify(workAreas) : undefined}
+      data-regions={workAreas ? JSON.stringify(regions) : undefined}
+      data-classifications={classifications ? JSON.stringify(classifications) : undefined}
+    >
       <!-- NOTHING ASKED YET — only when the program has published no measure
            at all. Never an invitation to DEFINE one: that is the program
            lead's job, on the catalog. PM 2's own copy. -->
@@ -353,8 +396,18 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   <div data-firma2-pm-remove-template hidden aria-hidden="true">
     <EsaButton variant="chrome" iconOnly icon="x" size="sm" aria-label="Clear target">Clear target</EsaButton>
   </div>
+  <!-- Under a measured value while nothing is reported: turns it into the
+       person's own figure, in place. Same rung and variant as Set target,
+       which shares the column. -->
+  <div data-firma2-pm-use-measured-template hidden aria-hidden="true">
+    <EsaButton variant="ghost" size="md">Use this figure</EsaButton>
+  </div>
+  <!-- The estimated measure's disclosure. -->
+  <div data-firma2-pm-how-template hidden aria-hidden="true">
+    <EsaButton variant="ghost" size="md" iconRight="chevron-down">How this was estimated</EsaButton>
+  </div>
   {canImport && (
-    <Firma2ProjectReportImport projectSlug={projectSlug} years={[...years].reverse()} units={unitsByName} />
+    <Firma2ProjectReportImport projectSlug={projectSlug} years={[...years].reverse()} units={unitsByName} reported={reportedByName} />
   )}
   </div>
 )}
@@ -375,8 +428,68 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   .firma2-project-measures :global(.firma2-project-measures__retired-tag[hidden]) {
     display: none;
   }
-  .firma2-project-measures :global(tr[data-retired-measure] :is(.firma2-project-measures__record, .firma2-project-measures__remove, .firma2-project-measures__set-target)) {
+  .firma2-project-measures :global(tr:is([data-retired-measure], [data-estimated]) :is(.firma2-project-measures__record, .firma2-project-measures__remove, .firma2-project-measures__set-target)) {
     display: none !important;
+  }
+
+  /* ---- values the record works out ---------------------------------------
+     bcn-lego-checked: the rows below are table rows of this section's own
+     table (no table lego exists — see firma2-project-measure-row); the line
+     in them is firma2-provenance, the controls are cloned esa-buttons.
+
+     A DERIVED ROW READS AS PART OF ITS MEASURE: no rule between them, and its
+     text starts on the name's glyphs — past the ring (1.5rem) and its gap
+     (0.5rem) — the way a breakdown row is indented. */
+  .firma2-project-measures__table :global(tr[data-derived-of] th),
+  .firma2-project-measures__table :global(tr[data-derived-of] td) {
+    border-block-start: 0 !important;
+    padding-block-start: 0;
+  }
+  .firma2-project-measures__table :global(tr[data-derived-of] th) {
+    padding-inline-start: var(--spacing-700, 2rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .firma2-project-measures__table :global(.firma2-project-measures__derived-value) {
+    color: var(--color-content-default-secondary, #646464);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: end;
+  }
+  /* A figure the method could not produce says what is missing, in the
+     figure's own place and weight — it is the answer to "how much?". */
+  .firma2-project-measures__table :global(.firma2-project-measures__missing) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+  /* The disclosure: one cell across the table, wrapping, at reading width. */
+  .firma2-project-measures__table :global(td.firma2-project-measures__estimate-cell) {
+    white-space: normal;
+    padding-block-end: var(--spacing-400, 1rem);
+  }
+  .firma2-project-measures :global(.firma2-project-measures__estimate) {
+    margin: 0;
+    padding-inline-start: var(--spacing-700, 2rem);
+    max-inline-size: 40rem;
+  }
+  .firma2-project-measures :global(.firma2-project-measures__estimate > div) {
+    display: grid;
+    grid-template-columns: 6rem 1fr;
+    gap: var(--spacing-300, 0.75rem);
+  }
+  .firma2-project-measures :global(.firma2-project-measures__estimate dt) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+  .firma2-project-measures :global(.firma2-project-measures__estimate dd) {
+    margin: 0;
+  }
+  .firma2-project-measures :global(.firma2-project-measures__estimate ul) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-project-measures__table :global(.firma2-project-measures__how[aria-expanded='true'] svg) {
+    transform: rotate(180deg);
   }
 
   /* No ring where there is nothing to measure against. */
@@ -538,6 +651,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   }
 
   .firma2-project-measures__table :global(.firma2-project-measure-row__total),
+  .firma2-project-measures__table :global(.firma2-project-measures__derived-value),
   .firma2-project-measures__table thead th:nth-child(2) {
     position: sticky;
     /* THE OFFSET IS MEASURED, NOT DECLARED. It has to equal the name column's
@@ -568,6 +682,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
      occlusion shadow is not available here, and a partial column at a scroll
      edge is what every scrolled table looks like. */
   .firma2-project-measures__table :global(.firma2-project-measure-row__total),
+  .firma2-project-measures__table :global(.firma2-project-measures__derived-value),
   .firma2-project-measures__table thead th:nth-child(2) {
     border-inline-end: var(--border-width-default, 1px) solid
       var(--color-border-default, #cecece);
@@ -649,11 +764,15 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     line-height: 0;
   }
 
-  .firma2-project-measures__table :global(tr:hover .firma2-project-measures__record),
   .firma2-project-measures__table :global(tr:focus-within .firma2-project-measures__record),
-  .firma2-project-measures__table :global(tr:hover .firma2-project-measures__remove),
   .firma2-project-measures__table :global(tr:focus-within .firma2-project-measures__remove) {
     opacity: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-project-measures__table :global(tr:hover .firma2-project-measures__record),
+    .firma2-project-measures__table :global(tr:hover .firma2-project-measures__remove) {
+      opacity: 1;
+    }
   }
 
   @media (hover: none) {
@@ -967,14 +1086,26 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   import '@esa/ecology/esa-button-toggle';
   import {
     askedBreakdowns,
+    geometricQuantity,
     isSummable,
     liveOptions,
     measures as catalogSeeds,
     measureDisplayName,
     periodName,
+    sourceOf,
   } from '../../data/firma2-performance-measures';
   import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
-  import { draftedSlugs, isLocalMeasureSlug, withDraft } from '../../lib/measure-draft';
+  import { draftedSlugs, isLocalMeasureSlug, withDraft as withDraftOnly } from '../../lib/measure-draft';
+  import { withSource } from '../../lib/measure-source';
+  import { getEstimateMethod, runEstimate } from '../../data/firma2-estimate-methods';
+  import type { EstimateMethod, EstimateRegion, EstimateResult } from '../../data/firma2-estimate-methods';
+  import type { MapWorkArea } from '../../data/firma2-geography';
+  import { onGeoChange, readWorkAreas } from '../../lib/work-areas';
+  import { goalsTracking } from '../../lib/measure-goals';
+  import { provenance } from '../../lib/provenance';
+
+  /** A catalog measure as this browser sees it: draft fields, then its source. */
+  const withDraft = (slug: string): PerformanceMeasureDefinition => withSource(withDraftOnly(slug));
   import {
     addProjectMeasure,
     readProjectMeasures,
@@ -1047,7 +1178,71 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     if (!seedRow) return;
 
     const realRows = (): HTMLElement[] =>
-      [...tbody.querySelectorAll<HTMLElement>('tr:not([data-breakdown-of])')];
+      [...tbody.querySelectorAll<HTMLElement>('tr:not([data-breakdown-of]):not([data-derived-of])')];
+
+    // ---- what the record can work out itself ------------------------------
+    // The project's work areas as this browser holds them (seed, then any
+    // drawing on the map), the regions an estimate looks up, and the
+    // project's classifications. Each is absent on callers that do not pass
+    // it, and its feature then stays off.
+    const parse = <T,>(raw: string | undefined): T | null => {
+      if (raw === undefined) return null;
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        return null;
+      }
+    };
+    const seedAreas = parse<MapWorkArea[]>(body.dataset.workAreas);
+    const regions = parse<EstimateRegion[]>(body.dataset.regions) ?? [];
+    const projectClasses = parse<string[]>(body.dataset.classifications);
+    const currentAreas = (): MapWorkArea[] => (seedAreas ? readWorkAreas(slug, seedAreas) : []);
+
+    /**
+     * ONLY WHAT APPLIES: a catalog measure is asked of this project when a
+     * classification the project carries tracks it — read from the goal side,
+     * the one place the link is set. With no classifications passed, every
+     * published measure applies, as it did before.
+     */
+    const applies = (m: PerformanceMeasureDefinition): boolean =>
+      projectClasses === null || goalsTracking(m.slug).some((g) => projectClasses.includes(g.name));
+
+    /**
+     * What the mapped work areas add up to, in a measure's own unit — or null
+     * when the unit is not a size, or no shape of that kind is mapped. Acres
+     * from areas, miles from reaches; points have no extent.
+     */
+    const measuredFor = (unit: string): number | null => {
+      const q = geometricQuantity(unit);
+      if (!q || !seedAreas) return null;
+      // ONLY WHEN ONE MEASURE CAN OWN IT. Nothing links a measure to particular
+      // work areas, so when two measures on this project are both areas (or both
+      // lengths), the mapped total belongs to neither: "invasive vegetation
+      // removed" is not every mapped acre. Showing it under each would claim a
+      // figure nobody recorded (brief §4, only compare what the record holds).
+      const sameKind = realRows().filter((tr) => {
+        const u = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total')?.dataset.unit ?? '';
+        return geometricQuantity(u) === q;
+      }).length;
+      if (sameKind > 1) return null;
+      const kind = q === 'area' ? 'area' : 'reach';
+      const sum = currentAreas()
+        .filter((a) => a.kind === kind)
+        .reduce((t, a) => t + (a.extent ?? 0), 0);
+      if (!(sum > 0)) return null;
+      if (unit === 'square feet') return Math.round(sum * 43560);
+      if (unit === 'linear feet') return Math.round(sum * 5280);
+      return sum < 1000 ? Number(sum.toFixed(1)) : Math.round(sum);
+    };
+
+    /** An estimated measure's method and what it makes of this project, or null. */
+    const estimateFor = (key: string): { method: EstimateMethod; result: EstimateResult } | null => {
+      const cat = catalogFor(key);
+      if (!cat || sourceOf(cat) !== 'estimated' || !seedAreas) return null;
+      const method = getEstimateMethod(cat.estimateMethod);
+      if (!method) return null;
+      return { method, result: runEstimate(method, projectClasses ?? [], currentAreas(), regions) };
+    };
 
     const nameOf = (tr: HTMLElement): string =>
       (
@@ -1098,6 +1293,23 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         nameCell.after(tag);
       }
       if (tag) tag.hidden = !retiredMeasure;
+
+      // ESTIMATED: the method's figure, or what it is missing — never a
+      // reading, never a target, nothing per period (it is a yearly rate,
+      // not a filed series).
+      const est = estimateFor(key);
+      tr.toggleAttribute('data-estimated', Boolean(est));
+      if (est) {
+        tr.removeAttribute('data-uncommitted');
+        tr.setAttribute('data-no-target', '');
+        total.classList.toggle('firma2-project-measures__missing', !est.result.ok);
+        total.textContent = est.result.ok ? `${fmtNum(est.result.value)} ${unit}`.trim() : est.result.missing;
+        tr.querySelectorAll<HTMLElement>('.firma2-project-measure-row__year').forEach((td) => {
+          td.classList.add('firma2-project-measure-row__year--none');
+          td.innerHTML = DASH;
+        });
+        return;
+      }
 
       const reported = summing
         ? baseReported + entries.reduce((sum, e) => sum + e.amount, 0)
@@ -1173,7 +1385,9 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
 
     /** The rows this project has committed to and can still report — what the report, Record work and the due line ask about. */
     const committedRows = (): HTMLElement[] =>
-      realRows().filter((tr) => !tr.hasAttribute('data-uncommitted') && !tr.hasAttribute('data-retired-measure'));
+      realRows().filter(
+        (tr) => !tr.hasAttribute('data-uncommitted') && !tr.hasAttribute('data-retired-measure') && !tr.hasAttribute('data-estimated'),
+      );
 
     // The fold over uncommitted measures: one line, offered only to someone
     // who may set targets (data-edit-only hides it while the record is read).
@@ -1197,6 +1411,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       realRows().forEach(paintRow);
       paintOthers();
       paintBreakdowns();
+      paintDerived();
       syncEmpty();
       paintReport();
     };
@@ -1381,6 +1596,9 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
             sec.append(p);
           };
           if (cat?.reporterGuidance?.trim()) meta(cat.reporterGuidance.trim());
+          // What the map says, beside the figure the person is about to type.
+          const measured = measuredFor(unit);
+          if (measured !== null) sec.append(provenance({ source: 'Measured from the work areas', detail: `${fmtNum(measured)} ${unit}`.trim() }));
           // LAST PERIOD, as a hint and never pre-filled: the system remembers,
           // the person still commits.
           const prevYear = periods.filter((y) => y < period).pop();
@@ -1613,6 +1831,174 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       });
     };
 
+    // ---- derived rows: measured and estimated (2026-11-12) -------------------
+    // ONE QUIET ROW UNDER ITS MEASURE, rebuilt on every paint like the
+    // breakdown rows, so it can never disagree with the map: the provenance
+    // line where a name goes, the derived figure (or the disclosure) where
+    // the figure goes, empty cells under the years.
+    const useTemplate = root.querySelector<HTMLElement>('[data-firma2-pm-use-measured-template]');
+    const howTemplate = root.querySelector<HTMLElement>('[data-firma2-pm-how-template]');
+    const openEstimates = new Set<string>();
+
+    const derivedShell = (key: string): { row: HTMLElement; th: HTMLElement; td: HTMLElement } => {
+      const row = document.createElement('tr');
+      row.dataset.derivedOf = key;
+      // Folds with its measure: an uncommitted measure's measured row stays
+      // behind "Other measures" with it.
+      const parent = realRows().find((tr) => rowKey(tr) === key);
+      if (parent?.hasAttribute('data-uncommitted')) row.setAttribute('data-uncommitted', '');
+      const th = document.createElement('th');
+      th.scope = 'row';
+      const td = document.createElement('td');
+      td.className = 'firma2-project-measures__derived-value';
+      row.append(th, td);
+      axisYears().forEach((year) => {
+        const cell = document.createElement('td');
+        cell.className = 'firma2-project-measure-row__year firma2-project-measure-row__num';
+        cell.dataset.year = String(year);
+        row.append(cell);
+      });
+      const spacer = document.createElement('td');
+      spacer.className = 'firma2-project-measure-row__spacer';
+      row.append(spacer);
+      return { row, th, td };
+    };
+
+    /** The period a measured figure files into: the last one that closed, else this one. */
+    const fileYear = (): number => axisYears().slice(-1)[0] ?? PRESENT;
+
+    /**
+     * Use this figure: the measured value becomes a field in its own cell,
+     * pre-filled, labelled with the period it files into. Enter or leaving
+     * the field files it as the person's own entry; Escape puts the cell back.
+     */
+    const editMeasured = (td: HTMLElement, key: string, unit: string, value: number) => {
+      const year = fileYear();
+      const field = document.createElement('esa-text-field') as Control;
+      field.setAttribute('label', `Reported for ${periodName(year)}`);
+      field.setAttribute('size', 'md');
+      field.setAttribute('inputmode', 'decimal');
+      if (unit) field.setAttribute('suffix', unit);
+      field.value = String(value);
+      td.replaceChildren(field);
+      let closed = false;
+      const finish = (commit: boolean) => {
+        if (closed) return;
+        closed = true;
+        if (commit) {
+          const raw = String(field.value ?? '').replace(/,/g, '').trim();
+          const amount = raw === '' ? NaN : Number(raw);
+          if (Number.isFinite(amount) && amount > 0) addEntry(slug, { measureKey: key, year, amount, answers: {} });
+        }
+        paintAllRows();
+      };
+      field.addEventListener('keydown', (event) => {
+        const k = (event as KeyboardEvent).key;
+        if (k === 'Enter' || k === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          finish(k === 'Enter');
+        }
+      });
+      field.addEventListener('focusout', () => finish(true));
+      requestAnimationFrame(() => {
+        const input = field.shadowRoot?.querySelector<HTMLInputElement>('input');
+        input?.focus();
+        input?.select();
+      });
+    };
+
+    /** "How this was estimated": method, edition, practice, inputs, estimate. */
+    const estimateDetail = (key: string, method: EstimateMethod, result: EstimateResult, unit: string): HTMLElement => {
+      const row = document.createElement('tr');
+      row.dataset.derivedOf = key;
+      row.dataset.estimateDetail = '';
+      const td = document.createElement('td');
+      td.className = 'firma2-project-measures__estimate-cell';
+      td.colSpan = axisYears().length + 3;
+      td.id = `firma2-estimate-${key.replace(/[^a-z0-9]+/gi, '-')}`;
+      const dl = document.createElement('dl');
+      dl.className = 'firma2-project-measures__estimate stack typography-body-sm';
+      dl.dataset.gap = 'xs';
+      const pair = (term: string, ...content: (string | Node)[]) => {
+        const div = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = term;
+        const dd = document.createElement('dd');
+        dd.append(...content);
+        div.append(dt, dd);
+        dl.append(div);
+      };
+      pair('Method', `${method.name}, version ${method.version}`);
+      pair('Practice', result.practice ? `${result.practice}, from the project’s classifications` : 'None this method covers');
+      if (result.lines.length) {
+        const ul = document.createElement('ul');
+        result.lines.forEach((line) => {
+          const li = document.createElement('li');
+          const where = line.region ?? 'outside every region';
+          li.textContent =
+            line.coefficient === null
+              ? `${line.label}: ${fmtNum(line.acres)} acres in ${where}, no coefficient`
+              : `${line.label}: ${fmtNum(line.acres)} acres in ${where} × ${line.coefficient} ${method.coefficientUnit} = ${fmtNum(Math.round(line.value ?? 0))}`;
+          ul.append(li);
+        });
+        pair('Inputs', ul);
+      }
+      pair('Estimate', result.ok ? `${fmtNum(result.value)} ${unit}`.trim() : result.fix);
+      td.append(dl);
+      row.append(td);
+      return row;
+    };
+
+    const paintDerived = () => {
+      tbody.querySelectorAll('tr[data-derived-of]').forEach((tr) => tr.remove());
+      realRows().forEach((tr) => {
+        const key = rowKey(tr);
+        const total = tr.querySelector<HTMLElement>('.firma2-project-measure-row__total');
+        const unit = total?.dataset.unit ?? '';
+        const est = estimateFor(key);
+        if (est) {
+          const { row, th, td } = derivedShell(key);
+          th.append(provenance({ source: `Estimated with ${est.method.name}`, detail: est.method.version, inline: true }));
+          const how = cloneButton(howTemplate, 'firma2-project-measures__how', `How ${nameOf(tr)} was estimated`);
+          const open = openEstimates.has(key);
+          const detail = open ? estimateDetail(key, est.method, est.result, unit) : null;
+          const button = how?.querySelector('button');
+          button?.setAttribute('aria-expanded', String(open));
+          how?.setAttribute('aria-expanded', String(open));
+          if (detail) button?.setAttribute('aria-controls', detail.querySelector('td')?.id ?? '');
+          button?.addEventListener('click', () => {
+            if (openEstimates.has(key)) openEstimates.delete(key);
+            else openEstimates.add(key);
+            paintDerived();
+            tbody.querySelector<HTMLElement>(`tr[data-derived-of="${CSS.escape(key)}"] .firma2-project-measures__how button`)?.focus();
+          });
+          if (how) td.append(how);
+          tr.after(row);
+          if (detail) row.after(detail);
+          return;
+        }
+        const measured = measuredFor(unit);
+        if (measured === null) return;
+        const { row, th, td } = derivedShell(key);
+        th.append(provenance({ source: 'Measured from the work areas', inline: true }));
+        td.append(`${fmtNum(measured)} ${unit}`.trim());
+        // Offered only while nothing is reported: once a person has a figure,
+        // theirs wins and this one is reference.
+        const entries = readEntries(slug).filter((e) => e.measureKey === key);
+        const hasReading = Number(total?.dataset.reported || 0) > 0 || entries.length > 0;
+        if (!hasReading && !tr.hasAttribute('data-retired-measure')) {
+          const use = cloneButton(useTemplate, 'firma2-project-measures__use', `Use ${fmtNum(measured)} ${unit} as the reported figure for ${nameOf(tr)}`);
+          if (use) {
+            use.dataset.editOnly = '';
+            use.querySelector('button')?.addEventListener('click', () => editMeasured(td, key, unit, measured));
+            td.append(' ', use);
+          }
+        }
+        tr.after(row);
+      });
+    };
+
     // ---- row affordances --------------------------------------------------
     const cloneButton = (
       template: HTMLElement | null,
@@ -1702,8 +2088,11 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       for (const entry of readProjectMeasures(slug).filter((e) => e.target > 0)) {
         addRow(withDraft(entry.measureSlug), entry.target);
       }
+      // Only what applies: a published measure none of the project's
+      // classifications track is not offered here at all. What was filed
+      // stays, applicable or not.
       for (const m of catalogAll()) {
-        if (m.status === 'Published' || filed.has(m.slug)) addRow(m, 0);
+        if ((m.status === 'Published' && applies(m)) || filed.has(m.slug)) addRow(m, 0);
       }
       ensureRowControls();
       paintAllRows();
@@ -1760,7 +2149,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     // 0) clears the target through writeTarget.
     const editTarget = (td: HTMLElement) => {
       const tr = td.closest<HTMLElement>('tr');
-      if (!tr || tr.dataset.breakdownOf !== undefined || tr.hasAttribute('data-retired-measure') || td.querySelector('esa-text-field')) return;
+      if (!tr || tr.dataset.breakdownOf !== undefined || tr.hasAttribute('data-retired-measure') || tr.hasAttribute('data-estimated') || td.querySelector('esa-text-field')) return;
       const key = rowKey(tr);
       const unit = td.dataset.unit ?? '';
       const current = readTargetOverrides(slug)[key] ?? Number(td.dataset.expected || 0);
@@ -2116,6 +2505,10 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
       paintAllRows();
       paintLog();
     });
+
+    // A shape drawn, reshaped or removed on the map changes what is measured
+    // and estimated; repaint so the figures follow the ground.
+    if (seedAreas) onGeoChange(() => paintAllRows());
 
     // ---- boot -------------------------------------------------------------
     paintAdded();

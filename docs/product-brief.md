@@ -212,7 +212,7 @@ decision gets written down where it was made.
    **The public sees a published snapshot, decided 2026-10-09 (user-directed).**
    Always-saved is true of the RECORD, not of what the public reads. Editors
    change their projects freely and every change saves; the public page shows
-   what a steward or administrator last reviewed and published. QA/QC happens
+   what a manager or administrator last reviewed and published. QA/QC happens
    at publish, on whatever schedule the organization keeps (none by default) —
    between publishes, editors are trusted. There is no re-certification: a
    project with nothing new since its last publish needs nothing. See
@@ -252,20 +252,35 @@ them, or first-render cleverness that costs legibility.
 Each of these was paid for on a real screen. The screen is named so the reasoning
 can be read in full where it was written.
 
-### Sort content by whether it has a history
+### Sort content by whether you read it or set it
 
-A **series** has an account over time worth reading — what was delivered against
-what was expected, reached against planned, drawn down year after year. A
-**scalar** is a fact that can be corrected but has no interesting history: lead
-organization, county, the description — and the budget, which is
-authored once for the whole project (see the next principle).
+Linear's rule for a record page, adopted 2026-10-22. The **main column is the
+document**: what a person wrote (the description), what grows as a list (the
+tracked tables, milestones, photos) and what people said (the comments). The
+**rail is the property sheet**: every value picked from a list or typed into a
+box, the people on the record, the shapes on the ground, the records this one
+links to. The test is not "does it have a history" but *do you read it, or do
+you set it*.
 
-Series lead. Scalars go in the rail — present, because the numbers cannot be read
-without them; not prominent, because they are not why anyone opened the page.
+Two consequences, both Linear's. **Mirror the identity, don't move it**: the
+main column opens with a strip of the four properties the numbers are read
+against (stage, timeline, cost, lead organization) and the rail keeps the full
+sheet — one component, one edit path, a commit in either repaints the other —
+because the rail collapses and unpins and the document must stand alone.
+**Comments are the tail of the document**, not a rail item: an activity feed
+closes an issue, and a count in the heading replaces the badge a tab needed.
 
-*Proved on: project detail. Tested twice — the description moved out of the rail
-and came back (the argument was about reading ORDER but the position bought
-PROMINENCE), and funding sources moved out and stayed out.*
+This replaced *sort by whether it has a history* (series lead, scalars in the
+rail). That rule explained the tracked tables and misplaced the rest: the
+description — a paragraph, read — spent two releases in a 22rem column; the
+comments hid behind a tab; funding had to be argued out of the rail on width
+alone. The width test below survives unchanged.
+
+*Proved on: project detail. The description had already tested the old rule
+twice (under the title and back to the rail — reading ORDER was argued, and
+PROMINENCE was what the position bought); the strip is what makes its position
+under the title affordable now, because the numbers' context stays above the
+fold whatever its length.*
 
 ### Only compare two things the record actually holds
 
@@ -288,14 +303,24 @@ the answer is "this component, just now", state the two facts separately.
 *Proved on: project detail — expenditures. The same question is worth asking of
 every progress ring and every "x of y" on the page.*
 
-### The rail's test is scalar AND short AND narrow
+### The rail's test is set AND short AND narrow
 
-Being a scalar is necessary and not sufficient. A rail row has to be readable at
-a glance and has to live at 22rem. Funding sources is a set of scalars by the
-definition above and still failed: a four-column table needed 434px in a 352px
+Being something you set is necessary and not sufficient. A rail row has to be
+readable at a glance and has to live at 22rem. Funding sources is a list of
+commitments and still failed: a four-column table needed 434px in a 352px
 column and the rail answered with a horizontal scrollbar. It also separated "who
 committed the budget" from "what has been spent of it" — two halves of one
-question, a screen apart.
+question, a screen apart. The work-areas map passed by shrinking to the rail's
+size and dropping its list's Kind column, which the swatch beside each name
+already draws.
+
+**A rail can have modes (project record, 2026-10-22).** Squeezed between Key
+facts and Contacts the map was too small to read the ground and big enough to
+push Contacts off the screen. So the rail shows one thing at a time: Details
+(facts, contacts) or Map (the map and its list). The icons that switch, open
+and close it ride the record's own bar, a row under the app's top bar that
+never scrolls away, as Linear's sidebar icons do. A closed rail leaves nothing
+behind, and the main column stops at 60rem, centred.
 
 "Scalar" here really means *no series*: a small fixed SET passes too, when each
 member is one short label. Classifications — a goal or two per project —
@@ -375,9 +400,9 @@ Three cases, same shape:
 
 | Section | Asked for | Got, wrongly | Where it landed |
 |---|---|---|---|
-| Description | reading order — "what IS this project" comes before any number | a band under the page title | last row of Key facts |
+| Description | reading order — "what IS this project" comes before any number | a band under the page title | last row of Key facts; since 2026-10-22, first section of the document, under a property strip that keeps the numbers' context above the fold |
 | Funding sources | proximity to the money it explains | a slot in the rail | directly after Expenditures |
-| Work areas map | room — it is a surface, not text | the whole first screen | last in the column, still full width and a screenful tall |
+| Work areas map | room — it is a surface, not text | the whole first screen | last in the column, full width and a screenful tall; since 2026-10-22, the rail's own Map mode at 28rem, switched from the record bar, where Linear keeps its sidebar icons |
 
 The map is the cleanest illustration. Leading the column it put **zero pixels of
 tracked data above the fold** — the page's actual question went unanswered until
@@ -632,9 +657,9 @@ Access is modelled on Linear's members and roles (settled 2026-10-02):
 - **Three fixed workspace roles**, each holding everything below it —
   Administrator ⊃ Contributor ⊃ Viewer (Linear's Admin ⊃ Member ⊃ Guest). No
   custom roles, no per-project overrides. Set on Workspace settings › Users.
-- **Steward is not a role.** It is a flag on one organization membership —
+- **Manager is not a role.** It is a flag on one organization membership —
   Linear's team owner — set on that organization's Members page. It runs the
-  organization's members, settings and approvals. Administrators steward every
+  organization's members, settings and approvals. Administrators manage every
   organization without the flag; a Viewer can never be one.
 - **Membership is a list, separate from the role.** A person belongs to any
   number of organizations. A Contributor needs at least one; a Viewer may have
@@ -642,27 +667,36 @@ Access is modelled on Linear's members and roles (settled 2026-10-02):
   organizationless Viewer, the same place a Viewer lands.
 - **Flexibility lives on the act, not the role.** Each workspace act (invite,
   import, export, tokens…) has a "who can" setting in Security; each
-  organization act is "All members / Only stewards" on its Access page. Nothing
+  organization act is "All members / Only managers" on its Access page. Nothing
   inherits from workspace to organization. A few acts never widen: making an
-  organization private, naming a steward, granting Administrator.
+  organization private, naming a manager, granting Administrator.
 - **Accounts are suspended, not deleted.** Suspended people lose access at
   once but stay listed, so the work they touched still names them.
+- **Newcomers join; only administrators create** (settled 2026-11-02). A new
+  account is a Viewer with no organization, which sees exactly what the public
+  sees, and first sign-in asks which organization they work for. They join at
+  once, request to join, or request a new organization, which only an
+  administrator approves. A name proves nothing, so an organization is
+  *verified* only by a verified domain matching its website, and an unverified
+  one can't publish its own projects. Steward is now **Manager**, so the word
+  can't be read as ProjectFirma 1.x's Project steward. Spec:
+  `.scratch/access-requests/spec.md`.
 - **Anyone can see who the administrators are.** "An administrator sets your
   role" is a dead end until it names someone to ask.
 
-The data model follows: `WorkspaceUser` = `role` + `organizations[]` + `stewardOf[]` + `status`
+The data model follows: `WorkspaceUser` = `role` + `organizations[]` + `managerOf[]` + `status`
 (`Active | Invited | Suspended`) in `firma2-directory.ts`. The Users list
 is one table grouped into Active, Invited and Suspended bands, as Linear's is.
 Full reference — every default, who manages members, the invitation rule:
 `docs/roles-and-permissions.md`.
 
 *Applies to: firma2-user-grid (row "…": Change role…, Suspend…),
-firma2-organization-members (Make steward), firma2-organization-access,
+firma2-organization-members (Make manager), firma2-organization-access,
 firma2-administrators-note (Account, Security and access).*
 
 ### Review the net diff, not the history
 
-Publishing is a sweep (user, 2026-10-09): every so often a steward goes through
+Publishing is a sweep (user, 2026-10-09): every so often a manager goes through
 all their projects and brings each public page up to date. Three things follow.
 
 - **The unit of review is the difference between the public page and the
@@ -671,7 +705,7 @@ all their projects and brings each public page up to date. Three things follow.
   changed and changed back reads as nothing. A year between sweeps still
   yields at most a row per field, where a year of activity feed would be
   unreviewable. The change log keeps every entry; it is the evidence behind
-  the review, and the Updates feed is where a steward checks the trust given
+  the review, and the Updates feed is where a manager checks the trust given
   to editors between publishes.
 - **A sweep has to be completable.** The queue states the whole set ("15 of
   24 public pages up to date"), lists what waits oldest first, and the review
@@ -680,11 +714,11 @@ all their projects and brings each public page up to date. Three things follow.
 - **Schedules are optional.** With none, the queue and the waits are the whole
   story; an organization that sets one (Organization settings › Review
   schedule) gets Overdue marks and a weekly reminder. Who may publish is a
-  Security threshold ("Publish projects", stewards and administrators by
+  Security threshold ("Publish projects", managers and administrators by
   default), not a role.
 
 Publish records the changes that were on screen, not "the record as of now",
-so an edit made while the steward was reading does not go out unreviewed.
+so an edit made while the manager was reading does not go out unreviewed.
 Revert is per field and only back to the published value; a filed report or a
 redrawn boundary has no single value to restore, so its fix is on the record.
 The Updates feed folds one person's edits on one project in one day into a
@@ -739,10 +773,12 @@ a styling problem.
 | Explore | Project Finder, Map | not built |
 | Track | **Projects index** | built |
 | Track | **Project detail** | built — the reference screen for this brief |
+| Track | **Import projects** (Projects › Import) | built — one page, not a wizard: columns, then values matched to the closed lists, then rows to fix; undoable |
 | Track | Organizations, Funding Sources | not built |
 | Report | **Performance measures** catalog | built |
 | Report | **Measure setup** (one per measure) | built |
-| Report | Progress Dashboard, Funding Status | not built |
+| Report | **Progress Dashboard** | built — a grid of tiles (one number, bars by group, over time) assembled from the workspace's whole inventory of figures and dimensions; one add-on-demand filter for every tile; charts sized by dragging |
+| Report | Funding Status | not built |
 | Manage | Users, Manage Organizations, Manage Funding Sources, Custom Pages | not built |
 | Workspace settings › Administration | **Workspace**, **Organizations**, **Users**, **Security**, **Custom pages**, **Import & export** | built |
 | Workspace settings › Organizations | **Organization record** (each organization's page from the list, your own included) | built |
@@ -774,10 +810,11 @@ filed against, Delete only for drafts. The four unbuilt Manage screens now
 have their pattern: state the record, price the downstream burden beside it,
 in the shared idioms, with the floor plan chosen by the job.
 
-**Nothing at the END of the chain exists yet.** Progress Dashboard and Funding
-Status are the reports §0 says the product is *for*, and both are unbuilt. Worth
-holding in mind: every screen we have built so far feeds a screen nobody has
-specified.
+**The END of the chain has its first screen** (2026-11-12): the Progress
+Dashboard. Funding Status and the report documents themselves are still unbuilt.
+What the dashboard settled is in `src/components/dashboard/firma2-dashboard.astro`'s
+header — a dashboard is scanned, not read, so it is tiles and one filter, not a
+written page with charts in it.
 
 ---
 
@@ -815,14 +852,13 @@ funder X"), not ask-first.
 - **What is the real breakpoint floor?** Everything is currently reasoned about
   and verified at desktop widths.
 - **What does undo look like when nothing is ever "saved"?** Partly answered
-  (2026-10-09): the record has a change log (History), and a steward can revert
+  (2026-10-09): the record has a change log (History), and a manager can revert
   any field to its PUBLISHED value from the review page. Still open: undo for
   the editor, before anyone reviews — the typo caught a second later. An undo
   toast on commit is the candidate.
-- **Who sees unpublished values?** Today every signed-in reader sees the live
-  record and the public sees the published snapshot. If funders read project
-  pages signed in, they are reading values nobody has checked. Candidate:
-  Contributors and stewards see the live record; Viewers see what is published.
+- **Who sees unpublished values?** Settled for Viewers (2026-11-02): a Viewer
+  reads published values everywhere. Still open: whether the live record is
+  shown to Contributors of organizations that don't lead the project.
 - **Do reported values pass the publish gate?** The prototype says yes — a
   filing shows on the review page and stays off the public page until
   published. The cost is a busier queue every reporting season; the

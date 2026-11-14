@@ -1,0 +1,307 @@
+---
+// firma2-welcome-organization — first sign-in's one question: "Which
+// organization do you work for?" (.scratch/access-requests/spec.md,
+// decision 17).
+//
+// THE ANSWER DECIDES THE DOOR, NOT THE PERSON. Picking an organization shows
+// what its own Access setting allows, so the newcomer never has to know how
+// the workspace is set up:
+//   approval  → a request, with what they need and an optional message
+//   open      → join now
+//   invite    → NOT LISTED. An invitation-only organization takes no
+//               requests, so offering it would be a door that only says no
+//               (user, 2026-11-02). Its people arrive by invitation.
+// Every outcome says WHICH ROLE answers — its managers, or the workspace's
+// administrators when it has none (decision 16) — and never WHO. A newcomer
+// who could read a manager's name and email here would write to them
+// directly; the request is the channel (user, 2026-11-02: "should not know who
+// the manager of the organization is, so they don't get spammed"). The names
+// are not shipped to the page either — only whether a manager exists.
+//
+// TWO WAYS OUT, ALWAYS VISIBLE: "My organization isn't listed" (a new-
+// organization request, its own page — adds are pages) and "Skip for now".
+// Skipping leaves them a Viewer with no organization, which is a real place to
+// be, so it is a plain button, not a guilt line.
+//
+// ONE REQUEST PER ORGANIZATION (decision 26): picking one already asked shows
+// the pending request and its Withdraw instead of a second form; one declined
+// in the last 30 days says when they can ask again (decision 25).
+//
+// bcn-lego-checked: esa-combobox finds the organization, esa-radio-group asks
+// what they need, esa-textarea takes the message, esa-button acts,
+// esa-snackbar-container reports; firma2-verified-mark is the domain. No esa-
+// lego is an outcome panel, and an esa-card would box a single column for no
+// reason. Beacon is not cloned on this machine. `.stack`/`.cluster` lay it out;
+// the CSS shows one outcome at a time.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2VerifiedMark from '../shared/firma2-verified-mark.astro';
+import { organizations, users, verifiedDomain } from '../../data/firma2-directory';
+import { NEWCOMER } from '../../data/firma2-access-requests';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /**
+   * `first` — first sign-in, in the bare welcome frame: the newcomer, with
+   * Skip for now until they act and Continue to projects after.
+   * `app` — Join an organization from inside the app (account menu, settings,
+   * the request notice): the signed-in person, the page header carries the
+   * title, and there is nothing to skip.
+   */
+  context?: 'first' | 'app';
+}
+const { context = 'first' } = Astro.props;
+const first = context === 'first';
+const newOrganizationHref = withBase(first ? '/prototypes/welcome/new-organization' : '/prototypes/join/new-organization');
+
+// Only organizations a newcomer can ask to join or join outright.
+const askable = organizations.filter((o) => o.joining !== 'invite');
+const directory = askable.map((o) => ({
+  name: o.name,
+  type: o.type,
+  joining: o.joining,
+  domain: verifiedDomain(o) ?? '',
+  // Whether anyone at it answers requests — its managers, or for an
+  // organization its administrators run (the host board), those
+  // administrators. A boolean on purpose: who they are stays off the page.
+  hasManagers: users.some(
+    (u) => u.status === 'Active' && u.organizations.includes(o.name) && (u.managerOf.includes(o.name) || u.role === 'Administrator'),
+  ),
+}));
+const options = JSON.stringify(askable.map((o) => ({ value: o.name, label: o.name })));
+const asked = JSON.stringify([
+  { value: 'Contributor', label: 'Edit its projects' },
+  { value: 'Viewer', label: 'Follow it' },
+]);
+// A stand-in so the verified mark's markup can be cloned and re-pointed.
+const sample = { website: 'example.org', approvedDomains: [{ domain: 'example.org', status: 'verified' as const, email: '', date: '' }] };
+---
+<section
+  class="firma2-welcome-organization stack"
+  data-gap="xl"
+  data-directory={JSON.stringify(directory)}
+  data-name={NEWCOMER.name}
+  data-email={NEWCOMER.email}
+  data-context={context}
+  data-state="empty"
+>
+  {first
+    ? <h1 class="typography-heading-lg">Which organization do you work for?</h1>
+    : <h2 class="visually-hidden">Which organization do you work for?</h2>}
+
+  <esa-combobox
+    label="Organization"
+    placeholder="Search by name"
+    size="md"
+    options={options}
+    data-welcome-search
+  ></esa-combobox>
+
+  <div class="firma2-welcome-organization__outcome stack" data-gap="lg">
+    <div class="stack" data-gap="3xs">
+      <h2 class="typography-title-sm-strong" data-slot="org-name"></h2>
+      <span class="cluster typography-body-sm firma2-welcome-organization__meta" data-gap="xs">
+        <span data-slot="org-type"></span>
+        <span data-slot="org-domain"></span>
+      </span>
+    </div>
+
+    {/* approval / open */}
+    <div class="stack" data-gap="lg" data-when="ask">
+      <p class="typography-body-md" data-slot="route"></p>
+      <esa-radio-group label="What do you need?" size="md" options={asked} data-welcome-asked></esa-radio-group>
+      <esa-textarea
+        label="Message (optional)"
+        help-text="Who you are and what you work on."
+        size="md"
+        rows="3"
+        data-welcome-message
+      ></esa-textarea>
+      <div>
+        <EsaButton variant="primary" size="md" data-welcome-send>Send request</EsaButton>
+      </div>
+    </div>
+
+    {/* pending */}
+    <div class="stack" data-gap="md" data-when="pending">
+      <p class="typography-body-md" data-slot="pending"></p>
+      <div>
+        <EsaButton variant="secondary" size="md" data-welcome-withdraw>Withdraw request</EsaButton>
+      </div>
+    </div>
+
+    {/* declined, or joined */}
+    <p class="typography-body-md" data-when="declined" data-slot="declined"></p>
+    <p class="typography-body-md" data-when="joined" data-slot="joined"></p>
+  </div>
+
+  <div class="cluster" data-gap="xs">
+    <EsaButton variant="secondary" size="md" href={newOrganizationHref}>My organization isn’t listed</EsaButton>
+    {/* FIRST SIGN-IN ONLY. Skip until they have asked for something; once
+        they have, it is no longer skipping, so the way on becomes the primary
+        Continue (user, 2026-11-02). The request outcome above never shows a
+        primary at the same time — Send request is gone once it is sent. */}
+    {first && <span data-when-acted="no"><EsaButton variant="ghost" size="md" href={withBase('/prototypes/projects')}>Skip for now</EsaButton></span>}
+    {first && <span data-when-acted="yes"><EsaButton variant="primary" size="md" href={withBase('/prototypes/projects')}>Continue to projects</EsaButton></span>}
+  </div>
+
+  <template data-verified><Firma2VerifiedMark organization={sample} /></template>
+  <esa-snackbar-container class="firma2-welcome-organization__toasts"></esa-snackbar-container>
+</section>
+
+<script>
+  import '@esa/ecology/esa-combobox';
+  import '@esa/ecology/esa-radio-group';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-snackbar-container';
+  import {
+    createRequest,
+    approveRequest,
+    withdrawRequest,
+    pendingRequest,
+    daysUntilReask,
+    readRequests,
+    CHANGED,
+  } from '../../lib/access-requests';
+  import { currentPerson } from '../../lib/workspace-permissions';
+  import type { AskedAccess } from '../../data/firma2-access-requests';
+
+  type Org = { name: string; type: string; joining: 'open' | 'approval'; domain: string; hasManagers: boolean };
+  type Field = HTMLElement & { value: string; errorText: string };
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
+
+  // The role that answers, never the people in it.
+  const answerer = (org: Org) => (org.hasManagers ? 'its managers' : 'the workspace administrators');
+  const route = (org: Org) => `Goes to ${answerer(org)}.`;
+
+  document.querySelectorAll<HTMLElement>('.firma2-welcome-organization').forEach((root) => {
+    const directory: Org[] = JSON.parse(root.dataset.directory ?? '[]');
+    // First sign-in is always the newcomer; inside the app it is whoever is
+    // signed in (the prototype's ?as= switch).
+    const me = root.dataset.context === 'app'
+      ? currentPerson()
+      : { name: root.dataset.name ?? '', email: root.dataset.email ?? '' };
+    const search = root.querySelector<Field>('[data-welcome-search]')!;
+    const asked = root.querySelector<Field>('[data-welcome-asked]')!;
+    const message = root.querySelector<Field>('[data-welcome-message]')!;
+    const toasts = root.querySelector<Toasts>('.firma2-welcome-organization__toasts');
+    const verified = root.querySelector<HTMLTemplateElement>('[data-verified]')!;
+    const slot = (name: string) => root.querySelector<HTMLElement>(`[data-slot="${name}"]`)!;
+    const sendLabel = root.querySelector<HTMLElement>('[data-welcome-send] .esa-button__label');
+
+    let current: Org | undefined;
+
+    function show() {
+      current = directory.find((o) => o.name === search.value);
+      if (!current) {
+        root.dataset.state = 'empty';
+        return;
+      }
+      const org = current;
+      slot('org-name').textContent = org.name;
+      slot('org-type').textContent = org.type;
+      const domain = slot('org-domain');
+      domain.replaceChildren();
+      if (org.domain) {
+        const mark = verified.content.cloneNode(true) as DocumentFragment;
+        const text = mark.querySelector('.firma2-verified-mark > span:last-child');
+        if (text) text.innerHTML = `<span class="visually-hidden">Verified domain </span>${org.domain}`;
+        domain.append(mark);
+      }
+
+      const pending = pendingRequest(me.email, org.name);
+      const joined = readRequests().find((r) => r.email === me.email && r.organization === org.name && r.status === 'approved');
+      const wait = daysUntilReask(me.email, org.name);
+
+      if (joined) {
+        root.dataset.state = 'joined';
+        slot('joined').textContent = `You’re a member, as ${joined.granted === 'Viewer' ? 'a Viewer' : 'a Contributor'}.`;
+      } else if (pending) {
+        root.dataset.state = 'pending';
+        slot('pending').textContent = `Request sent. Waiting on ${answerer(org)}.`;
+      } else if (wait > 0) {
+        root.dataset.state = 'declined';
+        slot('declined').textContent = `Your request was declined. You can ask again in ${wait} ${wait === 1 ? 'day' : 'days'}.`;
+      } else {
+        root.dataset.state = 'ask';
+        slot('route').textContent = org.joining === 'open' ? 'Anyone can join.' : route(org);
+        if (sendLabel) sendLabel.textContent = org.joining === 'open' ? 'Join' : 'Send request';
+        asked.value = 'Contributor';
+        message.value = '';
+      }
+    }
+
+    customElements.whenDefined('esa-radio-group').then(() => { asked.value = 'Contributor'; });
+    // "Ask to join X instead" from the new-organization form arrives with X picked.
+    const preset = new URLSearchParams(location.search).get('organization');
+    if (preset) customElements.whenDefined('esa-combobox').then(() => { search.value = preset; show(); });
+    // Skip → Continue once they have asked for anything (withdrawn doesn't count).
+    const acted = () =>
+      root.toggleAttribute('data-acted', readRequests().some((r) => r.email === me.email && r.status !== 'withdrawn'));
+    acted();
+
+    search.addEventListener('change', show);
+    window.addEventListener(CHANGED, show);
+    window.addEventListener(CHANGED, acted);
+
+    root.querySelector('[data-welcome-send]')?.addEventListener('click', () => {
+      const org = current;
+      if (!org) return;
+      const request = createRequest({
+        kind: 'join',
+        name: me.name,
+        email: me.email,
+        organization: org.name,
+        asked: (asked.value || 'Contributor') as AskedAccess,
+        message: message.value.trim() || undefined,
+        via: 'welcome',
+      });
+      if (org.joining === 'open') {
+        // Open joining is an approval nobody had to give.
+        approveRequest(request.id, request.asked, 'Open joining');
+        toasts?.show({ message: `You joined ${org.name}.`, variant: 'success' });
+      } else {
+        toasts?.show({ message: `Request sent to ${org.name}.`, variant: 'success' });
+      }
+    });
+
+    root.querySelector('[data-welcome-withdraw]')?.addEventListener('click', () => {
+      const pending = current && pendingRequest(me.email, current.name);
+      if (!pending) return;
+      withdrawRequest(pending.id);
+      toasts?.show({ message: 'Request withdrawn.', variant: 'success' });
+    });
+  });
+</script>
+
+<style>
+  .firma2-welcome-organization h1,
+  .firma2-welcome-organization h2,
+  .firma2-welcome-organization p {
+    margin: 0;
+  }
+  .firma2-welcome-organization__meta {
+    color: var(--color-text-secondary);
+  }
+
+  /* ONE OUTCOME AT A TIME. The state is a data flag the script sets; each
+     block says which state it belongs to. Display rules, not [hidden], which
+     loses to .stack's own display. */
+  .firma2-welcome-organization[data-state='empty'] .firma2-welcome-organization__outcome {
+    display: none;
+  }
+  .firma2-welcome-organization [data-when] {
+    display: none;
+  }
+  .firma2-welcome-organization:not([data-acted]) [data-when-acted='yes'],
+  .firma2-welcome-organization[data-acted] [data-when-acted='no'] {
+    display: none;
+  }
+  .firma2-welcome-organization[data-state='ask'] [data-when='ask'],
+  .firma2-welcome-organization[data-state='pending'] [data-when='pending'] {
+    display: flex;
+  }
+  .firma2-welcome-organization[data-state='declined'] [data-when='declined'],
+  .firma2-welcome-organization[data-state='joined'] [data-when='joined'] {
+    display: block;
+  }
+</style>

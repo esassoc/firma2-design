@@ -14,22 +14,32 @@
 // or removed — not per keystroke, so "Add at least two choices" does not
 // flash while the first one is being typed.
 //
-// Props: label (the fieldset's legend; rows are named "Choice 2"), hidden.
+// GUIDANCE (opt-in, `guidance`): each choice takes a second, optional line —
+// when to pick it and how to fill in the rest — under its name. It is the
+// list's own guidance (FieldDefinition.optionGuidance), shown as helper text
+// wherever the choice is picked (src/lib/vocabulary-guidance.ts). It travels
+// with its choice through a rename or a move, and reads back as `guidance`
+// (Record<choice, line>). Without the prop the rows are exactly as before.
+//
+// Props: label (the fieldset's legend; rows are named "Choice 2"), hidden,
+// guidance.
 import EsaButton from '@esa/ecology/esa-button.astro';
 
 interface Props {
   label?: string;
   hidden?: boolean;
+  /** Give every choice an optional guidance line under its name. */
+  guidance?: boolean;
   [key: `data-${string}`]: unknown;
 }
-const { label = 'Choices', hidden, ...rest } = Astro.props;
+const { label = 'Choices', hidden, guidance = false, ...rest } = Astro.props;
 ---
 <!-- bcn-lego-checked: every control is a lego (esa-text-field, esa-button) or
      the spoke's bcn-sortable-list (reorders rows — no esa- list does;
      esassoc/ecology#39). esa-input-tag holds the values but cannot order them.
      The classes only lay out the row list. Beacon is not cloned on this
      machine. Same row construction as firma2-schema-board's options. -->
-<firma2-choice-list class="firma2-choice-list" hidden={hidden} {...rest}>
+<firma2-choice-list class="firma2-choice-list" hidden={hidden} data-guidance={guidance ? '' : undefined} {...rest}>
   <fieldset class="firma2-choice-list__set stack" data-gap="xs">
     <legend class="firma2-choice-list__legend typography-label-md">{label}</legend>
     <bcn-sortable-list data-choice-sort>
@@ -93,6 +103,17 @@ const { label = 'Choices', hidden, ...rest } = Astro.props;
     flex: none;
   }
 
+  /* With guidance, a choice is two fields stacked — its name, then its line —
+     and the grip and bin sit level with the name. */
+  .firma2-choice-list[data-guidance] .firma2-choice-list__rows :global(li) {
+    align-items: start;
+  }
+
+  .firma2-choice-list__rows :global(.firma2-choice-list__choice) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .firma2-choice-list__error {
     margin: 0;
     color: var(--form-error-color, var(--color-content-utility-danger));
@@ -108,6 +129,7 @@ const { label = 'Choices', hidden, ...rest } = Astro.props;
   interface Choice {
     key: string;
     text: string;
+    guidance: string;
   }
 
   let seq = 0;
@@ -123,6 +145,11 @@ const { label = 'Choices', hidden, ...rest } = Astro.props;
         const v = (this as unknown as { value: unknown }).value;
         delete (this as unknown as { value?: unknown }).value;
         this.value = v as string[];
+      }
+      if (Object.prototype.hasOwnProperty.call(this, 'guidance')) {
+        const g = (this as unknown as { guidance: unknown }).guidance;
+        delete (this as unknown as { guidance?: unknown }).guidance;
+        this.guidance = g as Record<string, string>;
       }
       if (this.dataset.wired) return;
       this.dataset.wired = '';
@@ -145,7 +172,21 @@ const { label = 'Choices', hidden, ...rest } = Astro.props;
     }
 
     set value(list: string[]) {
-      this.#items = (Array.isArray(list) ? list : []).map((text) => ({ key: `choice-${(seq += 1)}`, text: String(text) }));
+      const kept = this.guidance;
+      this.#items = (Array.isArray(list) ? list : []).map((text) => ({ key: `choice-${(seq += 1)}`, text: String(text), guidance: kept[String(text)] ?? '' }));
+      this.#paint();
+    }
+
+    /** Each named choice's guidance line, by choice. Blank lines are left out. */
+    get guidance(): Record<string, string> {
+      return Object.fromEntries(
+        (this.#items ?? []).filter((c) => c.text.trim() && c.guidance.trim()).map((c) => [c.text.trim(), c.guidance.trim()]),
+      );
+    }
+
+    set guidance(lines: Record<string, string>) {
+      const map = lines && typeof lines === 'object' ? lines : {};
+      this.#items.forEach((c) => (c.guidance = map[c.text.trim()] ?? ''));
       this.#paint();
     }
 
@@ -180,7 +221,7 @@ const { label = 'Choices', hidden, ...rest } = Astro.props;
 
     /** A new empty row after `key` (or last), with the cursor in it. */
     #addAfter(key: string | null) {
-      const choice = { key: `choice-${(seq += 1)}`, text: '' };
+      const choice = { key: `choice-${(seq += 1)}`, text: '', guidance: '' };
       const at = key ? this.#items.findIndex((c) => c.key === key) + 1 : this.#items.length;
       this.#items.splice(at, 0, choice);
       this.#paint();
@@ -231,7 +272,30 @@ const { label = 'Choices', hidden, ...rest } = Astro.props;
       remove.querySelector('button')?.setAttribute('title', name);
       remove.addEventListener('click', () => this.#remove(choice.key));
 
-      li.append(field, remove);
+      if (!this.hasAttribute('data-guidance')) {
+        li.append(field, remove);
+        return li;
+      }
+      // The choice's guidance line, under its name.
+      const line = document.createElement('esa-text-field') as Field;
+      line.setAttribute('size', 'md');
+      line.setAttribute('aria-label', choice.text ? `Guidance for ${choice.text}` : `Guidance for choice ${n}`);
+      line.setAttribute('placeholder', 'When to pick it (optional)');
+      void customElements.whenDefined('esa-text-field').then(() => (line.value = choice.guidance));
+      line.addEventListener('focusout', () => {
+        const next = String(line.value ?? '').trim();
+        if (next === choice.guidance) return;
+        choice.guidance = next;
+        if (choice.text.trim()) this.#emit();
+      });
+      line.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Enter') e.preventDefault();
+      });
+      const cell = document.createElement('div');
+      cell.className = 'firma2-choice-list__choice stack';
+      cell.dataset.gap = 'xs';
+      cell.append(field, line);
+      li.append(cell, remove);
       return li;
     }
 

@@ -10,6 +10,10 @@
 // RENAMING SAYS SO EVERYWHERE ON THE PAGE: the title, the last crumb and the
 // tab follow the name the moment it saves. A blank or duplicate name is
 // refused in place and the stored name stands.
+//
+// A PROJECT TYPE ALSO CARRIES GUIDANCE: one line on when to pick it and how to
+// fill in the rest, shown under every project type picker once this type is
+// chosen (src/lib/vocabulary-guidance.ts). Written once here, on the list.
 import Firma2RailSection from '../shared/firma2-rail-section.astro';
 import { CLASSIFICATION_GROUPS } from '../../data/firma2-classifications';
 import type { TaxonomyKind } from '../../lib/taxonomy-edits';
@@ -29,6 +33,9 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
 <div class="firma2-taxonomy-details stack" data-gap="md" data-kind={kind} data-slug={slug} data-noun={noun}>
   <esa-text-field label="Name" size="md" required data-name></esa-text-field>
   <esa-textarea label="Description" size="md" rows="2" auto-resize data-description></esa-textarea>
+  {kind === 'projectType' && (
+    <esa-text-field label="Guidance" size="md" help-text="Shown when someone picks this type." placeholder="When to pick it and what to draw" data-guidance></esa-text-field>
+  )}
   {kind === 'classification' && (
     <esa-select label="Group" size="md" options={JSON.stringify(groupOptions)} data-group></esa-select>
   )}
@@ -42,6 +49,7 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
   import { editEntry, entries, getEntry, nameTaken } from '../../lib/taxonomy-edits';
   import type { TaxonomyKind } from '../../lib/taxonomy-edits';
   import { recordSlug, retitle } from '../../lib/taxonomy-record';
+  import { guidanceByKey, setGuidance } from '../../lib/vocabulary-guidance';
 
   type Field = HTMLElement & { value: string; errorText: string };
 
@@ -53,11 +61,13 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
     const name = root.querySelector<Field>('[data-name]')!;
     const description = root.querySelector<Field>('[data-description]')!;
     const group = root.querySelector<Field>('[data-group]');
+    const guidance = root.querySelector<Field>('[data-guidance]');
 
     retitle(entry.name);
     Promise.all(['esa-text-field', 'esa-textarea', 'esa-select'].map((t) => customElements.whenDefined(t))).then(() => {
       name.value = entry.name;
       description.value = entry.description;
+      if (guidance) guidance.value = guidanceByKey('projectType', slug);
       if (group) {
         // From the store, so a group added in this browser can be chosen.
         (group as Field & { options: unknown }).options = entries('classificationGroup').map((g) => ({ value: g.slug, label: g.name }));
@@ -79,6 +89,7 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
       retitle(value);
     });
     description.addEventListener('change', () => editEntry(kind, slug, { description: (description.value ?? '').trim() }));
+    guidance?.addEventListener('change', () => setGuidance('projectType', slug, guidance.value ?? ''));
     group?.addEventListener('change', () => editEntry(kind, slug, { group: group.value }));
   });
 </script>

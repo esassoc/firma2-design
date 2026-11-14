@@ -1,0 +1,76 @@
+---
+// firma2-update-sandbox-bar — the Team 5 sandbox's own controls, on every one
+// of its pages: who is looking, and the two workspace switches Team 5 built.
+//
+// NOT PRODUCT UI. In ProjectFirma2 the seat is whoever signed in and the two
+// switches are tenant feature flags an operator sets (ProjectUpdateReview,
+// ProjectUpdateAssistant — their ADR-0005). They are on the page here so one
+// browser can walk the whole loop: edit as a project editor, switch seats,
+// approve as an administrator.
+//
+// Every sandbox component listens for the store's event, so flipping anything
+// here re-renders the page beneath it without a reload.
+//
+// bcn-lego-checked: esa-button-toggle (seat), esa-switch-toggle (both flags),
+// esa-button (Reset) — legos, unchanged. The band is a `.cluster` on the
+// sunken surface token; no esa- lego is a settings strip (esa-filter-container
+// is for filters over a result set). Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { SANDBOX_PEOPLE } from '../../data/firma2-project-updates';
+
+const seats = [
+  { value: 'reporter', label: SANDBOX_PEOPLE.reporter.title },
+  { value: 'admin', label: SANDBOX_PEOPLE.admin.title },
+];
+---
+<section class="firma2-update-sandbox-bar cluster" data-gap="lg" aria-label="Sandbox controls" data-seats={JSON.stringify(seats)}>
+  <esa-button-toggle size="md" aria-label="Viewing as" data-seat></esa-button-toggle>
+  <esa-switch-toggle size="md" label="Review edits before they apply" data-flag="review"></esa-switch-toggle>
+  <esa-switch-toggle size="md" label="Update assistant" data-flag="assistant"></esa-switch-toggle>
+  <EsaButton class="firma2-update-sandbox-bar__reset" variant="secondary" appearance="outline" size="md" data-reset>Reset sandbox</EsaButton>
+</section>
+
+<style>
+  .firma2-update-sandbox-bar {
+    align-items: center;
+    padding: var(--spacing-300) var(--spacing-400);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-sunken);
+  }
+
+  .firma2-update-sandbox-bar :global(.firma2-update-sandbox-bar__reset) {
+    margin-inline-start: auto;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-switch-toggle';
+  import type { SandboxRole } from '../../data/firma2-project-updates';
+  import { onSandboxChange, readSettings, resetSandbox, writeSettings } from '../../lib/update-sandbox';
+
+  type Toggle = HTMLElement & { options: { label: string; value: string }[]; value: string };
+  type Switch = HTMLElement & { checked: boolean };
+
+  document.querySelectorAll<HTMLElement>('.firma2-update-sandbox-bar').forEach(async (root) => {
+    // Properties set before the element upgrades are shadowed by the class's own.
+    await Promise.all([customElements.whenDefined('esa-button-toggle'), customElements.whenDefined('esa-switch-toggle')]);
+    const seat = root.querySelector<Toggle>('[data-seat]')!;
+    const flags = [...root.querySelectorAll<Switch>('[data-flag]')];
+    seat.options = JSON.parse(root.dataset.seats ?? '[]');
+
+    onSandboxChange(() => {
+      const settings = readSettings();
+      seat.value = settings.role;
+      flags.forEach((flag) => {
+        flag.checked = settings[flag.dataset.flag as 'review' | 'assistant'];
+      });
+    });
+
+    seat.addEventListener('change', (e) => writeSettings({ role: (e as CustomEvent<{ value: SandboxRole }>).detail.value }));
+    flags.forEach((flag) =>
+      flag.addEventListener('change', (e) => writeSettings({ [flag.dataset.flag!]: (e as CustomEvent<{ checked: boolean }>).detail.checked })),
+    );
+    root.querySelector('[data-reset]')?.addEventListener('click', () => resetSandbox());
+  });
+</script>

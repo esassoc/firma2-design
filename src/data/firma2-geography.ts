@@ -86,9 +86,13 @@ export const seedWorkAreas = (project: Project): MapWorkArea[] => {
   });
 };
 
+/** A point in the middle of Lake Tahoe: where the four shores meet, and the
+ *  fallback center for anything without one. */
+export const LAKE: LatLng = [39.09, -120.04];
+
 /** Where a project's map opens: its authored center, which every project has. */
 export const projectCenter = (project: Project): LatLng =>
-  projectDetails.get(project.projectName)?.mapCenter ?? [38.5, -121.5];
+  projectDetails.get(project.projectName)?.mapCenter ?? LAKE;
 
 // ---------------------------------------------------------------------------
 // Hydrologic regions — the reference geography coverage is counted against
@@ -100,59 +104,41 @@ export interface Region {
   ring: LatLng[];
 }
 
-// California's ten hydrologic regions, by name. The rings are a coarse,
-// hand-drawn simplification — shared vertices where two regions meet, so the
-// set tiles the state without slivers at this resolution.
+// The Lake Tahoe basin and its two outflow corridors, as six coarse areas: the
+// four shores (each a group of the tributaries that drain into the lake from
+// that side), the Truckee River below the outlet, and the Upper Carson. The
+// four shores meet at a point in the lake, so the set tiles the basin with no
+// slivers at this resolution. Hand-drawn, never traced from a boundary.
 export const HYDROLOGIC_REGIONS: Region[] = [
   {
-    id: 'north-coast',
-    name: 'North Coast',
-    ring: [[42.0, -124.21], [42.0, -122.4], [41.3, -122.45], [40.3, -122.95], [39.4, -122.85], [38.8, -122.7], [38.3, -122.55], [38.3, -123.05], [39.0, -123.7], [39.8, -123.85], [40.44, -124.41], [41.0, -124.12]],
+    id: 'truckee-river',
+    name: 'Truckee River',
+    ring: [[39.42, -120.4], [39.42, -120.06], [39.255, -120.06], [39.255, -120.17], [39.18, -120.17], [39.15, -120.4]],
   },
   {
-    id: 'sacramento-river',
-    name: 'Sacramento River',
-    ring: [[42.0, -122.4], [42.0, -120.75], [40.6, -120.55], [39.75, -120.15], [39.4, -120.35], [39.0, -120.2], [38.85, -120.2], [38.65, -120.8], [38.4, -121.5], [38.25, -121.9], [38.3, -122.55], [38.8, -122.7], [39.4, -122.85], [40.3, -122.95], [41.3, -122.45]],
+    id: 'north-shore',
+    name: 'North Shore',
+    ring: [[39.42, -120.06], [39.42, -119.85], [39.22, -119.85], LAKE, [39.18, -120.17], [39.255, -120.17], [39.255, -120.06]],
   },
   {
-    id: 'north-lahontan',
-    name: 'North Lahontan',
-    ring: [[42.0, -120.75], [42.0, -120.0], [39.0, -120.0], [38.2, -118.93], [38.2, -119.6], [38.6, -119.95], [39.0, -120.2], [39.4, -120.35], [39.75, -120.15], [40.6, -120.55]],
+    id: 'east-shore',
+    name: 'East Shore',
+    ring: [[39.22, -119.85], [38.95, -119.8], [38.95, -119.93], LAKE],
   },
   {
-    id: 'san-francisco-bay',
-    name: 'San Francisco Bay',
-    ring: [[38.3, -123.05], [38.3, -122.55], [38.25, -121.9], [37.9, -121.75], [37.45, -121.55], [37.1, -121.6], [37.1, -122.35], [37.2, -122.45], [37.82, -122.52]],
+    id: 'south-shore',
+    name: 'South Shore',
+    ring: [LAKE, [38.95, -119.93], [38.95, -119.8], [38.85, -119.8], [38.85, -119.97], [38.65, -119.98], [38.65, -120.12], [38.95, -120.12]],
   },
   {
-    id: 'san-joaquin-river',
-    name: 'San Joaquin River',
-    ring: [[38.25, -121.9], [38.4, -121.5], [38.65, -120.8], [38.85, -120.2], [39.0, -120.2], [38.6, -119.95], [38.2, -119.6], [37.4, -118.95], [36.9, -118.75], [36.85, -119.8], [36.85, -120.6], [37.1, -121.2], [37.45, -121.55], [37.9, -121.75]],
+    id: 'west-shore',
+    name: 'West Shore',
+    ring: [LAKE, [38.95, -120.12], [38.95, -120.4], [39.15, -120.4], [39.18, -120.17]],
   },
   {
-    id: 'central-coast',
-    name: 'Central Coast',
-    ring: [[37.1, -122.35], [37.1, -121.6], [37.45, -121.55], [37.1, -121.2], [36.85, -120.6], [36.0, -120.35], [35.4, -120.1], [34.85, -119.4], [34.45, -120.47], [35.65, -121.28], [36.6, -121.9], [36.95, -122.05]],
-  },
-  {
-    id: 'tulare-lake',
-    name: 'Tulare Lake',
-    ring: [[36.9, -118.75], [36.85, -119.8], [36.85, -120.6], [36.0, -120.35], [35.4, -120.1], [34.85, -119.4], [34.8, -118.8], [35.8, -118.35]],
-  },
-  {
-    id: 'south-lahontan',
-    name: 'South Lahontan',
-    ring: [[38.2, -119.6], [38.2, -118.93], [35.7, -115.6], [34.6, -115.5], [34.3, -116.8], [34.4, -117.7], [34.8, -118.8], [35.8, -118.35], [36.9, -118.75], [37.4, -118.95]],
-  },
-  {
-    id: 'south-coast',
-    name: 'South Coast',
-    ring: [[34.45, -120.47], [34.85, -119.4], [34.8, -118.8], [34.4, -117.7], [34.3, -116.8], [33.4, -116.3], [32.65, -116.1], [32.53, -117.12], [33.2, -117.38], [33.7, -118.3], [34.02, -118.8], [34.4, -119.7]],
-  },
-  {
-    id: 'colorado-river',
-    name: 'Colorado River',
-    ring: [[35.7, -115.6], [35.0, -114.63], [34.3, -114.13], [33.4, -114.72], [32.72, -114.72], [32.65, -116.1], [33.4, -116.3], [34.3, -116.8], [34.6, -115.5]],
+    id: 'upper-carson',
+    name: 'Upper Carson River',
+    ring: [[38.85, -119.8], [38.65, -119.8], [38.65, -119.98], [38.85, -119.97]],
   },
 ];
 
@@ -179,30 +165,30 @@ export interface Subwatershed {
 
 /** The stream each project works on, which names its subwatersheds. */
 const STREAMS: Record<string, string> = {
-  'Deer Creek Riparian Corridor Enhancement': 'Deer Creek',
-  'Scott River Fish Passage Barrier Removal': 'Scott River',
-  'Suisun Slough Tidal Marsh Enhancement': 'Suisun Slough',
-  'Red Clover Valley Meadow Reconnection': 'Red Clover Creek',
-  'Cosumnes Floodplain Reconnection': 'Cosumnes River',
-  'Bear River Gravel Augmentation': 'Bear River',
-  'Yuba Headwaters Fuels Reduction': 'North Yuba River',
-  'Butte Creek Canyon Fuel Break': 'Butte Creek',
-  'Navarro River Large Wood Placement': 'Navarro River',
-  'Salinas River Arundo Removal': 'Salinas River',
-  'Alameda Creek Culvert Retrofit': 'Alameda Creek',
+  'Deer Creek Riparian Corridor Enhancement': 'Saxon Creek',
+  'Scott River Fish Passage Barrier Removal': 'Ward Creek',
+  'Suisun Slough Tidal Marsh Enhancement': 'Trout Creek',
+  'Red Clover Valley Meadow Reconnection': 'West Fork Carson River',
+  'Cosumnes Floodplain Reconnection': 'Donner Creek',
+  'Bear River Gravel Augmentation': 'General Creek',
+  'Yuba Headwaters Fuels Reduction': 'Third Creek',
+  'Butte Creek Canyon Fuel Break': 'Glenbrook Creek',
+  'Navarro River Large Wood Placement': 'Meeks Creek',
+  'Salinas River Arundo Removal': 'Cold Creek',
+  'Alameda Creek Culvert Retrofit': 'Incline Creek',
   'Truckee River Streambank Stabilization': 'Truckee River',
-  'Elk River Sediment Reduction': 'Elk River',
-  'Carmel Valley Steelhead Habitat': 'Carmel River',
-  'Owens Valley Spring Channel Restoration': 'Owens River',
-  'Putah Creek Riparian Planting': 'Putah Creek',
-  'San Luis Rey Arroyo Toad Habitat': 'San Luis Rey River',
-  'Klamath Tributary Thermal Refugia': 'Klamath River',
-  'Mokelumne Meadow Rewetting': 'Mokelumne River',
-  'Pescadero Marsh Tidal Exchange': 'Pescadero Creek',
-  'Battle Creek Diversion Screening': 'Battle Creek',
-  'Cache Creek Floodplain Terracing': 'Cache Creek',
-  'Trinity River Side-Channel Construction': 'Trinity River',
-  'Arroyo Seco Urban Greenway': 'Arroyo Seco',
+  'Elk River Sediment Reduction': 'Burton Creek',
+  'Carmel Valley Steelhead Habitat': 'Bear Creek',
+  'Owens Valley Spring Channel Restoration': 'Martis Creek',
+  'Putah Creek Riparian Planting': 'Edgewood Creek',
+  'San Luis Rey Arroyo Toad Habitat': 'McFaul Creek',
+  'Klamath Tributary Thermal Refugia': 'Glen Alpine Creek',
+  'Mokelumne Meadow Rewetting': 'Grass Lake Creek',
+  'Pescadero Marsh Tidal Exchange': 'Taylor Creek',
+  'Battle Creek Diversion Screening': 'Blackwood Creek',
+  'Cache Creek Floodplain Terracing': 'Heavenly Valley Creek',
+  'Trinity River Side-Channel Construction': 'Marlette Creek',
+  'Arroyo Seco Urban Greenway': 'Griff Creek',
 };
 
 // Eight radii per ring, so a subwatershed reads as a drainage rather than a
@@ -225,15 +211,18 @@ const blob = (center: LatLng, radiusDeg: number, pattern: number): LatLng[] => {
 
 /**
  * Two per project: the LOWER unit holds the project's own center (so adopting
- * it covers the work), the UPPER sits upstream beside it. Real subwatersheds
- * are ten to forty thousand acres; these land in that range.
+ * it covers the work), the UPPER sits upstream of it — away from the lake,
+ * which is where every tributary in the basin comes from. Basin subwatersheds
+ * run a few thousand to ten thousand acres; these land in that range.
  */
 export const SUBWATERSHEDS: Subwatershed[] = projects.flatMap((project) => {
   const stream = STREAMS[project.projectName] ?? project.projectName;
   const [lat, lng] = projectCenter(project);
   const slug = projectSlug(project);
-  const lower = blob([lat - 0.004, lng + 0.003], 0.075, 0);
-  const upper = blob([lat + 0.12, lng + 0.1], 0.07, 1);
+  const away = [lat - LAKE[0], lng - LAKE[1]];
+  const length = Math.hypot(away[0], away[1]) || 1;
+  const lower = blob([lat - 0.004, lng + 0.003], 0.032, 0);
+  const upper = blob([lat + (away[0] / length) * 0.055, lng + (away[1] / length) * 0.055], 0.03, 1);
   return [
     { id: `${slug}-lower`, name: `Lower ${stream}`, ring: lower, acres: Math.round(ringAcres(lower)), projectSlug: slug },
     { id: `${slug}-upper`, name: `Upper ${stream}`, ring: upper, acres: Math.round(ringAcres(upper)), projectSlug: slug },
@@ -282,6 +271,39 @@ export const LAYER_KINDS: { value: LayerKind; label: string; note?: string; rast
   },
 ];
 
+/** Quick picks beside every map colour field: hues that hold on the grey base map. */
+export const MAP_SWATCHES: { value: string; label: string }[] = [
+  { value: '#3e63dd', label: 'Indigo' },
+  { value: '#0090ff', label: 'Blue' },
+  { value: '#12a594', label: 'Teal' },
+  { value: '#46a758', label: 'Green' },
+  { value: '#f76b15', label: 'Orange' },
+  { value: '#e5484d', label: 'Red' },
+  { value: '#8e4ec6', label: 'Purple' },
+  { value: '#6b7280', label: 'Gray' },
+];
+
+export type LineStyle = 'solid' | 'dashed' | 'dotted';
+
+export const LINE_STYLES: { value: LineStyle; label: string }[] = [
+  { value: 'solid', label: 'Solid' },
+  { value: 'dashed', label: 'Dashed' },
+  { value: 'dotted', label: 'Dotted' },
+];
+
+/**
+ * A layer's line style. Regions were always drawn dashed, before the style was
+ * a setting, so a regions layer saved without one keeps its dashes.
+ */
+export const lineStyleOf = (layer: Pick<ReferenceLayer, 'strokeStyle' | 'draws'>): LineStyle =>
+  layer.strokeStyle ?? (layer.draws === 'regions' ? 'dashed' : 'solid');
+
+/** The SVG/Leaflet dash pattern for a style at a line width. Undefined: solid. */
+export const dashOf = (style: LineStyle, width: number): string | undefined => {
+  const w = Math.max(1, width);
+  return style === 'dashed' ? `${w * 4} ${w * 3}` : style === 'dotted' ? `${w * 0.1} ${w * 2.5}` : undefined;
+};
+
 export interface ReferenceLayer {
   id: string;
   name: string;
@@ -300,6 +322,10 @@ export interface ReferenceLayer {
   strokeWidth: number;
   fill: string;
   fillOpacity: number;
+  /** Absent on layers saved before line styles: read it through lineStyleOf(). */
+  strokeStyle?: LineStyle;
+  /** Print the pop-up field on each shape, instead of on hover only. */
+  showLabels?: boolean;
   /** Which geometry in this file the prototype draws for it. Null: none to draw. */
   draws: 'regions' | 'subwatersheds' | null;
 }
@@ -309,10 +335,10 @@ export const REFERENCE_LAYERS: ReferenceLayer[] = [
     id: 'subwatersheds',
     name: 'Subwatersheds',
     kind: 'feature',
-    url: 'https://services.example.org/arcgis/rest/services/Hydrography/FeatureServer/2',
+    url: 'https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer/6',
     description: 'Drainage units small enough to stand for one project’s footprint.',
     popupField: 'NAME',
-    minZoom: 9,
+    minZoom: 11,
     onByDefault: true,
     active: true,
     publisherColours: false,
@@ -323,11 +349,28 @@ export const REFERENCE_LAYERS: ReferenceLayer[] = [
     draws: 'subwatersheds',
   },
   {
+    id: 'subbasins',
+    name: 'Subbasins',
+    kind: 'feature',
+    url: 'https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer/4',
+    description: 'USGS 8-digit watersheds, the scale river programs report at.',
+    popupField: 'NAME',
+    minZoom: 7,
+    onByDefault: false,
+    active: true,
+    publisherColours: false,
+    stroke: '#0d74ce',
+    strokeWidth: 1.5,
+    fill: '#0d74ce',
+    fillOpacity: 0,
+    draws: null,
+  },
+  {
     id: 'hydrologic-regions',
     name: 'Hydrologic regions',
     kind: 'geojson',
     url: 'https://data.example.org/reference/hydrologic-regions.geojson',
-    description: 'The ten regions the coverage report counts against.',
+    description: 'The six basin areas the coverage report counts against.',
     popupField: 'REGION_NAME',
     minZoom: null,
     onByDefault: false,
@@ -383,16 +426,12 @@ export interface Place {
 }
 
 const TOWNS: [string, number, number][] = [
-  ['Red Bluff', 40.1785, -122.2358], ['Chico', 39.7285, -121.8375], ['Redding', 40.5865, -122.3917],
-  ['Yreka', 41.7354, -122.6345], ['Fort Jones', 41.6071, -122.8414], ['Quincy', 39.9368, -120.9472],
-  ['Truckee', 39.328, -120.1833], ['Downieville', 39.5596, -120.8263], ['Grass Valley', 39.2191, -121.0611],
-  ['Ukiah', 39.1502, -123.2078], ['Eureka', 40.8021, -124.1637], ['Salinas', 36.6777, -121.6555],
-  ['King City', 36.2127, -121.126], ['Carmel-by-the-Sea', 36.5552, -121.9233], ['Bishop', 37.3635, -118.3951],
-  ['Independence', 36.8027, -118.2001], ['Davis', 38.5449, -121.7405], ['Fairfield', 38.2494, -122.04],
-  ['Fremont', 37.5485, -121.9886], ['Pescadero', 37.2552, -122.383], ['Weaverville', 40.731, -122.942],
-  ['Pasadena', 34.1478, -118.1445], ['Pala', 33.3653, -117.0761], ['Elk Grove', 38.4088, -121.3716],
-  ['Woodland', 38.6785, -121.7733], ['Jackson', 38.3488, -120.7741], ['Fresno', 36.7378, -119.7871],
-  ['Bakersfield', 35.3733, -119.0187], ['El Centro', 32.792, -115.5631], ['Visalia', 36.3302, -119.2921],
+  ['Truckee', 39.328, -120.1833], ['Olympic Valley', 39.1971, -120.2357], ['Tahoe City', 39.1677, -120.1452],
+  ['Carnelian Bay', 39.2269, -120.0802], ['Tahoe Vista', 39.2399, -120.051], ['Kings Beach', 39.2377, -120.0266],
+  ['Incline Village', 39.2513, -119.973], ['Glenbrook', 39.0905, -119.9393], ['Zephyr Cove', 39.0013, -119.9474],
+  ['Stateline', 38.9616, -119.9396], ['South Lake Tahoe', 38.9399, -119.9772], ['Meyers', 38.8566, -120.0135],
+  ['Tahoma', 39.0674, -120.1288], ['Homewood', 39.0855, -120.1602], ['Markleeville', 38.6941, -119.7802],
+  ['Kirkwood', 38.7024, -120.0716],
 ];
 
 export const PLACES: Place[] = [

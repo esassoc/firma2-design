@@ -1,4 +1,4 @@
-// Review and publishing — the sweep a steward or administrator runs to bring
+// Review and publishing — the sweep a manager or administrator runs to bring
 // public pages up to date. One module for the routes, the queues and the
 // review schedules, so the org's Review page, the workspace's, the project's
 // badge and the review page itself count the same projects the same way.
@@ -7,7 +7,7 @@
 // record in firma2-publish-history; this module only gathers them.
 //
 // A QUEUE IS EVERY PROJECT, NOT ONLY THE PENDING ONES. "Did we get to all of
-// them?" is the steward's question, so a queue knows its whole set and says
+// them?" is the manager's question, so a queue knows its whole set and says
 // how much of it is published. Oldest waiting first: the page that has been
 // behind longest is the one a reader is most likely to have misread.
 //
@@ -177,7 +177,7 @@ export const organizationBacklogs = (): OrganizationBacklog[] =>
     .filter((b) => b.pending > 0)
     .sort((a, b) => b.overdue - a.overdue || b.oldestDays - a.oldestDays || a.organization.localeCompare(b.organization));
 
-/** "4 months", "12 days" — how long a page has been behind, at the grain a steward plans in. */
+/** "4 months", "12 days" — how long a page has been behind, at the grain a manager plans in. */
 export const waitingLabel = (days: number): string => {
   if (days < 1) return 'Today';
   if (days < 45) return `${days} day${days === 1 ? '' : 's'}`;

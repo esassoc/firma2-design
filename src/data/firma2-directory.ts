@@ -93,7 +93,17 @@ export interface Organization {
   created: string;
   /** Grant programs it administers; empty for anyone who does not fund. */
   programs: string[];
+  /** How someone without a matching domain gets in (Access › How people join). */
+  joining: JoiningChoice;
+  /** The administrator who created it — only administrators create
+   *  organizations (.scratch/access-requests/spec.md, decision 7). */
+  addedBy: string;
+  /** Who asked for it, when it began as a new-organization request. */
+  requestedBy?: string;
 }
+
+/** Access › How people join. `approval` is the default (decided 2026-11-02). */
+export type JoiningChoice = 'open' | 'invite' | 'approval';
 
 /** The values Organization settings › Access offers for who can see an
  *  organization. One list, so the settings page, the create dialog and the
@@ -109,20 +119,20 @@ export interface AccessChoice<V extends string = string> {
 
 export const visibilityChoices: AccessChoice<OrganizationVisibility>[] = [
   { value: 'public', label: 'Public' },
-  { value: 'workspace', label: 'Workspace members' },
+  { value: 'workspace', label: 'Members of any organization' },
   { value: 'private', label: 'Private to organization members' },
 ];
 
-export const joiningChoices: AccessChoice[] = [
+export const joiningChoices: AccessChoice<JoiningChoice>[] = [
+  { value: 'approval', label: 'Approval required', hint: 'Anyone can ask. Managers approve each request.' },
+  { value: 'invite', label: 'Invitation required', hint: 'Not listed for people choosing an organization. Managers invite.' },
   { value: 'open', label: 'Anyone who can see it can join' },
-  { value: 'invite', label: 'Invitation required' },
-  { value: 'approval', label: 'Approval required', hint: 'Member managers approve each request.' },
 ];
 
 /** The short form a grid cell has room for. */
 export const visibilityLabel: Record<OrganizationVisibility, string> = {
   public: 'Public',
-  workspace: 'Workspace',
+  workspace: 'Members',
   private: 'Members only',
 };
 
@@ -195,9 +205,9 @@ const seeds: { name: string; type: OrganizationType }[] = [
 // last organization makes them an organizationless Viewer: the same place a
 // Viewer lands when removed from their last one.
 //
-// STEWARD IS NOT A ROLE. It is a flag on a membership, Linear's team owner: it
+// MANAGER IS NOT A ROLE. It is a flag on a membership, Linear's team owner: it
 // runs one organization (its members, settings and approvals) and is set on
-// that organization's Members page. Administrators are stewards of every
+// that organization's Members page. Administrators are managers of every
 // organization without the flag; a Viewer can never hold it, as a Linear guest
 // can never own a team.
 
@@ -211,9 +221,9 @@ export interface WorkspaceUser {
   /** The organizations this person belongs to. At least one for a Contributor;
    *  a Viewer's may be empty. */
   organizations: string[];
-  /** The organizations they steward — a subset of `organizations`. Always empty
-   *  for a Viewer, and never needed by an Administrator — see isSteward(). */
-  stewardOf: string[];
+  /** The organizations they manage — a subset of `organizations`. Always empty
+   *  for a Viewer, and never needed by an Administrator — see isManager(). */
+  managerOf: string[];
   /** `Invited` has not signed in yet, so it has no last-active date.
    *  `Suspended` has lost all access but stays listed, so the projects and
    *  updates they touched still name them. */
@@ -270,9 +280,9 @@ export const CURRENT_USER = {
  */
 export const CURRENT_USER_ORGANIZATIONS: string[] = [CURRENT_USER.organization, 'Feather Headwaters Trust'];
 
-const roster: { organization: string; role: UserRole; steward: boolean }[] = [];
-const add = (organization: string, role: UserRole, count: number, steward = false) => {
-  for (let i = 0; i < count; i += 1) roster.push({ organization, role, steward });
+const roster: { organization: string; role: UserRole; manager: boolean }[] = [];
+const add = (organization: string, role: UserRole, count: number, manager = false) => {
+  for (let i = 0; i < count; i += 1) roster.push({ organization, role, manager });
 };
 
 // The host agency runs the workspace: its staff are the administrators, and its
@@ -281,7 +291,7 @@ add(CURRENT_USER.organization, 'Administrator', 2);
 add(CURRENT_USER.organization, 'Viewer', 3);
 for (const name of leadNames) {
   const h = hashOf(name);
-  // Every lead organization has one steward, who drafts like any contributor.
+  // Every lead organization has one manager, who drafts like any contributor.
   add(name, 'Contributor', 1, true);
   add(name, 'Contributor', 1 + (h % 3));
   add(name, 'Viewer', h % 2);
@@ -295,7 +305,7 @@ for (const { name, type } of OTHER_ORGANIZATIONS) {
 }
 // One program officer at the host board drafts updates too — added last so no
 // earlier name moves — which gives its Members page a Contributor to make a
-// steward of.
+// manager of.
 add(CURRENT_USER.organization, 'Contributor', 1);
 // Members of the public who follow the program — signed-in Viewers who belong
 // to no organization.
@@ -307,22 +317,22 @@ export const users: WorkspaceUser[] = [
     email: CURRENT_USER.email,
     role: 'Administrator',
     organizations: [CURRENT_USER.organization],
-    stewardOf: [],
+    managerOf: [],
     status: 'Active',
     lastActive: daysAgo(0),
   },
-  ...roster.map(({ organization, role, steward }, k): WorkspaceUser => {
+  ...roster.map(({ organization, role, manager }, k): WorkspaceUser => {
     const name = nameAt(k);
     // Every ninth account is an invitation nobody has accepted yet — the row an
     // administrator most needs to find, so the fixture has to hold some. A few
-    // others were suspended — never a steward, whose organization would then be
+    // others were suspended — never a manager, whose organization would then be
     // left without the person who runs it.
     const invited = k % 9 === 4;
-    const suspended = !invited && !steward && k % 17 === 10;
+    const suspended = !invited && !manager && k % 17 === 10;
     // Some contributors work for two lead organizations — a consultant on one
     // project, staff on another — so the fixture holds multi-organization rows.
     const lead = leadNames.indexOf(organization);
-    const second = role === 'Contributor' && !steward && lead >= 0 && hashOf(name) % 5 === 0
+    const second = role === 'Contributor' && !manager && lead >= 0 && hashOf(name) % 5 === 0
       ? leadNames[(lead + 1) % leadNames.length]
       : '';
     return {
@@ -330,7 +340,7 @@ export const users: WorkspaceUser[] = [
       email: emailOf(name, organization),
       role,
       organizations: [organization, second].filter(Boolean),
-      stewardOf: steward ? [organization] : [],
+      managerOf: manager ? [organization] : [],
       status: invited ? 'Invited' : suspended ? 'Suspended' : 'Active',
       // A suspended account keeps the date it was last used: the last time it
       // had access is what an administrator reviewing it needs.
@@ -339,11 +349,11 @@ export const users: WorkspaceUser[] = [
   }),
 ];
 
-/** Stewards this organization — flagged on it, or an Administrator of the
- *  workspace. Without an organization: stewards any. */
-export const isSteward = (user: WorkspaceUser, organization?: string): boolean =>
+/** Manages this organization — flagged on it, or an Administrator of the
+ *  workspace. Without an organization: manages any. */
+export const isManager = (user: WorkspaceUser, organization?: string): boolean =>
   user.role === 'Administrator' ||
-  (user.role !== 'Viewer' && (organization ? user.stewardOf.includes(organization) : user.stewardOf.length > 0));
+  (user.role !== 'Viewer' && (organization ? user.managerOf.includes(organization) : user.managerOf.length > 0));
 
 /** Who anyone can ask about their access — Linear's "View workspace admins". */
 export const administrators = (): WorkspaceUser[] =>
@@ -355,11 +365,13 @@ export const administrators = (): WorkspaceUser[] =>
 // Organizations, assembled — after people, because they count them
 // ---------------------------------------------------------------------------
 
+const adminNames = users.filter((u) => u.role === 'Administrator' && u.name !== CURRENT_USER.name).map((u) => u.name);
+
 export const organizations: Organization[] = seeds
   .map(({ name, type }) => {
     const members = users.filter((u) => u.organizations.includes(name) && u.status !== 'Suspended');
     const contact =
-      members.find((u) => u.stewardOf.includes(name) && u.status === 'Active') ??
+      members.find((u) => u.managerOf.includes(name) && u.status === 'Active') ??
       members.find((u) => u.role === 'Administrator' && u.name !== CURRENT_USER.name) ??
       members[0];
     const h = hashOf(name);
@@ -403,6 +415,15 @@ export const organizations: Organization[] = seeds
       // the fixture's today; everyone else joined after it.
       created: isoDaysAgo(host ? 940 : 30 + (h % 880)),
       programs: funderPrograms.get(name) ?? [],
+      // Most ask for approval, the new default. Contractors keep to invitations;
+      // a few open nonprofits let anyone who can see them in.
+      joining: (type === 'Private company'
+        ? 'invite'
+        : type === 'Nonprofit' && h % 7 === 2
+          ? 'open'
+          : 'approval') as JoiningChoice,
+      // The host's administrators added everyone, the founder most often.
+      addedBy: host || h % 3 !== 1 ? CURRENT_USER.name : (adminNames[h % adminNames.length] ?? CURRENT_USER.name),
     };
   })
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -425,13 +446,18 @@ export const userRoles: UserRole[] = ['Administrator', 'Contributor', 'Viewer'];
  *  Administrator makes another, from Users. */
 export const grantableRoles: UserRole[] = ['Contributor', 'Viewer'];
 
+/** The domain that makes an organization VERIFIED: a verified approved domain
+ *  that is also its website. A name proves nothing; this does (decision 6). */
+export const verifiedDomain = (org: Pick<Organization, 'website' | 'approvedDomains'>): string | undefined =>
+  org.approvedDomains.find((d) => d.status === 'verified' && d.domain === org.website.replace(/^https?:\/\/(www\.)?/, ''))?.domain;
+
 export const getOrganization = (slug: string): Organization | undefined =>
   organizations.find((o) => o.slug === slug);
 
 export const currentOrganization = (): Organization =>
   organizations.find((o) => o.name === CURRENT_USER.organization)!;
 
-/** People at one organization, administrators and stewards first. Suspended
+/** People at one organization, administrators and managers first. Suspended
  *  accounts are left out: they belong to no one until restored. */
 export const membersOf = (organization: string): WorkspaceUser[] =>
   users
@@ -439,7 +465,7 @@ export const membersOf = (organization: string): WorkspaceUser[] =>
     .sort(
       (a, b) =>
         userRoles.indexOf(a.role) - userRoles.indexOf(b.role) ||
-        Number(b.stewardOf.includes(organization)) - Number(a.stewardOf.includes(organization)) ||
+        Number(b.managerOf.includes(organization)) - Number(a.managerOf.includes(organization)) ||
         a.name.localeCompare(b.name),
     );
 

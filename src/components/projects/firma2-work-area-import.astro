@@ -25,6 +25,7 @@
 // lego — see firma2-project-map); the tables are the settings-table style.
 // Beacon is not cloned here.
 import EsaCard from '@esa/ecology/esa-card.astro';
+import Firma2HelpLink from '../shared/firma2-help-link.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
@@ -32,6 +33,7 @@ import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
 import { projects, projectHref, projectSlug } from '../../data/firma2-projects';
 import { BULK_IMPORT_SAMPLE, projectCenter, projectNumber, seedWorkAreas } from '../../data/firma2-geography';
 import { withBase } from '../../lib/base';
+import '../settings/firma2-settings-table.css';
 
 const config = {
   sample: BULK_IMPORT_SAMPLE,
@@ -56,6 +58,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
 
   <div class="stack" data-gap="xl" data-on>
     <EsaCard title="File">
+      <Firma2HelpLink slot="actions" article="importing">Learn about importing</Firma2HelpLink>
       <div class="stack" data-gap="md">
         <p class="typography-body-md">A zipped shapefile or file geodatabase.</p>
         <esa-file-upload label="File" accept=".zip" max-size-mb="100" data-file></esa-file-upload>
@@ -85,10 +88,12 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
 
       <section class="stack" data-gap="md" data-matched-section>
         <h3 class="typography-title-strong firma2-work-area-import__h">Will be added</h3>
-        <table class="firma2-work-area-import__table">
+        <div class="firma2-settings-table-scroll">
+          <table class="firma2-work-area-import__table">
           <thead><tr><th scope="col" class="num">#</th><th scope="col">Project</th><th scope="col">Work area</th><th scope="col">Kind</th><th scope="col" class="num">Extent</th><th scope="col">Already has</th></tr></thead>
           <tbody data-matched></tbody>
         </table>
+        </div>
       </section>
 
       <section class="stack" data-gap="md" data-unmatched-section>
@@ -97,10 +102,12 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
             <p class="typography-body-sm" data-unmatched-text></p>
           </EsaAlertBox>
         </div>
-        <table class="firma2-work-area-import__table">
+        <div class="firma2-settings-table-scroll">
+          <table class="firma2-work-area-import__table">
           <thead><tr><th scope="col" class="num">#</th><th scope="col">In the file</th><th scope="col">Work area</th><th scope="col">Match to</th></tr></thead>
           <tbody data-unmatched></tbody>
         </table>
+        </div>
       </section>
 
       <div class="cluster" data-gap="xs">
@@ -192,14 +199,6 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
     margin: 0;
     padding-inline-start: var(--spacing-500);
   }
-
-  :global(.firma2-map-tip) {
-    padding: var(--spacing-200) var(--spacing-300);
-    background: var(--color-background-elevation-floating, #fcfcfc);
-    border: 1px solid var(--color-border-default, #cecece);
-    border-radius: var(--radius-sm, 0.25rem);
-    color: var(--color-content-default, #202020);
-  }
 </style>
 
 <script>
@@ -208,11 +207,11 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
   import type { BulkFeature, MapWorkArea } from '../../data/firma2-geography';
   import { centroid, formatExtent, pathMiles, ringAcres } from '../../lib/geo';
   import type { LatLng } from '../../lib/geo';
-  import { createMap, loadLeaflet, shapeStyle } from '../../lib/leaflet';
+  import { createMap, kindColor, loadLeaflet, markerStyle, shapeStyle } from '../../lib/leaflet';
   import type { Leaflet } from '../../lib/leaflet';
   import { newWorkAreaId, onGeoChange, readProjectSource, readWorkAreas, writeWorkAreas } from '../../lib/work-areas';
 
-  type Control = HTMLElement & { value?: unknown; options?: unknown };
+  type Control = HTMLElement & { value?: unknown; options?: unknown; helpText?: string };
   interface ProjectRow {
     slug: string;
     name: string;
@@ -268,6 +267,19 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
       };
     };
 
+    // ---- the chosen columns' real values ----------------------------------------------
+    // A field name like PROJ_NO or UNIT says little about what is in it; the
+    // first three distinct values under each select show what will be matched
+    // and what the work areas will be called, before the tables below repaint.
+    const valuesOf = (field: string): string => {
+      const seen = [...new Set(config.sample.features.map((f) => (f.fields[field] ?? '').trim()).filter(Boolean))].slice(0, 3);
+      return seen.length ? `e.g. ${seen.join(', ')}` : 'Empty in this file';
+    };
+    const preview = () => {
+      join.helpText = valuesOf(joinField);
+      name.helpText = nameField ? valuesOf(nameField) : '';
+    };
+
     // ---- the preview map -----------------------------------------------------------
     let map: Leaflet = null;
     let drawn: Leaflet = null;
@@ -290,12 +302,12 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
       // A partner's file spans the state, where a treatment unit is a speck:
       // a dot on each shape says where it landed at any zoom.
       rows.forEach(({ area, project }) =>
-        L.circleMarker(centroid(area.path), { ...shapeStyle(area.kind), radius: 5, fillOpacity: 0.9 })
+        L.circleMarker(centroid(area.path), { ...markerStyle(kindColor(area.kind)), radius: 5 })
           .bindTooltip(`${esc(project.name)}<br>${esc(area.label)}`, { className: 'firma2-map-tip' })
           .addTo(drawn),
       );
       if (rows.length) map.fitBounds(drawn.getBounds(), { padding: [40, 40], maxZoom: 13 });
-      else map.setView([37.6, -120.4], 6);
+      else map.setView([39.05, -120.07], 10);
     };
 
     // ---- the two tables ----------------------------------------------------------------
@@ -382,6 +394,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
           against.value = againstField;
           name.options = [{ value: '', label: 'Position in file' }, ...fields.map((f) => ({ value: f, label: f }))];
           name.value = nameField;
+          preview();
           paint();
         });
       }, 700);
@@ -395,6 +408,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
     join.addEventListener('change', () => {
       joinField = String(join.value ?? 'PROJ_NO');
       handMatched.clear();
+      preview();
       paint();
     });
     against.addEventListener('change', () => {
@@ -404,6 +418,7 @@ const sourceHref = withBase('/prototypes/workspace-settings/project-source');
     });
     name.addEventListener('change', () => {
       nameField = String(name.value ?? '');
+      preview();
       paint();
     });
     $('[data-again]').addEventListener('click', () => {

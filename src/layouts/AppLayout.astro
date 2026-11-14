@@ -21,8 +21,11 @@ import Firma2PagesNav from '../components/shared/firma2-pages-nav.astro';
 import Firma2NavArrange from '../components/shared/firma2-nav-arrange.astro';
 import Firma2TopBar from '../components/shared/firma2-top-bar.astro';
 import Firma2UtilityBar from '../components/shared/firma2-utility-bar.astro';
+import Firma2HelpSheet from '../components/shared/firma2-help-sheet.astro';
+import Firma2RequestNotice from '../components/welcome/firma2-request-notice.astro';
 import { seedEntries } from '../data/firma2-pages';
-import { pagesNavItems } from '../lib/custom-pages';
+import { pagesNavItems, dashboardNavItems } from '../lib/custom-pages';
+import { users } from '../data/firma2-directory';
 
 interface Props {
   /** Document title. The shell's wordmark is the product name and does not change. */
@@ -86,13 +89,26 @@ const items = (nav === 'workspace-settings' ? workspaceSettingsNavItems : [...na
 // before any script runs; Firma2PagesNav swaps in this browser's adds and puts
 // the + on the heading. Built already based and enabled — a folder has no href
 // and must not be dimmed by the rule above.
-const railItems = nav === 'app' ? [...items, ...pagesNavItems(seedEntries)] : items;
+// DASHBOARDS COME JUST BEFORE THEM, in a group of their own: the workspace's
+// Progress Dashboard and the ones added beside it.
+const railItems = nav === 'app' ? [...items, ...dashboardNavItems(seedEntries, undefined, active === 'progress-dashboard'), ...pagesNavItems(seedEntries)] : items;
+// THE WORKSPACE MENU NAMES THE PLAN AND THE HEADCOUNT (firma2 batch D): a
+// returning administrator's first two questions about the workspace. Members
+// are people who can sign in now; invitations and suspended accounts don't count.
+const memberCount = users.filter((u) => u.status === 'Active').length;
 const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry.id) }));
 
-// THE ACCOUNT MENU IS SIGN OUT ALONE. The shell's default adds Profile and
-// Settings, both cut (user call): the settings rail already opens on the
-// Personal pages, so the account menu was a second door to the same room.
-const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as const }];
+// THE ACCOUNT MENU: JOIN AN ORGANIZATION, THEN SIGN OUT. The shell's default
+// adds Profile and Settings, both cut (user call): the settings rail already
+// opens on the Personal pages, so the account menu was a second door to the
+// same room. Join an organization is the one addition (user, 2026-11-02):
+// which organizations you belong to is about WHO YOU ARE, which is what this
+// menu is, and its only other home — a link under Settings › Security — was
+// somewhere nobody waiting on a request would look.
+const userMenu = [
+  { label: 'Join an organization', action: 'join' },
+  { label: 'Sign out', action: 'sign-out', variant: 'danger' as const },
+];
 
 // No `mark` is passed: this spoke has no ProjectFirma wordmark or glyph yet, and
 // the brand ramp still points at the hub's default. Inventing a logo for a real
@@ -100,7 +116,27 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
 // design-principles wants the identity RESEARCHED, not fabricated.
 ---
 <BaseLayout title={title}>
-  <div class="firma2-app-frame" data-nav={nav}>
+  {/* THE RAIL'S WIDTH, KNOWN BEFORE FIRST PAINT. Every menu click is a full
+      page load, and the browser paints the new page before the deferred
+      module scripts define esa-sidebar-nav. Until then the rail is a bare
+      element: it collapsed to its brand, the sheet jumped left, then snapped
+      back — the "glitch" on every navigation. The CSS below holds the rail's
+      track while it is :not(:defined); this blocking script hands that rule the
+      width bcn-edge-handle restored last time (storage-key "app-nav"), so a
+      collapsed or resized rail holds its own width, not the default.
+      A DELIBERATE DUPLICATE of storedCollapsed() below and of the handle's
+      200–320 bounds in mountRailEdgeHandle(); change one, change the other. */}
+  <script is:inline>
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem('bcn-edge-handle:app-nav') || '{}');
+        var w = s.c ? 'var(--sidenav-width-collapsed, 72px)'
+          : typeof s.w === 'number' ? Math.min(Math.max(s.w, 200), 320) + 'px' : '';
+        if (w) document.documentElement.style.setProperty('--firma2-rail-boot', w);
+      } catch (e) { /* blocked or corrupt — the default width stands */ }
+    })();
+  </script>
+  <div class="firma2-app-frame" data-nav={nav} data-member-count={memberCount}>
     <EsaAppShell
       title="ProjectFirma 2.0"
       active={active}
@@ -114,9 +150,16 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
       {/* The root-only bar. A page's firma2-page-header swaps its own (crumbs,
           status, actions) in for this one during parse — see firma2-top-bar. */}
       <Firma2TopBar />
-      {width === 'full' ? <slot /> : <EsaContainer maxWidth={width === 'reading' ? CONTENT_READING : CONTENT_MAX}><slot /></EsaContainer>}
+      {/* The signed-in person's access requests — waiting, or answered —
+          above every page's own content (firma2-request-notice). */}
+      {width === 'full'
+        ? <><Firma2RequestNotice /><slot /></>
+        : <EsaContainer maxWidth={width === 'reading' ? CONTENT_READING : CONTENT_MAX}><Firma2RequestNotice /><slot /></EsaContainer>}
     </EsaAppShell>
     <Firma2UtilityBar />
+    {/* Help, docked like every sheet (firma2-help-sheet). Inside the frame,
+        where bcn-side-sheet reserves its room. */}
+    <Firma2HelpSheet />
   </div>
   {nav === 'app' && <Firma2PagesNav />}
   {nav === 'app' && <Firma2NavArrange />}
@@ -131,10 +174,9 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
   // routing is the spoke's, and it belongs in the layout rather than on a page —
   // the menu is on every screen, so its behaviour has to be too.
   //
-  // The account menu is Sign out alone (see the frontmatter), and it stays inert:
-  // there is no sign-in screen to land on. esa-app-shell's AppShellMenuItem has
-  // no `disabled` field, so it cannot yet be DIMMED the way a nav row is — an
-  // upstream gap. Only the workspace menu's actions are wired.
+  // The account menu is Sign out alone (see the frontmatter). It lands on the
+  // sign-in screen (/prototypes/sign-in, built with the access-request flow on
+  // 2026-11-02); nothing is really signed out.
   import { withBase } from '../lib/base';
   import { SETTINGS_HOME } from '../data/firma2-nav';
 
@@ -142,6 +184,11 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     // The workspace menu on the rail's wordmark emits the same event. Settings
     // opens on the first row of its rail, Personal › Preferences.
     settings: SETTINGS_HOME,
+    // Root-relative: the listener below adds the base once. (Sign out was
+    // based here too, which doubled it on the deployed site.)
+    join: '/prototypes/join',
+    plan: '/prototypes/workspace-settings/plan',
+    'sign-out': '/prototypes/sign-in',
   };
 
   // On `document`, not on the menu: the event is composed and bubbling, and the
@@ -184,6 +231,7 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
 <script>
   // Staggers bcn-progress-ring's draw-in across every ring on the page.
   import '../lib/ring-stagger';
+  import { PLAN_NAME, readPlan } from '../lib/workspace-plan';
   import { ICON_PATHS } from '@esa/ecology/icon-registry';
   // Registers <bcn-edge-handle>, the grip mountRailEdgeHandle appends to the
   // rail's edge below. A side-effect import: the module defines a custom element
@@ -254,6 +302,12 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     // Not a height: the group's <fieldset> keeps the UA's grooved border,
     // padding and margin — esa-radio-group resets all four, this lego none
     // (hub bug, 2026-10-20; drop this once the hub resets it).
+    // The md toggle sizes to its text plus padding (45px); pin its track to the
+    // 40px rung so it lines up beside md buttons and fields.
+    'esa-button-toggle': `
+      .group { height: 40px; box-sizing: border-box; }
+      .option { padding-block: 0; }
+    `,
     'esa-checkbox-group': `
       .items { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
     `,
@@ -445,7 +499,11 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     // needs it full-width; there is no hook, so the same adopted-sheet move as
     // stackRailHead below.
     customElements.whenDefined('esa-dropdown-menu').then(() => {
-      (menu as HTMLElement & { items: unknown }).items = WORKSPACE_MENU;
+      // The plan and headcount close the menu, after a divider, and open Plan and
+      // usage. Last rather than first: the G S shortcut is drawn on the first item.
+      const members = Number(document.querySelector<HTMLElement>('.firma2-app-frame')?.dataset.memberCount ?? 0);
+      const about = `${PLAN_NAME[readPlan()]} plan · ${members} ${members === 1 ? 'member' : 'members'}`;
+      (menu as HTMLElement & { items: unknown }).items = [...WORKSPACE_MENU, { label: '', divider: true }, { label: about, action: 'plan' }];
       requestAnimationFrame(() => {
         const root = menu.shadowRoot;
         if (!root) return;
@@ -570,11 +628,62 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
   // no `min-width: 0`, so a flex item's automatic minimum holds it at its full
   // text width: "California Watershed Restoration Board" ran past the rail and
   // pushed its parent row's chevron out of sight. Same hub gap.
+  //
+  // DRAWER MODE (phone, see mountResponsiveShell) needs three more things the
+  // lego has no hook for. The toggle is the top bar's 32px icon button, so its
+  // text label is kept for the name and hidden from sight. The panel's Close
+  // button goes to the panel's top corner as a 40px icon button, which leaves
+  // the first row to the workspace menu. And the panel pads for the notch and
+  // the home indicator (safe-area insets), which a fixed full-height panel
+  // otherwise slides under. It lifts off the page on the peek's shadow: this
+  // theme's scrim is transparent (theme-firma2's overlay backdrop), so the
+  // scrim still takes the tap that closes it but draws nothing.
+  const VISUALLY_HIDDEN = 'position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;';
   const RAIL_HEAD_CSS = `
     .rail-head { flex-direction: column; align-items: stretch; }
     .nav-content { overflow-y: auto; }
     .label { min-width: 0; }
+    :host([drawer]) .rail-head { flex-direction: row; }
+    :host([drawer]) .toggle { margin: 0; }
+    :host([drawer]) .toggle-label { ${VISUALLY_HIDDEN} }
+    :host([drawer]) .nav-content {
+      padding-block: calc(var(--spacing-200, 8px) + env(safe-area-inset-top, 0px)) calc(var(--spacing-200, 8px) + env(safe-area-inset-bottom, 0px));
+      padding-inline-start: calc(var(--spacing-200, 8px) + env(safe-area-inset-left, 0px));
+      box-shadow: var(--elevation-3);
+    }
+    :host([drawer]) .drawer-close {
+      position: absolute;
+      inset-block-start: calc(var(--spacing-200, 8px) + env(safe-area-inset-top, 0px));
+      inset-inline-end: var(--spacing-200, 8px);
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    :host([drawer]) .drawer-close > span:last-child { ${VISUALLY_HIDDEN} }
+    slot[name='drawer-foot'] { display: block; margin-block-start: auto; padding-block-start: var(--spacing-200, 8px); }
   `;
+
+  // THE PANEL'S TWO SLOTS. In drawer mode the rail's head (workspace menu,
+  // search) and the account menu belong INSIDE the sliding panel, but the
+  // lego's only slot (`header`) sits in the row beside the toggle, outside it.
+  // So two named slots are placed in the panel itself, the move
+  // firma2-pages-nav already makes for its folder rows: one before everything
+  // Lit renders there, one after the list. Both sit outside Lit's parts, so a
+  // re-render (the `drawer` flip swaps the Close button in and out) leaves
+  // them alone. They hold nothing until the script re-slots items into them.
+  function placeDrawerSlots(root: ShadowRoot): void {
+    const panel = root.querySelector('.nav-content');
+    if (!panel || panel.querySelector(':scope > slot[name="drawer-head"]')) return;
+    const head = document.createElement('slot');
+    head.name = 'drawer-head';
+    const foot = document.createElement('slot');
+    foot.name = 'drawer-foot';
+    panel.prepend(head);
+    panel.append(foot);
+  }
 
   function stackRailHead(): void {
     document.querySelectorAll('esa-sidebar-nav').forEach((nav) => {
@@ -583,6 +692,7 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
       const sheet = new CSSStyleSheet();
       sheet.replaceSync(RAIL_HEAD_CSS);
       root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      placeDrawerSlots(root);
       root._firma2Head = true;
     });
   }
@@ -726,6 +836,129 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
 
   customElements.whenDefined('esa-sidebar-nav').then(mountRailPeek);
 
+  // ---- THE RAIL FOLLOWS THE SCREEN ----
+  //
+  // Two lines, both the spec's (mobile-foundation, 2026-10-21):
+  //
+  //   ≤ 64rem   tablet. The rail starts as its 72px strip — the content gets the
+  //             width, the peek still shows the whole nav on hover, and the foot
+  //             toggle still opens it for real. The screen wins over a stored
+  //             "open": a 768px window with a 280px rail left a 480px page.
+  //             Nothing new is stored; widening back past 64rem restores what
+  //             bcn-edge-handle remembers.
+  //   ≤ 45rem   phone. The rail is esa-sidebar-nav's own DRAWER: its host
+  //             shrinks to a menu toggle on the top bar's leading edge, and the
+  //             nav slides in over the page with a scrim, Escape, and focus
+  //             moved in and back. The lego asks its host to drive `drawer`
+  //             from a media query because the layout and the behaviour have to
+  //             agree; esa-app-shell does not, so this layout does (hub gap).
+  //
+  // In drawer mode the rail's head (workspace menu, search) and the account
+  // menu are re-slotted into the panel (placeDrawerSlots) — moved, not rebuilt,
+  // like everything moveChromeIntoRail moves — and put back on the way out.
+  const PHONE = window.matchMedia('(max-width: 45rem)');
+  const TABLET = window.matchMedia('(max-width: 64rem)');
+  type ShellNav = HTMLElement & { collapsed: boolean; drawer: boolean; drawerOpen: boolean; label: string };
+
+  // What bcn-edge-handle stored for the app rail (storage-key "app-nav").
+  function storedCollapsed(): boolean {
+    try {
+      return !!(JSON.parse(localStorage.getItem('bcn-edge-handle:app-nav') ?? '{}') as { c?: boolean }).c;
+    } catch {
+      return false;
+    }
+  }
+
+  function mountResponsiveShell(): void {
+    document.querySelectorAll<HTMLElement>('.firma2-app-frame').forEach((frame) => {
+      const nav = frame.querySelector<ShellNav>('esa-sidebar-nav');
+      if (!nav) return;
+      const foot = frame.querySelector<HTMLElement>('.firma2-app-frame__account');
+      const toggle = foot?.querySelector<HTMLElement>('.esa-app-shell__toggle') ?? null;
+      const account = foot?.querySelector<HTMLElement>('esa-dropdown-menu') ?? null;
+      const head = Array.from(nav.querySelectorAll<HTMLElement>(':scope > [slot="header"]'));
+      const page = [frame.querySelector<HTMLElement>('.esa-app-shell__content'), frame.querySelector<HTMLElement>('.firma2-utility-bar')];
+      const sidebarLabel = nav.label;
+
+      // A flip the screen made, not the reader: no width ease (the rule on
+      // esa-sidebar-nav[data-resizing] zeroes it for the frame).
+      const setCollapsed = (shut: boolean): void => {
+        if (nav.collapsed === shut) return;
+        nav.setAttribute('data-resizing', '');
+        nav.collapsed = shut;
+        toggle?.classList.toggle('is-collapsed', shut);
+        requestAnimationFrame(() => requestAnimationFrame(() => nav.removeAttribute('data-resizing')));
+      };
+
+      // The lego leaves inerting the page to its host. Behind an open drawer
+      // the pane and the utility strip are out of reach; the top bar is in the
+      // pane, so it goes with it.
+      const setPageInert = (inert: boolean): void => {
+        page.forEach((el) => el && (el.inert = inert));
+      };
+      nav.addEventListener('drawerchange', (event) => {
+        setPageInert((event as CustomEvent<{ open: boolean }>).detail.open);
+      });
+
+      // FOCUS ON A RE-SLOTTED ITEM IS STILL INSIDE THE DRAWER. The lego closes
+      // the drawer when focus leaves its shadow root, and the workspace menu,
+      // search and account menu are light-DOM children slotted into it, so a
+      // tap on any of them would shut the panel under the finger. Stopped at
+      // the host, in capture, before the lego's own listener on its <nav> —
+      // only when focus is moving between the host's own parts.
+      nav.addEventListener(
+        'focusout',
+        (event) => {
+          if (!nav.drawer || !nav.drawerOpen) return;
+          const next = event.relatedTarget as Node | null;
+          if (next && (next === nav || nav.contains(next))) event.stopPropagation();
+        },
+        { capture: true },
+      );
+
+      const setDrawer = (on: boolean): void => {
+        if (nav.drawer === on) return;
+        if (!on && nav.drawerOpen) {
+          nav.drawerOpen = false;
+          setPageInert(false);
+        }
+        frame.removeAttribute('data-nav-peek');
+        nav.drawer = on;
+        // The toggle's name is the landmark's label in drawer mode (the lego
+        // labels both from `label`): "Menu", the word on every phone's
+        // hamburger. Back to the rail's own name on the way out.
+        nav.label = on ? 'Menu' : sidebarLabel;
+        head.forEach((el) => el.setAttribute('slot', on ? 'drawer-head' : 'header'));
+        if (account && foot) {
+          if (on) {
+            account.setAttribute('slot', 'drawer-foot');
+            nav.appendChild(account);
+          } else {
+            account.removeAttribute('slot');
+            foot.prepend(account);
+          }
+        }
+      };
+
+      const apply = (first: boolean): void => {
+        setDrawer(PHONE.matches);
+        // A drawer is never the 72px strip — collapsed zeroes every label.
+        if (PHONE.matches) setCollapsed(false);
+        else if (TABLET.matches) setCollapsed(true);
+        else if (!first) setCollapsed(storedCollapsed());
+      };
+
+      apply(true);
+      PHONE.addEventListener('change', () => apply(false));
+      TABLET.addEventListener('change', () => apply(false));
+    });
+  }
+
+  // After the rail head is stacked: the drawer slots are placed there.
+  customElements.whenDefined('esa-sidebar-nav').then(() => {
+    requestAnimationFrame(() => requestAnimationFrame(mountResponsiveShell));
+  });
+
   // THE CONTENT PANE IS NOT A SCROLL REGION HERE, so it must not be a tab stop.
   //
   // esa-app-shell ships `<main tabindex="0">` and is right to: upstream that pane
@@ -751,6 +984,24 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
 </script>
 
 <style>
+  /* THE RAIL HOLDS ITS TRACK BEFORE IT BOOTS (see the inline script at the top
+     of the markup). Undefined, esa-sidebar-nav has no shadow root, so it would
+     size to its light-DOM header and the sheet would start ~130px left of
+     where it lands a frame later. Reserved at the width it will have, hidden
+     so the half-built light DOM is never painted. Tablet takes the 72px strip
+     whatever was stored, as mountResponsiveShell() does; the phone rule
+     (`:not([drawer])` → none) is more specific and still wins below 45rem. */
+  .firma2-app-frame :global(esa-sidebar-nav:not(:defined)) {
+    display: block;
+    inline-size: var(--firma2-rail-boot, var(--sidenav-width, 280px));
+    visibility: hidden;
+  }
+  @media (max-width: 64rem) {
+    .firma2-app-frame :global(esa-sidebar-nav:not(:defined)) {
+      inline-size: var(--sidenav-width-collapsed, 72px);
+    }
+  }
+
   /* md BUTTONS TAKE THE CONTROL LINE TOO. esa-button has no height: an md
      button is 2 × 12px padding + its content + border, so a text-only one
      lands at 41px and one carrying a 20px icon at 46px — "Add option", every
@@ -822,7 +1073,12 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
        bottom by the same. Every block-axis sticky in the spoke adds this to its
        `top`, which puts its zero back on the sheet's edge. The literal is the
        pane padding the bleeding bands already restate as --_bleed. */
-    --firma2-sticky-origin: calc(var(--spacing-500, 1.5rem) * -1);
+    --firma2-sticky-origin: calc(var(--firma2-pane-padding) * -1);
+    /* The pane's own padding, published so every band that bleeds through it
+       (top bar, rails, maps) reads one number instead of restating
+       esa-app-shell's literal — it steps down on a phone (see the drawer block
+       at the end of this stylesheet), and a restated literal would not. */
+    --firma2-pane-padding: var(--spacing-500, 1.5rem);
     background: var(--color-background-elevation-sunken, #f0f0f0);
     /* The height of the account strip at the foot of the rail — see the ACCOUNT
        MENU block below. Declared here because the rail reads it too, to reserve
@@ -943,6 +1199,7 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     margin: var(--firma2-gutter);
     margin-inline-start: 0;
     margin-block-end: 0;
+    padding: var(--firma2-pane-padding);
     block-size: var(--firma2-fold);
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -970,6 +1227,10 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     :global(.firma2-app-frame:has(bcn-side-sheet[open][collapsed]) .esa-app-shell__content) {
       --_sheet-room: calc(var(--spacing-500, 1.5rem) + 2.5rem + 2 * var(--spacing-200, 0.5rem) + var(--border-width-default, 1px));
     }
+    /* …or from and to the width of the rail it takes the place of. */
+    :global(.firma2-app-frame:has(bcn-side-sheet[open][collapsed][data-from-rail]) .esa-app-shell__content) {
+      --_sheet-room: calc(var(--spacing-500, 1.5rem) + var(--firma2-side-sheet-from));
+    }
     :global(.firma2-app-frame:has(bcn-side-sheet[open]) .esa-app-shell__content > .firma2-top-bar) {
       margin-inline-end: calc(var(--_sheet-room) * -1);
     }
@@ -980,6 +1241,9 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
     :global(.firma2-app-frame .esa-app-shell__content > .firma2-top-bar) {
       transition: margin-inline-end var(--transition-base, 200ms ease);
     }
+    /* …and while a sheet and the page's rail trade places, which is instant. */
+    :global(.firma2-app-frame[data-sheet-swapping] .esa-app-shell__content),
+    :global(.firma2-app-frame[data-sheet-swapping] .esa-app-shell__content > .firma2-top-bar),
     :global(.firma2-app-frame:has(bcn-side-sheet[data-resizing]) .esa-app-shell__content),
     :global(.firma2-app-frame:has(bcn-side-sheet[data-resizing]) .esa-app-shell__content > .firma2-top-bar) {
       transition: none;
@@ -1317,5 +1581,122 @@ const userMenu = [{ label: 'Sign out', action: 'sign-out', variant: 'danger' as 
   }
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__workspace-chevron) {
     display: none;
+  }
+
+  /* ---- PHONE: THE RAIL IS A DRAWER ----
+     bcn-lego-checked: esa-sidebar-nav's own drawer mode is the drawer (panel,
+     scrim, Escape, focus move, inert content) — mountResponsiveShell turns it on
+     from a matchMedia, which the lego asks its host to do and esa-app-shell does
+     not. These rules are placement only: where the rail's host (now just its
+     menu toggle) sits, what the frame stops reserving for it, and how the rail
+     head's items read inside the panel. No esa- lego or layout primitive places
+     a control over another lego's bar; Beacon is not cloned here.
+
+     Below 45rem the shell's breakpoint, and the spec's phone line. The pane
+     steps down to a 16px gutter (and --firma2-sticky-origin with it, so every
+     sticky band still lands on the sheet's edge). */
+  @media (max-width: 45rem) {
+    .firma2-app-frame {
+      --firma2-pane-padding: var(--spacing-400, 1rem);
+    }
+    /* Until the script has made it a drawer, a phone shows no 280px column —
+       that is the flash this rule exists to prevent, at the price of no rail at
+       all if scripting fails, which takes the rest of the app with it anyway. */
+    .firma2-app-frame :global(.esa-app-shell__nav:not([drawer])) {
+      display: none;
+    }
+  }
+  /* The rail's host leaves the grid: it rides the leading edge of the top bar's
+     row, laid over the sheet, and is only as big as its toggle. Absolute on the
+     shell (which the pane fills) rather than fixed, so the toggle moves with the
+     frame if anything ever pads it. Over the top bar's own layer, and at the
+     modal rung so the lego's fixed panel and scrim — painted inside this host's
+     stacking context — clear every sticky band on the page. */
+  .firma2-app-frame:has(esa-sidebar-nav[drawer]) :global(.esa-app-shell) {
+    position: relative;
+  }
+  .firma2-app-frame :global(.esa-app-shell__nav[drawer]) {
+    position: absolute;
+    inset-block-start: var(--firma2-gutter);
+    inset-inline-start: var(--firma2-gutter);
+    z-index: var(--z-modal, 400);
+    display: flex;
+    align-items: center;
+    block-size: 48px;
+    padding: 0;
+    padding-inline-start: var(--firma2-pane-padding);
+  }
+  /* The sheet takes the whole width the rail gave up. */
+  .firma2-app-frame:has(esa-sidebar-nav[drawer]) :global(.esa-app-shell__content) {
+    margin-inline-start: var(--firma2-gutter);
+  }
+  /* The foot's account menu moves into the drawer (the script re-slots it) and
+     its collapse toggle means nothing on a drawer, so the strip goes. */
+  .firma2-app-frame:has(esa-sidebar-nav[drawer]) :global(.firma2-app-frame__account) {
+    display: none;
+  }
+  /* Room at the top bar's leading edge for the 32px toggle and one gap, so the
+     home glyph starts after it. */
+  :global(.firma2-app-frame:has(esa-sidebar-nav[drawer]) .esa-app-shell__content > .firma2-top-bar .firma2-top-bar__bar.esa-app-bar) {
+    /* The pane's own padding already offsets the bar; only the toggle and one
+       gap are added, so the home glyph lands at 56px (measured, not 72). */
+    padding-inline-start: calc(32px + var(--spacing-200, 0.5rem));
+  }
+  /* Inside the panel: the workspace row clears the panel's close button in the
+     corner beside it, the search gets its label back (the shell drops it to an
+     icon under 720px, written for a bar with no room), and the account menu
+     opens upward from the panel's foot as it did from the rail's. */
+  .firma2-app-frame :global(esa-sidebar-nav[drawer] > .firma2-app-frame__workspace) {
+    margin-inline-end: calc(40px + var(--spacing-200, 0.5rem));
+    margin-block-end: var(--spacing-200, 0.5rem);
+  }
+  .firma2-app-frame :global(esa-sidebar-nav[drawer] > .esa-app-shell__search) {
+    justify-content: flex-start;
+    padding-inline: var(--spacing-300, 0.75rem);
+    margin-block-end: var(--spacing-200, 0.5rem);
+  }
+  .firma2-app-frame :global(esa-sidebar-nav[drawer] .esa-app-shell__search-label) {
+    display: block;
+  }
+  .firma2-app-frame :global(esa-sidebar-nav[drawer] > [slot='drawer-foot']) {
+    display: block;
+  }
+
+  /* SCROLLBARS: JUST THE BAR (user, 2026-10-22: "it's less about how they
+     look and more about how they work, they have a container for some reason
+     with borders… just the scroll bar without the rest of that stuff" — and
+     "I didn't want them thinner"). Where the OS shows scrollbars all the time
+     (Windows; macOS set to "Always"), the classic scrollbar draws a grey
+     track with ruled edges behind the thumb: a box inside every pane. Setting
+     scrollbar-color with a TRANSPARENT track removes that box and keeps the
+     platform's own width; only the thumb is drawn, mid-grey from the border
+     ramp so it holds in dark as in light. The colour is inherited, so it is
+     set once on the root and reaches shadow roots too. High contrast gets the
+     content ink. Safari before 26.2 knows neither property and gets the same
+     look through the legacy pseudo-elements, behind @supports so no browser
+     applies both. */
+  :global(:root) {
+    --firma2-scrollbar-thumb: var(--color-border-default-strong, #b9b9b9);
+    --firma2-scrollbar-track: transparent;
+    scrollbar-color: var(--firma2-scrollbar-thumb) var(--firma2-scrollbar-track);
+  }
+  @media (prefers-contrast: more) {
+    :global(:root) {
+      --firma2-scrollbar-thumb: var(--color-content-default, #202020);
+    }
+  }
+  @supports not (scrollbar-color: auto) {
+    :global(::-webkit-scrollbar) {
+      width: 12px;
+      height: 12px;
+    }
+    :global(::-webkit-scrollbar-thumb) {
+      background: var(--firma2-scrollbar-thumb);
+      border-radius: 999px;
+    }
+    :global(::-webkit-scrollbar-track),
+    :global(::-webkit-scrollbar-corner) {
+      background: var(--firma2-scrollbar-track);
+    }
   }
 </style>

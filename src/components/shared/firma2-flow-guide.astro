@@ -1,0 +1,244 @@
+---
+// firma2-flow-guide — the prototype's walkthrough bar: which step of a guided
+// flow you're on, who you are on it, the one thing to do, and Back / Next.
+// PROTOTYPE CHROME, not product UI: it exists so a reviewer can click a whole
+// journey through the real screens, switching people as the journey does.
+//
+// HOW IT STARTS. Any URL with `?flow=<id>` starts that flow at step one (or at
+// `&step=N`) and resets the demo's requests, so every run begins the same. The
+// choice is kept for the tab (sessionStorage), so the bar follows the reader to
+// whatever page a step opens and stays out of every other tab.
+//
+// NEXT OPENS THE NEXT STEP'S SCREEN AS ITS PERSON — the href carries `?as=`,
+// which the permissions switch keeps — so Next is the only control a reviewer
+// needs. The bar never does the act itself.
+//
+// IT SITS BOTTOM-LEFT, over the rail's foot, because the bottom-right is where
+// every toast lands and the top bar holds the page's own actions. On pages with
+// no rail (sign-in, welcome) it moves bottom-right, clear of the centred
+// column. It folds to one line so it never hides what a step asks you to press.
+//
+// bcn-lego-checked: esa-button for Back / Next / fold / end, esa-badge for the
+// person — composed unchanged. No esa- lego is a floating walkthrough panel
+// (esa-popover anchors to a trigger; esa-snackbar is transient). Beacon is not
+// cloned on this machine. The CSS places and surfaces the panel and shows one
+// fold state at a time.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import { FLOWS, personaLabel } from '../../data/firma2-flows';
+import { withBase } from '../../lib/base';
+import { CURRENT_USER } from '../../data/firma2-directory';
+
+// Every flow, with each step's full URL resolved here, where the base is known.
+const flows = FLOWS.map((flow) => ({
+  id: flow.id,
+  title: flow.title,
+  steps: flow.steps.map((s) => ({
+    title: s.title,
+    body: s.body,
+    who: personaLabel[s.as],
+    href: `${withBase(s.href)}${s.href.includes('?') ? '&' : '?'}as=${s.as}`,
+  })),
+}));
+---
+<aside class="firma2-flow-guide" aria-label="Walkthrough" data-flows={JSON.stringify(flows)} data-reader={CURRENT_USER.name} data-off>
+  <div class="firma2-flow-guide__head repel" data-gap="xs">
+    <span class="typography-label-md" data-guide-count></span>
+    <span class="cluster" data-gap="3xs">
+      <EsaButton variant="chrome" size="md" iconOnly icon="chevron-down" label="Fold the walkthrough" data-guide-fold />
+      <EsaButton variant="chrome" size="md" iconOnly icon="x" label="End the walkthrough" data-guide-end />
+    </span>
+  </div>
+  <div class="firma2-flow-guide__body stack" data-gap="sm">
+    <span data-guide-who><EsaBadge value="" variant="secondary" size="sm" /></span>
+    <h2 class="typography-title-sm-strong" data-guide-title></h2>
+    <p class="typography-body-md" data-guide-body></p>
+    <div class="cluster" data-gap="xs">
+      <EsaButton variant="primary" size="md" data-guide-next>Next</EsaButton>
+      <EsaButton variant="ghost" size="md" data-guide-back>Back</EsaButton>
+    </div>
+  </div>
+</aside>
+
+<script>
+  import { resetRequests } from '../../lib/access-requests';
+  import { actingAs, clearActingAs, currentPerson } from '../../lib/workspace-permissions';
+
+  type Step = { title: string; body: string; who: string; href: string };
+  type Flow = { id: string; title: string; steps: Step[] };
+
+  const KEY = 'firma2:flow:v1';
+  const read = (): { id: string; step: number; folded?: boolean } | null => {
+    try {
+      return JSON.parse(sessionStorage.getItem(KEY) ?? 'null');
+    } catch {
+      return null;
+    }
+  };
+  const save = (state: { id: string; step: number; folded?: boolean } | null) => {
+    try {
+      if (state) sessionStorage.setItem(KEY, JSON.stringify(state));
+      else sessionStorage.removeItem(KEY);
+    } catch {
+      /* blocked storage: the bar lasts for this page only */
+    }
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-flow-guide').forEach((root) => {
+    const flows: Flow[] = JSON.parse(root.dataset.flows ?? '[]');
+    const params = new URLSearchParams(location.search);
+    const asked = params.get('flow');
+
+    // Starting a flow: step one (or ?step=N), with the demo's requests reset so
+    // every run begins from the same seeds.
+    if (asked && flows.some((f) => f.id === asked)) {
+      const step = Math.max(0, Number(params.get('step') ?? 1) - 1);
+      if (step === 0) {
+        resetRequests();
+        // The flow opens as its first step's person.
+        const first = flows.find((f) => f.id === asked)!.steps[0];
+        const as = new URL(first.href, location.href).searchParams.get('as');
+        try { if (as) localStorage.setItem('firma2:acting-as', as); } catch { /* ignore */ }
+      }
+      save({ id: asked, step });
+    }
+
+    let state = read();
+    const flow = state ? flows.find((f) => f.id === state!.id) : undefined;
+    if (!state || !flow) return;
+
+    // Reaching the next step's screen by the product's own controls (signing
+    // in lands on the welcome page) counts as doing the step: the bar moves on.
+    const following = flow.steps[state.step + 1];
+    if (following && new URL(following.href, location.href).pathname === location.pathname) {
+      state = { ...state, step: state.step + 1 };
+      save(state);
+    }
+
+    const $ = (sel: string) => root.querySelector<HTMLElement>(sel)!;
+    const label = (sel: string) => root.querySelector<HTMLElement>(`${sel} .esa-button__label`);
+
+    function paint() {
+      const step = flow!.steps[state!.step];
+      if (!step) return;
+      root.removeAttribute('data-off');
+      root.toggleAttribute('data-folded', !!state!.folded);
+      // The count stays short so it never wraps the header; the flow's name is
+      // the region's label instead.
+      root.setAttribute('aria-label', `Walkthrough: ${flow!.title}`);
+      $('[data-guide-count]').textContent = `Step ${state!.step + 1} of ${flow!.steps.length}`;
+      $('[data-guide-who] .esa-badge__text').textContent = `As ${step.who}`;
+      $('[data-guide-title]').textContent = step.title;
+      $('[data-guide-body]').textContent = step.body;
+      const last = state!.step === flow!.steps.length - 1;
+      const next = label('[data-guide-next]');
+      if (next) next.textContent = last ? 'Finish' : 'Next';
+      $('[data-guide-back]').closest<HTMLElement>('.esa-button')!.style.display = state!.step === 0 ? 'none' : '';
+      $('[data-guide-fold]').setAttribute('aria-label', state!.folded ? 'Open the walkthrough' : 'Fold the walkthrough');
+      $('[data-guide-fold]').setAttribute('aria-expanded', String(!state!.folded));
+    }
+
+    // A step's screen is opened as its person; arriving on it by any other
+    // route (the reader clicked through themselves) is fine — the bar follows.
+    function go(to: number) {
+      const step = flow!.steps[to];
+      if (!step) return;
+      state = { ...state!, step: to, folded: false };
+      save(state);
+      location.assign(step.href);
+    }
+
+    // LEAVING A FLOW HANDS THE BROWSER BACK TO ITS READER. A step's person is
+    // kept in localStorage so it survives the flow's page changes; left there,
+    // it outlived the flow and silently hid acts (New project) on every page
+    // after. Ending or finishing forgets it and reloads, so the screen under
+    // the bar redraws as the reader rather than keep the person's view.
+    // The reload must not carry `?flow=` either, or it starts the flow again.
+    function end() {
+      save(null);
+      root.setAttribute('data-off', '');
+      clearActingAs();
+      const url = new URL(location.href);
+      url.searchParams.delete('flow');
+      url.searchParams.delete('step');
+      location.replace(url);
+    }
+
+    $('[data-guide-next]').addEventListener('click', () => {
+      if (state!.step >= flow!.steps.length - 1) return end();
+      go(state!.step + 1);
+    });
+    $('[data-guide-back]').addEventListener('click', () => go(state!.step - 1));
+    $('[data-guide-fold]').addEventListener('click', () => {
+      state = { ...state!, folded: !state!.folded };
+      save(state);
+      paint();
+    });
+    $('[data-guide-end]').addEventListener('click', end);
+
+    paint();
+
+    // THE ACCOUNT NAME FOLLOWS THE PERSON. The shell's account menu is built
+    // with the directory's reader; while the flow has you as someone else, the
+    // rail's foot says who, so the bar and the shell never disagree.
+    const as = actingAs();
+    const person = as === 'newcomer' ? currentPerson().name : '';
+    if (person) {
+      const shell = document.querySelector('.esa-app-shell');
+      const content = document.querySelector('.esa-app-shell__content');
+      if (shell) {
+        const walker = document.createTreeWalker(shell, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (content?.contains(node)) continue;
+          if (node.nodeValue?.trim() === root.dataset.reader) node.nodeValue = node.nodeValue.replace(root.dataset.reader!, person);
+        }
+      }
+    }
+  });
+</script>
+
+<style>
+  .firma2-flow-guide {
+    position: fixed;
+    inset-inline-start: var(--spacing-400);
+    inset-block-end: calc(var(--spacing-700) + var(--spacing-200));
+    z-index: 900;
+    inline-size: min(22rem, calc(100vw - 2 * var(--spacing-400)));
+    padding: var(--spacing-300) var(--spacing-400) var(--spacing-400);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    background: var(--color-background-elevation-raised, var(--color-background-default));
+    box-shadow: var(--shadow-300);
+  }
+  /* Pages without the app shell (sign-in, welcome) have no rail to sit over;
+     there the bar moves to the right, clear of the centred column. */
+  :global(body:not(:has(.esa-app-shell))) .firma2-flow-guide {
+    inset-inline-start: auto;
+    inset-inline-end: var(--spacing-400);
+    inset-block-end: var(--spacing-400);
+    inline-size: min(18rem, calc(100vw - 2 * var(--spacing-400)));
+  }
+  .firma2-flow-guide[data-off] {
+    display: none;
+  }
+  .firma2-flow-guide__head {
+    align-items: center;
+  }
+  .firma2-flow-guide__head > span:first-child {
+    color: var(--color-text-secondary);
+  }
+  .firma2-flow-guide h2,
+  .firma2-flow-guide p {
+    margin: 0;
+  }
+  /* Folded: the count and its two buttons, nothing else. */
+  .firma2-flow-guide[data-folded] {
+    padding-block-end: var(--spacing-300);
+  }
+  .firma2-flow-guide[data-folded] .firma2-flow-guide__body {
+    display: none;
+  }
+  .firma2-flow-guide[data-folded] [data-guide-fold] {
+    transform: rotate(180deg);
+  }
+</style>

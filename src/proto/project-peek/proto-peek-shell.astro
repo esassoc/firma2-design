@@ -1,0 +1,199 @@
+---
+// PROTOTYPE — /proto/project-peek. Throwaway; deleted when a direction is picked.
+// The production peek's shell (header, doors, acts, painting) with the record
+// body swapped per Overview arrangement. The header is held constant on purpose: the
+// question under test is what the BODY carries.
+//
+// bcn-lego-checked: prototype harness copy of firma2-project-peek's shell — same legos (firma2-rail, esa-button, esa-pill, esa-dropdown-menu, esa-snackbar-container); bodies compose existing sections; throwaway, nothing imports it
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaPill from '@esa/ecology/esa-pill.astro';
+import Firma2Rail from '../../components/shared/firma2-rail.astro';
+import { projects, projectSlug, projectHref, STAGE_ORDER, STAGE_TONE } from '../../data/firma2-projects';
+import { getProjectDetail } from '../../data/firma2-project-detail';
+import { withBase } from '../../lib/base';
+import BodyOverview, { type OverviewLayout } from './body-overview.astro';
+import BodyOverviewCards from './body-overview-cards.astro';
+
+interface Props {
+  variant: OverviewLayout | 'map-beside-cards';
+  n: number;
+  width: string;
+}
+const { variant, n, width } = Astro.props;
+const id = `proto-peek-${variant}`;
+
+const records = projects.map((project) => ({
+  slug: projectSlug(project),
+  name: project.projectName,
+  stage: project.stage,
+  href: withBase(projectHref(project)),
+  project,
+  detail: getProjectDetail(project),
+}));
+---
+<Firma2Rail
+  id={id}
+  class="proto-peek"
+  label="project details"
+  ariaLabel="Project peek"
+  sizeVar={`--${id}-width`}
+  width={width}
+  floor="30rem"
+  min={480}
+  max={880}
+  storageKey={id}
+  unpinAt={904}
+  closes
+  hidden
+>
+  <header class="proto-peek__head stack" data-gap="sm">
+    <h2 class="proto-peek__title typography-title">
+      <a class="proto-peek__door" data-peek-door href="#"><span data-peek-name></span></a>
+    </h2>
+    <div class="repel" data-gap="sm">
+      <p class="proto-peek__stage"><span class="visually-hidden">Stage </span><span data-peek-stage></span></p>
+      <div class="cluster" data-gap="xs">
+        <esa-dropdown-menu class="proto-peek__more" position="below-end">
+          <EsaButton variant="secondary" appearance="outline" size="md" aria-label="More actions">⋯</EsaButton>
+        </esa-dropdown-menu>
+        <EsaButton variant="secondary" appearance="outline" size="md" href="#" data-peek-open>Open project</EsaButton>
+        <EsaButton variant="primary" size="md" href="#" data-peek-record>Record work</EsaButton>
+      </div>
+    </div>
+  </header>
+
+  <div data-peek-record-host></div>
+
+  <div data-peek-stage-templates hidden aria-hidden="true">
+    {STAGE_ORDER.map((s) => (
+      <span data-stage={s}><EsaPill label={s} variant={STAGE_TONE[s]} size="md" removable={false} /></span>
+    ))}
+  </div>
+
+  {records.map((r) => (
+    <template data-project-peek={r.slug} data-name={r.name} data-stage={r.stage} data-href={r.href}>
+      <div class="proto-peek__record">
+        {variant === 'map-beside-cards' ? <BodyOverviewCards detail={r.detail} /> : <BodyOverview detail={r.detail} layout={variant} />}
+      </div>
+    </template>
+  ))}
+
+  <esa-snackbar-container class="proto-peek__toasts"></esa-snackbar-container>
+</Firma2Rail>
+
+<style>
+  /* THE HEADER STAYS. The rail's inner box is the scroller, so sticky at 0
+     pins the name and the acts while the body scrolls under them; the sheet
+     background paints over what passes beneath, and a hairline appears only
+     once something has (data-scrolled, set below). The corner toggle lives
+     outside the scroller at z-index 1, so it stays on top. */
+  .proto-peek__head {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
+    padding-block-end: var(--spacing-300, 0.75rem);
+    margin-block-end: calc(var(--spacing-300, 0.75rem) * -1);
+    border-block-end: var(--border-width-default, 1px) solid transparent;
+    transition: border-color 150ms ease-out;
+  }
+  :global(.firma2-rail__inner[data-scrolled]) > .proto-peek__head {
+    border-block-end-color: var(--color-border-default-subtle, #e3e5e2);
+  }
+  :global(.proto-peek .firma2-rail__inner) { isolation: isolate; }
+  .proto-peek__title {
+    margin: 0;
+    padding-inline-end: calc(2.5rem + var(--spacing-200, 0.5rem));
+    text-wrap: balance;
+  }
+  .proto-peek__door {
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-sm, 0.25rem);
+  }
+  .proto-peek__door:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .proto-peek__door:hover {
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+  }
+  .proto-peek__stage {
+    margin: 0;
+  }
+  :global(.proto-peek .firma2-hover-card__row) {
+    min-inline-size: 0;
+    inline-size: fit-content;
+    max-inline-size: 100%;
+  }
+  /* The header already carries the stage pill. */
+  :global(.proto-peek .firma2-project-facts__stage) {
+    display: none;
+  }
+  :global(.proto-peek .firma2-rail__inner [hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+
+  // The sticky header's hairline: on once the body has scrolled under it.
+  document.querySelectorAll<HTMLElement>('.proto-peek .firma2-rail__inner').forEach((inner) => {
+    const sync = () => inner.toggleAttribute('data-scrolled', inner.scrollTop > 0);
+    inner.addEventListener('scroll', sync, { passive: true });
+    sync();
+  });
+  import '@esa/ecology/esa-snackbar-container';
+  import '../../components/shared/bcn-edge-handle';
+  import { shareRecord } from '../../lib/share-record';
+  import { initRecordPeek } from '../../lib/record-peek';
+
+  type Menu = HTMLElement & { items: { label: string; action: string }[] };
+  type Snackbar = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
+
+  document.querySelectorAll<HTMLElement>('.proto-peek').forEach((panel) => {
+    const nameEl = panel.querySelector<HTMLElement>('[data-peek-name]')!;
+    const door = panel.querySelector<HTMLAnchorElement>('[data-peek-door]')!;
+    const stageEl = panel.querySelector<HTMLElement>('[data-peek-stage]')!;
+    const menu = panel.querySelector<Menu>('.proto-peek__more');
+    const toasts = panel.querySelector<Snackbar>('.proto-peek__toasts');
+    const openLink = panel.querySelector<HTMLAnchorElement>('a[data-peek-open]');
+    const recordLink = panel.querySelector<HTMLAnchorElement>('a[data-peek-record]');
+    const pills = new Map<string, HTMLElement>();
+    panel.querySelectorAll<HTMLElement>('[data-peek-stage-templates] [data-stage]').forEach((el) => pills.set(el.dataset.stage ?? '', el));
+
+    const peek = initRecordPeek(panel, {
+      trigger: 'data-open-project',
+      template: 'data-project-peek',
+      paint: (template) => {
+        const href = template.dataset.href ?? '#';
+        nameEl.textContent = template.dataset.name ?? '';
+        door.href = href;
+        openLink?.setAttribute('href', href);
+        recordLink?.setAttribute('href', `${href}#record-work`);
+        const pill = pills.get(template.dataset.stage ?? '');
+        stageEl.replaceChildren(...(pill ? [pill.firstElementChild!.cloneNode(true)] : []));
+      },
+    });
+
+    void customElements.whenDefined('esa-dropdown-menu').then(() => {
+      if (menu) menu.items = [
+        { label: 'Add expenditure', action: 'add-expenditure' },
+        { label: 'Share', action: 'share' },
+        { label: 'Fact sheet', action: 'fact-sheet' },
+      ];
+    });
+    menu?.addEventListener('menu-action', (event) => {
+      const current = peek?.current();
+      if ((event as CustomEvent<string>).detail === 'share' && current) {
+        void shareRecord({ title: `${current.dataset.name} — ProjectFirma 2.0`, url: new URL(current.dataset.href ?? '#', location.href).toString() }, toasts);
+      }
+    });
+  });
+</script>

@@ -108,6 +108,28 @@ export interface FieldDefinition {
   helpText?: string;
   /** Number fields: the range the fixture draws values from. */
   range?: [number, number];
+  /**
+   * Choice fields: one line per choice saying when to use it and how to fill
+   * in the rest ("Use for buffers 35 ft or wider; draw the planted
+   * footprint"). Written once here, on the list, and shown as helper text
+   * under the control wherever the choice is picked (src/lib/vocabulary-guidance.ts).
+   * Learned from FieldDoc, whose activity type's description tells the user
+   * how to fill in the rest of the activity.
+   */
+  optionGuidance?: Record<string, string>;
+  /**
+   * Choice fields with a long list: "Help me choose" — a few plain questions
+   * that end at one choice and pick it. DATA ON THE LIST, never logic in a
+   * picker, so any list can carry one. Learned from a FieldDoc funder guide's
+   * decision tree. No authoring screen yet: seeded here.
+   */
+  chooser?: ChooserStep;
+}
+
+/** One question of a "Help me choose" path. Each answer leads on, or ends at a choice. */
+export interface ChooserStep {
+  question: string;
+  answers: { label: string; next?: ChooserStep; pick?: string }[];
 }
 
 export const FIELD_DEFINITIONS: FieldDefinition[] = [
@@ -146,7 +168,111 @@ export const FIELD_DEFINITIONS: FieldDefinition[] = [
     kind: 'text',
     helpText: 'The agreement number on the lead streambed permit.',
   },
-  { id: 'bmp-type', label: 'Treatment type', kind: 'choice', options: ['Bioswale', 'Detention basin', 'Pervious paving', 'Rain garden'] },
+  // THE LONG LIST: sixteen water-quality practices, the one vocabulary long
+  // enough to need "Help me choose" and the "Used here" filter. Invented
+  // guidance, in the shape a program's practice handbook would give it.
+  {
+    id: 'bmp-type',
+    label: 'Treatment type',
+    kind: 'choice',
+    options: [
+      'Rain garden',
+      'Bioswale',
+      'Infiltration trench',
+      'Detention basin',
+      'Constructed wetland',
+      'Pervious paving',
+      'Green roof',
+      'Tree box filter',
+      'Cover crop',
+      'Grassed waterway',
+      'Livestock exclusion fence',
+      'Barnyard runoff control',
+      'Nutrient management',
+      'Riparian forest buffer',
+      'Grass filter strip',
+      'Streambank stabilization',
+    ],
+    optionGuidance: {
+      'Rain garden': 'A planted basin that holds roof or street runoff. Draw the basin itself.',
+      Bioswale: 'A planted channel that carries runoff. Draw it along the flow line.',
+      'Infiltration trench': 'A gravel trench that soaks runoff into the ground. Draw the trench.',
+      'Detention basin': 'Stores runoff and lets it out slowly. Draw the basin at its full-pool edge.',
+      'Constructed wetland': 'A shallow marsh built to treat runoff. Draw the wetted area.',
+      'Pervious paving': 'Paving that lets water through. Draw only the replaced surface.',
+      'Green roof': 'A planted roof. Draw the planted area, not the whole building.',
+      'Tree box filter': 'A street tree in a box that filters gutter flow. Count each box once.',
+      'Cover crop': 'Planted between cash crops to hold soil. Draw the fields planted this season.',
+      'Grassed waterway': 'A grassed channel where runoff crosses a field. Draw its centerline.',
+      'Livestock exclusion fence': 'Keeps stock out of the stream. Draw the fence line.',
+      'Barnyard runoff control': 'Diverts or treats runoff from barns and corrals. Draw the area it drains.',
+      'Nutrient management': 'A plan for applying fertilizer and manure. Draw the fields it covers.',
+      'Riparian forest buffer': 'Use for buffers 35 ft or wider; draw the planted footprint.',
+      'Grass filter strip': 'Use for strips under 35 ft wide. Wider plantings are a riparian forest buffer.',
+      'Streambank stabilization': 'Rock, logs or plants holding an eroding bank. Draw the treated bank.',
+    },
+    chooser: {
+      question: 'What is the land around the work mostly used for?',
+      answers: [
+        {
+          label: 'Streets, roofs or parking',
+          next: {
+            question: 'Where was it built?',
+            answers: [
+              { label: 'On a roof', pick: 'Green roof' },
+              { label: 'In a parking lot or driveway surface', pick: 'Pervious paving' },
+              { label: 'At a curb or sidewalk', pick: 'Tree box filter' },
+              {
+                label: 'On open ground beside pavement',
+                next: {
+                  question: 'What does it do with the water?',
+                  answers: [
+                    { label: 'Holds it in a planted basin', pick: 'Rain garden' },
+                    { label: 'Carries it along a planted channel', pick: 'Bioswale' },
+                    { label: 'Soaks it into a gravel trench', pick: 'Infiltration trench' },
+                    { label: 'Stores it and lets it out slowly', pick: 'Detention basin' },
+                    { label: 'Treats it in a shallow marsh', pick: 'Constructed wetland' },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        {
+          label: 'Farming or ranching',
+          next: {
+            question: 'What did the work change?',
+            answers: [
+              { label: 'What grows between cash crops', pick: 'Cover crop' },
+              { label: 'Where runoff crosses a field', pick: 'Grassed waterway' },
+              { label: 'Where livestock reach the stream', pick: 'Livestock exclusion fence' },
+              { label: 'Runoff from barns or corrals', pick: 'Barnyard runoff control' },
+              { label: 'How fertilizer or manure is applied', pick: 'Nutrient management' },
+            ],
+          },
+        },
+        {
+          label: 'Land along a stream',
+          next: {
+            question: 'What was done at the stream?',
+            answers: [
+              {
+                label: 'Planted along the bank',
+                next: {
+                  question: 'How wide is the planting at its narrowest?',
+                  answers: [
+                    { label: '35 ft or wider', pick: 'Riparian forest buffer' },
+                    { label: 'Under 35 ft', pick: 'Grass filter strip' },
+                  ],
+                },
+              },
+              { label: 'Held an eroding bank in place', pick: 'Streambank stabilization' },
+            ],
+          },
+        },
+      ],
+    },
+  },
   { id: 'drainage-area', label: 'Drainage area treated', kind: 'number', unit: 'acres', range: [12, 340] },
 ];
 
@@ -167,6 +293,13 @@ export interface ProjectType {
   /** The swatch that tells two types apart at a glance — map colours among them. */
   color: string;
   description: string;
+  /**
+   * When to pick this type and how to fill in the rest — one line, shown as
+   * helper text under every project type picker once this type is chosen
+   * (src/lib/vocabulary-guidance.ts). An administrator rewrites it on the
+   * type's settings page; this is the seed.
+   */
+  guidance?: string;
   /** Asked of every project of this type. */
   fields: ProjectTypeField[];
   /** The page of every project of this type. */
@@ -179,6 +312,7 @@ export const PROJECT_TYPES: ProjectType[] = [
     name: 'Riparian revegetation',
     color: '#3f9142',
     description: 'Streamside planting and the fencing that keeps it alive.',
+    guidance: 'Use for planting along a stream. Draw the planted area, not the whole parcel.',
     fields: [
       { fieldId: 'planting-stock', placement: 'rail' },
       { fieldId: 'landowner-agreement', placement: 'rail' },
@@ -191,6 +325,7 @@ export const PROJECT_TYPES: ProjectType[] = [
     name: 'Fish passage',
     color: '#2d6fb0',
     description: 'Removing or fixing the barriers between fish and their habitat.',
+    guidance: 'Use when a barrier is removed or fixed. Count each culvert or dam once.',
     fields: [
       { fieldId: 'barrier-type', placement: 'rail' },
       { fieldId: 'structures-addressed', placement: 'rail' },
@@ -205,6 +340,7 @@ export const PROJECT_TYPES: ProjectType[] = [
     name: 'Forest health & fuels',
     color: '#b5621f',
     description: 'Thinning, burning and grazing to make forests less flammable.',
+    guidance: 'Use for thinning, burning or grazing. Draw each treated unit as its own work area.',
     fields: [
       { fieldId: 'treatment-prescription', placement: 'rail' },
       { fieldId: 'near-homes', placement: 'rail' },
@@ -218,6 +354,7 @@ export const PROJECT_TYPES: ProjectType[] = [
     name: 'Meadow & wetland restoration',
     color: '#5b7f2a',
     description: 'Raising water tables and rewetting meadows and marshes.',
+    guidance: 'Use when the work raises a water table. Draw the area that is wet after treatment.',
     fields: [
       { fieldId: 'wetland-type', placement: 'rail' },
       { fieldId: 'landowner-agreement', placement: 'rail' },
@@ -230,6 +367,7 @@ export const PROJECT_TYPES: ProjectType[] = [
     name: 'Aquatic habitat restoration',
     color: '#167a7a',
     description: 'Wood, gravel and side channels that give fish somewhere to live.',
+    guidance: 'Use for wood, gravel or side channels in a stream. Count structures, not logs.',
     fields: [
       { fieldId: 'wood-structures', placement: 'rail' },
       { fieldId: 'target-species', placement: 'rail' },
@@ -242,6 +380,7 @@ export const PROJECT_TYPES: ProjectType[] = [
     name: 'Stormwater & water quality',
     color: '#6a5aa8',
     description: 'Catching and cleaning runoff before it reaches a stream.',
+    guidance: 'Use for practices that catch or clean runoff. Report the area that drains to it.',
     fields: [
       { fieldId: 'bmp-type', placement: 'rail' },
       { fieldId: 'drainage-area', placement: 'rail' },

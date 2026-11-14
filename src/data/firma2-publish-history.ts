@@ -3,12 +3,12 @@
 //
 // THE WORKFLOW (user, 2026-10-09). Editors change their projects freely and
 // the record saves as they go; the public page shows only a published
-// snapshot. Every so often a steward or administrator sweeps their projects,
+// snapshot. Every so often a manager or administrator sweeps their projects,
 // checks what changed, and publishes. QA/QC happens at publish — between
 // publishes, editors are trusted. There is no re-certification: a project with
 // nothing new since its last publish needs nothing.
 //
-// THE REVIEW IS A NET DIFF, NOT A HISTORY. A steward asks "what is different
+// THE REVIEW IS A NET DIFF, NOT A HISTORY. A manager asks "what is different
 // from what the public sees?", so the log entries after the last publish fold
 // into one row per field — published value, current value, who touched it.
 // Three edits to the cost read as one line; a county changed and changed back
@@ -80,7 +80,7 @@ interface PublishSeed {
   redate?: { startsWith: string; iso: string }[];
 }
 
-// The host board's administrators run the sweep in this workspace; a steward
+// The host board's administrators run the sweep in this workspace; a manager
 // of the lead organization could publish too, under the Security threshold.
 const PUBLISHERS = ['Avery Castillo', 'Jordan Delgado', 'Dana Whitfield'];
 
@@ -98,8 +98,8 @@ const SEEDS: Record<string, PublishSeed> = {
     edits: [
       { iso: '2026-05-18', who: 'grant', change: costChange(398_500, 405_000) },
       { iso: '2026-05-18', who: 'grant', change: costChange(405_000, 412_000) },
-      { iso: '2026-05-18', who: 'lead', change: 'County changed from Tehama to Glenn' },
-      { iso: '2026-05-18', who: 'lead', change: 'County changed from Glenn to Tehama' },
+      { iso: '2026-05-18', who: 'lead', change: 'County changed from El Dorado to Placer' },
+      { iso: '2026-05-18', who: 'lead', change: 'County changed from Placer to El Dorado' },
       { iso: '2026-08-21', who: 'lead', change: 'Description edited' },
       { iso: '2026-09-12', who: 'lead', change: 'Timeline changed from 2023–2026 to 2023–2027' },
     ],

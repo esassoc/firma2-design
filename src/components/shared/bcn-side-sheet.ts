@@ -35,6 +35,16 @@
 // columns: it lies over the pane instead, still without a scrim, and opens and
 // closes without the width motion.
 //
+// IT TAKES THE RAIL'S PLACE (user, 2026-10-21). A record with a pinned
+// firma2-rail used to get two right-hand columns — the rail, then this beside
+// it. Never two: on show() the page's pinned rail steps out (data-sheet-over —
+// its collapsed state untouched) and the sheet starts at the rail's width
+// (data-from-rail, --firma2-side-sheet-from) instead of the strip, so one
+// column eases from the rail's width to the sheet's. Closing runs it back:
+// down to the rail's width, then the rail returns exactly as it was, open or
+// strip. While the sheet is open the rail cannot be reached. Pages with no
+// rail, and the narrow overlay, are unchanged.
+//
 // NON-MODAL. The native <dialog> is opened with show(), not showModal(): no top
 // layer, no inert page, no light dismiss (closedby is stripped — a click on the
 // table must not close the sheet editing it). Escape closes it while focus is
@@ -62,15 +72,21 @@ export class BcnSideSheet extends EsaSideDialog {
     css`
       :host {
         position: fixed;
-        /* Under the top bar, which runs on across the sheet's column. */
+        /* Straight under the app bar, even on a page with a record bar: the
+           sheet sits outside the pane, and the record bar narrows with the
+           pane to end where the sheet begins. */
         inset-block-start: calc(var(--firma2-gutter, 0px) + var(--firma2-band-height, 48px));
-        inset-block-end: var(--firma2-gutter, 0px);
+        /* Down to the pane's foot, not the window's: the utility bar
+           (firma2-utility-bar) runs under the pane, and a sheet to the window
+           edge covered its Recent, Help and Shortcuts. */
+        inset-block-end: max(var(--firma2-gutter, 0px), var(--firma2-utility-height, 0px));
         /* Inside the pane's scrollbar, as a rail in the pane would be. */
         inset-inline-end: calc(var(--firma2-gutter, 0px) + var(--firma2-pane-scrollbar, 0px));
         inline-size: var(--firma2-side-sheet-width, var(--firma2-side-sheet-size, 400px));
         box-sizing: border-box;
         z-index: calc(var(--z-header, 200) + 1);
-        border-inline-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+        /* No border (user, 2026-10-22): a sheet stands in the rail's slot, and
+           the rail has none — the gutter is the only seam. */
         border-end-end-radius: var(--radius-lg, 12px);
         background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
         overflow: visible;
@@ -99,9 +115,27 @@ export class BcnSideSheet extends EsaSideDialog {
       :host([collapsed]) {
         inline-size: calc(2.5rem + 2 * var(--spacing-200, 0.5rem) + var(--border-width-default, 1px));
       }
+      /* Taking a rail's place: the strip's part is played by the rail's width. */
+      :host([collapsed][data-from-rail]) {
+        inline-size: var(--firma2-side-sheet-from);
+      }
       :host([collapsed]) dialog.panel,
       :host([data-opening]) dialog.panel {
         display: none;
+      }
+      /* The content fades in once the width has landed. */
+      dialog.panel {
+        animation: bcn-side-sheet-in var(--transition-base, 200ms ease);
+      }
+      @keyframes bcn-side-sheet-in {
+        from {
+          opacity: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        dialog.panel {
+          animation: none;
+        }
       }
 
       /* ---- THE TOGGLE ---- firma2-rail__toggle, restated: inside, at the
@@ -127,7 +161,13 @@ export class BcnSideSheet extends EsaSideDialog {
       :host([collapsed]) .toggle {
         inset-inline-end: var(--spacing-200, 0.5rem);
       }
-      .toggle:hover {
+      @media (hover: hover) and (pointer: fine) {
+        .toggle:hover {
+          background: var(--color-background-elevation-sunken, #f0f0f0);
+        }
+      }
+
+      .toggle:active {
         background: var(--color-background-elevation-sunken, #f0f0f0);
       }
       .toggle:focus-visible {
@@ -159,6 +199,8 @@ export class BcnSideSheet extends EsaSideDialog {
   /** Bumped by every show/close, so a motion that finishes late does not act on a newer one. */
   #turn = 0;
   #toggle: HTMLButtonElement | null = null;
+  /** The page rail this sheet has taken the place of, while open. */
+  #rail: HTMLElement | null = null;
 
   constructor() {
     super();
@@ -225,6 +267,13 @@ export class BcnSideSheet extends EsaSideDialog {
     this.#toggle.title = name;
   }
 
+  /** Hold the pane's room still for the frame a rail and this sheet trade places. */
+  #swap(): void {
+    const frame = this.closest<HTMLElement>('.firma2-app-frame');
+    frame?.setAttribute('data-sheet-swapping', '');
+    requestAnimationFrame(() => requestAnimationFrame(() => frame?.removeAttribute('data-sheet-swapping')));
+  }
+
   /** Resolve once the host's width transition ends (or at once, with none running). */
   #settled(): Promise<void> {
     // Chrome reports the logical property by its physical name.
@@ -249,6 +298,25 @@ export class BcnSideSheet extends EsaSideDialog {
       frame!.style.setProperty('--firma2-pane-start', `${Math.round(pane.getBoundingClientRect().left)}px`);
     }
 
+    // The page's pinned rail, still showing or already stepped out for a sheet
+    // this one replaces: its width is where this sheet starts.
+    const rail = matchMedia(NARROW).matches
+      ? null
+      : (frame ?? document).querySelector<HTMLElement>(
+          '[data-rail][data-sheet-over], [data-rail]:not([hidden]):not([data-unpinned])',
+        );
+    if (rail && !this.open) {
+      if (!rail.hasAttribute('data-sheet-over')) {
+        frame?.style.setProperty('--firma2-side-sheet-from', `${Math.round(rail.getBoundingClientRect().width)}px`);
+        rail.setAttribute('data-sheet-over', '');
+      }
+      this.#rail = rail;
+      this.setAttribute('data-from-rail', '');
+      // The swap itself is instant: the pane's room jumps to the rail's width
+      // in the frame the rail leaves, and only then eases.
+      this.#swap();
+    }
+
     const turn = ++this.#turn;
     if (this.open || matchMedia(NARROW).matches) {
       this.removeAttribute('collapsed');
@@ -261,6 +329,8 @@ export class BcnSideSheet extends EsaSideDialog {
     void this.updateComplete.then(() => {
       if (turn !== this.#turn) return;
       void this.offsetWidth;
+      // The rail's room has landed; from here the room eases with the sheet.
+      frame?.removeAttribute('data-sheet-swapping');
       this.dataset.opening = '';
       this.removeAttribute('collapsed');
       void this.#settled().then(() => {
@@ -281,14 +351,22 @@ export class BcnSideSheet extends EsaSideDialog {
       if (turn !== this.#turn) return;
       super.close();
       this.removeAttribute('collapsed');
+      this.removeAttribute('data-from-rail');
       delete this.dataset.opening;
+      // The rail comes back as it was — unless another sheet has taken its place.
+      const replaced = [...document.querySelectorAll<BcnSideSheet>('bcn-side-sheet')].some((s) => s !== this && s.open);
+      if (this.#rail && !replaced) {
+        this.#swap();
+        this.#rail.removeAttribute('data-sheet-over');
+      }
+      this.#rail = null;
       if (hadFocus && this.#opener?.isConnected) this.#opener.focus();
     };
     if (matchMedia(NARROW).matches) {
       finish();
       return;
     }
-    // Down to the strip, then out of the page.
+    // Down to the strip (or the rail's width), then out of the page.
     this.setAttribute('collapsed', '');
     void this.#settled().then(finish);
   }

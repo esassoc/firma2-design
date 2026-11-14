@@ -45,6 +45,7 @@ see; the organization chooses what to share beyond that.
 | 16 | One **crosswalk** mechanism: v1 maps project types only; fields and measures answer the program directly. Later, the organization links its own field or measure to the program's so one answer serves both, allowed only when the counting rules match; unit conversion within one kind of quantity. The field-and-measure crosswalk is Agency and above. |
 | 17 | Plans: accepting connected organizations needs Program. Connecting outward works on any plan, Free included, which makes every program a signup channel. |
 | 18 | An organization leaving can always take a full export of its projects, on every plan. Moving back into its own workspace can come later. |
+| 19 | The program section carries its requirements as a checklist generated from the minimum (core facts, the program's fields, its measures for the project's type), each item done or missing, and links to the program's guide. Missing organization fields are answered in place like any record field; funder-owned fields show as the program's to fill in (2026-11-12; built as `firma2-program-requirements`, data in `src/data/firma2-program-requirements.ts`). |
 
 ## User Stories
 

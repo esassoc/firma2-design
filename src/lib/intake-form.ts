@@ -1,6 +1,6 @@
 // The intake form's rules and its browser-local store — THE ONE SEAM every
 // intake surface reads through: the builder (Workspace settings › Intake
-// form), the member's New project and intake pages, and the steward's
+// form), the member's New project and intake pages, and the manager's
 // Proposals queue. Spec: .scratch/project-intake/spec.md.
 //
 // THE RULES ARE PURE FUNCTIONS OF (form, answers). Which blocks show, which

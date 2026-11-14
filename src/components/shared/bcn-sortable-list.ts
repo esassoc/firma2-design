@@ -61,6 +61,18 @@
 // IN, with `detail.from` the list it left. The event bubbles, so a consumer
 // with nested lists checks `event.target`.
 //
+// A GRID OF TILES, NOT ONLY A COLUMN OF ROWS: `layout="grid"` (the Progress
+// Dashboard, 2026-11-12). Rows that sit side by side and wrap are placed by
+// reading order — the dragged tile goes before the first tile the pointer is
+// above, or left of the middle of, on its own line — it follows the pointer on
+// both axes, and the menu says Move earlier / later / to start / to end,
+// because "up" means nothing between two tiles on one line. Everything else
+// is the list's: the grip, the menu, the announcement, Escape.
+//
+// WHERE THE GRIP GOES. First in the row, unless the row holds an element
+// marked `data-sort-grip-slot` — then there, so a tile can keep its grip with
+// its other actions instead of ahead of its title.
+//
 // It decorates every movable <li> with a grip (and re-decorates whenever the
 // consumer repaints — a MutationObserver, so the consumer never calls it).
 // A move fires `sort-change` with `detail: { order: string[], key: string }`:
@@ -190,6 +202,16 @@ export class BcnSortableList extends HTMLElement {
     return Array.from(this.#list?.children ?? []).filter((n): n is HTMLLIElement => n instanceof HTMLLIElement);
   }
 
+  /** Rows sit side by side and wrap, so place is reading order on two axes. */
+  get #grid(): boolean {
+    return this.getAttribute('layout') === 'grid';
+  }
+
+  /** Where a row's grip lives: its marked slot, or the row itself. */
+  #gripHome(li: HTMLLIElement): HTMLElement {
+    return li.querySelector<HTMLElement>('[data-sort-grip-slot]') ?? li;
+  }
+
   #movable(): HTMLLIElement[] {
     return this.#rows().filter((li) => li.dataset.sortKey && !('sortLocked' in li.dataset));
   }
@@ -217,13 +239,14 @@ export class BcnSortableList extends HTMLElement {
         li.prepend(spacer);
       });
     movable.forEach((li, i) => {
-      let menu = li.querySelector<MenuEl>(':scope > [data-sort-grip]');
+      const home = this.#gripHome(li);
+      let menu = home.querySelector<MenuEl>(':scope > [data-sort-grip]');
       if (!menu) {
         menu = document.createElement('esa-dropdown-menu') as MenuEl;
         menu.setAttribute('data-sort-grip', '');
-        menu.setAttribute('position', 'below-start');
+        menu.setAttribute('position', home === li ? 'below-start' : 'below-end');
         menu.append(cloneGrip(template));
-        li.prepend(menu);
+        home.prepend(menu);
         const button = menu.querySelector('button');
         button?.addEventListener('pointerdown', (e) => this.#onPointerDown(e, li));
       }
@@ -238,10 +261,10 @@ export class BcnSortableList extends HTMLElement {
       const items: MenuEl['items'] = [
         ...own,
         ...(own.length ? [{ label: '', action: '', divider: true }] : []),
-        { label: 'Move up', action: 'up', disabled: i === 0 },
-        { label: 'Move down', action: 'down', disabled: i === movable.length - 1 },
-        { label: 'Move to top', action: 'top', disabled: i === 0 },
-        { label: 'Move to bottom', action: 'bottom', disabled: i === movable.length - 1 },
+        { label: this.#grid ? 'Move earlier' : 'Move up', action: 'up', disabled: i === 0 },
+        { label: this.#grid ? 'Move later' : 'Move down', action: 'down', disabled: i === movable.length - 1 },
+        { label: this.#grid ? 'Move to start' : 'Move to top', action: 'top', disabled: i === 0 },
+        { label: this.#grid ? 'Move to end' : 'Move to bottom', action: 'bottom', disabled: i === movable.length - 1 },
       ];
       // `to:n` is the peer's place among ALL the other lists, refusing or not,
       // so the action still finds it.
@@ -334,6 +357,8 @@ export class BcnSortableList extends HTMLElement {
   #onPointerDown(event: PointerEvent, li: HTMLLIElement): void {
     if (event.button !== 0) return;
     const startY = event.clientY;
+    const startX = event.clientX;
+    const grid = this.#grid;
     const original = this.#order();
     // Where the row came from, to put it back exactly on Escape.
     const home = { parent: li.parentElement!, next: li.nextSibling };
@@ -341,16 +366,21 @@ export class BcnSortableList extends HTMLElement {
     // The pointer's offset inside the row, so the row stays under it as the
     // DOM reorders around it.
     let grabOffset = 0;
+    let grabOffsetX = 0;
 
+    // Rows in a column only ever shift down or up, so dx is 0 there; tiles in
+    // a grid also change line.
     const flip = (siblings: HTMLElement[], mutate: () => void) => {
-      const before = new Map(siblings.map((s) => [s, s.getBoundingClientRect().top]));
+      const before = new Map(siblings.map((s) => [s, s.getBoundingClientRect()]));
       mutate();
       if (reducedMotion()) return;
       siblings.forEach((s) => {
-        const dy = before.get(s)! - s.getBoundingClientRect().top;
-        if (!dy) return;
+        const now = s.getBoundingClientRect();
+        const dy = before.get(s)!.top - now.top;
+        const dx = before.get(s)!.left - now.left;
+        if (!dy && !dx) return;
         s.style.transition = 'none';
-        s.style.transform = `translateY(${dy}px)`;
+        s.style.transform = `translate(${dx}px, ${dy}px)`;
         requestAnimationFrame(() => {
           s.style.transition = 'transform 150ms ease';
           s.style.transform = '';
@@ -358,22 +388,27 @@ export class BcnSortableList extends HTMLElement {
       });
     };
 
-    const follow = (y: number) => {
+    const follow = (x: number, y: number) => {
       li.style.transform = '';
-      const natural = li.getBoundingClientRect().top;
-      li.style.transform = `translateY(${y - grabOffset - natural}px)`;
+      const natural = li.getBoundingClientRect();
+      li.style.transform = grid
+        ? `translate(${x - grabOffsetX - natural.left}px, ${y - grabOffset - natural.top}px)`
+        : `translateY(${y - grabOffset - natural.top}px)`;
     };
 
     const onMove = (e: PointerEvent) => {
       if (!dragging) {
-        if (Math.abs(e.clientY - startY) < DRAG_SLOP) return;
+        const travelled = grid ? Math.hypot(e.clientX - startX, e.clientY - startY) : Math.abs(e.clientY - startY);
+        if (travelled < DRAG_SLOP) return;
         dragging = true;
         grabOffset = startY - li.getBoundingClientRect().top;
+        grabOffsetX = startX - li.getBoundingClientRect().left;
         li.dataset.dragging = '';
         this.dataset.sorting = '';
       }
       e.preventDefault();
       const y = e.clientY;
+      const x = e.clientX;
       // The list under the pointer — or, between lists, the nearest one.
       // Unlinked, that is always this list.
       const peers = this.#peers().filter((p) => p.#takes(li.dataset.sortKey!));
@@ -388,9 +423,14 @@ export class BcnSortableList extends HTMLElement {
       // dragged row belongs just before it. Locked rows are never crossed —
       // they are not in `others`, and the row is only ever placed beside a
       // movable one.
+      // In a grid the same question is asked in reading order: the first
+      // tile on a later line, or on the pointer's line with its middle to the
+      // pointer's right. A tile that is not on screen has no place to offer.
       const next = others.find((r) => {
         const rect = r.getBoundingClientRect();
-        return y < rect.top + rect.height / 2;
+        if (!grid) return y < rect.top + rect.height / 2;
+        if (!rect.width) return false;
+        return y < rect.top || (y <= rect.bottom && x < rect.left + rect.width / 2);
       });
       const inTarget = li.parentElement === target.#list;
       const currentNext = inTarget ? target.#movable()[target.#movable().indexOf(li) + 1] : undefined;
@@ -401,7 +441,7 @@ export class BcnSortableList extends HTMLElement {
           else target.#list?.append(li);
         });
       }
-      follow(y);
+      follow(x, y);
     };
 
     const end = (cancelled: boolean) => {

@@ -29,7 +29,7 @@
 // <style> block.
 import EsaButton from '@esa/ecology/esa-button.astro';
 import Firma2RailSection from '../shared/firma2-rail-section.astro';
-import { organizations, visibilityChoices, joiningChoices } from '../../data/firma2-directory';
+import { CURRENT_USER, organizations, visibilityChoices, joiningChoices } from '../../data/firma2-directory';
 import { withBase } from '../../lib/base';
 
 const listHref = withBase('/prototypes/workspace-settings/organizations');
@@ -40,10 +40,10 @@ const sourceOptions = [
   { value: 'none', label: 'Workspace defaults' },
   ...organizations.map((o) => ({ value: o.slug, label: o.name })),
 ];
-// What each source copies into the access selects. Every fixture organization
-// requires an invitation to join — the safe default — so only visibility varies.
+// What each source copies into the access selects: its own visibility and
+// how people join it.
 const sources = Object.fromEntries(
-  organizations.map((o) => [o.slug, { name: o.name, visibility: o.visibility, joining: 'invite' }]),
+  organizations.map((o) => [o.slug, { name: o.name, visibility: o.visibility, joining: o.joining }]),
 );
 
 const toOptions = (choices: { value: string; label: string }[]) =>
@@ -54,9 +54,12 @@ const hintFor = (choices: { value: string; hint?: string }[], value: string) =>
   choices.find((c) => c.value === value)?.hint || undefined;
 
 // Workspace defaults, the same as Organization settings › Access: Public (a
-// restoration organization's projects are public record) and invitation
-// required (widening later is one edit; narrowing cannot un-admit anyone).
-const DEFAULTS = { visibility: 'public', joining: 'invite' };
+// restoration organization's projects are public record) and approval
+// required (decided 2026-11-02, .scratch/access-requests/spec.md decision 5:
+// anyone can ask and a manager decides, so nobody is stuck and nobody gets in
+// unseen). Looked up by value, never by position — joiningChoices' order is
+// presentation.
+const DEFAULTS = { visibility: 'public', joining: 'approval' };
 const SOURCE_HINT_COPY = 'Copies access, permissions and notifications only.';
 ---
 <form
@@ -67,6 +70,7 @@ const SOURCE_HINT_COPY = 'Copies access, permissions and notifications only.';
   data-sources={JSON.stringify(sources)}
   data-names={JSON.stringify(organizations.map((o) => o.name))}
   data-defaults={JSON.stringify(DEFAULTS)}
+  data-added-by={CURRENT_USER.name}
   data-source-hint-copy={SOURCE_HINT_COPY}
 >
   <Firma2RailSection title="Details">
@@ -126,7 +130,7 @@ const SOURCE_HINT_COPY = 'Copies access, permissions and notifications only.';
   import '@esa/ecology/esa-file-upload';
   import '@esa/ecology/esa-select';
   import { organizationSlug } from '../../data/firma2-directory';
-  import type { Organization, OrganizationVisibility } from '../../data/firma2-directory';
+  import type { JoiningChoice, Organization, OrganizationVisibility } from '../../data/firma2-directory';
   import { addOrganization, readAddedOrganizations } from '../../lib/added-organizations';
 
   type Field = HTMLElement & { value: string; helpText: string; errorText: string };
@@ -212,6 +216,11 @@ const SOURCE_HINT_COPY = 'Copies access, permissions and notifications only.';
         people: 0,
         projects: 0,
         visibility: visibility.value as OrganizationVisibility,
+        joining: joining.value as JoiningChoice,
+        // Added by hand, so no domain is verified yet — that happens on Access.
+        approvedDomains: [],
+        // Only administrators add organizations (spec decision 7): the reader.
+        addedBy: form.dataset.addedBy ?? '',
         // Today in the reader's own time zone — toISOString() is UTC and turns
         // an evening add on the West Coast into tomorrow.
         created: new Date().toLocaleDateString('en-CA'),

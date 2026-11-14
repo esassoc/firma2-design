@@ -16,8 +16,9 @@
 //
 // Slots: "status" (badges — what state the record is in), "toolbar" (record
 // utilities), "actions" (the page's workflow; its primary rightmost). No rail
-// toggle lives here: every rail carries its own chevron on its edge
-// (firma2-rail; user, 2026-10-20).
+// control lives here: a record's rail icons ride the record's own bar under
+// this one (firma2-record-bar; user, 2026-10-22), and every other rail
+// carries its toggle in its own corner (firma2-rail).
 //
 // bcn-lego-checked: esa-app-bar is the strip and esa-breadcrumbs the trail;
 // esa-dropdown-menu + EsaButton chrome/iconOnly are the two "…" menus (the
@@ -94,13 +95,17 @@ const hasActions = Astro.slots.has('actions');
             <slot name="toolbar" />
           </div>
         )}
-        {hasToolbar && (
-          <esa-dropdown-menu class="firma2-top-bar__fold" position="below-end" data-top-bar-fold>
+        {/* ONE "…" FOR EVERYTHING THAT FOLDS — the toolbar under 45rem, and the
+            secondary actions whenever the bar runs out of room. It starts empty
+            (hidden) and the script fills it, so a page with nothing folded never
+            shows it. */}
+        {(hasToolbar || hasActions) && (
+          <esa-dropdown-menu class="firma2-top-bar__fold" position="below-end" data-top-bar-fold data-empty>
             <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="More actions" />
           </esa-dropdown-menu>
         )}
         {hasActions && (
-          <div class="firma2-top-bar__actions cluster" data-gap="xs">
+          <div class="firma2-top-bar__actions cluster" data-gap="xs" data-top-bar-actions>
             <slot name="actions" />
           </div>
         )}
@@ -140,91 +145,278 @@ const hasActions = Astro.slots.has('actions');
     new ResizeObserver(sync).observe(bar);
   }
 
-  // A LONG TRAIL COLLAPSES ITS MIDDLE. Home, the parent and the current page are
-  // always on screen; anything between them goes into one "…" menu when the
-  // trail would otherwise push the actions or wrap. The current crumb then
-  // ellipsizes in CSS, with its full text as a tooltip.
-  function collapseTrail(bar: HTMLElement): void {
+  const PHONE = matchMedia('(max-width: 45rem)');
+  const TABLET = matchMedia('(max-width: 64rem)');
+
+  const nameOf = (el: HTMLElement): string =>
+    el.getAttribute('aria-label')?.trim() || el.textContent?.trim() || '';
+  const shown = (el: Element): boolean => (el as HTMLElement).getClientRects().length > 0;
+
+  /** One thing in the fold menu: what it reads, and what choosing it does. */
+  interface FoldItem {
+    label: string;
+    run: () => void;
+  }
+
+  // THE BAR LAYS ITSELF OUT IN ONE PASS, from a clean slate, every time its
+  // width or its actions change. Order of giving, cheapest first:
+  //   1. a long trail collapses its middle into "…" (wide screens);
+  //   2. the actions' secondary controls fold into the bar's "…" — every one
+  //      under 45rem, longest label first and only while the bar is short
+  //      under 64rem — and text riding the actions slot (a "Published 3 days
+  //      ago") steps out on the way;
+  //   3. under 45rem the parent crumb gives way; then, on any bar still short
+  //      under 64rem, the primary action drops its label to its icon.
+  // The primary action never folds: it is the slot's first primary-variant
+  // button, or its last control when none is primary (the slot's own "primary
+  // rightmost" rule). Status badges never fold; they ellipsize in CSS.
+  // One function rather than one observer per part, because each step changes
+  // the room the next one measures.
+  function layout(bar: HTMLElement): void {
     const trail = bar.querySelector<HTMLElement>('.firma2-top-bar__trail');
     const list = trail?.querySelector<HTMLOListElement>('.esa-breadcrumbs__list');
     const tpl = bar.querySelector<HTMLTemplateElement>('template[data-top-bar-ellipsis]');
+    const end = bar.querySelector<HTMLElement>('.firma2-top-bar__end');
+    const toolbar = bar.querySelector<HTMLElement>('[data-top-bar-toolbar]');
+    const actions = bar.querySelector<HTMLElement>('[data-top-bar-actions]');
+    const status = bar.querySelector<HTMLElement>('.firma2-top-bar__status');
+    const fold = bar.querySelector<Menu>('[data-top-bar-fold]');
     if (!trail || !list || !tpl) return;
 
+    // ── The trail ────────────────────────────────────────────────────────────
     const current = list.querySelector<HTMLElement>('.esa-breadcrumbs__current');
     if (current?.textContent?.trim()) current.title = current.textContent.trim();
-
     const crumbs = [...list.children].filter((li): li is HTMLLIElement => li instanceof HTMLLIElement);
+    // home + parent + current: the parent is a real crumb, not the home glyph.
+    const parent = crumbs.length >= 3 ? crumbs[crumbs.length - 2] : null;
     // home + ≥1 hidden + parent + current
-    if (crumbs.length < 4) return;
-    const middle = crumbs.slice(1, -2);
-
-    const node = tpl.content.firstElementChild!.cloneNode(true) as HTMLLIElement;
-    // The separator after the ellipsis is the first middle crumb's own, so it
-    // borrows it rather than drawing one.
-    const sep = middle[0].querySelector('.esa-breadcrumbs__separator');
-    if (sep) node.append(sep.cloneNode(true));
-    middle[0].before(node);
-    const menu = node.querySelector<Menu>('esa-dropdown-menu')!;
-    menu.items = middle.map((li) => {
-      const a = li.querySelector<HTMLAnchorElement>('a');
-      return { label: a?.textContent?.trim() ?? '', action: a?.href ?? '' };
-    });
-    menu.addEventListener('menu-action', (e) => {
-      const href = (e as CustomEvent<string>).detail;
-      if (href) location.href = href;
-    });
-
+    const middle = crumbs.length >= 4 ? crumbs.slice(1, -2) : [];
+    let node: HTMLLIElement | null = null;
+    if (middle.length) {
+      node = tpl.content.firstElementChild!.cloneNode(true) as HTMLLIElement;
+      // The separator after the ellipsis is the first middle crumb's own, so it
+      // borrows it rather than drawing one.
+      const sep = middle[0].querySelector('.esa-breadcrumbs__separator');
+      if (sep) node.append(sep.cloneNode(true));
+      middle[0].before(node);
+      const menu = node.querySelector<Menu>('esa-dropdown-menu')!;
+      menu.items = middle.map((li) => {
+        const a = li.querySelector<HTMLAnchorElement>('a');
+        return { label: a?.textContent?.trim() ?? '', action: a?.href ?? '' };
+      });
+      menu.addEventListener('menu-action', (e) => {
+        const href = (e as CustomEvent<string>).detail;
+        if (href) location.href = href;
+      });
+    }
     // The current crumb shrinks before the trail overflows, so "fits" means it
     // is not being ellipsized either.
-    const fits = (): boolean =>
+    const trailFits = (): boolean =>
       trail.scrollWidth <= trail.clientWidth + 1 &&
       (!current || current.scrollWidth <= current.clientWidth + 1);
+    // The bar is short when either side is past its floor: the trail clipping
+    // its crumbs, or the end slot's controls spilling out of it.
+    const barFits = (): boolean =>
+      trail.scrollWidth <= trail.clientWidth && (!end || end.scrollWidth <= end.clientWidth);
+
+    // ── The actions ──────────────────────────────────────────────────────────
+    const CONTROL = '.esa-button, esa-dropdown-menu, esa-button-toggle';
+    // A control's box is the outermost wrapper that holds nothing else, so a
+    // folded button does not leave its page's <span> holding a gap open.
+    const boxOf = (el: HTMLElement): HTMLElement => {
+      let box = el;
+      while (box.parentElement && box.parentElement !== actions && box.parentElement.children.length === 1) {
+        box = box.parentElement;
+      }
+      return box;
+    };
+    const controls = (): HTMLElement[] =>
+      actions
+        ? [...actions.querySelectorAll<HTMLElement>(CONTROL)].filter(
+            (el) => !el.parentElement?.closest(CONTROL) && shown(el),
+          )
+        : [];
+    // Free text in the slot — a timestamp beside a button. It has no menu form,
+    // so it steps out rather than folding.
+    const notes = (root: HTMLElement | null = actions): HTMLElement[] =>
+      root
+        ? [...root.querySelectorAll<HTMLElement>('*')].filter(
+            (el) =>
+              !el.closest(CONTROL) &&
+              !el.closest('.esa-badge') &&
+              [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim()) &&
+              shown(el),
+          )
+        : [];
+    const foldable: HTMLElement[] = [];
+    // The toolbar's own buttons — not the ones inside what they open. A
+    // toolbar component brings its sheet, dialog and toasts along in the same
+    // slot, and those have to stay rendered for the buttons to work.
+    const SURFACE = 'bcn-side-sheet, esa-dialog, esa-side-dialog, esa-confirm-dialog, esa-snackbar-container, esa-dropdown-menu';
+    const toolbarControls = (): HTMLElement[] =>
+      toolbar
+        ? [...toolbar.querySelectorAll<HTMLElement>('a[href], button')].filter(
+            (el) => !el.closest(SURFACE) && nameOf(el),
+          )
+        : [];
+
     const sync = (): void => {
-      node.hidden = true;
-      middle.forEach((li) => (li.hidden = false));
-      if (fits()) return;
-      node.hidden = false;
-      middle.forEach((li) => (li.hidden = true));
+      // Clean slate.
+      bar.querySelectorAll('[data-top-bar-folded]').forEach((el) => el.removeAttribute('data-top-bar-folded'));
+      bar.querySelectorAll('[data-top-bar-compact]').forEach((el) => el.removeAttribute('data-top-bar-compact'));
+      trail.removeAttribute('data-drop-parent');
+      if (node) {
+        node.hidden = true;
+        middle.forEach((li) => (li.hidden = false));
+      }
+      foldable.length = 0;
+      const phone = PHONE.matches;
+      const tablet = TABLET.matches;
+      // A note riding the status (why Publish is still disabled) stays on the
+      // one row: CSS ellipsizes it under 64rem and drops it under 45rem.
+      notes(status).forEach((el) => el.setAttribute('data-top-bar-note', ''));
+
+      // 0. Under 45rem the toolbar's buttons fold — each one's box, never the
+      //    toolbar itself, so the surfaces they open stay laid out (a sheet
+      //    inside a display:none toolbar opened at 0×0).
+      if (phone) {
+        const mine = toolbarControls();
+        for (const el of mine) {
+          let box = el;
+          while (
+            box.parentElement &&
+            box.parentElement !== toolbar &&
+            !box.parentElement.querySelector(SURFACE) &&
+            mine.filter((c) => box.parentElement!.contains(c)).length === 1
+          ) {
+            box = box.parentElement;
+          }
+          box.setAttribute('data-top-bar-folded', '');
+        }
+      }
+
+      // 1. The trail's middle (under 45rem CSS keeps only home, parent, current).
+      if (node && !phone && !trailFits()) {
+        node.hidden = false;
+        middle.forEach((li) => (li.hidden = true));
+      }
+
+      // 2. The actions.
+      const all = controls();
+      const primary =
+        all.find((el) => el.matches('.esa-button--variant-primary')) ??
+        [...all].reverse().find((el) => !el.matches('esa-button-toggle'));
+      // A segmented switch has no menu form; it stays.
+      const secondary = all.filter((el) => el !== primary && !el.matches('esa-button-toggle'));
+      const foldOne = (el: HTMLElement): void => {
+        boxOf(el).setAttribute('data-top-bar-folded', '');
+        if (el !== primary) foldable.push(el);
+      };
+      if (phone) {
+        notes().forEach((el) => el.setAttribute('data-top-bar-folded', ''));
+        secondary.forEach(foldOne);
+      } else if (tablet && !barFits()) {
+        notes().forEach((el) => el.setAttribute('data-top-bar-folded', ''));
+        const longest = [...secondary].sort((a, b) => nameOf(b).length - nameOf(a).length);
+        for (const el of longest) {
+          if (barFits()) break;
+          foldOne(el);
+        }
+      }
+      // Keep the menu's order the slot's order.
+      foldable.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+
+      // 3. The parent crumb (phone), then — on any short bar — the primary's
+      //    label, when it has an icon to stand on.
+      if (phone && parent && trail.scrollWidth > trail.clientWidth + 1) trail.setAttribute('data-drop-parent', '');
+      if (tablet && !barFits() && primary?.matches('.esa-button') && primary.querySelector('.esa-icon, svg')) {
+        primary.setAttribute('data-top-bar-compact', '');
+      }
+
+      if (fold) {
+        const items = foldItems(phone);
+        fold.toggleAttribute('data-empty', items.length === 0);
+      }
+    };
+
+    // ── The fold ─────────────────────────────────────────────────────────────
+    // A MIRROR, NOT A COPY: each item is one of the bar's own controls, and
+    // choosing it clicks that control (or, for a page's own "…" menu that
+    // folded, replays the choice on that menu), so whatever the page wired —
+    // share sheet, history drawer, a link — runs unchanged. The toolbar's
+    // buttons are icon-only, so an item is named by its accessible name.
+    // Toolbar first (it folds only under 45rem, where the pass above folds its buttons), then the
+    // folded actions, a divider between the two groups.
+    const foldItems = (phone: boolean): FoldItem[] => {
+      const groups: FoldItem[][] = [];
+      if (phone) {
+        groups.push(toolbarControls().map((el) => ({ label: nameOf(el), run: () => el.click() })));
+      }
+      groups.push(
+        foldable.flatMap((el): FoldItem[] => {
+          if (el.matches('esa-dropdown-menu')) {
+            return ((el as Menu).items ?? [])
+              .filter((it) => !it.divider && !it.disabled)
+              .map((it) => ({
+                label: it.label,
+                run: () =>
+                  el.dispatchEvent(new CustomEvent('menu-action', { detail: it.action, bubbles: true, composed: true })),
+              }));
+          }
+          const native = el.querySelector<HTMLElement>('.esa-button__native') ?? el;
+          const label = nameOf(native);
+          return label ? [{ label, run: () => native.click() }] : [];
+        }),
+      );
+      return groups.filter((g) => g.length).flatMap((g, i) => (i ? [{ label: '', run: () => {} }, ...g] : g));
+    };
+
+    let openItems: FoldItem[] = [];
+    if (fold) {
+      // Rebuilt on open, so a control that appeared since the last pass is in it.
+      fold.addEventListener(
+        'click',
+        () => {
+          openItems = foldItems(PHONE.matches);
+          fold.items = openItems.map((it, i) =>
+            it.label ? { label: it.label, action: String(i) } : { label: '', divider: true },
+          );
+        },
+        true,
+      );
+      fold.addEventListener('menu-action', (e) => {
+        openItems[Number((e as CustomEvent<string>).detail)]?.run();
+      });
+    }
+
+    let queued = 0;
+    const schedule = (): void => {
+      cancelAnimationFrame(queued);
+      queued = requestAnimationFrame(sync);
     };
     sync();
-    new ResizeObserver(sync).observe(trail);
-  }
-
-  // UNDER 45rem THE TOOLBAR FOLDS INTO "…". The menu is a mirror, not a copy:
-  // each item is one of the toolbar's own buttons, and choosing it clicks that
-  // button, so whatever the toolbar's component wired (share sheet, history
-  // drawer, a link) runs unchanged. The toolbar is hidden in CSS at that width;
-  // the items are rebuilt on open so a button that appeared later is included.
-  // The toolbar's buttons are icon-only, so an item is named by the button's
-  // accessible name — its aria-label, or its text where it has one.
-  function wireFold(bar: HTMLElement): void {
-    const toolbar = bar.querySelector<HTMLElement>('[data-top-bar-toolbar]');
-    const menu = bar.querySelector<Menu>('[data-top-bar-fold]');
-    if (!toolbar || !menu) return;
-    const nameOf = (el: HTMLElement): string =>
-      el.getAttribute('aria-label')?.trim() || el.textContent?.trim() || '';
-    const controls = (): HTMLElement[] =>
-      [...toolbar.querySelectorAll<HTMLElement>('a[href], button')].filter(
-        (el) => !el.closest('esa-dropdown-menu') && nameOf(el),
-      );
-    const build = (): void => {
-      const list = controls();
-      menu.toggleAttribute('data-empty', list.length === 0);
-      menu.items = list.map((el, i) => ({ label: nameOf(el), action: String(i) }));
-    };
-    build();
-    menu.addEventListener('click', build, true);
-    menu.addEventListener('menu-action', (e) => {
-      controls()[Number((e as CustomEvent<string>).detail)]?.click();
-    });
+    new ResizeObserver(schedule).observe(bar);
+    PHONE.addEventListener('change', schedule);
+    TABLET.addEventListener('change', schedule);
+    document.fonts?.ready.then(schedule);
+    // A page shows and hides its own actions (edit mode, a decision that
+    // becomes available). Only those attributes are watched: this pass writes
+    // data-* attributes alone, so it cannot wake itself.
+    if (actions) {
+      new MutationObserver(schedule).observe(actions, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['hidden', 'style'],
+      });
+    }
   }
 
   customElements.whenDefined('esa-dropdown-menu').then(() => {
     const bar = document.querySelector<HTMLElement>('[data-firma2-top-bar="app"]');
     if (!bar) return;
     publishHeight(bar);
-    collapseTrail(bar);
-    wireFold(bar);
+    layout(bar);
   });
 </script>
 
@@ -240,7 +432,10 @@ const hasActions = Astro.slots.has('actions');
        edge to window edge — the same literal firma2-page-header and the maps
        restate (no hook exposes it; /request-lego for --app-shell-content-padding
        is filed). */
-    --_bleed: var(--spacing-500, 1.5rem);
+    /* Read from the shell where it publishes its padding: --firma2-sticky-origin
+       is that padding, negated, and follows it when the phone gutter narrows
+       to 16px (mobile-foundation 01). The literal above is the fallback. */
+    --_bleed: calc(var(--firma2-sticky-origin, calc(var(--spacing-500, 1.5rem) * -1)) * -1);
 
     position: sticky;
     top: var(--firma2-sticky-origin, 0px);
@@ -264,7 +459,9 @@ const hasActions = Astro.slots.has('actions');
      49. The surface is the canvas, not a raised plate — the bar is the page's
      own top, and the hairline alone marks where content passes under it. */
   .firma2-top-bar :global(.esa-app-bar.firma2-top-bar__bar) {
-    --_bar-pad-x: var(--spacing-500, 1.5rem);
+    /* The bar's gutter is the pane's, so the home glyph sits on the content's
+       leading edge at every width. */
+    --_bar-pad-x: var(--_bleed);
     --_bar-pad-y: 0px;
     --_bar-gap: var(--spacing-400, 1rem);
     box-sizing: border-box;
@@ -373,6 +570,14 @@ const hasActions = Astro.slots.has('actions');
     min-inline-size: 0;
     overflow: hidden;
   }
+  /* A page's own wrapper around its badge (a publish-state component) would
+     keep its content width and clip the badge without the ellipsis, so every
+     box between the cluster and a badge may shrink too. */
+  .firma2-top-bar__status :global(*:has(.esa-badge)) {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    overflow: hidden;
+  }
   .firma2-top-bar__status :global(.esa-badge) {
     display: block;
     max-inline-size: 100%;
@@ -393,24 +598,125 @@ const hasActions = Astro.slots.has('actions');
     display: none;
   }
   .firma2-top-bar__fold {
-    display: none;
+    display: inline-flex;
   }
-  /* [hidden] loses to the author display rule below, so emptiness is its own
-     attribute (see esa-hidden-attribute-trap). */
+  /* [hidden] loses to the author display rule above, so emptiness is its own
+     attribute (see esa-hidden-attribute-trap). The script clears it once the
+     fold has something in it. */
   .firma2-top-bar__fold[data-empty] {
     display: none !important;
   }
 
+  /* WHAT THE SCRIPT FOLDS. A folded control's box is out of the row — its
+     click still lives in the fold menu — and a note riding the actions slot
+     steps out with it. !important because the page's own wrappers and the
+     lego's span carry display rules of their own. */
+  .firma2-top-bar__actions :global([data-top-bar-folded]),
+  .firma2-top-bar__toolbar :global([data-top-bar-folded]) {
+    display: none !important;
+  }
+  /* The primary's last resort on a phone: its icon alone, a 32px square like
+     every icon-only button in the bar. The label is clipped, not removed, so
+     the button keeps its accessible name. */
+  .firma2-top-bar__actions :global([data-top-bar-compact] > .esa-button__native) {
+    inline-size: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+  .firma2-top-bar__actions :global([data-top-bar-compact] .esa-button__label) {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* ≤64rem — tablet. THE TRAIL GIVES FIRST, DOWN TO ITS FLOOR. On a wide bar
+     the two sides shrink in proportion and nothing ever reaches its floor; on a
+     short one that split squeezed the actions out of their slot while the
+     trail still had slack (pm2 at 390: trail 193 wide, buttons 11px over).
+     So here the start slot takes nearly all of the shrink until it reaches
+     home + the current crumb's floor, then the status ellipsizes, and only
+     then does the script fold a secondary action — longest label first. */
+  @media (max-width: 64rem) {
+    .firma2-top-bar :global(.esa-app-bar__start) {
+      flex-shrink: 1000;
+      min-inline-size: calc(3rem + min(12rem, 40vw));
+    }
+    /* Two things that cost a gap and show nothing: the lego's empty centre slot
+       (16px), and a status cluster whose badges are all hidden or that only
+       received the header's forwarded whitespace (12px). */
+    .firma2-top-bar__status :global(.cluster) {
+      flex-wrap: nowrap;
+      min-inline-size: 0;
+    }
+    .firma2-top-bar__status :global([data-top-bar-note]) {
+      min-inline-size: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .firma2-top-bar :global(.esa-app-bar__main:empty),
+    .firma2-top-bar__status:not(:has(.esa-badge:not([hidden] *), .esa-button:not([hidden] *))) {
+      display: none;
+    }
+  }
+
+  /* ≤45rem — phone. */
   @media (max-width: 45rem) {
-    /* Parent as the way back, then the current page. */
-    .firma2-top-bar__trail :global(.esa-breadcrumbs__item:not(:nth-last-child(-n + 2))) {
+    /* Under the notch: viewport-fit=cover (BaseLayout) lets the page run under
+       it, so the bar pads its top by the inset and paints that strip itself.
+       The 48px is the row below it. publishHeight measures this box, so
+       --firma2-band-height and scroll-padding grow by the inset too. */
+    .firma2-top-bar {
+      padding-block-start: env(safe-area-inset-top, 0px);
+      background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
+    }
+
+    /* Home, then the parent as the way back, then the current page. */
+    .firma2-top-bar__trail :global(.esa-breadcrumbs__item:not(:first-child):not(:nth-last-child(-n + 2))) {
       display: none;
     }
+    /* The parent gives before the page's name does: it ellipsizes to a floor
+       that still reads as a word, and below that the script drops it. */
+    .firma2-top-bar__trail :global(.esa-breadcrumbs__item:nth-last-child(2):not(:first-child)) {
+      flex: 0 1 auto;
+      min-inline-size: 4.5rem;
+    }
+    .firma2-top-bar__trail :global(.esa-breadcrumbs__item:nth-last-child(2):not(:first-child) .esa-breadcrumbs__link) {
+      display: block;
+      flex: 0 1 auto;
+      min-inline-size: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .firma2-top-bar__trail[data-drop-parent] :global(.esa-breadcrumbs__item:nth-last-child(2):not(:first-child)) {
+      display: none;
+    }
+    /* The page's name keeps a floor of a few words, not 40% of a phone. */
+    .firma2-top-bar__trail :global(.esa-breadcrumbs__item:last-child) {
+      min-inline-size: 5rem;
+    }
+    /* home (glyph + separator, 40px) + gap + that floor */
+    .firma2-top-bar :global(.esa-app-bar__start) {
+      min-inline-size: 8rem;
+    }
+    /* A status shortens to a word and an ellipsis, never to nothing — the
+       badge's short form ("Waiting…"). */
+    .firma2-top-bar__status:has(.esa-badge:not([hidden] .esa-badge)) {
+      min-inline-size: 3.5rem;
+    }
+    .firma2-top-bar__status :global([data-top-bar-note]) {
+      display: none;
+    }
+    /* The toolbar stays rendered — its sheet and toasts live in it — but with
+       its buttons folded it holds no width, so it leaves the row rather than
+       holding a gap open beside the "…". */
     .firma2-top-bar__toolbar {
-      display: none;
-    }
-    .firma2-top-bar__fold {
-      display: inline-flex;
+      position: absolute;
+      inline-size: 0;
+      overflow: visible;
     }
   }
 </style>

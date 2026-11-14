@@ -2,7 +2,7 @@
 // server every other prototype in this spoke uses. Versioned keys, so a shape
 // change later discards stale state instead of misreading it.
 //
-// FIVE THINGS, each keyed on its own so one screen's reset never takes
+// SIX THINGS, each keyed on its own so one screen's reset never takes
 // another's with it:
 //
 //   work areas      per project, written whole: the record's shapes as edited.
@@ -12,6 +12,7 @@
 //                   in ProjectFirma, or read from a GIS subscription. It
 //                   decides whether the drawing tools exist at all.
 //   layers          the workspace's reference layers, as edited in settings.
+//   map style       the base map a map opens on and the work areas' colours.
 //   subscriptions   the GIS subscriptions, as edited and synced.
 //   draft           the one subscription being set up in the wizard, and the
 //                   step it stopped on — so leaving to share a layer into the
@@ -31,7 +32,8 @@ const SOURCE_KEY = 'firma2:project-source:v1';
 const LAYERS_KEY = 'firma2:reference-layers:v1';
 const SUBSCRIPTIONS_KEY = 'firma2:subscriptions:v1';
 const DRAFT_KEY = 'firma2:subscription-draft:v1';
-export const GEO_KEYS = [WORK_AREAS_KEY, SOURCE_KEY, LAYERS_KEY, SUBSCRIPTIONS_KEY, DRAFT_KEY];
+const MAP_STYLE_KEY = 'firma2:map-style:v1';
+export const GEO_KEYS = [WORK_AREAS_KEY, SOURCE_KEY, LAYERS_KEY, SUBSCRIPTIONS_KEY, DRAFT_KEY, MAP_STYLE_KEY];
 
 const read = <T>(key: string, fallback: T): T => {
   try {
@@ -91,6 +93,36 @@ export const writeProjectSource = (source: ProjectSource): void => write(SOURCE_
 
 export const readLayers = (): ReferenceLayer[] => read<ReferenceLayer[]>(LAYERS_KEY, REFERENCE_LAYERS);
 export const writeLayers = (layers: ReferenceLayer[]): void => write(LAYERS_KEY, layers);
+
+// ---- map style ---------------------------------------------------------------------
+
+/** The base maps every map's layers control offers, in its order. */
+export const BASEMAPS = [
+  { value: 'map', label: 'Map' },
+  { value: 'topo', label: 'Topographic' },
+  { value: 'terrain', label: 'Terrain' },
+  { value: 'imagery', label: 'Satellite' },
+] as const;
+export type BasemapId = (typeof BASEMAPS)[number]['value'];
+
+/**
+ * How the workspace's own shapes are painted, and what they open on. A null
+ * colour follows the house colour — a token, so it keeps tracking the colour
+ * scheme — where a chosen one is the same hex in light and dark.
+ */
+export interface MapStyle {
+  basemap: BasemapId;
+  /** Areas and points share one colour: a point is an area too small to outline. */
+  areaColor: string | null;
+  reachColor: string | null;
+  /** 0 to 1. The wash inside an area's edge. */
+  areaFillOpacity: number;
+}
+
+export const DEFAULT_MAP_STYLE: MapStyle = { basemap: 'map', areaColor: null, reachColor: null, areaFillOpacity: 0.18 };
+
+export const readMapStyle = (): MapStyle => ({ ...DEFAULT_MAP_STYLE, ...read<Partial<MapStyle>>(MAP_STYLE_KEY, {}) });
+export const writeMapStyle = (style: MapStyle): void => write(MAP_STYLE_KEY, style);
 
 // ---- subscriptions -----------------------------------------------------------------
 

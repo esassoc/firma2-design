@@ -37,6 +37,27 @@ export const addOrganization = (organization: Organization, note: JustAdded): vo
   }
 };
 
+/**
+ * Several at once, with no arrival note — a project import adds the lead
+ * organizations its file names, and the list has nothing to confirm on arrival.
+ */
+export const addOrganizations = (list: Organization[]): void => {
+  try {
+    localStorage.setItem(KEY, JSON.stringify([...list, ...readAddedOrganizations()]));
+  } catch {
+    /* storage unavailable — the adds are forgotten */
+  }
+};
+
+/** Takes back organizations by name — an undone import's. */
+export const removeAddedOrganizations = (names: string[]): void => {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(readAddedOrganizations().filter((o) => !names.includes(o.name))));
+  } catch {
+    /* storage unavailable */
+  }
+};
+
 /** Reads the arrival note and clears it, so the confirmation shows once. */
 export const takeJustAdded = (): JustAdded | null => {
   try {

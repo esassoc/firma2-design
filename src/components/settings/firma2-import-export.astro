@@ -9,10 +9,16 @@
 // identical rows would say it four times.
 //
 // EXPORT IS REAL: the CSV is built in the browser from the same fixture every
-// screen reads, so what downloads matches what the grids show. IMPORT STOPS AT
-// THE FILE. There is no store behind this prototype, so the Import button is
-// enabled and inert — the product brief's "inert, not disabled" — rather than
-// pretending to save rows it cannot keep. The template download is real.
+// screen reads, so what downloads matches what the grids show. IMPORTING
+// PROJECTS IS ITS OWN PAGE (Projects › Import projects), where the file's
+// columns and values are matched before anything is written; with Projects
+// picked, Import goes there. The other record types stop at the file: no
+// store sits behind them, so their Import is enabled and inert — the product
+// brief's "inert, not disabled". The template download is real.
+//
+// WHAT AN EXPORT IS NOT, BEFORE IT IS TAKEN (FieldDoc's lesson): a CSV of
+// current values, not a backup — someone leaving with it must not find out
+// later that photos and history stayed behind. Said on the select's help line.
 //
 // NO LEADING ICONS ON THE BUTTONS. At md, esa-button's 20px icon makes the
 // box 46px against 41px for a text-only one, so "Download template" stood 5px
@@ -25,13 +31,17 @@
 import '../shared/firma2-card-section.css';
 import EsaCard from '@esa/ecology/esa-card.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2HelpLink from '../shared/firma2-help-link.astro';
 import { projects } from '../../data/firma2-projects';
 import { organizations, users } from '../../data/firma2-directory';
+import { withBase } from '../../lib/base';
+import { IMPORT_FIELDS } from '../../data/firma2-project-import';
 
 // The columns each import expects, in template order. What an export writes is
 // the record's own fields, so the two lists are allowed to differ.
 const TEMPLATES: Record<string, string[]> = {
-  projects: ['Project name', 'Classifications', 'Lead organization', 'County', 'Stage', 'Implementation start year', 'Completion year', 'Estimated total cost'],
+  // The fields Import projects reads, in its order — one list, so the two templates can't differ.
+  projects: IMPORT_FIELDS.map((f) => f.label),
   organizations: ['Organization', 'Type', 'Website', 'Primary contact email'],
   users: ['Name', 'Email', 'Organizations', 'Role'],
   expenditures: ['Project name', 'Funding source', 'Year', 'Amount'],
@@ -73,7 +83,7 @@ const exports = {
     // Semicolons, because an organization's name can hold a comma.
     Organizations: u.organizations.join('; '),
     Role: u.role,
-    'Steward of': u.stewardOf.join('; '),
+    'Manager of': u.managerOf.join('; '),
     Status: u.status,
     'Last active': u.lastActive,
   })),
@@ -85,8 +95,9 @@ const exportOptions = [
   { value: 'users', label: `Users (${exports.users.length})` },
 ];
 ---
-<div class="firma2-import-export stack" data-gap="xl">
+<div class="firma2-import-export stack" data-gap="xl" data-import-href={withBase('/prototypes/projects/import')}>
   <EsaCard title="Import">
+    <Firma2HelpLink slot="actions" article="importing">Learn about importing</Firma2HelpLink>
     <div class="stack" data-gap="lg">
       <esa-select
         id="import-kind"
@@ -95,9 +106,11 @@ const exportOptions = [
         data-options={JSON.stringify(importOptions)}
         data-initial="projects"
       ></esa-select>
-      <esa-file-upload label="Spreadsheet" accept=".csv,.xlsx"></esa-file-upload>
+      {/* The limits, before they are hit: types in the label, the size in the
+          zone — the same 20 MB as Import projects. */}
+      <esa-file-upload label="Spreadsheet (.csv or .xlsx)" accept=".csv,.xlsx" max-size-mb="20"></esa-file-upload>
       <div class="cluster" data-gap="sm">
-        <EsaButton variant="primary" size="md">Import</EsaButton>
+        <EsaButton variant="primary" size="md" data-import>Import</EsaButton>
         <EsaButton variant="secondary" size="md" data-import-template>Download template</EsaButton>
       </div>
     </div>
@@ -108,6 +121,7 @@ const exportOptions = [
       <esa-select
         id="export-kind"
         label="Records to export"
+        help-text="A snapshot of current values, not a backup. Photos, files and change history aren’t included."
         size="md"
         data-options={JSON.stringify(exportOptions)}
         data-initial="projects"
@@ -153,6 +167,10 @@ const exportOptions = [
       for (const select of [importKind, exportKind]) {
         if (select) hydrateSelect(select.id, JSON.parse(select.dataset.options ?? '[]'), select.dataset.initial);
       }
+
+      root.querySelector('[data-import]')?.addEventListener('click', () => {
+        if ((importKind?.value || 'projects') === 'projects') window.location.href = root.dataset.importHref ?? '';
+      });
 
       root.querySelector('[data-import-template]')?.addEventListener('click', () => {
         const kind = importKind?.value || 'projects';

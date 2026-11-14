@@ -293,6 +293,7 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
   import type { Project } from '../../data/firma2-projects';
   import { withBase } from '../../lib/base';
   import { readStages } from '../../lib/stage-draft';
+  import { importedProjects, importedUpdates, norm } from '../../lib/project-import';
   import type { ColDef } from 'ag-grid-community';
 
   /** Lifecycle position, so the Stage column sorts Proposal → Deferred rather than alphabetically. */
@@ -376,6 +377,8 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
           cellRenderer: (p: { data?: Project }) => {
             if (!p.data) return '';
             const name = esc(p.data.projectName);
+            // Imported here, so the prototype built no page for it: plain text, never a dead link.
+            if ((p.data as Project & { imported?: true }).imported) return `<span class="firma2-grid-namecell"><span class="firma2-grid-namecell__text">${name}</span></span>`;
             const peek = peekHTML.replace('aria-label="Preview project"', `aria-label="Preview ${name}"`);
             return (
               `<span class="firma2-grid-namecell">` +
@@ -444,6 +447,22 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     // The workspace's column layout (Workspace settings → Grid defaults).
     watchGridDefault(handle.gridApi, 'projects');
     const { gridApi } = handle;
+
+    // What Import projects wrote in this browser: its updates over the seeded
+    // rows, its new projects after them (src/lib/project-import.ts).
+    const overlay = importedUpdates();
+    if (overlay.size) {
+      gridApi.forEachNode((node) => {
+        const o = node.data && overlay.get(norm(node.data.projectName));
+        if (o) node.setData({ ...node.data!, ...(o as Partial<Project>) });
+      });
+    }
+    const added = importedProjects();
+    if (added.length) {
+      handle.data.push(...(added as unknown as Project[]));
+      handle.countState.total += added.length;
+      gridApi.applyTransaction({ add: added as unknown as Project[] });
+    }
 
     // `selection-change` carries the whole selection (an array, because these are
     // `multiple`), so each handler replaces its dimension's list wholesale — the

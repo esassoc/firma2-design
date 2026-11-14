@@ -18,7 +18,7 @@ import { builtin } from '../data/firma2-intake';
 import type { Answers, QuestionBlock } from '../data/firma2-intake';
 import type { FieldDefinition } from '../data/firma2-project-types';
 import { answerKey, choicesFor } from './intake-form';
-import { createMap, loadLeaflet } from './leaflet';
+import { createMap, loadLeaflet, markerStyle, token } from './leaflet';
 import { parsePair } from './geo';
 import { isFormatted, sanitizeInline } from './inline-format';
 
@@ -137,7 +137,8 @@ const rawControl = (block: QuestionBlock, fields: FieldDefinition[], name: strin
         <esa-text-field ${key} ${name} size="md" placeholder="40.0712, -121.1834"></esa-text-field>
       </div>`;
     default:
-      return `<esa-text-field ${key} ${name} size="md"${ph}></esa-text-field>`;
+      // A free-text answer is the project's own (a name, a permit number): browser autofill only offers noise.
+      return `<esa-text-field ${key} ${name} size="md" autocomplete="off"${ph}></esa-text-field>`;
   }
 };
 
@@ -184,12 +185,13 @@ export const mountLocation = async (field: Control, value: [number, number] | un
   if (!canvas || canvas.dataset.mounted) return;
   canvas.dataset.mounted = '';
   const L = await loadLeaflet();
-  // Northern California, where the invented workspace works.
-  const map = createMap(L, canvas, { center: value ?? [39.6, -121.4], zoom: value ? 10 : 6, zoomControl: live, dragging: live, doubleClickZoom: live, keyboard: false });
-  let marker = value ? L.circleMarker(value, { radius: 8, weight: 2 }).addTo(map) : null;
+  // The Lake Tahoe basin, where the invented workspace works.
+  const map = createMap(L, canvas, { center: value ?? [39.09, -120.04], zoom: value ? 12 : 9, zoomControl: live, dragging: live, doubleClickZoom: live, keyboard: false });
+  const pinStyle = () => ({ ...markerStyle(token('--color-content-brand', '#2a7e3b')), radius: 8 });
+  let marker = value ? L.circleMarker(value, pinStyle()).addTo(map) : null;
   const pin = (p: [number, number]) => {
     if (marker) marker.setLatLng(p);
-    else marker = L.circleMarker(p, { radius: 8, weight: 2 }).addTo(map);
+    else marker = L.circleMarker(p, pinStyle()).addTo(map);
   };
   if (!live) return;
   map.on('click', (e: { latlng: { lat: number; lng: number } }) => {

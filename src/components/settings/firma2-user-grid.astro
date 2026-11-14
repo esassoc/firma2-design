@@ -35,7 +35,7 @@
 // as a fact, and the Organization filter can find those rows. A Contributor
 // needs one, so making an organizationless Viewer a Contributor asks which.
 //
-// STEWARD RIDES ON THE ROLE. It is a per-organization flag, set on that
+// MANAGER RIDES ON THE ROLE. It is a per-organization flag, set on that
 // organization's Members page, not here — but the reader scanning roles needs
 // to see it, so a quiet badge follows the role it sits on.
 //
@@ -56,6 +56,7 @@ import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
+import Firma2InheritedAccess from './firma2-inherited-access.astro';
 import { users, userRoles, organizations, CURRENT_USER } from '../../data/firma2-directory';
 import { withBase } from '../../lib/base';
 
@@ -90,6 +91,8 @@ const rows = users.map((u) => ({
 }));
 ---
 <section class="firma2-user-grid stack" data-gap="md" data-statuses={JSON.stringify(STATUSES)} data-role-order={JSON.stringify(userRoles)} data-role-hints={JSON.stringify(ROLE_HINTS)} data-no-organization={NO_ORGANIZATION} data-org-hrefs={JSON.stringify(orgHrefs)}>
+  {/* What each role reaches, before the list of who holds it (firma2-inherited-access). */}
+  <Firma2InheritedAccess scope="workspace" />
   <div class="firma2-data-grid__controls repel">
     <div class="firma2-data-grid__controls-filters cluster">
       <div class="firma2-data-grid__search">
@@ -131,8 +134,8 @@ const rows = users.map((u) => ({
   </footer>
 
   {/* Server-rendered legos the cell renderers clone. */}
-  <div data-users-steward-template hidden aria-hidden="true">
-    <EsaBadge value="Steward" variant="secondary" size="sm" />
+  <div data-users-manager-template hidden aria-hidden="true">
+    <EsaBadge value="Manager" variant="secondary" size="sm" />
   </div>
   <div data-users-actions-template hidden aria-hidden="true">
     <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="Actions" />
@@ -207,7 +210,7 @@ const rows = users.map((u) => ({
     let gridApi: GridApi<Row> | undefined;
     const emptyState = root.querySelector<HTMLElement>('[data-users-empty] > *');
     const html = (attr: string, fallback: string) => root.querySelector(`[${attr}]`)?.innerHTML.trim() ?? fallback;
-    const stewardHTML = html('data-users-steward-template', 'Steward');
+    const managerHTML = html('data-users-manager-template', 'Manager');
     const actionsHTML = html('data-users-actions-template', '');
     const roleFilter = root.querySelector<HTMLElement>('[data-users-role-filter]');
     const statuses: string[] = JSON.parse(root.dataset.statuses ?? '["Active"]');
@@ -312,8 +315,8 @@ const rows = users.map((u) => ({
           headerName: 'Role', field: 'role', colId: 'role', width: 200,
           comparator: (a: string, b: string) => roleOrder.indexOf(a) - roleOrder.indexOf(b),
           cellRenderer: (p: { data?: Row }) =>
-            p.data?.role === 'Contributor' && p.data.stewardOf.length > 0
-              ? `<span class="firma2-grid-status cluster" data-gap="xs">${esc(p.data.role)}${stewardHTML}</span>`
+            p.data?.role === 'Contributor' && p.data.managerOf.length > 0
+              ? `<span class="firma2-grid-status cluster" data-gap="xs">${esc(p.data.role)}${managerHTML}</span>`
               : esc(p.data?.role ?? ''),
         },
         {
@@ -450,11 +453,11 @@ const rows = users.map((u) => ({
       }
     });
 
-    // Each role's reach — and, under Viewer for a steward, what moving there
-    // costs, because a Viewer can't be a steward.
+    // Each role's reach — and, under Viewer for a manager, what moving there
+    // costs, because a Viewer can't be a manager.
     const hintFor = (row: Row, role: string) =>
-      role === 'Viewer' && row.stewardOf.length > 0
-        ? `Read-only. No longer a steward of ${row.stewardOf.join(' and ')}.`
+      role === 'Viewer' && row.managerOf.length > 0
+        ? `Read-only. No longer a manager of ${row.managerOf.join(' and ')}.`
         : (roleHints[role] ?? '');
 
     // A Contributor needs an organization: picking it for someone who has none
@@ -488,7 +491,7 @@ const rows = users.map((u) => ({
         role,
         organizations,
         organizationHrefs: joining ? [orgHref(joining)] : row.organizationHrefs,
-        stewardOf: role === 'Viewer' ? [] : row.stewardOf,
+        managerOf: role === 'Viewer' ? [] : row.managerOf,
       });
       toasts?.show({
         message:
