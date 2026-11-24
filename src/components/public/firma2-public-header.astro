@@ -1,0 +1,255 @@
+---
+// firma2-public-header — the navigation bar on every public page: whose site
+// this is, where a reader can go, and the door into the workspace.
+//
+// ONE ROW, THE WIDTH OF THE WINDOW (user, 2026-11-20: "a more normal
+// navigation bar"). Name leading, links beside it, Sign in trailing. A first
+// build stacked the links on a second row inside the page's 76rem column to
+// make them fit; the bar is not page content and does not need the column.
+//
+// THE TABS ARE THE PUBLIC SITE'S PAGES (src/data/firma2-public-site.ts): the
+// name is the way home, then the five index pages the detail pages hang off, and the workspace's own
+// pages in one Pages menu.
+//
+// NEUTRAL, NOT BRANDED. The bar is the surface tone; a page's hero is the
+// branded surface.
+//
+// THE WHOLE MENU IS ALWAYS IN THE DOCUMENT. Wide: the row of links. Narrow:
+// the same links in one native <details> menu, in the markup open or closed.
+//
+// ONE DOOR, AND IT KNOWS WHO IS READING. Signed out: Sign in. Signed in
+// (src/lib/session.ts): the way back into the workspace in its place — "Open
+// workspace", or the page's own record when the page passes one (a project's
+// public page passes "Open project"; user, 2026-11-23). Both are in the markup
+// and an inline script right after them marks <html> before first paint, so
+// the wrong door never flashes. The key is a DELIBERATE DUPLICATE of the one
+// in session.ts — an inline script has no module graph.
+//
+// THE THEME SWITCH sits beside Sign in: one icon button that flips light and
+// dark and remembers the choice (src/lib/scheme.ts — the same preference the
+// app's Interface settings writes; a reader who never chooses follows their
+// system). Two buttons are in the markup and the scheme shows one, so the
+// right glyph is there before any script runs.
+//
+// Every control is a lego: esa-app-bar (the bar), EsaButton chrome (links),
+// esa-nav-dropdown (Pages, and the narrow Menu), EsaButton secondary (Sign in).
+// bcn-lego-checked: esa-header-nav was considered — its user menu is the
+// signed-in app's shape, and its own header says to compose esa-app-bar +
+// bricks for a public nav. Beacon is not cloned on this machine.
+import EsaAppBar from '@esa/ecology/esa-app-bar.astro';
+import EsaIconButton from '@esa/ecology/esa-icon-button.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaNavDropdown from '@esa/ecology/esa-nav-dropdown.astro';
+import { withBase } from '../../lib/base';
+import {
+  PUBLIC_HOME_HREF,
+  PUBLIC_NAV,
+  PUBLIC_PAGES,
+  PUBLIC_PAGES_LABEL,
+  PUBLIC_SIGN_IN_HREF,
+  PUBLIC_SITE_OWNER,
+} from '../../data/firma2-public-site';
+import type { PublicNavKey } from '../../data/firma2-public-site';
+import { HOME_HREF } from '../../data/firma2-nav';
+
+interface Props {
+  /** The destination this page belongs to — marked as the current one. */
+  current?: PublicNavKey;
+  /** The signed-in reader's way back: this page's record in the workspace. Base-less. Defaults to the workspace's home. */
+  workspaceDoor?: { label: string; href: string };
+}
+
+const { current, workspaceDoor = { label: 'Open workspace', href: HOME_HREF } } = Astro.props;
+---
+<EsaAppBar as="header" tone="surface" class="firma2-public-header">
+  <a slot="start" class="firma2-public-header__owner typography-label-md-strong" href={withBase(PUBLIC_HOME_HREF)}>
+    {PUBLIC_SITE_OWNER.name}
+  </a>
+
+  <nav class="firma2-public-header__links" aria-label="Site">
+    {PUBLIC_NAV.map((item) => (
+      <EsaButton variant="chrome" href={withBase(item.href)} current={item.key === current}>{item.label}</EsaButton>
+    ))}
+    {PUBLIC_PAGES.length > 0 && (
+      <div class="firma2-public-header__dropdown">
+        <EsaNavDropdown label={PUBLIC_PAGES_LABEL}>
+          <div class="stack" data-gap="2xs">
+            {PUBLIC_PAGES.map((page) => (
+              <EsaButton variant="chrome" href={withBase(page.href)}>{page.label}</EsaButton>
+            ))}
+          </div>
+        </EsaNavDropdown>
+      </div>
+    )}
+  </nav>
+
+  <div slot="end" class="firma2-public-header__end">
+    <nav class="firma2-public-header__menu firma2-public-header__dropdown" aria-label="Site">
+      <EsaNavDropdown label="Menu" align="end">
+        <div class="stack" data-gap="2xs">
+          {PUBLIC_NAV.map((item) => (
+            <EsaButton variant="chrome" href={withBase(item.href)} current={item.key === current}>{item.label}</EsaButton>
+          ))}
+          {PUBLIC_PAGES.map((page) => (
+            <EsaButton variant="chrome" href={withBase(page.href)}>{page.label}</EsaButton>
+          ))}
+        </div>
+      </EsaNavDropdown>
+    </nav>
+    <span class="firma2-public-header__scheme" data-set-scheme="dark"><EsaIconButton icon="moon" label="Switch to dark theme" /></span>
+    <span class="firma2-public-header__scheme" data-set-scheme="light"><EsaIconButton icon="sun" label="Switch to light theme" /></span>
+    <span class="firma2-public-header__door" data-door="out"><EsaButton variant="secondary" href={withBase(PUBLIC_SIGN_IN_HREF)}>Sign in</EsaButton></span>
+    <span class="firma2-public-header__door" data-door="in"><EsaButton variant="secondary" href={withBase(workspaceDoor.href)}>{workspaceDoor.label}</EsaButton></span>
+    <script is:inline>
+      try {
+        if (localStorage.getItem('firma2:signed-in') === '1') document.documentElement.setAttribute('data-signed-in', '');
+      } catch (e) {}
+    </script>
+  </div>
+</EsaAppBar>
+
+<style>
+  :global(.firma2-public-header) {
+    border-block-end: 1px solid var(--color-border-subtle);
+  }
+  :global(.firma2-public-header > .esa-app-bar__row) {
+    padding-inline: var(--firma2-public-gutter, var(--spacing-600));
+    gap: var(--spacing-500);
+  }
+
+  .firma2-public-header__owner {
+    color: var(--color-content-default);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .firma2-public-header__owner:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+    border-radius: var(--radius-sm);
+  }
+
+  .firma2-public-header__links,
+  .firma2-public-header__end {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-100);
+  }
+  .firma2-public-header__links {
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+  .firma2-public-header__end {
+    gap: var(--spacing-200);
+  }
+
+  /* SIBLINGS MATCH. A lego button with an icon is 46px beside a text-only
+     one's 40px (the 20px md glyph is taller than the label's line), so a
+     dropdown's chevron gives the extra height back. */
+  .firma2-public-header__dropdown :global(summary .esa-icon) {
+    margin-block: calc((1lh - 20px) / 2);
+  }
+  /* Menu rows read as a list: full width, text at the leading edge. */
+  .firma2-public-header__dropdown :global(.esa-nav-dropdown__panel a.esa-button__native) {
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  /* One theme button at a time: the one that leads to the OTHER scheme. */
+  .firma2-public-header__scheme[data-set-scheme='light'],
+  :global(html[data-scheme='dark']) .firma2-public-header__scheme[data-set-scheme='dark'] {
+    display: none;
+  }
+  :global(html[data-scheme='dark']) .firma2-public-header__scheme[data-set-scheme='light'] {
+    display: inline-flex;
+  }
+  .firma2-public-header__scheme {
+    display: inline-flex;
+  }
+
+  /* One door at a time: Sign in, or the way back for a signed-in reader. */
+  .firma2-public-header__door {
+    display: inline-flex;
+  }
+  .firma2-public-header__door[data-door='in'],
+  :global(html[data-signed-in]) .firma2-public-header__door[data-door='out'] {
+    display: none;
+  }
+  :global(html[data-signed-in]) .firma2-public-header__door[data-door='in'] {
+    display: inline-flex;
+  }
+
+  /* One menu at a time. `display: none` takes the other out of the tab order
+     and the landmark list, so the two <nav>s never both announce. */
+  .firma2-public-header__menu {
+    display: none;
+  }
+  /* THE ROW'S OWN GATE, not one of the four layout gates: 79rem is the width
+     the name, six tabs and Sign in measure (1,248px) plus a scrollbar. Below
+     it the tabs would wrap or push Sign in off the bar. Re-measure if the
+     tabs change. */
+  @media (max-width: 79rem) {
+    :global(.firma2-public-header .esa-app-bar__main) {
+      display: none;
+    }
+    .firma2-public-header__menu {
+      display: block;
+    }
+  }
+  /* SIGNED IN, THE GATE IS HIGHER: "Open workspace" is 73px wider than Sign
+     in, and at 80rem it pushed the Pages chevron under the theme button. */
+  @media (max-width: 84rem) {
+    :global(html[data-signed-in] .firma2-public-header .esa-app-bar__main) {
+      display: none;
+    }
+    :global(html[data-signed-in]) .firma2-public-header__menu {
+      display: block;
+    }
+  }
+  @media (max-width: 45rem) {
+    :global(.firma2-public-header > .esa-app-bar__row) {
+      gap: var(--spacing-300);
+    }
+    /* A long program name wraps rather than pushing the door off the bar. */
+    :global(.firma2-public-header .esa-app-bar__start) {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .firma2-public-header__owner {
+      white-space: normal;
+      text-wrap: balance;
+    }
+  }
+</style>
+
+<script>
+  import { setScheme, watchSystemScheme } from '../../lib/scheme';
+  import type { SchemePreference } from '../../lib/scheme';
+
+  // The theme switch: each button sets the scheme it names and keeps focus on
+  // the button that replaces it.
+  const schemeButtons = [...document.querySelectorAll<HTMLElement>('.firma2-public-header__scheme')];
+  schemeButtons.forEach((wrap) =>
+    wrap.addEventListener('click', () => {
+      setScheme(wrap.dataset.setScheme as SchemePreference);
+      schemeButtons.find((other) => other !== wrap)?.querySelector<HTMLElement>('button')?.focus();
+    }),
+  );
+  watchSystemScheme();
+
+  // Menus close the way a menu does: Escape (focus back on the trigger) and a
+  // click anywhere else. esa-nav-dropdown is a bare <details>, which does
+  // neither on its own.
+  const menus = [...document.querySelectorAll<HTMLDetailsElement>('.firma2-public-header details')];
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    menus.filter((menu) => menu.open).forEach((menu) => {
+      menu.open = false;
+      menu.querySelector<HTMLElement>('summary')?.focus();
+    });
+  });
+  document.addEventListener('click', (event) => {
+    menus.forEach((menu) => {
+      if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+    });
+  });
+</script>

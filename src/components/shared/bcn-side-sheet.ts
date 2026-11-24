@@ -85,10 +85,12 @@ export class BcnSideSheet extends EsaSideDialog {
         inline-size: var(--firma2-side-sheet-width, var(--firma2-side-sheet-size, 400px));
         box-sizing: border-box;
         z-index: calc(var(--z-header, 200) + 1);
-        /* No border (user, 2026-10-22): a sheet stands in the rail's slot, and
-           the rail has none — the gutter is the only seam. */
+        /* The rail's surface and hairline (user, 2026-11-16): a sheet stands in
+           the rail's slot, so it paints what firma2-rail paints — neutral
+           step 2 in both modes and a subtle leading border. */
         border-end-end-radius: var(--radius-lg, 12px);
-        background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
+        border-inline-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle);
+        background: var(--firma2-neutral-2, var(--color-background-default, #f8f8f8));
         overflow: visible;
         transition: inline-size var(--transition-base, 200ms ease);
       }

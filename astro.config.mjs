@@ -1,4 +1,5 @@
 import { defineConfig } from 'astro/config';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // Minimal, mirroring the ecology hub and the other spokes. The spoke ships
@@ -25,9 +26,43 @@ const hugeicons = {
   },
 };
 
+// A REAL WORKSPACE, IN DEV ONLY. `scripts/pull-projectfirma.mjs` writes one
+// tenant to docs/private/<tenant>/workspace.json (gitignored), and the data
+// modules read it through `virtual:firma2-workspace` in place of the invented
+// fixtures (src/data/firma2-real-data.ts). This repo and its site are public,
+// so the module is `null` in EVERY build, whatever is on disk: a build cannot
+// publish a tenant's data because it never reads the file.
+//   FIRMA2_WORKSPACE=<tenant>  pick a folder (default: the first one found)
+//   FIRMA2_DATA=mock           dev with the invented fixtures
+const PRIVATE = fileURLToPath(new URL('./docs/private/', import.meta.url));
+const workspaceFile = () => {
+  if (process.env.FIRMA2_DATA === 'mock' || !existsSync(PRIVATE)) return null;
+  const tenants = process.env.FIRMA2_WORKSPACE ? [process.env.FIRMA2_WORKSPACE] : readdirSync(PRIVATE).sort();
+  return tenants.map((t) => `${PRIVATE}${t}/workspace.json`).find((file) => existsSync(file)) ?? null;
+};
+const realWorkspace = () => {
+  let serving = false;
+  return {
+    name: 'firma2-real-workspace',
+    configResolved(config) {
+      serving = config.command === 'serve' && !config.isProduction;
+    },
+    resolveId(source) {
+      return source === 'virtual:firma2-workspace' ? '\0virtual:firma2-workspace' : null;
+    },
+    load(id) {
+      if (id !== '\0virtual:firma2-workspace') return null;
+      const file = serving ? workspaceFile() : null;
+      if (!file) return 'export default null;';
+      this.addWatchFile(file);
+      return `export default ${readFileSync(file, 'utf8')};`;
+    },
+  };
+};
+
 export default defineConfig({
   site: 'https://esassoc.github.io',
   base,
   server: { port: 4330 },
-  vite: { plugins: process.env.ICONS === 'lucide' ? [] : [hugeicons] },
+  vite: { plugins: [realWorkspace(), ...(process.env.ICONS === 'lucide' ? [] : [hugeicons])] },
 });

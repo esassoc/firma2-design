@@ -25,6 +25,17 @@
 // row is a label and a card, both components, and the only decision left here
 // is the order of the three.
 //
+// CONTACTS AN IMPORT ADDED ARE ROWS HERE TOO (.scratch/project-updates/spec.md,
+// decision 14). Import a report can add a person the document names; this
+// browser keeps them in src/lib/report-imports.ts, and the script appends one
+// row each: the same role label and the same contact card, cloned from a
+// <template> rendered at build time, plus one line naming the document. A
+// person whose address is already on the record is skipped. An added contact
+// is a name and an address, nothing more: no invitation, no account, and the
+// row says nothing that suggests either. The rows repaint when the store
+// changes, so Undo removes them. The slug comes from firma2-project-imported's
+// element, because the rail that mounts this has none to pass.
+//
 // bcn-lego-checked: no esa- contact/person/roster lego — walked the catalog
 // (`ls node_modules/@esa/ecology/src/components/`, 67 files): esa-avatar is a
 // glyph, not a row, and it is deliberately NOT used here (an initials disc for
@@ -72,6 +83,19 @@ const { contacts } = Astro.props;
       ))}
     </dl>
 
+    <!-- THE ROW AN IMPORT ADDS, for the script to clone and fill. After the
+         list, so the contact card's own script is first rendered by a real
+         row and not trapped in here. -->
+    <template data-imported-contact-row>
+      <div class="stack" data-gap="2xs" data-imported-contact>
+        <dt class="typography-label-sm"></dt>
+        <dd class="stack" data-gap="2xs">
+          <Firma2ContactCard contact={{ name: '', role: '', organization: '', email: '' }} />
+          <span class="firma2-project-contacts__source typography-body-xs" data-imported-source></span>
+        </dd>
+      </div>
+    </template>
+
     <!-- INERT, AND DELIBERATELY NOT `disabled`. Same stance as every other Add
          on this page: a greyed-out control claims the action is unavailable to
          this reader, which is a different and false claim from "not wired yet".
@@ -102,7 +126,79 @@ const { contacts } = Astro.props;
   /* The role reads as the same term the Key facts tab's labels are: the label
      composite is on the element in the markup, and the ink is the one thing the
      composite does not carry. */
-  dt {
+  dt,
+  .firma2-project-contacts__source {
     color: var(--color-content-default-secondary, #646464);
   }
+
+  /* A file name is one unbroken token; it wraps inside the rail. */
+  .firma2-project-contacts__source {
+    overflow-wrap: anywhere;
+  }
 </style>
+
+<script>
+  import { IMPORTS_EVENT, importedContacts, sourceLine } from '../../lib/report-imports';
+
+  // The project, from firma2-project-imported. Absent on a project with no
+  // reading, where nothing can have been imported.
+  const slug = document.querySelector<HTMLElement>('[data-project-imported]')?.dataset.slug;
+
+  if (slug) {
+    document.querySelectorAll<HTMLElement>('dl.firma2-project-contacts').forEach((list) => {
+      const template = list.parentElement?.querySelector<HTMLTemplateElement>('template[data-imported-contact-row]');
+      const source = template?.content.firstElementChild;
+      if (!source) return;
+
+      const text = (root: Element, selector: string, value: string): void => {
+        const el = root.querySelector(selector);
+        if (el) el.textContent = value;
+      };
+
+      const paint = (): void => {
+        list.querySelectorAll('[data-imported-contact]').forEach((row) => row.remove());
+        // Already on the record, by address: the seeded rows' own mailto links.
+        const known = new Set(
+          [...list.querySelectorAll<HTMLAnchorElement>('a[href^="mailto:"]')].map((a) =>
+            a.getAttribute('href')!.slice('mailto:'.length).toLowerCase(),
+          ),
+        );
+        importedContacts(slug).forEach(({ contact, from }) => {
+          const email = contact.email.trim();
+          const key = email ? email.toLowerCase() : `name:${contact.name.toLowerCase()}`;
+          if (known.has(key)) return;
+          known.add(key);
+
+          const row = source.cloneNode(true) as HTMLElement;
+          const role = contact.role || 'Contact';
+          text(row, 'dt', role);
+          text(row, '[data-card-kind]', role);
+          text(row, '[data-card-title]', contact.name);
+          const name = row.querySelector<HTMLAnchorElement>('.firma2-contact-card__name');
+          if (name) {
+            name.textContent = contact.name;
+            if (email) name.href = `mailto:${email}`;
+            else name.removeAttribute('href');
+          }
+          // The card's two lines: the organization to read, the address to copy.
+          const organization = row.querySelector('.firma2-hover-card__line:not(.firma2-hover-card__line--copy)');
+          if (organization && contact.organization) organization.textContent = contact.organization;
+          else organization?.remove();
+          const copy = row.querySelector('.firma2-hover-card__line--copy');
+          if (email) {
+            text(row, '.firma2-hover-card__line-text', email);
+            (
+              row.querySelector('[data-copy-value]') ??
+              row.querySelector('.firma2-hover-card__line--copy .esa-button__native')
+            )?.setAttribute('data-copy-value', email);
+          } else copy?.remove();
+          text(row, '[data-imported-source]', sourceLine(from));
+          list.append(row);
+        });
+      };
+
+      paint();
+      document.addEventListener(IMPORTS_EVENT, paint);
+    });
+  }
+</script>

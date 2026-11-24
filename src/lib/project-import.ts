@@ -214,6 +214,9 @@ export interface Problem {
   /** The file's spelling, when the problem is a list value with no match. It is
       answered once, in the values table, never per row. */
   unmatched?: string;
+  /** The other field in a conflict between two (a completion year before the
+      start): fixing either clears it, so both get a box. */
+  also?: ImportField;
 }
 
 export interface Change {
@@ -276,7 +279,7 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 export const formatMoney = (n: number): string => money.format(n);
 
 /** How a field's value reads in a change line. */
-const show = (field: ImportField, value: unknown): string => {
+export const show = (field: ImportField, value: unknown): string => {
   if (value === undefined || value === null || value === '') return 'blank';
   if (Array.isArray(value)) return value.length ? value.join(', ') : 'none';
   if (field.kind === 'money' && typeof value === 'number') return formatMoney(value);
@@ -387,7 +390,7 @@ export const proposeRows = (sheet: ImportSheet, headerRow: number, d: ImportDeci
     const start = values.implementationStartYear;
     const end = values.completionYear;
     if (start && end && end < start) {
-      problems.push({ field: fieldOf('completionYear')!, raw: String(end), message: `Completion year ${end} is before the start, ${start}` });
+      problems.push({ field: fieldOf('completionYear')!, raw: String(end), message: `Completion year ${end} is before the start, ${start}`, also: fieldOf('implementationStartYear')! });
     }
     if (name) {
       const seenAt = firstSeen.get(norm(name));

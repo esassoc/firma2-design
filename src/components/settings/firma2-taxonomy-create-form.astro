@@ -8,6 +8,10 @@
 // be picked; `?group=<slug>` preselects one — each group's own "Add
 // classification" door passes it, so a classification starts in its group.
 //
+// A GROUP MAY START INSIDE ANOTHER (user, 2026-11-23): its form offers a
+// parent group, "None" for the top level, and `?parent=<slug>` preselects
+// one — a group's own "Add group" door passes it.
+//
 // ASKS ONLY WHAT EVERYTHING ELSE DEPENDS ON, then hands back the new record's
 // own page — the measure-setup rule ("setup is not a wizard"): a type's fields
 // and a goal's KPIs are configured there, over as many sittings as they take.
@@ -17,7 +21,7 @@
 // checked for blanks and duplicates on submit, the error cleared on the next
 // keystroke.
 import EsaButton from '@esa/ecology/esa-button.astro';
-import { CLASSIFICATION_GROUPS } from '../../data/firma2-classifications';
+import { CLASSIFICATION_GROUPS, groupPath } from '../../data/firma2-classifications';
 import { withBase } from '../../lib/base';
 import type { TaxonomyKind } from '../../lib/taxonomy-edits';
 
@@ -49,7 +53,7 @@ const COPY: Record<TaxonomyKind, { noun: string; list: string; records?: string;
 };
 const copy = COPY[kind];
 const listHref = withBase(copy.list);
-const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g.name }));
+const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: groupPath(g.slug).map((x) => x.name).join(' › ') }));
 ---
 <form
   class="firma2-taxonomy-create-form stack"
@@ -71,6 +75,9 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
       data-group
     ></esa-select>
   )}
+  {kind === 'classificationGroup' && (
+    <esa-select name="parent" label="Parent group" size="md" options={JSON.stringify([{ value: 'none', label: 'None' }, ...groupOptions])} data-seed="none" data-parent></esa-select>
+  )}
   <div class="cluster" data-gap="xs">
     <EsaButton variant="primary" size="md" type="submit">{`Add ${copy.noun}`}</EsaButton>
     <EsaButton variant="ghost" size="md" tag="a" href={listHref}>Cancel</EsaButton>
@@ -81,7 +88,7 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-textarea';
   import '@esa/ecology/esa-select';
-  import { addEntry, entries, nameTaken } from '../../lib/taxonomy-edits';
+  import { addEntry, groupOutline, nameTaken } from '../../lib/taxonomy-edits';
   import type { TaxonomyKind } from '../../lib/taxonomy-edits';
 
   type Field = HTMLElement & { value: string; errorText: string };
@@ -97,13 +104,24 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
     // shadows the lego's setter for good.
     // Options from the store, so groups added in this browser are offered; the
     // build's list is only the no-script fallback.
+    const parent = form.querySelector<Field>('[data-parent]');
+    const TOP = 'none';
+    // Each group by its full path, parents before children.
+    const groups = groupOutline();
+    const query = new URLSearchParams(window.location.search);
     if (group) {
-      const groups = entries('classificationGroup');
-      const asked = new URLSearchParams(window.location.search).get('group');
-      const seed = groups.some((g) => g.slug === asked) ? asked! : groups[0]?.slug ?? group.dataset.seed ?? '';
+      const asked = query.get('group');
+      const seed = groups.some((g) => g.entry.slug === asked) ? asked! : groups[0]?.entry.slug ?? group.dataset.seed ?? '';
       customElements.whenDefined('esa-select').then(() => {
-        (group as Field & { options: unknown }).options = groups.map((g) => ({ value: g.slug, label: g.name }));
+        (group as Field & { options: unknown }).options = groups.map((g) => ({ value: g.entry.slug, label: g.label }));
         group.value = seed;
+      });
+    }
+    if (parent) {
+      const asked = query.get('parent');
+      customElements.whenDefined('esa-select').then(() => {
+        (parent as Field & { options: unknown }).options = [{ value: TOP, label: 'None' }, ...groups.map((g) => ({ value: g.entry.slug, label: g.label }))];
+        parent.value = groups.some((g) => g.entry.slug === asked) ? asked! : TOP;
       });
     }
 
@@ -124,7 +142,7 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
         name.focus();
         return;
       }
-      const entry = addEntry(kind, { name: value, description: description.value ?? '', group: group?.value });
+      const entry = addEntry(kind, { name: value, description: description.value ?? '', group: parent ? (parent.value === TOP ? '' : parent.value) : group?.value });
       window.location.assign(`${form.dataset.recordHref}?slug=${encodeURIComponent(entry.slug)}`);
     });
 

@@ -35,8 +35,8 @@ import type { PerformanceMeasure } from './firma2-project-detail';
 import { measures as catalog } from './firma2-performance-measures';
 import { isSummable } from './firma2-performance-measures';
 import type { PerformanceMeasureDefinition } from './firma2-performance-measures';
-import { CLASSIFICATIONS } from './firma2-classifications';
-import type { Classification, GoalTarget } from './firma2-classifications';
+import { CLASSIFICATIONS, classificationsUnderGroup } from './firma2-classifications';
+import type { Classification, ClassificationGroup, GoalTarget } from './firma2-classifications';
 
 /**
  * A project row's unit, as the project page prints it, against the catalog
@@ -182,7 +182,9 @@ export const measurePortfolio = (measure: PerformanceMeasureDefinition): KpiProg
 export const goalsOf = (measure: PerformanceMeasureDefinition): Classification[] =>
   CLASSIFICATIONS.filter((c) => measure.classifications.includes(c.name));
 
-const progressOver = (
+/** Progress toward one measure over any set of projects — the public site
+ *  passes only the projects the public can see. */
+export const progressOver = (
   over: Project[],
   measure: PerformanceMeasureDefinition,
   goal?: GoalTarget,
@@ -296,6 +298,86 @@ export const kpiFigureTable = (
       },
     ]),
   );
+
+// ---------------------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------------------
+//
+// A GROUP ADDS UP WHAT IS FILED BENEATH IT (user, 2026-11-23). Its projects
+// are the projects carrying any classification in it or in a group under it,
+// each counted once. Its measures are the measures of those classifications;
+// a project counts toward one when it carries a classification that the
+// measure tracks — the classification rule, one level up — and counts once
+// however many of those classifications it carries.
+//
+// NO GOAL TARGET ON A GROUP. Targets are set on classifications; two of them
+// on one measure can be due in different years, so this module does not add
+// them into a group target. A group's measure reads reported against what
+// its projects planned.
+
+export interface GroupRollup extends Omit<ClassificationRollup, 'classification'> {
+  group: ClassificationGroup;
+  /** Every classification in the group or beneath it. */
+  classifications: Classification[];
+}
+
+const groupMeasures = (members: Classification[]): PerformanceMeasureDefinition[] =>
+  catalog.filter((m) => m.status !== 'Retired' && members.some((c) => m.classifications.includes(c.name)));
+
+const groupProgress = (members: Classification[], measure: PerformanceMeasureDefinition): KpiProgress => {
+  const tracked = members.filter((c) => measure.classifications.includes(c.name)).map((c) => c.name);
+  return progressOver(projects.filter((p) => p.classifications.some((n) => tracked.includes(n))), measure);
+};
+
+export const rollupGroup = (group: ClassificationGroup): GroupRollup => {
+  const members = classificationsUnderGroup(group.slug);
+  const names = members.map((c) => c.name);
+  const carrying = projects.filter((p) => p.classifications.some((n) => names.includes(n)));
+  const details = carrying.map(getProjectDetail);
+  return {
+    group,
+    classifications: members,
+    projects: carrying,
+    estimatedTotalCost: carrying.reduce((sum, p) => sum + p.estimatedTotalCost, 0),
+    spentToDate: details.reduce((sum, d) => sum + d.expenditures.reduce((s, y) => s + y.spent, 0), 0),
+    funders: new Set(details.flatMap((d) => d.funding.map((f) => f.organization))).size,
+    funding: funderTotals(details.flatMap((d) => d.funding.map((f) => ({ project: d.project, ...f })))),
+    kpis: groupMeasures(members).map((m) => groupProgress(members, m)),
+  };
+};
+
+/** A group's measures in the shape kpiFigureTable gives one classification. */
+export const groupFigures = (
+  rollup: GroupRollup,
+  hrefOf: (p: Project) => string,
+): { kpis: string[]; targets: GoalTarget[]; figures: Record<string, KpiFigures> } => ({
+  kpis: rollup.kpis.map((k) => k.measure.slug),
+  targets: [],
+  figures: Object.fromEntries(
+    rollup.kpis.map((k) => [
+      k.measure.slug,
+      {
+        name: k.measure.name,
+        unit: k.unit,
+        decimals: k.measure.decimalPlaces,
+        additive: k.additive,
+        reported: k.reported,
+        committed: k.committed,
+        from: k.contributions.map((x) => ({
+          name: x.project.projectName,
+          slug: projectSlug(x.project),
+          href: hrefOf(x.project),
+          reported: x.reported,
+          committed: x.committed,
+          series: x.series,
+        })),
+      },
+    ]),
+  ),
+});
+
+/** The app-side page for one classification group. */
+export const classificationGroupHref = (slug: string): string => `/prototypes/classifications/groups/${slug}`;
 
 /** The app-side page for one classification. */
 export const classificationHref = (slug: string): string => `/prototypes/classifications/${slug}`;

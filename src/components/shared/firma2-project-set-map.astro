@@ -24,6 +24,18 @@
 // Shapes are read through src/lib/work-areas, so an area drawn on a project's
 // map in this browser shows up here too.
 //
+// A PAGE CAN DRIVE IT (the public home's explorer, firma2-public-map-band).
+// The section listens for three events on itself and announces one:
+//   firma2:set-map-filter  { slugs: string[] | null }  show only these projects, reframe
+//   firma2:set-map-hover   { slug: string | null }     lift one project, quiet the rest
+//   firma2:set-map-focus   { slug: string }            fly to one project, open its popup
+//   firma2:set-map-select  { slug }  (bubbles)         a shape or dot was clicked
+// A PAGE CAN SUPPLY THE POPUP: a `<template data-popup="<slug>">` in the
+// `popups` slot is cloned into that project's popup as a full-bleed card (the
+// public home's photo card) in place of the text popup built here.
+// An item may carry a `photo` and a `meta` line for its popup, and `terrain`
+// swaps the grey canvas for the topographic map — the ground the work sits on.
+//
 // bcn-lego-checked: no map lego exists in the catalog; the canvas is Leaflet,
 // as in firma2-portfolio-map and firma2-my-projects-map. The popup's preview
 // button is the cloned firma2-project-peek-button (src/lib/project-peek). The
@@ -32,6 +44,7 @@
 import type { Project } from '../../data/firma2-projects';
 import { projectHref, projectSlug } from '../../data/firma2-projects';
 import { seedWorkAreas } from '../../data/firma2-geography';
+import { publicProjectHref } from '../../data/firma2-public-site';
 import { withBase } from '../../lib/base';
 
 interface Props {
@@ -39,17 +52,35 @@ interface Props {
   title: string;
   /** The canvas's accessible name. */
   label: string;
-  items: { project: Project; group?: string }[];
+  items: { project: Project; group?: string; photo?: { src: string; alt: string }; meta?: string }[];
   /** The colour split, in slot order. Omit for one colour. */
   groups?: { key: string; label: string }[];
+  /**
+   * Who is reading. `public` (the public site): doors lead to each project's
+   * PUBLIC page and the popup has no preview button — the peek is the app's.
+   */
+  audience?: 'app' | 'public';
+  /** The canvas's height (any CSS length) — for a page that leads with the map. */
+  height?: string;
+  /** Keep the heading for assistive tech only — where the map opens the page and needs no title. */
+  hideTitle?: boolean;
+  /** The canvas runs edge to edge: no frame, no rounded corners (a full-width band). */
+  bleed?: boolean;
+  /** Esri's topographic map (relief, water, place names) instead of the grey canvas. */
+  terrain?: boolean;
+  /** Left padding (px) kept clear when framing — room for a panel laid over the map. */
+  insetStart?: number;
 }
 
-const { title, label, items, groups = [] } = Astro.props;
+const { title, label, items, groups = [], audience = 'app', height, hideTitle = false, bleed = false, terrain = false, insetStart = 0 } = Astro.props;
+const isPublic = audience === 'public';
 const slotOf = (group?: string) => Math.max(0, groups.findIndex((g) => g.key === group)) + 1;
-const config = items.map(({ project, group }) => ({
+const config = items.map(({ project, group, photo, meta }) => ({
+  photo,
+  meta,
   slug: projectSlug(project),
   name: project.projectName,
-  href: withBase(projectHref(project)),
+  href: withBase(isPublic ? publicProjectHref(project) : projectHref(project)),
   slot: slotOf(group),
   seed: seedWorkAreas(project),
 }));
@@ -57,8 +88,8 @@ const shownGroups = groups.filter((g) => items.some((i) => i.group === g.key));
 const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 ---
 {items.length > 0 && (
-  <section class="firma2-project-set-map stack" data-gap="md" aria-labelledby={headingId} data-config={JSON.stringify(config)}>
-    <h2 id={headingId} class="typography-title-sm-strong">{title}</h2>
+  <section class:list={['firma2-project-set-map', 'stack', bleed && 'firma2-project-set-map--bleed']} data-gap="md" aria-labelledby={headingId} data-config={JSON.stringify(config)} data-audience={audience} data-terrain={terrain ? '' : undefined} data-inset-start={insetStart} style={height ? `--firma2-project-set-map-height: ${height}` : undefined}>
+    <h2 id={headingId} class:list={[hideTitle ? 'visually-hidden' : 'typography-title-sm-strong']}>{title}</h2>
     <div class="firma2-project-set-map__canvas" role="application" aria-label={label} data-canvas></div>
     {shownGroups.length > 1 && (
       <ul class="firma2-project-set-map__key typography-body-sm" aria-label="Key">
@@ -71,17 +102,23 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
       </ul>
     )}
     <p class="typography-body-md" data-unmapped hidden></p>
+    <slot name="popups" />
   </section>
 )}
 
 <style>
   .firma2-project-set-map__canvas {
-    block-size: clamp(18rem, 45vh, 28rem);
+    /* A page that leads with the map (the public home) sets the height. */
+    block-size: var(--firma2-project-set-map-height, clamp(18rem, 45vh, 28rem));
     border: 1px solid var(--color-border-default, #cecece);
     border-radius: var(--radius-md, 0.5rem);
     overflow: hidden;
     /* Leaflet's panes run to z-index 700; keep them under the app's chrome. */
     isolation: isolate;
+  }
+  .firma2-project-set-map--bleed .firma2-project-set-map__canvas {
+    border-inline: 0;
+    border-radius: 0;
   }
 
   .firma2-project-set-map [data-unmapped][hidden] {
@@ -116,7 +153,38 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
     gap: var(--spacing-100, 0.25rem);
   }
 
-  .firma2-project-set-map :global(.leaflet-popup-content a),
+  /* A supplied card runs edge to edge: the bubble is only its frame. */
+  .firma2-project-set-map :global(.firma2-project-set-map__card .leaflet-popup-content-wrapper) {
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--radius-lg, var(--radius-md));
+  }
+  .firma2-project-set-map :global(.firma2-project-set-map__card .leaflet-popup-content) {
+    margin: 0;
+    line-height: inherit;
+  }
+  /* Its close button rides on the card's photo: a round chip of the surface. */
+  .firma2-project-set-map :global(.firma2-project-set-map__card a.leaflet-popup-close-button) {
+    inset-block-start: var(--spacing-200);
+    inset-inline-end: var(--spacing-200);
+    border-radius: 50%;
+    background: var(--color-background-elevation-floating);
+    color: var(--color-content-default);
+  }
+
+  .firma2-project-set-map :global(.firma2-project-set-map__photo) {
+    display: block;
+    inline-size: 15rem;
+    max-inline-size: 100%;
+    block-size: auto;
+    aspect-ratio: 3 / 2;
+    object-fit: cover;
+    margin-block-end: var(--spacing-200);
+    border-radius: var(--radius-sm);
+    background: var(--color-background-elevation-sunken);
+  }
+
+  .firma2-project-set-map :global(.leaflet-popup-content a:not(.esa-button__native)),
   .firma2-project-set-map [data-unmapped] :global(a) {
     color: var(--color-content-link, #2a7e3b);
   }
@@ -131,7 +199,7 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
   import { label as vocab } from '../../lib/vocabulary';
   import { projectPeekButtonHTML } from '../../lib/project-peek';
 
-  type Row = { slug: string; name: string; href: string; slot: number; seed: MapWorkArea[] };
+  type Row = { slug: string; name: string; href: string; slot: number; seed: MapWorkArea[]; photo?: { src: string; alt: string }; meta?: string };
 
   const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -139,6 +207,7 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
     const rows: Row[] = JSON.parse(root.dataset.config ?? '[]');
     const canvas = root.querySelector<HTMLElement>('[data-canvas]')!;
     const unmapped = root.querySelector<HTMLElement>('[data-unmapped]')!;
+    const isPublic = root.dataset.audience === 'public';
 
     const L: Leaflet | null = await loadLeaflet().catch(() => null);
     if (!L) {
@@ -150,9 +219,46 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
 
     const shapes = L.featureGroup();
     const dots = L.featureGroup();
-    const map = createMap(L, canvas, { zoomSnap: 0.5 }, () => paint());
+    const map = createMap(L, canvas, { zoomSnap: 0.5 }, () => {
+      syncBase();
+      paint();
+    });
     map.setView([39.05, -120.07], 10);
     shapes.addTo(map);
+
+    // Esri's topographic map in place of the grey canvas: relief, water and
+    // its own place names, so ours hide (as addBasemaps does for Topographic).
+    // LIGHT THEME ONLY — the topo sheet is a bright page with no dark edition,
+    // so the dark theme keeps the house dark canvas and its names.
+    const topo =
+      root.dataset.terrain !== undefined
+        ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri, USGS, NOAA and contributors',
+            maxZoom: window.devicePixelRatio > 1 ? 17 : 16,
+            maxNativeZoom: 16,
+            detectRetina: window.devicePixelRatio > 1,
+          })
+        : null;
+    const syncBase = () => {
+      if (!topo) return;
+      const dark = document.documentElement.getAttribute('data-scheme') === 'dark';
+      if (dark) {
+        map.removeLayer(topo);
+        map.firma2Base.addTo(map);
+      } else {
+        map.removeLayer(map.firma2Base);
+        topo.addTo(map).bringToBack();
+      }
+      map.firma2Labels?.setOpacity(dark ? 1 : 0);
+    };
+    syncBase();
+
+    // Driven from outside: which projects show, and each one's layers.
+    let visible: Set<string> | null = null;
+    const drawn = new Map<string, { path: [number, number][]; layers: Leaflet[] }>();
+    const insetStart = Number(root.dataset.insetStart ?? 0);
+    const framing = (pad: number) => ({ paddingTopLeft: [pad + (canvas.clientWidth > 720 ? insetStart : 0), pad], paddingBottomRight: [pad, pad] });
+    const select = (slug: string) => root.dispatchEvent(new CustomEvent('firma2:set-map-select', { detail: { slug }, bubbles: true }));
 
     // A treatment unit is a speck at the zoom that shows a whole region, so
     // each project is also a dot at its work's centre while zoomed out.
@@ -167,20 +273,30 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
     const paint = (frame = false) => {
       shapes.clearLayers();
       dots.clearLayers();
+      drawn.clear();
       const missing: Row[] = [];
       const all: [number, number][] = [];
 
       rows.forEach((row) => {
+        if (visible && !visible.has(row.slug)) return;
         const areas = readWorkAreas(row.slug, row.seed);
         if (!areas.length) return missing.push(row);
         const color = colorOf(row);
         const path = areas.flatMap((a) => a.path);
         all.push(...path);
+        const entry = { path, layers: [] as Leaflet[] };
+        drawn.set(row.slug, entry);
 
-        L.circleMarker(centroid(path), markerStyle(color))
+        const dot = L.circleMarker(centroid(path), markerStyle(color))
           .bindTooltip(esc(row.name), { className: 'firma2-map-tip', direction: 'top' })
-          .on('click', () => map.fitBounds(L.latLngBounds(path), { padding: [48, 48], maxZoom: 13 }))
+          .on('click', () => {
+            map.fitBounds(L.latLngBounds(path), { ...framing(48), maxZoom: 13 });
+            select(row.slug);
+          })
           .addTo(dots);
+        entry.layers.push(dot);
+        const lead = row.photo ? `<img class="firma2-project-set-map__photo" src="${esc(row.photo.src)}" alt="${esc(row.photo.alt)}" width="480" height="320" loading="lazy">` : '';
+        const meta = row.meta ? `${esc(row.meta)}<br>` : '';
 
         areas.forEach((area) => {
           const style = shapeStyle(area.kind, color);
@@ -192,17 +308,27 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
                 : L.polygon(area.path, style);
           const extent = formatExtent(area.extent, area.unit);
           const line = `${esc(area.label)}${extent ? ` — ${extent}` : ''}`;
+          const card = root.querySelector<HTMLTemplateElement>(`template[data-popup="${row.slug}"]`);
+          shape.bindTooltip(`${esc(row.name)}<br>${line}`, { sticky: true, className: 'firma2-map-tip' });
+          if (card) {
+            // A fixed width, so Leaflet sizes, centres and pans for the real card.
+            const el = document.createElement('div');
+            el.append(card.content.cloneNode(true));
+            shape.bindPopup(el, { minWidth: 304, maxWidth: 304, className: 'firma2-project-set-map__card', autoPanPaddingTopLeft: [16 + (canvas.clientWidth > 720 ? insetStart : 0), 16], autoPanPaddingBottomRight: [16, 16] });
+          } else {
+            shape.bindPopup(
+              `${lead}<strong>${esc(row.name)}</strong><br>${meta}${line}<br><span class="firma2-project-set-map__doors"><a href="${row.href}">${esc(vocab('Open project'))}</a>${isPublic ? '' : projectPeekButtonHTML(row.slug, row.name)}</span>`,
+            );
+          }
           shape
-            .bindTooltip(`${esc(row.name)}<br>${line}`, { sticky: true, className: 'firma2-map-tip' })
-            .bindPopup(
-              `<strong>${esc(row.name)}</strong><br>${line}<br><span class="firma2-project-set-map__doors"><a href="${row.href}">${esc(vocab('Open project'))}</a>${projectPeekButtonHTML(row.slug, row.name)}</span>`,
-            )
+            .on('click', () => select(row.slug))
             .addTo(shapes);
+          entry.layers.push(shape);
         });
       });
 
       syncDots();
-      if (frame && all.length) map.fitBounds(L.latLngBounds(all), { padding: [32, 32], maxZoom: 12 });
+      if (frame && all.length) map.fitBounds(L.latLngBounds(all), { ...framing(32), maxZoom: 12 });
 
       unmapped.hidden = missing.length === 0;
       unmapped.innerHTML = missing.length
@@ -212,5 +338,33 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
 
     paint(true);
     onGeoChange(() => paint());
+
+    root.addEventListener('firma2:set-map-filter', (e) => {
+      const slugs = (e as CustomEvent<{ slugs: string[] | null }>).detail.slugs;
+      visible = slugs ? new Set(slugs) : null;
+      map.closePopup();
+      paint(true);
+    });
+    // Lift one project: the rest go quiet. Each layer remembers its own style.
+    root.addEventListener('firma2:set-map-hover', (e) => {
+      const slug = (e as CustomEvent<{ slug: string | null }>).detail.slug;
+      drawn.forEach((entry, key) => {
+        entry.layers.forEach((layer) => {
+          layer.firma2Rest ??= { opacity: layer.options.opacity ?? 1, fillOpacity: layer.options.fillOpacity ?? 0.2, weight: layer.options.weight ?? 3 };
+          const rest = layer.firma2Rest;
+          layer.setStyle(
+            !slug ? rest : key === slug ? { ...rest, weight: rest.weight + 2 } : { opacity: rest.opacity * 0.25, fillOpacity: rest.fillOpacity * 0.25, weight: rest.weight },
+          );
+          if (key === slug) layer.bringToFront?.();
+        });
+      });
+    });
+    root.addEventListener('firma2:set-map-focus', (e) => {
+      const entry = drawn.get((e as CustomEvent<{ slug: string }>).detail.slug);
+      if (!entry) return;
+      map.fitBounds(L.latLngBounds(entry.path), { ...framing(64), maxZoom: 13 });
+      // The dot is layer 0; the first work area carries the popup.
+      map.once('moveend', () => entry.layers[1]?.openPopup());
+    });
   });
 </script>

@@ -1,0 +1,61 @@
+---
+// PROTOTYPE, TO BE DELETED. The top-bar acts for the three new variants at
+// /proto/import-report: the same Cancel, Read another and "Add N changes" the
+// real page carries (firma2-report-import-actions), bound to the prototype's
+// shared model so every variant commits the same way. Nothing is saved: Add
+// shows the toast the project page would and puts the reading back.
+//
+// bcn-lego-checked: esa-button and esa-snackbar-container, unchanged.
+import EsaButton from '@esa/ecology/esa-button.astro';
+---
+<span class="proto-actions cluster" data-gap="xs">
+  <EsaButton variant="ghost" size="md" data-proto-reset>Cancel</EsaButton>
+  <EsaButton variant="secondary" appearance="outline" size="md" data-proto-reset>Read another</EsaButton>
+  <EsaButton variant="primary" size="md" data-proto-add>Add changes</EsaButton>
+</span>
+<esa-snackbar-container class="proto-actions__toasts"></esa-snackbar-container>
+
+<style>
+  /* Equal-width digits keep the button from changing width with every count. */
+  .proto-actions :global(.esa-button__label) {
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-snackbar-container';
+  import { PROTO_CHANGE, getModel } from './model';
+
+  document.querySelectorAll<HTMLElement>('.proto-actions').forEach((root) => {
+    const model = getModel();
+    const add = root.querySelector<HTMLButtonElement>('[data-proto-add]')!;
+    const addButton = add.closest<HTMLElement>('.esa-button')!;
+    const addLabel = add.querySelector('.esa-button__label') ?? add;
+    const toasts = document.querySelector<HTMLElement & { show: (config: { message: string; variant: string; duration: number }) => string }>(
+      '.proto-actions__toasts',
+    )!;
+
+    const paint = () => {
+      const count = model.count();
+      addLabel.textContent = count === 0 ? 'Nothing ticked' : `Add ${count} ${count === 1 ? 'change' : 'changes'}`;
+      add.disabled = count === 0;
+      addButton.classList.toggle('esa-button--disabled', count === 0);
+    };
+
+    add.addEventListener('click', async () => {
+      const count = model.count();
+      if (!count) return;
+      await customElements.whenDefined('esa-snackbar-container');
+      toasts.show({
+        message: `${count} ${count === 1 ? 'change' : 'changes'} added from ${model.data.documentName}`,
+        variant: 'success',
+        duration: 5000,
+      });
+      model.reset();
+    });
+    root.querySelectorAll('[data-proto-reset]').forEach((button) => button.addEventListener('click', () => model.reset()));
+
+    document.addEventListener(PROTO_CHANGE, paint);
+    paint();
+  });
+</script>

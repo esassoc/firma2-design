@@ -60,7 +60,8 @@
 // switch, and its header says what stays available while reading (the
 // reporting acts — Record work, Record spend — among them). The crumb row still
 // carries the record-level actions that touch nothing on the record — Share,
-// Fact sheet, History — see firma2-project-actions. The Add affordances are inert in this prototype — they
+// Fact sheet, History — and the link to Import a report, which is its own page
+// (firma2-project-imported is this page's half of it); see firma2-project-actions. The Add affordances are inert in this prototype — they
 // render, focus, and take a click, and nothing happens. They are deliberately
 // NOT `disabled`: a greyed-out control tells a reviewer the action is
 // unavailable to them, which is a different and false claim than "not wired
@@ -97,8 +98,10 @@ import Firma2ProjectActions from '../../../components/projects/firma2-project-ac
 import Firma2RecordMode from '../../../components/shared/firma2-record-mode.astro';
 import Firma2ProjectEditAccess from '../../../components/projects/firma2-project-edit-access.astro';
 import Firma2ProjectPublishState from '../../../components/projects/firma2-project-publish-state.astro';
+import Firma2ProjectImported from '../../../components/projects/firma2-project-imported.astro';
+import { IMPORT_FIXTURES, reportImportHref } from '../../../data/firma2-report-import';
 import Firma2ProgramRequirements from '../../../components/projects/firma2-program-requirements.astro';
-import { reviewHref } from '../../../data/firma2-publishing';
+import { publicHref, reviewHref } from '../../../data/firma2-publishing';
 import { projects, projectSlug } from '../../../data/firma2-projects';
 import type { Project } from '../../../data/firma2-projects';
 import { getProjectDetail } from '../../../data/firma2-project-detail';
@@ -119,6 +122,9 @@ interface Props {
 
 const { project } = Astro.props;
 const detail = getProjectDetail(project);
+const slug = projectSlug(project);
+// Import a report is offered only where a reading exists to show.
+const importHref = IMPORT_FIXTURES[slug] ? withBase(reportImportHref(slug)) : undefined;
 ---
 <!-- manifest:
   layout: record bar, then sidebar[data-side=end] > [ rail · stack(xl) ]
@@ -134,7 +140,9 @@ const detail = getProjectDetail(project);
       - edit / update           -> firma2-record-mode
       - publish state           -> firma2-project-publish-state (status row; unpublished changes)
       - record actions          -> firma2-project-actions
-                                   (review changes · share · fact sheet · change-history sheet)
+                                   (review changes · import a report · public page · share · fact sheet · change-history sheet)
+    - imported changes       -> firma2-project-imported (no box: applies what Import a report added,
+                                   the Undo toast, a readable file dropped anywhere)
     - property strip         -> firma2-project-facts    (strip layout: stage · timeline · cost · lead)
     - description            -> firma2-project-description
     - performance measures   -> firma2-project-measures
@@ -331,7 +339,11 @@ const detail = getProjectDetail(project);
       <Firma2ProjectActions
         slot="toolbar"
         audit={detail.audit}
-        reviewHref={detail.publishing.changes.length ? withBase(reviewHref(project)) : undefined}
+        reviewHref={withBase(reviewHref(project))}
+        importHref={importHref}
+        publicHref={withBase(publicHref(project))}
+        published={Boolean(detail.publishing.publishedIso)}
+        slug={slug}
       />
     </Firma2PageHeader>
 
@@ -339,6 +351,12 @@ const detail = getProjectDetail(project);
       <!-- Hidden unless a GIS subscription stopped returning this project; also
            locks the Key facts a subscription keeps. -->
       <Firma2ProjectGisStatus project={project} />
+
+      <!-- WHAT IMPORT A REPORT LEFT HERE. No box of its own (a toast stack,
+           display: contents): it writes the imported record fields on load,
+           offers Undo straight after an import, and sends a readable file
+           dropped anywhere on the page to the import page. -->
+      <Firma2ProjectImported slug={slug} />
 
       <!-- THE PROPERTY STRIP, under the title and ahead of everything. Linear's
            overview opens the same way: status, lead, dates in one row, then the
@@ -391,6 +409,7 @@ const detail = getProjectDetail(project);
       <Firma2ProjectFunding
         funding={detail.funding}
         estimatedTotalCost={detail.project.estimatedTotalCost}
+        slug={slug}
       />
       <Firma2ProgramRequirements detail={detail} />
       <Firma2ProjectTimeline milestones={detail.milestones} />

@@ -19,6 +19,15 @@
 // stops and firma2-review-status asks for a reload, so a page nobody checked
 // cannot slip out under the manager's name.
 //
+// IMPORTED CHANGES ARE PUBLISHED WITH THE REST. The diff sends the keys it is
+// showing, seeded and imported, on firma2:review-pending, and Publish records
+// those. Until that arrives, and for "next", a project's keys are its seeded
+// ones plus what this browser imported (src/lib/report-imports.ts).
+//
+// HELD CHANGES STAY OUT. The diff leaves held keys off firma2:review-pending,
+// so Publish never sends them, and "next" skips a project whose every change
+// is held: it comes back in the next review, not this sweep.
+//
 // UNDO. A publish goes through src/lib/publish-undo.ts, which remembers what
 // it replaced: the next page's toast offers Undo, and the review page's
 // publish history keeps "Undo publish" on the newest publish until anything
@@ -77,6 +86,7 @@ const { slug, name, leadOrganization, keys, queues, others } = Astro.props;
   import { PUBLISHING_KEY, pendingKeys, readPublishing } from '../../lib/publish-store';
   import { publishWithUndo } from '../../lib/publish-undo';
   import { publishBlock } from '../../lib/publish-permission';
+  import { importedChanges } from '../../lib/report-imports';
   import { CURRENT_USER } from '../../data/firma2-directory';
   import { TODAY_ISO } from '../../data/firma2-publish-history';
 
@@ -89,6 +99,8 @@ const { slug, name, leadOrganization, keys, queues, others } = Astro.props;
     const from = new URLSearchParams(window.location.search).get('from') ?? '';
     const order = (from && queues.organizations[from]) || queues.workspace;
     const suffix = from ? `?from=${encodeURIComponent(from)}` : '';
+    // A project's change keys: the build's, and this browser's imports.
+    const keysOf = (s: string, seeded: string[]): string[] => [...seeded, ...importedChanges(s).map((c) => c.key)];
 
     // The next project still waiting, after this one in the queue's order —
     // then any earlier one the manager skipped past.
@@ -96,11 +108,12 @@ const { slug, name, leadOrganization, keys, queues, others } = Astro.props;
       const state = readPublishing();
       const at = order.indexOf(slug);
       const rest = [...order.slice(at + 1), ...order.slice(0, Math.max(at, 0))];
-      return rest.find((s) => s !== slug && others[s] && pendingKeys(s, others[s].keys, state).length > 0) ?? null;
+      // A project whose every change is held has nothing for this sweep.
+      return rest.find((s) => s !== slug && others[s] && pendingKeys(s, keysOf(s, others[s].keys), state).some((k) => !state.held[s]?.[k])) ?? null;
     };
     const hrefOf = (s: string) => `${root.dataset.reviewBase}${s}${suffix}`;
 
-    let pending: string[] = pendingKeys(slug, JSON.parse(root.dataset.keys ?? '[]'));
+    let pending: string[] = pendingKeys(slug, keysOf(slug, JSON.parse(root.dataset.keys ?? '[]')));
     let stale = false;
     const publishButton = root.querySelector<HTMLElement>('[data-publish]')!;
     const skipButton = root.querySelector<HTMLElement>('[data-skip]')!;

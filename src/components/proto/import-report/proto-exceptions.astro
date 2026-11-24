@@ -1,0 +1,345 @@
+---
+// PROTOTYPE, TO BE DELETED. Variant 2, "Exceptions first". Axis: WHAT IS SHOWN.
+// Only the changes that need a decision are open, each with the passage it was
+// read from right under it; everything read cleanly is one collapsed line. The
+// bet: most of a reading is fine, so the steps to Add equal the real decisions.
+//
+// Nothing moves as a row is dealt with: bind() sets data-picked and the row's
+// badge turns to "Ready to add" in place. One column, no document pane.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import type { ProtoData, ProtoItem } from './model';
+import { formatFigure, formatUsd, passageOf } from './model';
+
+interface Props {
+  data: ProtoData;
+}
+
+const { data } = Astro.props;
+
+const needs = data.items.filter((item) => item.status === 'needs');
+const ready = data.items.filter((item) => item.status === 'ready');
+const onFile = data.items.filter((item) => item.status === 'on-file');
+const checks = ready.filter((item) => item.check).length;
+
+const BADGE_VARIANT = {
+  'Needs a decision': 'warning',
+  'No match': 'secondary',
+  Unsure: 'danger',
+  'Not in this workspace': 'warning',
+} as const;
+
+/** The words in quotation marks: the lines of the passage the reading used. */
+const quoted = (quote: string): string[] => [...quote.matchAll(/“([^”]+)”/g)].map((match) => match[1]);
+/** "Results table, page 2 — “Seed collected, 40”" reads without the dash. */
+const where = (quote: string): string => quote.replace(' — ', ': ');
+
+const passageFor = (item: ProtoItem) => {
+  const found = passageOf(data, item);
+  if (!found) return undefined;
+  const used = quoted(item.quote);
+  return {
+    caption: [found.page, found.passage.heading].filter(Boolean).join(', '),
+    lines: found.passage.lines.map((text) => ({ text, used: used.some((segment) => text.includes(segment)) })),
+  };
+};
+
+const heading = (item: ProtoItem): string => (item.kind === 'funding' ? `Funding source · ${item.name}` : item.label);
+const amountLabel = (item: ProtoItem): string => (item.unit ? `Amount (${item.unit})` : 'Amount');
+const readyTitle = `${ready.length} read cleanly${checks ? ` · ${checks} to check` : ''}`;
+---
+<div class="proto-exceptions stack" data-gap="xl" data-done={needs.length === 0 ? '' : undefined}>
+  <!-- bcn-lego-checked: every control is a lego (esa-checkbox, esa-text-field,
+       esa-select, esa-textarea, esa-button, esa-badge) and the groups are
+       esa-collapsible. The classes lay out the decision rows, the inline
+       passage excerpt and the compact ready rows, which no esa- component
+       does. Beacon is not cloned on this machine. -->
+
+  <section class="stack" data-gap="lg" aria-labelledby="proto-exceptions-left">
+    <h2 class="proto-exceptions__left typography-title" id="proto-exceptions-left">
+      <span class="proto-exceptions__some"><span data-waiting-count>{needs.length}</span> left to decide</span>
+      <span class="proto-exceptions__none">Nothing left to decide</span>
+    </h2>
+
+    {needs.length > 0 && (
+      <ul class="proto-exceptions__needs stack" data-gap="xl">
+        {needs.map((item) => {
+          const passage = passageFor(item);
+          const suggestion = item.suggestion;
+          return (
+            <li class="proto-exceptions__need stack" data-gap="md" data-item={item.id} data-waiting>
+              <div class="repel" data-gap="sm">
+                <h3 class="proto-exceptions__label typography-label-md-strong">{heading(item)}</h3>
+                <span class="proto-exceptions__badge-waiting">
+                  {item.badge && <EsaBadge variant={BADGE_VARIANT[item.badge]} size="sm" value={item.badge} />}
+                </span>
+                <span class="proto-exceptions__badge-done">
+                  <EsaBadge variant="success" size="sm" value="Ready to add" />
+                </span>
+              </div>
+
+              {item.reason && <p class="typography-body-md">{item.reason}</p>}
+
+              {item.kind === 'measure' && (
+                <div class="stack" data-gap="sm">
+                  <div class="proto-exceptions__entry cluster" data-gap="sm">
+                    <esa-text-field
+                      class="proto-exceptions__field"
+                      size="md"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      label={amountLabel(item)}
+                      data-amount
+                    ></esa-text-field>
+                    {suggestion && (
+                      <EsaButton variant="secondary" appearance="outline" size="md" data-use-suggestion>Use suggestion</EsaButton>
+                    )}
+                  </div>
+                  {suggestion && (
+                    <p class="proto-exceptions__quiet typography-body-sm">
+                      Suggested: {`${formatFigure(suggestion.amount)} ${item.unit ?? ''}`.trim()}. {suggestion.basis}.
+                    </p>
+                  )}
+                  {item.amount != null && <esa-checkbox size="md" label="Add this figure" data-pick></esa-checkbox>}
+                </div>
+              )}
+
+              {item.kind === 'funding' && item.funding && (
+                <div class="stack" data-gap="sm">
+                  <p class="typography-body-md">{formatUsd(item.funding.amount)} secured</p>
+                  <esa-select class="proto-exceptions__field" size="md" label="Organization" data-organization></esa-select>
+                </div>
+              )}
+
+              {passage && (
+                <figure class="proto-exceptions__passage stack" data-gap="xs">
+                  <figcaption class="proto-exceptions__quiet typography-body-sm">{passage.caption}</figcaption>
+                  <blockquote class="stack" data-gap="2xs">
+                    {passage.lines.map((line) => (
+                      <p class="typography-body-md">{line.used ? <mark>{line.text}</mark> : line.text}</p>
+                    ))}
+                  </blockquote>
+                </figure>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </section>
+
+  {ready.length > 0 && (
+    <EsaCollapsible title={readyTitle}>
+      <ul class="proto-exceptions__rows stack" data-gap="md">
+        {ready.map((item) => (
+          <li class="proto-exceptions__row stack" data-gap="2xs" data-item={item.id}>
+            <div class="proto-exceptions__line">
+              <esa-checkbox size="md" label={item.label} data-pick></esa-checkbox>
+              {item.check && <EsaBadge variant="warning" size="sm" value="Check this" />}
+              <span class="proto-exceptions__value typography-body-md" data-value>{item.value}</span>
+            </div>
+            <div class="proto-exceptions__aside stack" data-gap="2xs">
+              {item.was && <p class="proto-exceptions__quiet typography-body-sm">Was {item.was}</p>}
+              {item.conversion && (
+                <p class="proto-exceptions__quiet typography-body-sm">
+                  {item.conversion.includes('to date') ? item.conversion : `Converted: ${item.conversion}`}
+                </p>
+              )}
+              {item.note && <p class="proto-exceptions__quiet typography-body-sm">{item.note}</p>}
+              <p class="proto-exceptions__quiet typography-body-sm">{where(item.quote)}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </EsaCollapsible>
+  )}
+
+  {onFile.length > 0 && (
+    <EsaCollapsible title={`${onFile.length} already on file`}>
+      <ul class="proto-exceptions__rows stack" data-gap="md">
+        {onFile.map((item) => (
+          <li class="stack" data-gap="2xs">
+            <div class="proto-exceptions__line">
+              <span class="typography-label-md-strong">{item.label}</span>
+              {item.value && <span class="proto-exceptions__value typography-body-md">{item.value}</span>}
+            </div>
+            <p class="proto-exceptions__quiet typography-body-sm">{where(item.quote)}</p>
+          </li>
+        ))}
+      </ul>
+    </EsaCollapsible>
+  )}
+
+  {(data.notUsed.length > 0 || data.skipped.length > 0) && (
+    <div class="stack" data-gap="sm">
+      {data.notUsed.length > 0 && (
+        <EsaCollapsible title={`${data.notUsed.length} not used`}>
+          <ul class="proto-exceptions__list">
+            {data.notUsed.map((line) => <li>{line}</li>)}
+          </ul>
+        </EsaCollapsible>
+      )}
+      {data.skipped.length > 0 && <p class="typography-body-sm">Skipped: {data.skipped.join(' ')}</p>}
+    </div>
+  )}
+
+  <esa-textarea size="md" label="Note for the reviewer (optional)" rows="3"></esa-textarea>
+</div>
+
+<style>
+  /* Layout primitives set `display`, which beats the UA's [hidden]. */
+  .proto-exceptions [hidden] {
+    display: none !important;
+  }
+
+  /* One column at a reading width. */
+  .proto-exceptions {
+    max-inline-size: 42rem;
+    min-inline-size: 0;
+  }
+
+  .proto-exceptions p,
+  .proto-exceptions h2,
+  .proto-exceptions h3,
+  .proto-exceptions figure,
+  .proto-exceptions blockquote {
+    margin: 0;
+  }
+
+  .proto-exceptions p,
+  .proto-exceptions__value {
+    overflow-wrap: anywhere;
+  }
+
+  .proto-exceptions__needs,
+  .proto-exceptions__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .proto-exceptions__list {
+    margin: 0;
+    padding-inline-start: var(--spacing-400);
+  }
+
+  /* The leading line: a count while anything waits, a plain zero after. */
+  .proto-exceptions__some :global([data-waiting-count]) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .proto-exceptions__none,
+  .proto-exceptions[data-done] .proto-exceptions__some {
+    display: none;
+  }
+
+  .proto-exceptions[data-done] .proto-exceptions__none {
+    display: inline;
+  }
+
+  /* A decision row. Separated by a hairline, never boxed. */
+  .proto-exceptions__need + .proto-exceptions__need {
+    padding-block-start: var(--spacing-600);
+    border-block-start: 1px solid var(--color-border-default-subtle, var(--color-border-default));
+  }
+
+  .proto-exceptions__label {
+    min-inline-size: 0;
+  }
+
+  /* Dealt with: the badge turns, in place; nothing moves or disappears. */
+  .proto-exceptions__badge-done,
+  .proto-exceptions__need[data-picked] .proto-exceptions__badge-waiting {
+    display: none;
+  }
+
+  .proto-exceptions__need[data-picked] .proto-exceptions__badge-done {
+    display: inline-flex;
+  }
+
+  .proto-exceptions__entry {
+    align-items: end;
+  }
+
+  .proto-exceptions__field {
+    display: block;
+    inline-size: min(100%, 20rem);
+  }
+
+  .proto-exceptions__quiet {
+    color: var(--color-text-secondary);
+  }
+
+  /* The passage, inline: the report's own words, the used lines marked. */
+  .proto-exceptions__passage {
+    padding: var(--spacing-300) var(--spacing-400);
+    border-radius: var(--radius-sm);
+    background: var(--color-background-elevation-sunken);
+  }
+
+  .proto-exceptions__passage mark {
+    padding-inline: var(--spacing-050);
+    border-radius: var(--radius-sm);
+    background: var(--color-background-brand-muted);
+    color: inherit;
+  }
+
+  /* A ready row: tick and label, the value at the end of the same line. */
+  .proto-exceptions__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-100) var(--spacing-300);
+  }
+
+  .proto-exceptions__line > esa-checkbox {
+    min-inline-size: 0;
+  }
+
+  .proto-exceptions__value {
+    margin-inline-start: auto;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* An unticked row stays readable, so it can be ticked back, but recedes. */
+  .proto-exceptions__row:not([data-picked]) .proto-exceptions__value {
+    color: var(--color-text-secondary);
+  }
+
+  /* Secondary lines start under the label's first glyph: the 20px box plus its 8px gap. */
+  .proto-exceptions__aside {
+    padding-inline-start: calc(var(--spacing-500) + var(--spacing-100));
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-checkbox';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-textarea';
+  import { bind, getModel, PROTO_CHANGE } from './model';
+
+  const root = document.querySelector<HTMLElement>('.proto-exceptions');
+  if (root) {
+    bind(root);
+    const model = getModel();
+    const paintDone = () => root.toggleAttribute('data-done', model.waiting() === 0);
+    document.addEventListener(PROTO_CHANGE, paintDone);
+    paintDone();
+
+    // esa-checkbox's click target is its label row, about 26px tall. Pin it to
+    // the 40px rung the way AppLayout pins field heights, scoped to this root.
+    customElements.whenDefined('esa-checkbox').then(() =>
+      requestAnimationFrame(() => {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync('.wrapper { min-block-size: 40px; }');
+        root.querySelectorAll('esa-checkbox').forEach((box) => {
+          const shadow = box.shadowRoot;
+          if (shadow) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet];
+        });
+      }),
+    );
+  }
+</script>

@@ -30,6 +30,7 @@
 // name, never from randomness.
 
 import type { Project, ProjectTypeName } from './firma2-projects';
+import { REAL } from './firma2-real-data';
 
 // ---------------------------------------------------------------------------
 // Sections — the registry
@@ -417,6 +418,8 @@ export const fieldValue = (
 ): string => {
   // Defined in this browser: nobody has answered it yet.
   if (field.id.startsWith('local-')) return '';
+  // A real workspace (dev only) was never asked these questions.
+  if (REAL) return '';
   const h = hash(`${project.projectName}|${field.id}`);
   switch (field.kind) {
     case 'choice': {
@@ -469,4 +472,4 @@ export const fieldRows = (
 // ---------------------------------------------------------------------------
 
 /** The invented organization whose public pages these are. */
-export const TENANT_NAME = 'North State Watershed Partnership';
+export const TENANT_NAME = REAL?.source.name ?? 'North State Watershed Partnership';

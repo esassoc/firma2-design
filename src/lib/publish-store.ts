@@ -25,15 +25,35 @@ export interface LocalPublish {
   keys: string[];
 }
 
+/**
+ * A manager's word on one change (.scratch/project-updates/spec.md, decisions
+ * 33, 34, 38): why it is held back from the publish, or why it was reverted.
+ * Required either way, and sent to the people who made the change.
+ */
+export interface ReviewNote {
+  note: string;
+  by: string;
+  iso: string;
+  /** Who was told: the change's editors. */
+  told: string[];
+  /** The field, as the review names it, for the history line. */
+  label: string;
+}
+
 interface State {
   published: Record<string, LocalPublish>;
   /** Change keys put back to their published value, per project slug. */
   reverted: Record<string, string[]>;
+  /** Why each revert was made, per slug, by change key. */
+  revertNotes: Record<string, Record<string, ReviewNote>>;
+  /** Changes held back from publish with a note, per slug, by change key. They
+      stay on the record and stay pending, so they come back next review. */
+  held: Record<string, Record<string, ReviewNote>>;
   cadence: Record<string, ReviewCadence>;
   reminders: Record<string, boolean>;
 }
 
-const empty = (): State => ({ published: {}, reverted: {}, cadence: {}, reminders: {} });
+const empty = (): State => ({ published: {}, reverted: {}, revertNotes: {}, held: {}, cadence: {}, reminders: {} });
 
 const storage = (): Storage | null => {
   try {
@@ -73,11 +93,41 @@ export const publish = (slug: string, record: LocalPublish): void => {
   write({ ...state, published: { ...state.published, [slug]: { ...record, keys: [...new Set([...before, ...record.keys])] } } });
 };
 
-export const revert = (slug: string, key: string): void => {
+/** Put changes back to their published value. One row can stand for several keys. */
+export const revert = (slug: string, keys: string[], note?: ReviewNote): void => {
   const state = readPublishing();
   const list = new Set(state.reverted[slug] ?? []);
-  list.add(key);
-  write({ ...state, reverted: { ...state.reverted, [slug]: [...list] } });
+  keys.forEach((k) => list.add(k));
+  const notes = { ...(state.revertNotes[slug] ?? {}) };
+  const held = { ...(state.held[slug] ?? {}) };
+  keys.forEach((k) => {
+    if (note) notes[k] = note;
+    // A reverted change is no longer waiting, so no longer held.
+    delete held[k];
+  });
+  write({ ...state, reverted: { ...state.reverted, [slug]: [...list] }, revertNotes: { ...state.revertNotes, [slug]: notes }, held: { ...state.held, [slug]: held } });
+};
+
+/** Hold changes back from the publish, with the note their editors are sent. */
+export const hold = (slug: string, keys: string[], note: ReviewNote): void => {
+  const state = readPublishing();
+  const held = { ...(state.held[slug] ?? {}) };
+  keys.forEach((k) => (held[k] = note));
+  write({ ...state, held: { ...state.held, [slug]: held } });
+};
+
+/** Let held changes go out with the next publish again. */
+export const release = (slug: string, keys: string[]): void => {
+  const state = readPublishing();
+  const held = { ...(state.held[slug] ?? {}) };
+  keys.forEach((k) => delete held[k]);
+  write({ ...state, held: { ...state.held, [slug]: held } });
+};
+
+/** The held changes still waiting on a project. */
+export const heldKeys = (slug: string, keys: string[], state: State = readPublishing()): string[] => {
+  const held = state.held[slug] ?? {};
+  return pendingKeys(slug, keys, state).filter((k) => held[k]);
 };
 
 export const writeCadence = (organization: string, cadence: ReviewCadence): void => {

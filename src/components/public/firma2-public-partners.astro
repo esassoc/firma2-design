@@ -1,0 +1,285 @@
+---
+// firma2-public-partners — who pays for the work and who does it
+// (publicPartners). A partnership's home credits its partners.
+//
+// FUNDERS ARE A TREEMAP (2026-11-20, user: "bento box but with area chart
+// type… the bigger squares are for the bigger ones"): one box, each funder a
+// tile whose AREA is its share of the money shown, largest first from the
+// leading corner (src/lib/treemap.ts, squarified, laid out at build time —
+// once for a wide box and once for a phone's tall one). Each tile carries the
+// total, the name and the project count; type scales with the tile, and the
+// smallest tiles drop the count. COMPUTED from the public projects' funding
+// sources — whole-project grant amounts, public funders only.
+//
+// LEAD ORGANIZATIONS ARE TILES: initials, name, and how many projects each
+// leads. NAMES, NOT LOGOS — the workspace holds no organization logos; the
+// initials stand where a logo will.
+//
+// Each name is a door to that organization; its hit area is its card or tile.
+//
+// HOVER: pointing at a funder's tile deepens it and quiets the others, the
+// way a treemap is read. A LEAD'S TILE ROLLS ITS SECOND LINE: the project
+// count gives way to the door's words. Reduced motion gets the colours
+// without the movement.
+//
+// bcn-lego-checked: no treemap exists in the catalog (esa-chart draws
+// bars, lines and pies), so the funders' box is laid out here; esa-avatar is
+// the initials; the classes lay out the grid and the tile. The door to the directory is an
+// EsaButton. Beacon is not cloned on this machine.
+import EsaAvatar from '@esa/ecology/esa-avatar.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import type { PublicPartners } from '../../data/firma2-public-site';
+import { PUBLIC_NAV } from '../../data/firma2-public-site';
+import { withBase } from '../../lib/base';
+import { treemap } from '../../lib/treemap';
+
+interface Props {
+  partners: PublicPartners;
+}
+
+const { partners } = Astro.props;
+const organizationsHref = PUBLIC_NAV.find((item) => item.key === 'organizations')!.href;
+const compactUsd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
+const amounts = partners.funding.map((o) => o.amount ?? 0);
+// Two layouts of the same areas: a wide box, and a tall one for a phone.
+const WIDE = 2.4;
+const TALL = 0.62;
+const wide = treemap(amounts, WIDE);
+const tall = treemap(amounts, TALL);
+const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
+// A tile's padding follows its size (a container cannot query itself).
+const pad = (i: number) => (Math.min(wide[i].w, tall[i].w * 3) < 0.12 ? 'var(--spacing-200)' : wide[i].w < 0.2 ? 'var(--spacing-400)' : 'var(--spacing-500)');
+const place = (i: number) =>
+  `--pad:${pad(i)};--x:${pct(wide[i].x)};--y:${pct(wide[i].y)};--w:${pct(wide[i].w)};--h:${pct(wide[i].h)};--tx:${pct(tall[i].x)};--ty:${pct(tall[i].y)};--tw:${pct(tall[i].w)};--th:${pct(tall[i].h)}`;
+const count = (n: number) => `${n} project${n === 1 ? '' : 's'}`;
+---
+{partners.funding.length + partners.leading.length > 0 && (
+  <section class="firma2-public-partners stack" data-gap="lg" aria-labelledby="firma2-public-partners-title">
+    <div class="repel" data-align="center">
+      <h2 id="firma2-public-partners-title" class="typography-heading-lg">Partners</h2>
+      <EsaButton variant="ghost" href={withBase(organizationsHref)} iconRight="arrow-right">All organizations</EsaButton>
+    </div>
+    {partners.funding.length > 0 && (
+      <div class="stack" data-gap="sm">
+        <h3 class="typography-title-sm-strong" id="firma2-public-partners-funding">Funders</h3>
+        <ul class="firma2-public-partners__funders" style={`--wide: ${WIDE}; --tall: ${TALL}`} aria-labelledby="firma2-public-partners-funding">
+          {partners.funding.map((o, i) => (
+            <li class="firma2-public-partners__funder" style={place(i)}>
+              <div class="firma2-public-partners__cell">
+                <span class="firma2-public-partners__amount">{compactUsd.format(o.amount ?? 0)}</span>
+                <a class="firma2-public-partners__name" href={withBase(o.href)}>{o.name}</a>
+                <span class="firma2-public-partners__count">{count(o.projects)}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+    {partners.leading.length > 0 && (
+      <div class="stack" data-gap="sm">
+        <h3 class="typography-title-sm-strong" id="firma2-public-partners-leading">Leading projects</h3>
+        <ul class="firma2-public-partners__leads grid" data-gap="md" aria-labelledby="firma2-public-partners-leading">
+          {partners.leading.map((o) => (
+            <li class="firma2-public-partners__door firma2-public-partners__tile">
+              <EsaAvatar name={o.name} size="md" shape="square" />
+              <div class="stack" data-gap="2xs">
+                <a class="typography-label-md-strong" href={withBase(o.href)}>{o.name}</a>
+                <span class="firma2-public-partners__roll typography-body-sm">
+                  <span class="firma2-public-partners__quiet">{count(o.projects)}</span>
+                  <span class="firma2-public-partners__go" aria-hidden="true">View organization →</span>
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+  </section>
+)}
+
+<style>
+  .firma2-public-partners h2,
+  .firma2-public-partners h3 {
+    margin: 0;
+  }
+  .firma2-public-partners ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-public-partners__leads {
+    --grid-min: 15rem;
+  }
+  .firma2-public-partners__door {
+    position: relative;
+  }
+  .firma2-public-partners__tile {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding: var(--spacing-300);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .firma2-public-partners__door a {
+    color: inherit;
+    text-decoration: none;
+  }
+  /* The name's hit area is its card or tile. */
+  .firma2-public-partners__door a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  .firma2-public-partners__door {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  /* ---- funders: a treemap, area = money ---- */
+  .firma2-public-partners__funders {
+    position: relative;
+    aspect-ratio: var(--wide);
+  }
+  .firma2-public-partners__funder {
+    position: absolute;
+    inset-inline-start: var(--x);
+    inset-block-start: var(--y);
+    inline-size: var(--w);
+    block-size: var(--h);
+    /* The gutter between tiles is each tile's own padding. */
+    padding: var(--spacing-100);
+    box-sizing: border-box;
+    transition: opacity 220ms ease;
+  }
+  .firma2-public-partners__cell {
+    container-type: size;
+    position: relative;
+    box-sizing: border-box;
+    block-size: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: var(--spacing-100);
+    padding: var(--pad);
+    border-radius: var(--radius-md);
+    background: var(--color-background-brand-muted);
+    overflow: hidden;
+    transition: background-color 220ms ease, translate 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .firma2-public-partners__amount {
+    font-family: var(--typography-font-family-display);
+    font-weight: var(--typography-font-weight-bold);
+    /* The figure scales with its tile. */
+    font-size: clamp(1.5rem, 22cqmin, 4.5rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--color-content-brand);
+  }
+  .firma2-public-partners__name {
+    font-size: clamp(0.875rem, 7cqmin, 1.125rem);
+    font-weight: var(--typography-font-weight-semibold, 600);
+    line-height: 1.25;
+    color: var(--color-content-default);
+    text-decoration: none;
+    text-wrap: balance;
+  }
+  /* The name's hit area is its tile. */
+  .firma2-public-partners__name::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  .firma2-public-partners__count {
+    font-size: var(--font-size-150, 0.875rem);
+    color: var(--color-content-default-secondary);
+  }
+  /* A small tile keeps its total and its name. */
+  @container (max-height: 9rem) {
+    .firma2-public-partners__count {
+      display: none;
+    }
+  }
+  /* A narrow tile sets its name smaller and hyphenates a long word. */
+  @container (max-width: 7.5rem) {
+    .firma2-public-partners__name {
+      font-size: 0.75rem;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-wrap: wrap;
+    }
+  }
+  @media (max-width: 45rem) {
+    .firma2-public-partners__funders {
+      aspect-ratio: var(--tall);
+    }
+    .firma2-public-partners__funder {
+      inset-inline-start: var(--tx);
+      inset-block-start: var(--ty);
+      inline-size: var(--tw);
+      block-size: var(--th);
+    }
+  }
+  /* ---- leads: the second line rolls ---- */
+  .firma2-public-partners__tile {
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+  .firma2-public-partners__roll {
+    display: grid;
+    overflow: hidden;
+  }
+  .firma2-public-partners__roll > * {
+    grid-area: 1 / 1;
+    transition: translate 300ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
+  }
+  .firma2-public-partners__go {
+    color: var(--color-content-brand);
+    font-weight: var(--typography-font-weight-medium);
+    translate: 0 100%;
+    opacity: 0;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    /* Read like a treemap: the tile pointed at deepens, the rest step back. */
+    .firma2-public-partners__funders:hover .firma2-public-partners__funder:not(:hover) {
+      opacity: 0.45;
+    }
+    .firma2-public-partners__funder:hover .firma2-public-partners__cell {
+      background: color-mix(in srgb, var(--color-background-brand) 30%, var(--color-background-brand-muted));
+      translate: 0 -3px;
+    }
+    .firma2-public-partners__tile:hover {
+      border-color: var(--color-border-brand);
+      background: var(--color-background-brand-subtle);
+    }
+    .firma2-public-partners__tile:hover .firma2-public-partners__quiet {
+      translate: 0 -100%;
+      opacity: 0;
+    }
+    .firma2-public-partners__tile:hover .firma2-public-partners__go {
+      translate: 0 0;
+      opacity: 1;
+    }
+  }
+  .firma2-public-partners__door:active {
+    scale: 0.985;
+  }
+  .firma2-public-partners__funder:active .firma2-public-partners__cell {
+    scale: 0.985;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-public-partners__cell {
+      transition: background-color 200ms ease;
+      translate: 0 0 !important;
+      scale: 1 !important;
+    }
+    .firma2-public-partners__roll > * {
+      transition: opacity 200ms ease;
+      translate: 0 0 !important;
+    }
+    .firma2-public-partners__door {
+      scale: 1 !important;
+    }
+  }
+  .firma2-public-partners__quiet {
+    color: var(--color-content-default-secondary);
+  }
+</style>

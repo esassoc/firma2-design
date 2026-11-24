@@ -21,6 +21,7 @@
 // field, answer and agreement number is made up. Deterministic: no clock, no
 // Math.random().
 
+import { demoProjectName } from './firma2-projects';
 import type { Project } from './firma2-projects';
 import type { ProjectDetail } from './firma2-project-detail';
 
@@ -115,14 +116,14 @@ export const programShares: ProgramShare[] = [
   // Half answered: the agreement is signed and the program has its number in,
   // but nobody has picked the species or found the site ID.
   {
-    project: 'Scott River Fish Passage Barrier Removal',
+    project: demoProjectName('Scott River Fish Passage Barrier Removal'),
     program: 'afrf',
     answers: { landownerAgreement: 'Signed', grantAgreement: 'AFRF-2025-014' },
   },
   // Nearly there from the organization's side; the program hasn't entered its
   // agreement number yet.
   {
-    project: 'Bear River Gravel Augmentation',
+    project: demoProjectName('Bear River Gravel Augmentation'),
     program: 'afrf',
     answers: { targetSpecies: 'Chinook salmon', landownerAgreement: 'Not needed' },
   },

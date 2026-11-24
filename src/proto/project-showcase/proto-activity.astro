@@ -1,0 +1,364 @@
+---
+// PROTOTYPE — variant "Activity" for /proto/project-showcase. Throwaway.
+//
+// AXIS: the fitness / money app. A photo banner with the project's progress
+// card set into its foot (Monarch's goal page); a Strava stat row; then two
+// interactive panels — RESULTS: a big ring for one measure beside its
+// year-by-year bars (planned behind, reported in front — Strava's laps), with
+// every measure listed as a picker of small rings; and MONEY: spending as a
+// cumulative area climbing toward the estimated cost's dashed line (Monarch's
+// timeline), a crosshair reading any year, and the funding split under it.
+//
+// bcn-lego-checked: prototype — banner, stat row, rings and SVG charts are layout for this variant; no esa- chart draws a ring or a cumulative area in markup
+import { iconSvg } from '@esa/ecology/icon-registry';
+import Firma2ProjectTimeline from '../../components/projects/firma2-project-timeline.astro';
+import Firma2ProjectMap from '../../components/projects/firma2-project-map.astro';
+import type { Showcase } from './model';
+import { num, ring, usd, usdShort } from './model';
+
+interface Props {
+  s: Showcase;
+}
+const { s } = Astro.props;
+const banner = s.photos[0] ? s.photo(s.photos[0], 1600, 700) : undefined;
+const spentPct = Math.min(100, Math.round((s.spent / s.cost) * 100));
+
+// Bars: one chart per measure, same frame.
+const W = 560;
+const H = 200;
+const PAD = { l: 8, r: 8, t: 12, b: 26 };
+const bars = (m: Showcase['measures'][number]) => {
+  const top = Math.max(1, ...m.series.map((p) => Math.max(p.planned, p.value ?? 0)));
+  const n = m.series.length;
+  const slot = (W - PAD.l - PAD.r) / n;
+  const bw = Math.min(44, slot * 0.62);
+  const y = (v: number) => PAD.t + (H - PAD.t - PAD.b) * (1 - v / top);
+  return m.series.map((p, i) => {
+    const x = PAD.l + slot * i + (slot - bw) / 2;
+    return { x, bw, year: p.year, status: p.status, plannedY: y(p.planned), reportedY: p.value === null ? null : y(p.value), base: H - PAD.b, value: p.value, planned: p.planned };
+  });
+};
+
+// Cumulative spending.
+const CW = 720;
+const CH = 240;
+const CP = { l: 12, r: 12, t: 20, b: 28 };
+const spendTop = Math.max(s.cost, ...s.spending.map((e) => e.cumulative)) * 1.08;
+const cx = (i: number) => CP.l + ((CW - CP.l - CP.r) * i) / Math.max(1, s.spending.length - 1);
+const cy = (v: number) => CP.t + (CH - CP.t - CP.b) * (1 - v / spendTop);
+const reached = s.spending.filter((e) => e.status !== 'upcoming' || e.spent > 0);
+const line = reached.map((e, i) => `${i ? 'L' : 'M'}${cx(i).toFixed(1)},${cy(e.cumulative).toFixed(1)}`).join(' ');
+const area = reached.length ? `${line} L${cx(reached.length - 1).toFixed(1)},${CH - CP.b} L${cx(0).toFixed(1)},${CH - CP.b} Z` : '';
+const SEG = ['var(--color-background-brand)', 'color-mix(in srgb, var(--color-background-brand) 55%, var(--color-background-elevation-raised))', 'color-mix(in srgb, var(--color-background-brand) 28%, var(--color-background-elevation-raised))', 'var(--color-border-default)'];
+const BIG = 64;
+---
+<div class="pa">
+  <div class="pa__col">
+    <header class="pa__banner">
+      {banner && <img src={banner.src} alt={banner.alt} width="1600" height="700" fetchpriority="high" />}
+      <div class="pa__card">
+        <div class="pa__card-top">
+          <div class="pa__card-name">
+            <h1 class="typography-title-strong">{s.name}</h1>
+            <p class="cluster typography-body-sm" data-gap="xs"><span class="pa__pill">{s.stage}</span><span class="pa__quiet">{s.type} · {s.county} County</span></p>
+          </div>
+          <div class="pa__card-money">
+            <span class="typography-title-strong">{usd.format(s.spent)}</span>
+            <span class="pa__quiet typography-body-sm">{spentPct}% of {usd.format(s.cost)} spent</span>
+          </div>
+        </div>
+        <div class="pa__bar"><span style={`--p:${spentPct / 100}`}></span></div>
+      </div>
+    </header>
+
+    <dl class="pa__stats">
+      <div><dt>Estimated cost</dt><dd>{usdShort.format(s.cost)}</dd></div>
+      <div><dt>Spent</dt><dd>{usdShort.format(s.spent)}</dd></div>
+      <div><dt>Measures past halfway</dt><dd>{s.pastHalf}<span class="pa__of"> / {s.measures.length}</span></dd></div>
+      <div><dt>Timeline</dt><dd>{s.start}–{String(s.end).slice(2)}</dd></div>
+      <div><dt>Led by</dt><dd class="pa__stat-text">{s.lead}</dd></div>
+    </dl>
+
+    {s.measures.length > 0 && (
+      <section class="pa__panel" aria-labelledby="pa-results" data-results>
+        <div class="pa__panel-head">
+          <h2 id="pa-results" class="typography-title-strong">Results</h2>
+          <span class="pa__legend typography-body-sm"><i class="pa__key pa__key--planned"></i>Planned <i class="pa__key pa__key--reported"></i>Reported</span>
+        </div>
+        <div class="pa__results">
+          <div class="pa__focus">
+            {s.measures.map((m, i) => {
+              const r = ring(m.percent, BIG);
+              return (
+                <div class="pa__focus-item" data-measure-panel={i} hidden={i !== 0}>
+                  <div class="pa__big-ring">
+                    <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label={`${m.percent}% of planned`}>
+                      <circle cx="80" cy="80" r={BIG} class="pa__ring-track" stroke-width="14" />
+                      <circle cx="80" cy="80" r={BIG} class="pa__ring-fill" stroke-width="14" stroke-dasharray={r.dash} transform="rotate(-90 80 80)" style={`--c:${r.c.toFixed(2)}`} />
+                    </svg>
+                    <span class="pa__ring-center"><b>{m.percent}%</b><span class="typography-body-sm">of plan</span></span>
+                  </div>
+                  <div class="pa__focus-text">
+                    <p class="pa__figure">{num(m.reported)} <span class="typography-body-lg">{m.unit}</span></p>
+                    <p class="typography-label-md-strong">{m.name}</p>
+                    <p class="pa__quiet typography-body-sm">of {num(m.expected)} planned · last reported {m.last ?? '—'}</p>
+                  </div>
+                  <svg class="pa__bars" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${m.name} by year`}>
+                    <line x1="0" x2={W} y1={H - PAD.b} y2={H - PAD.b} class="pa__axis" />
+                    {bars(m).map((b, j) => (
+                      <g class="pa__bar-g" style={`--d:${j * 50}ms`}>
+                        <title>{b.year}: {b.value === null ? 'not reported' : `${num(b.value)} reported`} of {num(b.planned)} planned</title>
+                        <rect x={b.x} y={b.plannedY} width={b.bw} height={Math.max(0, b.base - b.plannedY)} rx="4" class="pa__planned" />
+                        {b.reportedY !== null && <rect x={b.x + 5} y={b.reportedY} width={b.bw - 10} height={Math.max(0, b.base - b.reportedY)} rx="3" class="pa__reported" />}
+                        <text x={b.x + b.bw / 2} y={H - 8} text-anchor="middle" class:list={['pa__tick', b.status === 'current' && 'pa__tick--now']}>{b.year}</text>
+                      </g>
+                    ))}
+                  </svg>
+                </div>
+              );
+            })}
+          </div>
+          <ul class="pa__picker" role="list">
+            {s.measures.map((m, i) => {
+              const r = ring(m.percent, 11);
+              return (
+                <li>
+                  <button type="button" data-measure={i} aria-pressed={i === 0 ? 'true' : 'false'}>
+                    <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
+                      <circle cx="14" cy="14" r="11" class="pa__ring-track" stroke-width="4" />
+                      <circle cx="14" cy="14" r="11" class="pa__ring-fill" stroke-width="4" stroke-dasharray={r.dash} transform="rotate(-90 14 14)" />
+                    </svg>
+                    <span class="pa__picker-name typography-body-sm">{m.name}</span>
+                    <span class="typography-label-sm-strong">{m.percent}%</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </section>
+    )}
+
+    <section class="pa__panel" aria-labelledby="pa-money" data-money>
+      <div class="pa__panel-head">
+        <h2 id="pa-money" class="typography-title-strong">Money</h2>
+        <span class="pa__legend typography-body-sm"><i class="pa__key pa__key--reported"></i>Spent, cumulative <i class="pa__key pa__key--cost"></i>Estimated cost</span>
+      </div>
+      {reached.length > 0 ? (
+        <div class="pa__chart-wrap">
+          <svg class="pa__area" viewBox={`0 0 ${CW} ${CH}`} role="img" aria-label={`Spending to date: ${usd.format(s.spent)} of ${usd.format(s.cost)}`} data-area>
+            <defs>
+              <linearGradient id="pa-fill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stop-color="var(--color-background-brand)" stop-opacity="0.35" />
+                <stop offset="1" stop-color="var(--color-background-brand)" stop-opacity="0.02" />
+              </linearGradient>
+            </defs>
+            <line x1={CP.l} x2={CW - CP.r} y1={cy(s.cost)} y2={cy(s.cost)} class="pa__cost" />
+            <text x={CW - CP.r} y={cy(s.cost) - 6} text-anchor="end" class="pa__tick">{usdShort.format(s.cost)} estimated</text>
+            <path d={area} fill="url(#pa-fill)" />
+            <path d={line} class="pa__line" pathLength="1" />
+            {s.spending.map((e, i) => <text x={cx(i)} y={CH - 8} text-anchor={i === 0 ? 'start' : i === s.spending.length - 1 ? 'end' : 'middle'} class="pa__tick">{e.year}</text>)}
+            <g class="pa__cross" data-cross hidden>
+              <line y1={CP.t} y2={CH - CP.b} class="pa__cross-line" />
+              <circle r="5" class="pa__cross-dot" />
+            </g>
+          </svg>
+          <div class="pa__tip typography-body-sm" data-tip hidden></div>
+          <script type="application/json" data-points set:html={JSON.stringify(reached.map((e, i) => ({ x: cx(i) / CW, y: cy(e.cumulative) / CH, year: e.year, cumulative: usd.format(e.cumulative), spent: usd.format(e.spent) })))} />
+        </div>
+      ) : (
+        <p class="pa__quiet typography-body-md">Nothing spent yet.</p>
+      )}
+      {s.funding.length > 0 && (
+        <div class="pa__funding">
+          <div class="pa__segments">
+            {s.funding.map((f, i) => (
+              <div style={`flex:${f.share}`}>
+                <span class="pa__seg" style={`background:${SEG[Math.min(i, SEG.length - 1)]}`}></span>
+                <span class="typography-label-md-strong">{usdShort.format(f.amount)} · {Math.round(f.share * 100)}%</span>
+                <span class="pa__quiet typography-body-sm">{f.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+
+    {s.goals.length > 0 && (
+      <ul class="pa__goals cluster" data-gap="sm">
+        {s.goals.map((g) => <li><a href={g.href}><span set:html={iconSvg(g.icon, 22) ?? ''} aria-hidden="true" />{g.name}</a></li>)}
+      </ul>
+    )}
+    <p class="pa__story typography-body-lg">{s.description}</p>
+    <div class="pa__timeline"><Firma2ProjectTimeline milestones={s.milestones} readonly /></div>
+  </div>
+  <div class="pa__map"><Firma2ProjectMap detail={s.detail} readonly /></div>
+</div>
+
+<style>
+  .pa {
+    --_g: var(--firma2-public-gutter, var(--spacing-600));
+    --_ease: cubic-bezier(0.22, 1, 0.36, 1);
+    padding-block: var(--spacing-600) 0;
+  }
+  .pa p, .pa h1, .pa h2, .pa dl, .pa dd { margin: 0; }
+  .pa__quiet { color: var(--color-content-default-secondary); }
+  .pa__col { box-sizing: border-box; max-inline-size: 76rem; margin-inline: auto; padding-inline: var(--_g); display: grid; gap: var(--spacing-700); }
+
+  /* Monarch's goal banner: the photo with the progress card set into its foot. */
+  .pa__banner {
+    position: relative;
+    display: grid;
+    align-items: end;
+    min-block-size: clamp(22rem, 46vw, 30rem);
+    padding: var(--spacing-500);
+    border-radius: var(--radius-lg, 12px);
+    overflow: hidden;
+    background: var(--color-background-elevation-sunken);
+  }
+  .pa__banner img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; }
+  .pa__card {
+    position: relative;
+    display: grid;
+    gap: var(--spacing-400);
+    padding: var(--spacing-500);
+    border-radius: var(--radius-md);
+    background: var(--color-background-elevation-raised);
+    box-shadow: 0 8px 30px rgb(0 0 0 / 0.18);
+  }
+  .pa__card-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--spacing-300) var(--spacing-600); }
+  .pa__card-name { display: grid; gap: var(--spacing-200); }
+  .pa__card-name h1 { text-wrap: balance; }
+  .pa__card-money { display: grid; justify-items: end; align-content: start; text-align: end; }
+  .pa__pill { padding: 2px var(--spacing-200); border-radius: 999px; background: var(--color-background-brand-muted); color: var(--color-content-brand); font-weight: var(--typography-font-weight-semibold, 600); }
+  .pa__bar { block-size: 8px; border-radius: 999px; background: var(--color-border-default-subtle); overflow: hidden; }
+  .pa__bar span { display: block; block-size: 100%; border-radius: 999px; background: var(--color-background-brand); transform-origin: left; scale: var(--p) 1; }
+
+  /* Strava's stat row: label above, figure below, no boxes. */
+  .pa__stats { display: flex; flex-wrap: wrap; gap: var(--spacing-500) var(--spacing-800); }
+  .pa__stats dt { font-size: 0.875rem; color: var(--color-content-default-secondary); }
+  .pa__stats dd { font-family: var(--typography-font-family-display); font-size: 1.75rem; font-weight: var(--typography-font-weight-bold); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .pa__stats .pa__stat-text { font-size: 1.125rem; padding-block-start: 0.5rem; }
+  .pa__of { color: var(--color-content-default-secondary); font-weight: normal; }
+
+  .pa__panel { display: grid; gap: var(--spacing-500); padding: var(--spacing-600); border-radius: var(--radius-lg, 12px); background: var(--color-background-elevation-raised); border: 1px solid var(--color-border-subtle); }
+  .pa__panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--spacing-300); }
+  .pa__legend { display: inline-flex; align-items: center; gap: var(--spacing-200); color: var(--color-content-default-secondary); }
+  .pa__key { display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 3px; margin-inline-start: var(--spacing-300); }
+  .pa__key--planned { background: var(--color-border-default-subtle); }
+  .pa__key--reported { background: var(--color-background-brand); }
+  .pa__key--cost { block-size: 0; border-block-start: 2px dashed var(--color-content-default-secondary); border-radius: 0; inline-size: 14px; }
+
+  .pa__results { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: var(--spacing-700); }
+  .pa__focus-item { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: var(--spacing-400) var(--spacing-600); align-items: center; }
+  .pa__focus-item[hidden] { display: none; }
+  .pa__big-ring { position: relative; inline-size: 160px; block-size: 160px; }
+  .pa__ring-center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .pa__ring-center b { font-family: var(--typography-font-family-display); font-size: 2rem; letter-spacing: -0.02em; }
+  .pa__ring-track { fill: none; stroke: var(--color-border-default-subtle); }
+  .pa__ring-fill { fill: none; stroke: var(--color-background-brand); stroke-linecap: round; }
+  .pa__focus-item:not([hidden]) .pa__big-ring .pa__ring-fill { animation: pa-ring 900ms var(--_ease) both; }
+  @keyframes pa-ring { from { stroke-dashoffset: var(--c); } }
+  .pa__figure { font-family: var(--typography-font-family-display); font-size: clamp(2.25rem, 4vw, 3.25rem); font-weight: var(--typography-font-weight-bold); letter-spacing: -0.03em; line-height: 1; color: var(--color-content-brand); }
+  .pa__bars { grid-column: 1 / -1; inline-size: 100%; block-size: auto; overflow: visible; }
+  .pa__axis { stroke: var(--color-border-default); }
+  .pa__planned { fill: var(--color-border-default-subtle); }
+  .pa__reported { fill: var(--color-background-brand); transform-box: fill-box; transform-origin: bottom; }
+  .pa__focus-item:not([hidden]) .pa__reported { animation: pa-rise 600ms var(--_ease) both; animation-delay: var(--d); }
+  @keyframes pa-rise { from { scale: 1 0; } }
+  .pa__tick { font-size: 12px; fill: var(--color-content-default-secondary); font-variant-numeric: tabular-nums; }
+  .pa__tick--now { fill: var(--color-content-default); font-weight: 700; }
+
+  .pa__picker { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; align-content: start; }
+  .pa__picker button {
+    inline-size: 100%;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: var(--spacing-300);
+    align-items: center;
+    padding: var(--spacing-200) var(--spacing-300);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-content-default);
+    text-align: start;
+    font: inherit;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+  .pa__picker button[aria-pressed='true'] { background: var(--color-background-brand-muted); }
+  @media (hover: hover) and (pointer: fine) { .pa__picker button:hover:not([aria-pressed='true']) { background: var(--color-background-elevation-sunken); } }
+  .pa__picker button:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color); outline-offset: 1px; }
+
+  .pa__chart-wrap { position: relative; }
+  .pa__area { inline-size: 100%; block-size: auto; overflow: visible; }
+  .pa__cost { stroke: var(--color-content-default-secondary); stroke-width: 1.5; stroke-dasharray: 6 5; }
+  .pa__line { fill: none; stroke: var(--color-background-brand); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 1; animation: pa-draw 1200ms var(--_ease) both; }
+  @keyframes pa-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+  .pa__cross[hidden] { display: none; }
+  .pa__cross-line { stroke: var(--color-content-default); stroke-width: 1; stroke-dasharray: 3 3; }
+  .pa__cross-dot { fill: var(--color-background-brand); stroke: var(--color-background-elevation-raised); stroke-width: 3; }
+  .pa__tip { position: absolute; translate: -50% calc(-100% - 12px); padding: var(--spacing-200) var(--spacing-300); border-radius: var(--radius-md); background: var(--color-background-inverse); color: var(--color-content-inverse); white-space: nowrap; pointer-events: none; }
+  .pa__tip[hidden] { display: none; }
+  .pa__segments { display: flex; gap: var(--spacing-200); }
+  .pa__segments > div { display: grid; gap: var(--spacing-100); min-inline-size: 0; }
+  .pa__seg { block-size: 12px; border-radius: 999px; }
+
+  .pa__goals { margin: 0; padding: 0; list-style: none; }
+  .pa__goals a { display: inline-flex; align-items: center; gap: var(--spacing-200); padding: var(--spacing-200) var(--spacing-400); border-radius: 999px; background: var(--color-background-brand-muted); color: var(--color-content-default); text-decoration: none; font-weight: var(--typography-font-weight-medium); }
+  .pa__goals a span { display: grid; color: var(--color-content-brand); }
+  .pa__story { max-inline-size: 62ch; text-wrap: pretty; }
+  .pa__map { margin-block-start: var(--spacing-900); --firma2-pane-padding: 0px; --firma2-map-plate-inset-inline-start: max(var(--_g), calc((100vw - 76rem) / 2 + var(--_g))); }
+
+  @media (max-width: 64rem) {
+    .pa__results { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 45rem) {
+    .pa__focus-item { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+    .pa__segments { flex-direction: column; }
+    .pa__card-money { justify-items: start; text-align: start; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pa__line, .pa__reported, .pa__ring-fill { animation: none !important; }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-results]').forEach((panel) => {
+    const buttons = Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-measure]'));
+    const items = Array.from(panel.querySelectorAll<HTMLElement>('[data-measure-panel]'));
+    buttons.forEach((button) =>
+      button.addEventListener('click', () => {
+        buttons.forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
+        items.forEach((item) => (item.hidden = item.dataset.measurePanel !== button.dataset.measure));
+      }),
+    );
+  });
+
+  // The money chart's crosshair: nearest year to the pointer.
+  document.querySelectorAll<HTMLElement>('.pa__chart-wrap').forEach((wrap) => {
+    const svg = wrap.querySelector<SVGSVGElement>('[data-area]')!;
+    const cross = svg.querySelector<SVGGElement>('[data-cross]')!;
+    const tip = wrap.querySelector<HTMLElement>('[data-tip]')!;
+    const points: { x: number; y: number; year: number; cumulative: string; spent: string }[] = JSON.parse(wrap.querySelector('[data-points]')!.textContent ?? '[]');
+    const vb = svg.viewBox.baseVal;
+    svg.addEventListener('pointermove', (e) => {
+      const box = svg.getBoundingClientRect();
+      const fx = (e.clientX - box.left) / box.width;
+      const p = points.reduce((best, q) => (Math.abs(q.x - fx) < Math.abs(best.x - fx) ? q : best), points[0]);
+      cross.removeAttribute('hidden');
+      cross.querySelector('line')!.setAttribute('x1', String(p.x * vb.width));
+      cross.querySelector('line')!.setAttribute('x2', String(p.x * vb.width));
+      cross.querySelector('circle')!.setAttribute('cx', String(p.x * vb.width));
+      cross.querySelector('circle')!.setAttribute('cy', String(p.y * vb.height));
+      tip.hidden = false;
+      tip.style.left = `${p.x * 100}%`;
+      tip.style.top = `${p.y * 100}%`;
+      tip.innerHTML = `<b>${p.year}</b> · ${p.spent} spent · ${p.cumulative} to date`;
+    });
+    svg.addEventListener('pointerleave', () => {
+      cross.setAttribute('hidden', '');
+      tip.hidden = true;
+    });
+  });
+</script>

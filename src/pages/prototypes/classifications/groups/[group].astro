@@ -1,0 +1,88 @@
+---
+// Classification group — one page per group, adding up everything filed
+// beneath it (user, 2026-11-23). Groups nest to any depth, and a group
+// carries what a classification does: a colour, a description, and a page of
+// its own. The door is "Open group" on the Classifications board, and the
+// group crumbs on a classification's page.
+//
+// The brief's five (docs/product-brief.md §5):
+//
+// 1. ONE QUESTION: "What does this whole branch of our work add up to, and
+//    what is in it?"
+// 2. READERS: the executive and program manager reading one level above a
+//    goal; a funder or partner sent the link. WHO IS NOT HERE: the
+//    administrator arranging groups — that is Workspace settings.
+// 3. SERIES/SCALAR: the description and four totals are scalars; what is in
+//    the group is the Classifications board, scoped to it; the measures are a
+//    series; the projects are the portfolio grid, filtered.
+// 4. IRREVERSIBLE: nothing. The page reads.
+// 5. CUT: targets on the group (targets are set on classifications, and two
+//    of them on one measure can be due in different years, so the page does
+//    not add them up — each measure reads against what its projects planned),
+//    and measures of the group's own (a group has none; it shows the measures
+//    of the classifications beneath it).
+//
+// COUNTED ONCE. A project filed under two classifications of this group is
+// one project here, and its report toward a measure counts once.
+//
+// FAKED: a group added in this browser has no page here (a static site cannot
+// build one); its "Open group" opens its settings page instead. Measures
+// linked or unlinked in Workspace settings do not move this page's roll-up.
+//
+// Same spine as a classification's page. Zero page CSS.
+import AppLayout from '../../../../layouts/AppLayout.astro';
+import Firma2PageHeader from '../../../../components/shared/firma2-page-header.astro';
+import Firma2ProjectPeekLayout from '../../../../components/projects/firma2-project-peek-layout.astro';
+import Firma2ClassificationSummary from '../../../../components/classifications/firma2-classification-summary.astro';
+import Firma2GoalBoard from '../../../../components/classifications/firma2-goal-board.astro';
+import Firma2ClassificationMeasures from '../../../../components/classifications/firma2-classification-measures.astro';
+import Firma2ClassificationProjects from '../../../../components/classifications/firma2-classification-projects.astro';
+import Firma2ClassificationFunding from '../../../../components/classifications/firma2-classification-funding.astro';
+import { CLASSIFICATION_GROUPS, groupPath } from '../../../../data/firma2-classifications';
+import type { ClassificationGroup } from '../../../../data/firma2-classifications';
+import { classificationGroupHref, groupFigures, rollupGroup } from '../../../../data/firma2-classification-rollup';
+import { projectHref } from '../../../../data/firma2-projects';
+import { withBase } from '../../../../lib/base';
+
+export function getStaticPaths() {
+  return CLASSIFICATION_GROUPS.map((group) => ({ params: { group: group.slug }, props: { group } }));
+}
+
+interface Props {
+  group: ClassificationGroup;
+}
+
+const { group } = Astro.props;
+const rollup = rollupGroup(group);
+const figures = groupFigures(rollup, (p) => withBase(projectHref(p)));
+---
+<!-- manifest:
+  layout: firma2-project-peek-layout > stack(xl)
+  sections:
+    - project peek  -> firma2-project-peek-layout     (docked rail, opened from a grid row)
+    - page header   -> firma2-page-header
+    - summary       -> firma2-classification-summary  (description + four totals, kind=classificationGroup)
+    - contents      -> firma2-goal-board              (root=this group: its classifications, then the groups inside it)
+    - measures      -> firma2-classification-measures (the measures beneath it, added up)
+    - projects      -> firma2-classification-projects (the portfolio grid, filtered)
+    - funders       -> firma2-classification-funding  (funding by funder, with the grants as data)
+-->
+<AppLayout title={`${group.name} — Classifications — ProjectFirma 2.0`} active="classifications" width="full">
+  <Firma2ProjectPeekLayout>
+    <div class="stack" data-gap="xl">
+      <Firma2PageHeader
+        title={group.name}
+        crumbs={[
+          { label: 'Classifications', href: withBase('/prototypes/classifications'), aliasable: true },
+          ...groupPath(group.slug).slice(0, -1).map((g) => ({ label: g.name, href: withBase(classificationGroupHref(g.slug)) })),
+          { label: group.name },
+        ]}
+      />
+      <Firma2ClassificationSummary classification={group} rollup={rollup} kind="classificationGroup" />
+      <Firma2GoalBoard root={group.slug} peek={false} />
+      <Firma2ClassificationMeasures slug={`group:${group.slug}`} kpis={rollup.kpis} figures={figures} />
+      <Firma2ClassificationProjects projects={rollup.projects} />
+      <Firma2ClassificationFunding funding={rollup.funding} projects={rollup.projects} />
+    </div>
+  </Firma2ProjectPeekLayout>
+</AppLayout>

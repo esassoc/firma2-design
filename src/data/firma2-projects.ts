@@ -16,6 +16,13 @@
 //
 // Deterministic by construction — a literal array, no generated values, so
 // every demo run renders the identical table.
+//
+// IN DEV, A REAL WORKSPACE REPLACES THE ARRAY when one has been pulled to
+// docs/private/ (src/data/firma2-real-data.ts). Builds never see it. The name
+// unions below describe the invented vocabulary; a real workspace's names are
+// its own.
+
+import { realProjects } from './firma2-real-data';
 
 /**
  * THREE WAYS A PROJECT IS FILED, each answering a different question
@@ -150,7 +157,7 @@ export interface Project {
   estimatedAnnualOperatingCost: number;
 }
 
-export const projects: Project[] = [
+const MOCK_PROJECTS: Project[] = [
   { projectName: 'Deer Creek Riparian Corridor Enhancement', projectType: 'Riparian revegetation', classifications: ['Salmon & steelhead recovery', 'Riparian & wetland habitat', 'Native planting'], tags: ['Volunteer-led', 'Private landowners', 'Education & outreach'], leadOrganization: 'Deer Creek Watershed Alliance', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2023, completionYear: 2027, estimatedTotalCost: 412000, estimatedAnnualOperatingCost: 18000 },
   { projectName: 'Scott River Fish Passage Barrier Removal', projectType: 'Fish passage', classifications: ['Salmon & steelhead recovery', 'Barrier removal & fish screens'], tags: ['Private landowners'], leadOrganization: 'Scott Valley Resource District', county: 'Placer', stage: 'Planning & Design', implementationStartYear: 2025, completionYear: 2028, estimatedTotalCost: 1240000, estimatedAnnualOperatingCost: 6500 },
   { projectName: 'Suisun Slough Tidal Marsh Enhancement', projectType: 'Meadow & wetland restoration', classifications: ['Riparian & wetland habitat', 'Flood risk reduction', 'Meadow & marsh rewetting'], tags: ['Climate adaptation'], leadOrganization: 'Suisun Basin Conservancy', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2022, completionYear: 2026, estimatedTotalCost: 876500, estimatedAnnualOperatingCost: 41000 },
@@ -177,6 +184,22 @@ export const projects: Project[] = [
   { projectName: 'Arroyo Seco Urban Greenway', projectType: 'Stormwater & water quality', classifications: ['Water quality', 'Public access & recreation', 'Stormwater capture'], tags: ['Education & outreach', 'Volunteer-led'], leadOrganization: 'Central LA Watershed Coalition', county: 'Placer', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2030, estimatedTotalCost: 3120000, estimatedAnnualOperatingCost: 115000 },
 ];
 
+export const projects: Project[] = realProjects ?? MOCK_PROJECTS;
+
+/**
+ * The project a fixture means when it names one of the invented ones. Sample
+ * files, sync conflicts and publish seeds each tell a story about a particular
+ * record; in a real workspace (dev only) the story lands on a real project at
+ * the same stage, chosen by the invented one's position so it never moves.
+ */
+export const demoProjectName = (inventedName: string): string => {
+  if (!realProjects) return inventedName;
+  const at = Math.max(0, MOCK_PROJECTS.findIndex((p) => p.projectName === inventedName));
+  const sameStage = realProjects.filter((p) => p.stage === MOCK_PROJECTS[at].stage);
+  const pool = sameStage.length ? sameStage : realProjects;
+  return pool[at % pool.length].projectName;
+};
+
 /**
  * URL-safe id for a project, derived from its name rather than stored beside it.
  *
@@ -196,6 +219,14 @@ export const projectSlug = (project: Project): string =>
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+
+/** demoProjectName, for a fixture that holds the invented project's slug. */
+export const demoProjectSlug = (inventedSlug: string): string => {
+  if (!realProjects) return inventedSlug;
+  const invented = MOCK_PROJECTS.find((p) => projectSlug(p) === inventedSlug);
+  const name = demoProjectName(invented?.projectName ?? '');
+  return projectSlug(projects.find((p) => p.projectName === name)!);
+};
 
 /**
  * Route to a project's detail page. Root-relative and BASE-LESS — wrap with
@@ -260,13 +291,23 @@ const RECENTLY_VIEWED: { projectName: string; viewedAt: string }[] = [
 
 const projectsByName = new Map(projects.map((p) => [p.projectName, p]));
 
+// A real workspace has no record of what this reader opened: its four most
+// recently started projects stand in, under the same labels.
+const recentSeed: { projectName: string; viewedAt: string }[] = realProjects
+  ? [...realProjects]
+      .sort((a, b) => b.implementationStartYear - a.implementationStartYear || a.projectName.localeCompare(b.projectName))
+      .filter((p) => p.stage !== 'Proposal')
+      .slice(0, RECENTLY_VIEWED.length)
+      .map((p, i) => ({ projectName: p.projectName, viewedAt: RECENTLY_VIEWED[i].viewedAt }))
+  : RECENTLY_VIEWED;
+
 /**
  * Most recent first — the order the Recently viewed row renders. Resolved by
  * name against `projects` so the row can never drift into showing a stage,
  * organization, or cost the table disagrees with; renaming a project without
  * updating RECENTLY_VIEWED fails the build instead of silently dropping a card.
  */
-export const recentlyViewed: RecentlyViewedProject[] = RECENTLY_VIEWED.map(
+export const recentlyViewed: RecentlyViewedProject[] = recentSeed.map(
   ({ projectName, viewedAt }) => {
     const project = projectsByName.get(projectName);
     if (!project) {

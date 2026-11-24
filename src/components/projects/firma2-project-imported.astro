@@ -1,0 +1,173 @@
+---
+// firma2-project-imported — what Import a report left on this project, as the
+// project page sees it. Import a report is its own page now
+// (.scratch/project-updates/spec.md, decision 7); this is the project page's
+// half of the round trip. Mounted once, it draws nothing but a toast.
+//
+// THREE JOBS, ALL READ FROM src/lib/report-imports.ts:
+//
+//   1. APPLY ON LOAD. The record fields an import set (the timeline, a county)
+//      are written through firma2-editable-field's own set path
+//      (firma2:field-set), so the record shows what the imports left it as.
+//      Same moment firma2-project-publish-state applies the review's reverts,
+//      and A REVERT WINS whichever script runs first: a change reverted in the
+//      review is skipped here, and so is any field a seeded revert holds.
+//
+//   2. ANNOUNCE AND UNDO (decision 18). The import page returns here with
+//      ?imported=<id>. One toast names the count and the document and offers
+//      Undo; the parameter is then stripped so a reload does not repeat it.
+//      Undo takes the import out of the store, puts each field back to what it
+//      read before, and tells the measures table to repaint. Contacts, funding
+//      sources and the change history repaint themselves on the store's event.
+//
+//   3. DROP A FILE ANYWHERE (decision 8). A readable file dropped on the page
+//      is kept for the import page (stashHandoff) and the page opens with it
+//      loaded. Images and shapefiles are not ours, and neither is anything
+//      aimed at another section's drop zone or at a text editor. No overlay:
+//      the browser's copy cursor is the affordance, and the import page is
+//      where the file is seen.
+//
+// THE TOAST CARRIES AN ACTION, which esa-snackbar-container supports and
+// discourages: a live region reads "Undo" as a word, not a button, and focus
+// never moves to it. Decision 18 asks for exactly this toast, so it is used,
+// and it stays until dismissed (no timer) so the control cannot vanish first.
+// Whether Undo also needs a home in the document is open.
+//
+// Lego-only: esa-snackbar-container is the whole markup, and it carries the
+// slug so firma2-project-contacts (mounted by the rail, which has no slug to
+// pass) can find the project. Rendered only for a project with a reading.
+import { DROPPED_PARAM, IMPORTED_PARAM, IMPORT_FIXTURES, reportImportHref } from '../../data/firma2-report-import';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** The project's slug: the key every import store reads by. */
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const canImport = Boolean(IMPORT_FIXTURES[slug]);
+---
+{canImport && (
+  <esa-snackbar-container
+    class="firma2-project-imported"
+    label="Import notifications"
+    data-project-imported
+    data-slug={slug}
+    data-import-href={withBase(reportImportHref(slug))}
+    data-imported-param={IMPORTED_PARAM}
+    data-dropped-param={DROPPED_PARAM}
+  ></esa-snackbar-container>
+)}
+
+<script>
+  import '@esa/ecology/esa-snackbar-container';
+  import { readPublishing } from '../../lib/publish-store';
+  import { findImport, importedChanges, stashHandoff, undoImport } from '../../lib/report-imports';
+  import type { ReportImport } from '../../lib/report-imports';
+
+  type Toasts = HTMLElement & {
+    show: (config: { message: string; variant?: string; action?: string }) => string;
+    dismiss: (id: string) => void;
+  };
+
+  const root = document.querySelector<Toasts>('[data-project-imported]');
+  if (root) {
+    const slug = root.dataset.slug!;
+    const importHref = root.dataset.importHref!;
+
+    const setField = (field: string, raw: string): void => {
+      document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: { field, raw } }));
+    };
+
+    // ---- 1. apply on load -----------------------------------------------------
+    // A later import wins a field; a revert recorded in the review wins over
+    // both. Reverts of seeded changes name their field on publish-state's root.
+    const apply = (): void => {
+      const reverted = new Set(readPublishing().reverted[slug] ?? []);
+      const seeded: Record<string, { field: string }> = JSON.parse(
+        document.querySelector<HTMLElement>('.firma2-project-publish-state')?.dataset.reverts ?? '{}',
+      );
+      const held = new Set([...reverted].flatMap((key) => (seeded[key] ? [seeded[key].field] : [])));
+      const fields: Record<string, string> = {};
+      importedChanges(slug).forEach((change) => {
+        if (change.field && !reverted.has(change.key)) fields[change.field.key] = change.field.raw;
+      });
+      Object.entries(fields).forEach(([field, raw]) => {
+        if (!held.has(field)) setField(field, raw);
+      });
+    };
+    if (document.readyState === 'complete') apply();
+    else window.addEventListener('load', apply, { once: true });
+
+    // ---- 2. announce and undo -------------------------------------------------
+    const counted = (n: number): string => `${n} change${n === 1 ? '' : 's'}`;
+    const documentName = (record: ReportImport): string =>
+      record.document.kind === 'text' ? 'pasted text' : record.document.name;
+
+    const announce = async (record: ReportImport): Promise<void> => {
+      await customElements.whenDefined('esa-snackbar-container');
+      const total = counted(record.changes.length);
+      const toast = root.show({
+        message: `${total} added from ${documentName(record)}`,
+        variant: 'success',
+        action: 'Undo',
+      });
+      const onAction = async (event: Event): Promise<void> => {
+        if ((event as CustomEvent<{ id: string }>).detail?.id !== toast) return;
+        root.removeEventListener('snackbar-action', onAction);
+        root.dismiss(toast);
+        const undone = await undoImport(slug, record.id);
+        if (!undone) return;
+        // Newest change first, so a field two changes touched ends on the
+        // value it read before the import; then whatever earlier imports set.
+        [...undone.changes].reverse().forEach((change) => {
+          if (change.field) setField(change.field.key, change.field.previousRaw);
+        });
+        apply();
+        document.dispatchEvent(new Event('firma2:entries-change'));
+        root.show({ message: `${total} removed`, variant: 'info' });
+      };
+      root.addEventListener('snackbar-action', onAction);
+    };
+
+    const param = root.dataset.importedParam!;
+    const url = new URL(window.location.href);
+    const importedId = url.searchParams.get(param);
+    if (importedId) {
+      url.searchParams.delete(param);
+      history.replaceState(history.state, '', url);
+      const record = findImport(slug, importedId);
+      if (record) void announce(record);
+    }
+
+    // ---- 3. drop a file anywhere on the project -------------------------------
+    const READABLE_NAME = /\.(pdf|docx?|xlsx?|csv)$/i;
+    const READABLE_TYPE = /pdf|sheet|excel|csv|msword|wordprocessing/;
+
+    const carriesReadable = (event: DragEvent): boolean => {
+      const items = [...(event.dataTransfer?.items ?? [])].filter((item) => item.kind === 'file');
+      return items.some((item) => item.type === '' || READABLE_TYPE.test(item.type));
+    };
+    const aimedElsewhere = (event: DragEvent): boolean =>
+      event.composedPath().some(
+        (node) => node instanceof Element && node.matches('esa-file-upload, [contenteditable="true"], [data-drop-zone]'),
+      );
+
+    document.addEventListener('dragover', (event) => {
+      if (!carriesReadable(event) || aimedElsewhere(event)) return;
+      // Without this the browser refuses the drop and opens the file instead.
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    });
+    document.addEventListener('drop', async (event) => {
+      if (!carriesReadable(event) || aimedElsewhere(event)) return;
+      event.preventDefault();
+      const dropped = [...(event.dataTransfer?.files ?? [])].find((f) => READABLE_NAME.test(f.name));
+      if (!dropped) return;
+      // A browser that could not keep the file still opens the page; the
+      // person picks the file there.
+      const kept = await stashHandoff(slug, dropped).catch(() => false);
+      window.location.assign(kept ? `${importHref}?${root.dataset.droppedParam}=1` : importHref);
+    });
+  }
+</script>

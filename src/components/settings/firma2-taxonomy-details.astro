@@ -14,8 +14,14 @@
 // A PROJECT TYPE ALSO CARRIES GUIDANCE: one line on when to pick it and how to
 // fill in the rest, shown under every project type picker once this type is
 // chosen (src/lib/vocabulary-guidance.ts). Written once here, on the list.
+//
+// A CLASSIFICATION GROUP ALSO CARRIES A COLOUR AND A PLACE (user, 2026-11-23):
+// its swatch, and the group it sits inside — "None" at the top level. The
+// parent list leaves out the group itself and every group beneath it, so a
+// group cannot be moved inside its own branch. Group pickers offer each group
+// by its full path, parents before children.
 import Firma2RailSection from '../shared/firma2-rail-section.astro';
-import { CLASSIFICATION_GROUPS } from '../../data/firma2-classifications';
+import { CLASSIFICATION_GROUPS, groupPath } from '../../data/firma2-classifications';
 import type { TaxonomyKind } from '../../lib/taxonomy-edits';
 
 interface Props {
@@ -27,7 +33,8 @@ interface Props {
 }
 
 const { kind, slug, noun } = Astro.props;
-const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g.name }));
+// The build's list is only the no-script fallback; the script offers the store's.
+const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: groupPath(g.slug).map((x) => x.name).join(' › ') }));
 ---
 <Firma2RailSection title="Details">
 <div class="firma2-taxonomy-details stack" data-gap="md" data-kind={kind} data-slug={slug} data-noun={noun}>
@@ -39,6 +46,10 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
   {kind === 'classification' && (
     <esa-select label="Group" size="md" options={JSON.stringify(groupOptions)} data-group></esa-select>
   )}
+  {kind === 'classificationGroup' && (
+    <esa-select label="Parent group" size="md" options={JSON.stringify([{ value: 'none', label: 'None' }])} data-parent></esa-select>
+  )}
+  {kind === 'classificationGroup' && <esa-color-picker label="Color" size="md" show-input data-color></esa-color-picker>}
 </div>
 </Firma2RailSection>
 
@@ -46,7 +57,8 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-textarea';
   import '@esa/ecology/esa-select';
-  import { editEntry, entries, getEntry, nameTaken } from '../../lib/taxonomy-edits';
+  import '@esa/ecology/esa-color-picker';
+  import { editEntry, getEntry, groupMoveTargets, groupOutline, nameTaken } from '../../lib/taxonomy-edits';
   import type { TaxonomyKind } from '../../lib/taxonomy-edits';
   import { recordSlug, retitle } from '../../lib/taxonomy-record';
   import { guidanceByKey, setGuidance } from '../../lib/vocabulary-guidance';
@@ -62,6 +74,10 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
     const description = root.querySelector<Field>('[data-description]')!;
     const group = root.querySelector<Field>('[data-group]');
     const guidance = root.querySelector<Field>('[data-guidance]');
+    const parent = root.querySelector<Field>('[data-parent]');
+    const color = root.querySelector<Field>('[data-color]');
+    // esa-select has no empty value to offer; "None" stands for the top level.
+    const TOP = 'none';
 
     retitle(entry.name);
     Promise.all(['esa-text-field', 'esa-textarea', 'esa-select'].map((t) => customElements.whenDefined(t))).then(() => {
@@ -70,10 +86,23 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
       if (guidance) guidance.value = guidanceByKey('projectType', slug);
       if (group) {
         // From the store, so a group added in this browser can be chosen.
-        (group as Field & { options: unknown }).options = entries('classificationGroup').map((g) => ({ value: g.slug, label: g.name }));
+        (group as Field & { options: unknown }).options = groupOutline().map((o) => ({ value: o.entry.slug, label: o.label }));
         group.value = entry.group ?? '';
       }
+      if (parent) {
+        (parent as Field & { options: unknown }).options = [
+          { value: TOP, label: 'None' },
+          ...groupMoveTargets(slug).map((o) => ({ value: o.entry.slug, label: o.label })),
+        ];
+        parent.value = entry.group || TOP;
+      }
     });
+    if (color) {
+      customElements.whenDefined('esa-color-picker').then(() => (color.value = entry.color ?? '#646464'));
+      color.addEventListener('change', () => {
+        if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color.value ?? '')) editEntry(kind, slug, { color: color.value });
+      });
+    }
 
     name.addEventListener('input', () => {
       if (name.errorText) name.errorText = '';
@@ -91,5 +120,8 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
     description.addEventListener('change', () => editEntry(kind, slug, { description: (description.value ?? '').trim() }));
     guidance?.addEventListener('change', () => setGuidance('projectType', slug, guidance.value ?? ''));
     group?.addEventListener('change', () => editEntry(kind, slug, { group: group.value }));
+    // The crumbs name the old place until the page is opened again; the
+    // settings list shows the new one at once.
+    parent?.addEventListener('change', () => editEntry(kind, slug, { group: parent.value === TOP ? '' : parent.value }));
   });
 </script>

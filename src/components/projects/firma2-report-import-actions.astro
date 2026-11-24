@@ -1,0 +1,71 @@
+---
+// firma2-report-import-actions — Import a report's acts, in the pinned top bar
+// so the commit stays in reach however long the list of changes runs.
+//
+// ONE PRIMARY AT A TIME. Choosing a document: "Read it". Checking what was
+// read: "Add 9 changes", which states the count because the count is the whole
+// confirmation. The page above lists every change, and the project page offers
+// Undo, so there is no second "Are you sure?". It is disabled only when
+// nothing is ticked, and then it says so.
+//
+// Cancel is a link back to the project: nothing is written until Add, so
+// leaving needs no warning.
+//
+// It paints from firma2-project-report-import's state event and sends each
+// click back as one; the two never reach into each other's markup.
+//
+// bcn-lego-checked: esa-buttons in a cluster; the spans carry `hidden` because
+// esa-button's own display rule beats [hidden].
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+interface Props {
+  /** The project page. */
+  cancelHref: string;
+}
+
+const { cancelHref } = Astro.props;
+---
+<span class="firma2-report-import-actions cluster" data-gap="xs">
+  <EsaButton variant="ghost" size="md" tag="a" href={cancelHref}>Cancel</EsaButton>
+  <span data-restart-wrap hidden><EsaButton variant="secondary" appearance="outline" size="md" data-restart>Read another</EsaButton></span>
+  <span data-read-wrap><EsaButton variant="primary" size="md" data-read>Read it</EsaButton></span>
+  <span data-add-wrap hidden><EsaButton variant="primary" size="md" data-add>Add changes</EsaButton></span>
+</span>
+
+<style>
+  .firma2-report-import-actions [hidden] {
+    display: none !important;
+  }
+
+  /* "Add 9 changes" changes as rows are ticked: equal-width digits keep the
+     button from changing width with every count. */
+  .firma2-report-import-actions :global(.esa-button__label) {
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('.firma2-report-import-actions').forEach((root) => {
+    const restartWrap = root.querySelector<HTMLElement>('[data-restart-wrap]')!;
+    const readWrap = root.querySelector<HTMLElement>('[data-read-wrap]')!;
+    const addWrap = root.querySelector<HTMLElement>('[data-add-wrap]')!;
+    const add = root.querySelector<HTMLButtonElement>('[data-add]')!;
+    const addButton = addWrap.querySelector<HTMLElement>('.esa-button')!;
+    const addLabel = add.querySelector('.esa-button__label') ?? add;
+
+    document.addEventListener('firma2:report-import-state', (event) => {
+      const { step, count } = (event as CustomEvent<{ step: string; count: number }>).detail;
+      readWrap.hidden = step !== 'read';
+      restartWrap.hidden = step !== 'review';
+      addWrap.hidden = step !== 'review';
+      addLabel.textContent = count === 0 ? 'Nothing ticked' : `Add ${count} ${count === 1 ? 'change' : 'changes'}`;
+      add.disabled = count === 0;
+      addButton.classList.toggle('esa-button--disabled', count === 0);
+    });
+
+    const act = (name: string) => () => document.dispatchEvent(new CustomEvent('firma2:report-import-act', { detail: { act: name } }));
+    root.querySelector('[data-read]')!.addEventListener('click', act('read'));
+    root.querySelector('[data-restart]')!.addEventListener('click', act('restart'));
+    add.addEventListener('click', act('add'));
+  });
+</script>

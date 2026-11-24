@@ -24,6 +24,18 @@
 // (src/lib/hugeicon-markup.ts loadCatalog), loaded on demand.
 import {
   Activity01Icon,
+  Sun03Icon,
+  Moon02Icon,
+
+  CloudBigRainIcon,
+  FishIcon,
+  Plant01Icon,
+  DropletIcon,
+  WaterPumpIcon,
+  FireIcon,
+  HikingIcon,
+  Target02Icon,
+
   Alert02Icon,
   AlertCircleIcon,
   Archive02Icon,
@@ -125,6 +137,18 @@ import { ICON_PATHS as LUCIDE_PATHS } from '../../node_modules/@esa/ecology/src/
 
 /** Hub registry name (plus names the spoke looks up) → Hugeicons glyph. */
 const MAP: Record<string, unknown> = {
+  // The public header's theme switch (firma2-public-header).
+  sun: Sun03Icon,
+  moon: Moon02Icon,
+  // Plan goals on the public home (firma2-public-goals), by Lucide name.
+  fish: FishIcon,
+  sprout: Plant01Icon,
+  droplet: DropletIcon,
+  'glass-water': WaterPumpIcon,
+  flame: FireIcon,
+  'cloud-rain-wind': CloudBigRainIcon,
+  footprints: HikingIcon,
+  target: Target02Icon,
   home: Home01Icon,
   settings: Settings01Icon,
   plus: PlusSignIcon,

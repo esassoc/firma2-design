@@ -7,7 +7,7 @@
 // read the same ArcGIS, so a reviewer comparing them compares flows, not data.
 
 import { SHARED_LAYERS, UNMAPPED_PROJECTS } from './firma2-geography';
-import { projects } from './firma2-projects';
+import { demoProjectName, projects } from './firma2-projects';
 
 export const ARCGIS_ACCOUNT = { org: 'Cosumnes Basin GIS', email: 'gis.admin@cosumnesbasin.example' };
 
@@ -91,19 +91,19 @@ export interface Conflict {
 
 export const CONFLICTS: Conflict[] = [
   {
-    project: 'Bear River Gravel Augmentation',
+    project: demoProjectName('Bear River Gravel Augmentation'),
     field: 'stage',
     layer: { value: 'Monitoring', at: '2026-10-01T14:05:00' },
     app: { value: 'Implementation', at: '2026-10-01T14:10:00' },
   },
   {
-    project: 'Yuba Headwaters Fuels Reduction',
+    project: demoProjectName('Yuba Headwaters Fuels Reduction'),
     field: 'leadOrganization',
     layer: { value: 'Yuba Headwaters Partnership Inc.', at: '2026-10-01T09:30:00' },
     app: { value: 'Yuba Headwaters Partnership', at: '2026-10-01T16:42:00' },
   },
   {
-    project: 'Battle Creek Diversion Screening',
+    project: demoProjectName('Battle Creek Diversion Screening'),
     field: 'estimatedTotalCost',
     layer: { value: '$2,040,000', at: '2026-10-01T11:15:00' },
     app: { value: '$1,985,000', at: '2026-10-01T13:20:00' },

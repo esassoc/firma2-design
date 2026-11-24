@@ -19,6 +19,7 @@
 
 import { projects } from './firma2-projects';
 import type { TagName } from './firma2-projects';
+import { REAL, realTagNames, slugOf } from './firma2-real-data';
 
 export interface TagGroup {
   slug: string;
@@ -47,13 +48,13 @@ export const TAG_COLORS = ['#0d74ce', '#167a7a', '#218358', '#2a7e3b', '#ab6400'
 
 export const randomTagColor = (): string => TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
 
-export const TAG_GROUPS: TagGroup[] = [
+const MOCK_TAG_GROUPS: TagGroup[] = [
   { slug: 'partners', name: 'Partners', description: '', color: '#6a5aa8' },
   { slug: 'community', name: 'Community', description: '', color: '#0d74ce' },
   { slug: 'climate-and-fire', name: 'Climate & fire', description: '', color: '#b5621f' },
 ];
 
-export const TAGS: Tag[] = [
+const MOCK_TAGS: Tag[] = [
   { slug: 'tribal-partnership', name: 'Tribal partnership', description: 'A tribe is a partner in planning, doing or monitoring the work.', group: 'partners', color: '#6a5aa8' },
   { slug: 'private-landowners', name: 'Private landowners', description: 'The work touches private land and depends on landowner agreements.', group: 'partners', color: '#1f3a5f' },
   { slug: 'volunteer-led', name: 'Volunteer-led', description: 'Volunteers do a substantial share of the field work.', group: 'community', color: '#167a7a' },
@@ -61,6 +62,14 @@ export const TAGS: Tag[] = [
   { slug: 'climate-adaptation', name: 'Climate adaptation', description: 'Designed for higher temperatures, sea-level rise or shifting flows.', group: 'climate-and-fire', color: '#218358' },
   { slug: 'post-fire-recovery', name: 'Post-fire recovery', description: 'Responds to damage from a recent wildfire.', group: 'climate-and-fire', color: '#a8324a' },
 ];
+
+// A real workspace (dev only): the tenant's "Project Types" system is a set of
+// yes/no labels with no measures, which is what a tag is here.
+export const TAG_GROUPS: TagGroup[] = REAL ? [] : MOCK_TAG_GROUPS;
+
+export const TAGS: Tag[] = REAL
+  ? realTagNames.map((name, i) => ({ slug: slugOf(name), name: name as TagName, description: '', group: '', color: TAG_COLORS[i % TAG_COLORS.length] }))
+  : MOCK_TAGS;
 
 /** How many projects carry each tag — the settings list and the filter read it. */
 export const tagCount = (name: TagName): number => projects.filter((p) => p.tags.includes(name)).length;

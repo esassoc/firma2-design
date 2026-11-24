@@ -62,4 +62,8 @@ export const imageId = (photo: ProjectPhoto): string => {
 // so opening a photo enlarges it rather than reframing it.
 /** An exact crop from the CDN, so every surface gets a uniform frame whatever the source's native shape. */
 export const photoSrc = (photo: ProjectPhoto, w: number, h: number, q = 60): string =>
-  `https://images.unsplash.com/photo-${imageId(photo)}?auto=format&fit=crop&w=${w}&h=${h}&q=${q}`;
+  // A real workspace's own photo (dev only), sized by the tenant's file service
+  // to fit the frame; the surface's object-fit does the cropping.
+  photo.src
+    ? photo.src.replace('/DisplayResource/', '/GetFileResourceResized/') + `/${w}/${h}`
+    : `https://images.unsplash.com/photo-${imageId(photo)}?auto=format&fit=crop&w=${w}&h=${h}&q=${q}`;

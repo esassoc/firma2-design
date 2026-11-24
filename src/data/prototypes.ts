@@ -6,6 +6,8 @@
 // empty until this spoke builds its first working screen. Add entries here as
 // prototypes land (each route lives under src/pages/prototypes/<slug>.astro).
 
+import { demoProjectSlug } from './firma2-projects';
+
 export type PrototypeStatus = 'live' | 'in-progress' | 'planned' | 'archived';
 
 export interface Prototype {
@@ -62,7 +64,7 @@ export const prototypes: Prototype[] = [
     slug: 'public-project-page',
     title: 'Public project page',
     description: 'A project as the public sees it',
-    route: '/prototypes/public/scott-river-fish-passage-barrier-removal',
+    route: `/prototypes/public/${demoProjectSlug('scott-river-fish-passage-barrier-removal')}`,
     createdAt: '2026-10-01',
     status: 'in-progress',
   },
@@ -90,7 +92,7 @@ export const prototypes: Prototype[] = [
     slug: 'work-areas',
     title: 'Place a project',
     description: 'Draw, drop, paste or upload a project’s footprint',
-    route: '/prototypes/projects/cosumnes-floodplain-reconnection',
+    route: `/prototypes/projects/${demoProjectSlug('cosumnes-floodplain-reconnection')}`,
     createdAt: '2026-10-02',
     status: 'in-progress',
   },
@@ -144,6 +146,14 @@ export const prototypes: Prototype[] = [
     status: 'in-progress',
   },
   {
+    slug: 'import-a-report',
+    title: 'Import a report',
+    description: 'Update a project from a report you already filed',
+    route: `/prototypes/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}/import-report`,
+    createdAt: '2026-11-13',
+    status: 'in-progress',
+  },
+  {
     slug: 'project-source',
     title: 'Project source',
     description: 'Create projects here or sync them from GIS',
@@ -166,7 +176,7 @@ export const prototypes: Prototype[] = [
     slug: 'report-import',
     title: 'Report from a document',
     description: 'Report from a crew log, pasted text or funder report',
-    route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement',
+    route: `/prototypes/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}`,
     createdAt: '2026-10-01',
     status: 'in-progress',
   },
@@ -196,7 +206,7 @@ export const prototypes: Prototype[] = [
     slug: 'pm2-project',
     title: 'Project measures (PM 2)',
     description: 'A project’s measures by period, with targets',
-    route: '/prototypes/pm2/projects/deer-creek-riparian-corridor-enhancement',
+    route: `/prototypes/pm2/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}`,
     createdAt: '2026-10-08',
     status: 'in-progress',
   },
@@ -228,7 +238,7 @@ export const prototypes: Prototype[] = [
     slug: 'project-detail',
     title: 'Project detail',
     description: 'One project in full',
-    route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement',
+    route: `/prototypes/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}`,
     createdAt: '2026-08-20',
     status: 'in-progress',
   },
@@ -241,7 +251,7 @@ export const prototypes: Prototype[] = [
     slug: 'project-detail-map',
     title: 'Project detail — map view',
     description: 'One project, map first',
-    route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement/map',
+    route: `/prototypes/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}/map`,
     createdAt: '2026-08-24',
     status: 'in-progress',
   },

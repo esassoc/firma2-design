@@ -19,9 +19,10 @@
 //
 // Deterministic: literal arrays and index-seeded shapes, no randomness.
 
-import { projects, projectSlug } from './firma2-projects';
+import { demoProjectName, projects, projectSlug } from './firma2-projects';
 import type { Project } from './firma2-projects';
 import { projectDetails } from './firma2-project-detail';
+import { REAL, realCenter, realRecords } from './firma2-real-data';
 import { centroid, pointInRing, ringAcres, pathMiles } from '../lib/geo';
 import type { LatLng } from '../lib/geo';
 
@@ -59,11 +60,12 @@ export interface MapWorkArea {
  * map" count is about. Their detail records still carry template shapes for
  * the atlas; the work-area screens read this list instead.
  */
-export const UNMAPPED_PROJECTS = new Set([
-  'Cosumnes Floodplain Reconnection',
-  'San Luis Rey Arroyo Toad Habitat',
-  'Cache Creek Floodplain Terracing',
-]);
+export const UNMAPPED_PROJECTS = new Set(
+  REAL
+    ? // A real workspace (dev only): the projects with neither a shape nor coordinates.
+      [...realRecords.values()].filter((r) => !r.geometries.length && r.latitude === null).map((r) => r.name)
+    : ['Cosumnes Floodplain Reconnection', 'San Luis Rey Arroyo Toad Habitat', 'Cache Creek Floodplain Terracing'],
+);
 
 /** The work areas a project starts with, before anyone edits them. */
 export const seedWorkAreas = (project: Project): MapWorkArea[] => {
@@ -71,6 +73,36 @@ export const seedWorkAreas = (project: Project): MapWorkArea[] => {
   const detail = projectDetails.get(project.projectName);
   if (!detail) return [];
   const slug = projectSlug(project);
+  // A real record (dev only): its shapes as drawn, then its points. With no
+  // shape at all, the record's own coordinates are its one location.
+  const record = realRecords.get(project.projectName);
+  if (record) {
+    const shapes: MapWorkArea[] = detail.workAreas.map((area, i) => ({
+      id: `${slug}-${i}`,
+      label: area.label,
+      kind: area.kind,
+      path: area.path,
+      extent: area.extent,
+      unit: area.extentUnit,
+      origin: 'record',
+    }));
+    const points: LatLng[] = record.geometries.filter((g) => g.type === 'Point').map((g) => [g.coordinates[1], g.coordinates[0]]);
+    if (!shapes.length && !points.length && record.latitude !== null && record.longitude !== null) {
+      points.push([record.latitude, record.longitude]);
+    }
+    return [
+      ...shapes,
+      ...points.map((point, i): MapWorkArea => ({
+        id: `${slug}-point-${i}`,
+        label: `Point ${i + 1}`,
+        kind: 'point',
+        path: [point],
+        extent: null,
+        unit: null,
+        origin: 'coordinates',
+      })),
+    ];
+  }
   return detail.workAreas.map((area, i) => {
     const measured = area.kind === 'area' ? ringAcres(area.path) : pathMiles(area.path);
     return {
@@ -88,7 +120,7 @@ export const seedWorkAreas = (project: Project): MapWorkArea[] => {
 
 /** A point in the middle of Lake Tahoe: where the four shores meet, and the
  *  fallback center for anything without one. */
-export const LAKE: LatLng = [39.09, -120.04];
+export const LAKE: LatLng = realCenter ?? [39.09, -120.04];
 
 /** Where a project's map opens: its authored center, which every project has. */
 export const projectCenter = (project: Project): LatLng =>
@@ -744,7 +776,7 @@ export interface BulkFeature {
   fields: Record<string, string>;
 }
 
-const numberOf = (name: string) => projectNumber(projects.find((p) => p.projectName === name)!);
+const numberOf = (name: string) => projectNumber(projects.find((p) => p.projectName === demoProjectName(name))!);
 
 export const BULK_IMPORT_SAMPLE = {
   fileName: 'partner-boundaries.zip',
@@ -753,27 +785,27 @@ export const BULK_IMPORT_SAMPLE = {
     {
       kind: 'area',
       offsets: [[0.012, -0.018], [0.016, 0.004], [0.004, 0.012], [-0.008, 0.006], [-0.006, -0.014]],
-      fields: { PROJ_NO: numberOf('Cosumnes Floodplain Reconnection'), PROJECT: 'Cosumnes Floodplain Reconnection', UNIT: 'Lower floodplain unit' },
+      fields: { PROJ_NO: numberOf('Cosumnes Floodplain Reconnection'), PROJECT: demoProjectName('Cosumnes Floodplain Reconnection'), UNIT: 'Lower floodplain unit' },
     },
     {
       kind: 'area',
       offsets: [[0.008, -0.01], [0.01, 0.006], [-0.002, 0.01], [-0.009, -0.002]],
-      fields: { PROJ_NO: numberOf('San Luis Rey Arroyo Toad Habitat'), PROJECT: 'San Luis Rey Arroyo Toad Habitat', UNIT: 'Breeding pool complex' },
+      fields: { PROJ_NO: numberOf('San Luis Rey Arroyo Toad Habitat'), PROJECT: demoProjectName('San Luis Rey Arroyo Toad Habitat'), UNIT: 'Breeding pool complex' },
     },
     {
       kind: 'area',
       offsets: [[0.014, -0.012], [0.012, 0.01], [-0.004, 0.014], [-0.01, -0.004], [0.002, -0.016]],
-      fields: { PROJ_NO: numberOf('Cache Creek Floodplain Terracing'), PROJECT: 'Cache Creek Floodplain Terracing', UNIT: 'Terrace grading unit' },
+      fields: { PROJ_NO: numberOf('Cache Creek Floodplain Terracing'), PROJECT: demoProjectName('Cache Creek Floodplain Terracing'), UNIT: 'Terrace grading unit' },
     },
     {
       kind: 'reach',
       offsets: [[0.02, -0.02], [0.01, -0.008], [0.002, -0.01], [-0.008, 0.004], [-0.018, 0.012]],
-      fields: { PROJ_NO: numberOf('Cache Creek Floodplain Terracing'), PROJECT: 'Cache Creek Floodplain Terracing', UNIT: 'Setback channel' },
+      fields: { PROJ_NO: numberOf('Cache Creek Floodplain Terracing'), PROJECT: demoProjectName('Cache Creek Floodplain Terracing'), UNIT: 'Setback channel' },
     },
     {
       kind: 'reach',
       offsets: [[0.024, 0.01], [0.018, 0.018], [0.01, 0.02], [0.002, 0.028]],
-      fields: { PROJ_NO: numberOf('Deer Creek Riparian Corridor Enhancement'), PROJECT: 'Deer Creek Riparian Corridor Enhancement', UNIT: 'Upper fence line' },
+      fields: { PROJ_NO: numberOf('Deer Creek Riparian Corridor Enhancement'), PROJECT: demoProjectName('Deer Creek Riparian Corridor Enhancement'), UNIT: 'Upper fence line' },
     },
     {
       kind: 'area',

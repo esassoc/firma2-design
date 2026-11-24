@@ -31,7 +31,7 @@ import { projects } from './firma2-projects';
 import { getProjectDetail } from './firma2-project-detail';
 import { measures, isSummable, liveOptions, askedBreakdowns } from './firma2-performance-measures';
 import { measurePortfolio } from './firma2-classification-rollup';
-import { CLASSIFICATIONS, CLASSIFICATION_GROUPS } from './firma2-classifications';
+import { PRACTICE_GROUP, childGroups, classificationsUnderGroup, goalClassifications } from './firma2-classifications';
 import { organizations } from './firma2-directory';
 import { FIELD_DEFINITIONS, fieldValue, projectTypeFor } from './firma2-project-types';
 import type { Dataset, DsDimension, DsMeasure, DsRow } from '../lib/dashboard-model';
@@ -54,8 +54,9 @@ let built: Dataset | undefined;
 export const dashboardDataset = (): Dataset => {
   if (built) return built;
   const all = projects.map((p, i) => ({ p, i, detail: getProjectDetail(p) }));
-  const classOf = new Map(CLASSIFICATIONS.map((c) => [c.name, c.group]));
-  const practiceGroups = CLASSIFICATION_GROUPS.filter((g) => g.slug !== 'plan-goal');
+  const goals = new Set(goalClassifications().map((c) => c.name));
+  // One dimension per area of work, each holding every practice beneath it.
+  const practiceGroups = childGroups(PRACTICE_GROUP).map((g) => ({ ...g, members: classificationsUnderGroup(g.slug).map((c) => c.name) }));
   const choiceFields = FIELD_DEFINITIONS.filter((d) => d.kind === 'choice' || d.kind === 'multi-choice' || d.kind === 'yes-no');
   const numberFields = FIELD_DEFINITIONS.filter((d) => (d.kind === 'number' || d.kind === 'money') && d.range);
 
@@ -89,14 +90,14 @@ export const dashboardDataset = (): Dataset => {
       lead: [p.leadOrganization],
       orgtype: organizations.filter((o) => o.name === p.leadOrganization).map((o) => o.type),
       county: [p.county],
-      goal: p.classifications.filter((c) => classOf.get(c) === 'plan-goal'),
+      goal: p.classifications.filter((c) => goals.has(c)),
       tag: [...p.tags],
       funder: Object.keys(funder),
       program: Object.keys(program),
       start: [String(p.implementationStartYear)],
       end: [String(p.completionYear)],
     };
-    practiceGroups.forEach((g) => (dims[`cg-${g.slug}`] = p.classifications.filter((c) => classOf.get(c) === g.slug)));
+    practiceGroups.forEach((g) => (dims[`cg-${g.slug}`] = p.classifications.filter((c) => g.members.includes(c))));
     // A custom field belongs to a project type; other projects have no value for it.
     choiceFields.forEach((d) => {
       const value = hasField(p, d.id) ? fieldValue(p, d) : '';

@@ -65,6 +65,8 @@
 // reads as the sample funder report, any spreadsheet as the sample crew log,
 // and pasted text as the sample paragraph. Invented content, deterministic.
 
+import { demoProjectSlug } from './firma2-projects';
+
 export type Confidence = 'High' | 'Medium' | 'Low';
 
 /** One block of a document: a heading and the lines under it. */
@@ -149,6 +151,7 @@ const DEER_CREEK_SHEET: ImportReading = {
       amount: 5.5,
       answers: { 'Riparian treatment': 'Planting' },
       quote: 'Rows 4 and 6 — “Willow stakes, east bank reach 2, 3.5 ac” and “Cottonwood poles, east bank reach 2, 2 ac”',
+      passage: 'r4-6',
       confidence: 'High',
     },
     {
@@ -158,6 +161,7 @@ const DEER_CREEK_SHEET: ImportReading = {
       amount: 1850,
       answers: {},
       quote: 'Row 7 — “Plants in ground: 1,850 (willow 1,200 / cottonwood 400 / valley oak 250)”',
+      passage: 'r7',
       confidence: 'High',
     },
     {
@@ -168,6 +172,7 @@ const DEER_CREEK_SHEET: ImportReading = {
       answers: {},
       quote: 'Row 8 — “Blackberry pull below county bridge, 1.5 ha”',
       conversion: '1.5 ha = 3.7 acres',
+      passage: 'r8',
       confidence: 'High',
     },
     {
@@ -179,6 +184,7 @@ const DEER_CREEK_SHEET: ImportReading = {
       quote: 'Row 10 — “Exclusion fence, upland pasture, 2,640 ft. Notes: ~4 ac fenced off”',
       conversion: '2,640 ft = 0.5 miles',
       note: 'Used the fence length, not the note’s “~4 ac”.',
+      passage: 'r10',
       confidence: 'High',
     },
     {
@@ -189,6 +195,7 @@ const DEER_CREEK_SHEET: ImportReading = {
       answers: { 'Activity type': 'Planting' },
       quote: 'Row 12 — “Saturday workday, sign-in sheet, 140 hrs”',
       note: 'Undated, so filed under 2025 from the sheet title. “Planting” is inferred.',
+      passage: 'r12',
       confidence: 'Medium',
     },
     {
@@ -199,6 +206,7 @@ const DEER_CREEK_SHEET: ImportReading = {
       answers: { 'Riparian treatment': 'Planting' },
       quote: 'Row 3 — “10/28/2024, late-season planting, west bank, 2 ac”',
       note: 'Filed by its date, not the sheet title.',
+      passage: 'r3',
       confidence: 'Medium',
     },
   ],
@@ -207,6 +215,32 @@ const DEER_CREEK_SHEET: ImportReading = {
     'Crew lunch, $180',
   ],
   skipped: ['Row 14, “TOTAL”.'],
+  document: {
+    pages: [
+      {
+        label: 'Sheet “2025 crew log”',
+        passages: [
+          { id: 'r3', heading: 'Row 3', lines: ['10/28/2024, late-season planting, west bank, 2 ac'] },
+          {
+            id: 'r4-6',
+            heading: 'Rows 4 to 6',
+            lines: [
+              'Willow stakes, east bank reach 2, 3.5 ac',
+              'Irrigation line repair, east bank',
+              'Cottonwood poles, east bank reach 2, 2 ac',
+            ],
+          },
+          { id: 'r7', heading: 'Row 7', lines: ['Plants in ground: 1,850 (willow 1,200 / cottonwood 400 / valley oak 250)'] },
+          { id: 'r8', heading: 'Row 8', lines: ['Blackberry pull below county bridge, 1.5 ha'] },
+          { id: 'r9', heading: 'Row 9', lines: ['Stream temperature, 7-day maximum 64.9 °F at logger LC-2'] },
+          { id: 'r10', heading: 'Row 10', lines: ['Exclusion fence, upland pasture, 2,640 ft. Notes: ~4 ac fenced off'] },
+          { id: 'r11', heading: 'Row 11', lines: ['Crew lunch, $180'] },
+          { id: 'r12', heading: 'Row 12', lines: ['Saturday workday, sign-in sheet, 140 hrs'] },
+          { id: 'r14', heading: 'Row 14', lines: ['TOTAL'] },
+        ],
+      },
+    ],
+  },
 };
 
 const DEER_CREEK_TEXT: ImportReading = {
@@ -288,8 +322,8 @@ const DEER_CREEK_REPORT: ImportReading = {
       year: 0,
       amount: 0,
       answers: {},
-      field: { key: 'timeline', label: 'Timeline', raw: '2023,2026', display: '2023–2026' },
-      quote: 'Project dates, page 1 — “Completion: September 2026”',
+      field: { key: 'timeline', label: 'Timeline', raw: '2023,2025', display: '2023–2025' },
+      quote: 'Project dates, page 1 — “Completion: September 2025”',
       passage: 'dates',
       page: 1,
       confidence: 'High',
@@ -435,7 +469,7 @@ const DEER_CREEK_REPORT: ImportReading = {
           {
             id: 'dates',
             heading: 'Project dates',
-            lines: ['Start: June 2023', 'Completion: September 2026', 'Update for a multi-year project: No'],
+            lines: ['Start: June 2023', 'Completion: September 2025', 'Update for a multi-year project: No'],
           },
           {
             id: 'location',
@@ -521,9 +555,18 @@ const DEER_CREEK_REPORT: ImportReading = {
 
 /** Readings by project slug. A project without one offers no import. */
 export const IMPORT_FIXTURES: Record<string, { sheet: ImportReading; text: ImportReading; report?: ImportReading }> = {
-  'deer-creek-riparian-corridor-enhancement': {
+  [demoProjectSlug('deer-creek-riparian-corridor-enhancement')]: {
     sheet: DEER_CREEK_SHEET,
     text: DEER_CREEK_TEXT,
     report: DEER_CREEK_REPORT,
   },
 };
+
+/** Import a report, the page: Projects › *Project* › Import a report. */
+export const reportImportHref = (projectSlug: string): string => `/prototypes/projects/${projectSlug}/import-report`;
+
+/** The query flag the project page sets when it hands a dropped file over. */
+export const DROPPED_PARAM = 'dropped';
+
+/** The query key the import page sets on its way back, naming the import to announce. */
+export const IMPORTED_PARAM = 'imported';

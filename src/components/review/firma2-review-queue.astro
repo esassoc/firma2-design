@@ -54,10 +54,25 @@ interface Props {
   backlogs?: OrganizationBacklog[];
   /** The organizations each project belongs to — the workspace's overdue test reads all of them. */
   organizationsOf?: Map<string, string[]>;
+  /** Draw the Up to date list. Off on the workspace's Review page (user,
+      2026-11-18): the figure "15 of 24" already says it. Its rows still
+      render, hidden, because that figure is counted from them. */
+  upToDate?: boolean;
+  /** Draw the three figures. Off on the workspace's Review page (user,
+      2026-11-18): the toggle counts what waits, the list is oldest first and
+      marks Overdue. They still render, hidden, because the script counts from
+      the same rows. */
+  summary?: boolean;
 }
 
-const { queue, organization, overdueFor, backlogs, organizationsOf } = Astro.props;
+const { queue, organization, overdueFor, backlogs, organizationsOf, upToDate = true, summary = true } = Astro.props;
 const scope = organization ? 'organization' : 'workspace';
+// THE INBOX TAKES THE TABLE'S PLACE (slot "waiting", firma2-review-inbox).
+// The table's rows still render, hidden: the figures and backlogs below are
+// counted from them, and they recount when the inbox publishes.
+const inbox = Astro.slots.has('waiting');
+// The inbox's Waiting / Held switch names the list, so the heading is kept for
+// the outline but not drawn there (user, 2026-11-18).
 const fromParam = organization ? `?from=${readerOrganizations().find((o) => o.name === organization)?.slug ?? ''}` : '';
 const readerOrgs = new Map(readerOrganizations().map((o) => [o.name, o.slug]));
 
@@ -76,14 +91,14 @@ const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.da
 ---
 <section
   class="firma2-review-queue stack"
-  data-gap="xl"
+  data-gap="lg"
   data-scope={scope}
   data-organization={organization}
   data-cadence-seeds={JSON.stringify(cadenceSeeds)}
   data-cadence-days={JSON.stringify(cadenceDays)}
   data-cadence-labels={JSON.stringify(Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.label])))}
 >
-  <div class="firma2-review-queue__summary grid" data-gap="md" aria-label="Summary">
+  <div class="firma2-review-queue__summary grid" data-gap="md" aria-label="Summary" hidden={!summary}>
     <div data-stat="published">
       <EsaStat value={`${published} of ${queue.total}`} label="Public pages up to date" />
     </div>
@@ -102,7 +117,9 @@ const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.da
   </div>
 
   <section class="stack" data-gap="md" aria-labelledby={`firma2-review-pending-${scope}`} data-pending-section>
-    <h2 id={`firma2-review-pending-${scope}`} class="typography-title-sm-strong">Waiting to publish</h2>
+    <h2 id={`firma2-review-pending-${scope}`} class:list={['typography-title-sm-strong', { 'visually-hidden': inbox }]}>Waiting to publish</h2>
+    {inbox && <slot name="waiting" />}
+    <div class="firma2-review-queue__table" hidden={inbox}>
     <div data-empty hidden={queue.pending.length > 0}>
       <EsaEmptyState title="Every public page is up to date" size="sm" />
     </div>
@@ -131,9 +148,6 @@ const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.da
             </th>
             <td>
               <span data-change-count>{item.publishedIso ? changesLabel(item.changes.length) : 'First publish'}</span>
-              {item.publishedIso && item.edits > item.changes.length && (
-                <span class="firma2-settings-table__meta typography-body-sm" data-edit-count>From {item.edits} edits</span>
-              )}
             </td>
             <td>{item.editors.join(', ')}</td>
             <td class="firma2-review-queue__waiting">
@@ -147,6 +161,7 @@ const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.da
         ))}
       </tbody>
     </table>
+    </div>
     </div>
   </section>
 
@@ -188,6 +203,7 @@ const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.da
       </div>
     </section>
   )}
+  <div class="stack" hidden={!upToDate}>
   <section class="stack" data-gap="md" aria-labelledby={`firma2-review-done-${scope}`} data-done-section hidden={published === 0}>
     <h2 id={`firma2-review-done-${scope}`} class="typography-title-sm-strong">Up to date</h2>
     <div class="firma2-settings-table-scroll">
@@ -214,6 +230,7 @@ const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.da
     </table>
     </div>
   </section>
+  </div>
 
 </section>
 
@@ -243,7 +260,7 @@ const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.da
   const waiting = (days: number) =>
     days < 1 ? 'Today' : days < 45 ? `${days} day${days === 1 ? '' : 's'}` : Math.round(days / 30.4) < 24 ? `${Math.round(days / 30.4)} months` : `${Math.floor(days / 365)} years`;
 
-  document.querySelectorAll<HTMLElement>('.firma2-review-queue').forEach((root) => {
+  const paint = (root: HTMLElement) => {
     const state = readPublishing();
     const seeds: Record<string, string> = JSON.parse(root.dataset.cadenceSeeds ?? '{}');
     const days: Record<string, number | null> = JSON.parse(root.dataset.cadenceDays ?? '{}');
@@ -321,6 +338,11 @@ const cadenceDays = Object.fromEntries(REVIEW_CADENCES.map((c) => [c.value, c.da
       row.querySelector('[data-backlog-overdue]')!.textContent = cadence === 'none' ? '—' : String(mine.filter((m) => m.late.includes(org)).length);
       row.hidden = mine.length === 0;
     });
+  };
 
+  document.querySelectorAll<HTMLElement>('.firma2-review-queue').forEach((root) => {
+    paint(root);
+    // The inbox publishes in place: the figures follow without a reload.
+    document.addEventListener('firma2:review-queue-change', () => paint(root));
   });
 </script>

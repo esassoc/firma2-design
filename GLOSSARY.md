@@ -35,3 +35,14 @@ _Avoid:_ tier (in visible copy).
 
 **Performance measure** — a question asked of every project, forever.
 _Avoid:_ KPI.
+
+**Classification** — what a project is filed under so its progress can be read
+from above: usually one of the workspace's goals, sometimes another axis such as
+a species. Performance measures and targets are set on it. A project can carry
+several. _Avoid:_ goal (as the noun for the object), category.
+
+**Classification group** — a named set of classifications. Groups nest: a group
+can sit inside another, to any depth. A group has a colour, a description and a
+progress page that adds up everything filed beneath it; it has no performance
+measures or targets of its own, and projects are never filed directly on it.
+_Avoid:_ parent classification, category, folder.

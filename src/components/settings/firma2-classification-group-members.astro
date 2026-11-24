@@ -9,6 +9,12 @@
 // `setOrder`). Moving a classification to ANOTHER group is its own page's
 // Group field; this list only arranges what is already here.
 //
+// TWO LISTS, ONE COMPONENT (user, 2026-11-23): groups nest, so a group's page
+// lists the GROUPS inside it (`members="groups"`) as well as its
+// classifications — the same rows, order and add, the add starting a new
+// group inside this one. Each list orders only itself; on the board a
+// group's own classifications come before the groups inside it.
+//
 // RENDERED IN THE BROWSER, from the store: a group's members change there
 // (added, moved in or out, removed), and a group added in this browser has no
 // build-time page to render into. Same approach as firma2-stage-editor.
@@ -25,21 +31,25 @@ import { withBase } from '../../lib/base';
 interface Props {
   /** The seeded group's slug. Omitted on a draft route, where `?slug=` names it. */
   slug?: string;
+  /** Which of the group's members this lists. */
+  members?: 'classifications' | 'groups';
 }
 
-const { slug } = Astro.props;
+const { slug, members = 'classifications' } = Astro.props;
+const groups = members === 'groups';
+const LIST = '/prototypes/workspace-settings/classifications';
 ---
-<Firma2RailSection title="Classifications">
-  <EsaButton slot="actions" variant="secondary" size="md" icon="plus" tag="a" href={withBase('/prototypes/workspace-settings/classifications/new')} data-members-add>
-    Add classification
+<Firma2RailSection title={groups ? 'Groups' : 'Classifications'}>
+  <EsaButton slot="actions" variant="secondary" size="md" icon="plus" tag="a" href={withBase(groups ? `${LIST}/groups/new` : `${LIST}/new`)} data-members-add>
+    {groups ? 'Add group' : 'Add classification'}
   </EsaButton>
-  <div class="firma2-classification-group-members" data-slug={slug}>
+  <div class="firma2-classification-group-members" data-slug={slug} data-members={members}>
     <bcn-sortable-list data-members-sort>
       <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
       <ol class="firma2-classification-group-members__rows" data-members-rows></ol>
     </bcn-sortable-list>
     <div data-members-empty hidden>
-      <EsaEmptyState size="sm" title="No classifications in this group" />
+      <EsaEmptyState size="sm" title={groups ? 'No groups inside this group' : 'No classifications in this group'} />
     </div>
   </div>
 </Firma2RailSection>
@@ -72,7 +82,7 @@ const { slug } = Astro.props;
 
 <script>
   import '../shared/bcn-sortable-list';
-  import { classificationsIn, setOrder } from '../../lib/taxonomy-edits';
+  import { classificationsIn, groupsIn, setOrder } from '../../lib/taxonomy-edits';
   import { recordHref, recordSlug } from '../../lib/taxonomy-record';
   import { withBase } from '../../lib/base';
 
@@ -82,10 +92,12 @@ const { slug } = Astro.props;
     const empty = root.querySelector<HTMLElement>('[data-members-empty]')!;
     const sorter = root.querySelector<HTMLElement>('[data-members-sort]')!;
     const add = root.closest('section')?.querySelector<HTMLAnchorElement>('[data-members-add]');
-    if (add) add.href = withBase(`/prototypes/workspace-settings/classifications/new?group=${encodeURIComponent(slug)}`);
+    const groups = root.dataset.members === 'groups';
+    const LIST = '/prototypes/workspace-settings/classifications';
+    if (add) add.href = withBase(groups ? `${LIST}/groups/new?parent=${encodeURIComponent(slug)}` : `${LIST}/new?group=${encodeURIComponent(slug)}`);
 
     const paint = (): void => {
-      const members = classificationsIn(slug);
+      const members = groups ? groupsIn(slug) : classificationsIn(slug);
       rows.replaceChildren(
         ...members.map((e) => {
           const li = document.createElement('li');
@@ -96,7 +108,7 @@ const { slug } = Astro.props;
           text.dataset.gap = '3xs';
           const link = document.createElement('a');
           link.className = 'typography-body-md';
-          link.href = recordHref('/prototypes/workspace-settings/classifications', e.slug);
+          link.href = recordHref(groups ? `${LIST}/groups` : LIST, e.slug);
           link.textContent = e.name;
           text.append(link);
           if (e.description) {
@@ -109,14 +121,14 @@ const { slug } = Astro.props;
           return li;
         }),
       );
-      // One classification has nothing to be ordered against: no grip.
+      // A single row has nothing to be ordered against: no grip.
       if (members.length === 1) rows.firstElementChild?.setAttribute('data-sort-locked', '');
       empty.hidden = members.length > 0;
     };
 
     paint();
     sorter.addEventListener('sort-change', (e) => {
-      setOrder(`classification:${slug}`, (e as CustomEvent<{ order: string[] }>).detail.order);
+      setOrder(`${groups ? 'classificationGroup' : 'classification'}:${slug}`, (e as CustomEvent<{ order: string[] }>).detail.order);
       paint();
     });
   });

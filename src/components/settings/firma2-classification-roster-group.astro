@@ -1,0 +1,140 @@
+---
+// firma2-classification-roster-group — one classification group on the
+// settings list (firma2-classification-roster): its name (the door to its
+// page), swatch and description, its own "Add classification", the table of
+// the classifications filed directly in it, and then the groups inside it —
+// each drawn by this same component, so the list nests as deep as the
+// workspace's groups do (user, 2026-11-23).
+//
+// INDENTED, NOT BOXED: a group inside a group sits one step in from its
+// parent's heading. No rule or card marks the level; the indent and the
+// heading say it.
+//
+// The roster's script keeps every level in step with this browser's edits; the
+// data hooks here are what it writes into.
+//
+// bcn-lego-checked: esa-button is the add, esa-empty-state the empty group,
+// firma2-settings-table the list; the swatch is the group's own colour, the
+// 12px square firma2-goal-card draws (no esa- swatch lego exists). Beacon is
+// not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SettingsTable from './firma2-settings-table.astro';
+import { childGroups, classificationsInGroup } from '../../data/firma2-classifications';
+import type { ClassificationGroup } from '../../data/firma2-classifications';
+import { kpisFor } from '../../data/firma2-classification-rollup';
+import { projects } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  group: ClassificationGroup;
+  /** 0 for a top-level group — the only level the roster's grip reorders. */
+  depth?: number;
+}
+
+const { group, depth = 0 } = Astro.props;
+const LIST = '/prototypes/workspace-settings/classifications';
+const inside = childGroups(group.slug);
+const rows = classificationsInGroup(group.slug).map((c) => {
+  const kpis = kpisFor(c.name).map((m) => m.slug);
+  const targets = c.targets ?? [];
+  return {
+    slug: c.slug,
+    name: c.name,
+    href: withBase(`${LIST}/${c.slug}`),
+    description: c.description,
+    cells: {
+      projects: projects.filter((p) => p.classifications.includes(c.name)).length,
+      kpis: kpis.length,
+      targets: kpis.length ? `${kpis.filter((k) => targets.some((t) => t.measure === k)).length} of ${kpis.length}` : '—',
+    },
+  };
+});
+const Heading = depth === 0 ? 'h2' : 'h3';
+---
+<li data-group-li={group.slug} data-sort-key={depth === 0 ? group.slug : undefined} data-sort-label={group.name}>
+  <section class="firma2-classification-roster-group stack" data-gap="md" aria-labelledby={`group-${group.slug}`} data-group={group.slug}>
+    <div class="repel" data-gap="sm">
+      <div class="firma2-classification-roster-group__text stack" data-gap="3xs">
+        <Heading class="typography-title-sm-strong" id={`group-${group.slug}`}>
+          <a class="firma2-classification-roster-group__name cluster" data-gap="xs" href={withBase(`${LIST}/groups/${group.slug}`)} data-group-name>
+            <span class="firma2-classification-roster-group__swatch" style={`background:${group.color}`} aria-hidden="true" data-group-swatch></span>
+            <span data-group-label>{group.name}</span>
+          </a>
+        </Heading>
+        <p class="firma2-classification-roster-group__description typography-body-sm" data-group-desc>{group.description}</p>
+      </div>
+      <EsaButton variant="secondary" size="md" icon="plus" tag="a" href={withBase(`${LIST}/new?group=${group.slug}`)} data-group-add>
+        Add classification
+      </EsaButton>
+    </div>
+    <div data-group-table hidden={rows.length === 0}>
+      <Firma2SettingsTable
+        label={group.name}
+        nameLabel="Classification"
+        columns={[
+          { key: 'projects', label: 'Projects', numeric: true },
+          { key: 'kpis', label: 'Performance measures', numeric: true },
+          { key: 'targets', label: 'Targets set', numeric: true },
+        ]}
+        rows={rows}
+      />
+    </div>
+    <!-- A plain div carries `hidden`, so no lego's display rule outranks it.
+         Shown only for a group holding nothing at all. -->
+    <div data-group-empty hidden={rows.length > 0 || inside.length > 0}>
+      <EsaEmptyState size="sm" title="Nothing in this group" />
+    </div>
+    <ol class="firma2-classification-roster-group__inside stack" data-gap="xl" data-subgroups>
+      {inside.map((child) => <Astro.self group={child} depth={depth + 1} />)}
+    </ol>
+  </section>
+</li>
+
+<style>
+  .firma2-classification-roster-group__inside {
+    margin: 0;
+    padding-inline-start: var(--spacing-600, 1.5rem);
+    list-style: none;
+  }
+
+  /* No groups inside: the list takes no room in its section's stack. */
+  .firma2-classification-roster-group__inside:not(:has(> li)) {
+    display: none;
+  }
+
+  /* The name and description give way before the add does, so every group's
+     add sits on its heading's line whatever the description's length. */
+  .firma2-classification-roster-group__text {
+    flex: 1 1 12rem;
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-roster-group__name {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-classification-roster-group__name:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .firma2-classification-roster-group__swatch {
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-radius: var(--radius-sm, 4px);
+    flex: none;
+  }
+
+  .firma2-classification-roster-group__description {
+    margin: 0;
+    max-inline-size: 60ch;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-classification-roster-group__description:empty {
+    display: none;
+  }
+</style>

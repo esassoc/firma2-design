@@ -19,11 +19,20 @@
 // product, not a need. The PRACTICE AREAS below are the invented sample of
 // that shape; the map colours by them.
 //
+// GROUPS NEST, TO ANY DEPTH (user, 2026-11-23). A group may sit inside
+// another (`parent`), so a taxonomy of three or four levels is one tree. A
+// group carries its own colour and description and has its own progress page,
+// which adds up everything filed beneath it. PROJECTS ARE FILED ON
+// CLASSIFICATIONS ONLY — the leaves; a group's projects are the projects of
+// the classifications under it, so no project sits "in the group but in none
+// of its children". A group has no measures or targets of its own.
+//
 // NOT HERE, on purpose: how a project's page is built (its PROJECT TYPE —
 // src/data/firma2-project-types.ts, optional for a workspace) and functional
 // labels with no KPIs (TAGS — src/data/firma2-tags.ts).
 
 import type { ClassificationName, Project } from './firma2-projects';
+import { REAL, realRecords, realSystems, slugOf } from './firma2-real-data';
 
 // ---------------------------------------------------------------------------
 // Groups
@@ -33,22 +42,76 @@ export interface ClassificationGroup {
   slug: string;
   name: string;
   description: string;
+  /** The swatch that tells two groups apart at a glance. */
+  color: string;
+  /** The group this one sits inside. Absent at the top level. */
+  parent?: string;
 }
 
-export const CLASSIFICATION_GROUPS: ClassificationGroup[] = [
-  { slug: 'plan-goal', name: 'Plan goal', description: 'The plan outcomes a project works toward.' },
-  { slug: 'channels-and-fish-passage', name: 'Channels & fish passage', description: 'Work in the stream channel: opening passage, adding habitat, giving high flows room.' },
-  { slug: 'vegetation-and-wetlands', name: 'Vegetation & wetlands', description: 'Planting and weeding along streams, and rewetting meadows and marshes.' },
-  { slug: 'forests-and-fuels', name: 'Forests & fuels', description: 'Thinning, fuel breaks and burning that change how fire moves through a forest.' },
-  { slug: 'runoff-and-groundwater', name: 'Runoff & groundwater', description: 'Holding soil in place, catching storm runoff, and putting water back underground.' },
+// Invented sample, one of each shape a group can take: a top-level group of
+// classifications only (Plan goal); a top-level group of groups only
+// (Practice area); groups one level down holding classifications; a group
+// holding BOTH a classification and a group (Forests & fuels); and a group
+// three levels down (Fire management). An empty group is not seeded — adding
+// one in Workspace settings shows that state.
+const MOCK_GROUPS: ClassificationGroup[] = [
+  { slug: 'plan-goal', name: 'Plan goal', color: '#3c5fa8', description: 'The plan outcomes a project works toward.' },
+  { slug: 'practice-area', name: 'Practice area', color: '#646464', description: 'The kinds of work a project does on the ground.' },
+  { slug: 'channels-and-fish-passage', parent: 'practice-area', name: 'Channels & fish passage', color: '#b4432f', description: 'Work in the stream channel: opening passage, adding habitat, giving high flows room.' },
+  { slug: 'vegetation-and-wetlands', parent: 'practice-area', name: 'Vegetation & wetlands', color: '#2f8f6b', description: 'Planting and weeding along streams, and rewetting meadows and marshes.' },
+  { slug: 'forests-and-fuels', parent: 'practice-area', name: 'Forests & fuels', color: '#5f7a3a', description: 'Thinning, fuel breaks and burning that change how fire moves through a forest.' },
+  { slug: 'fire-management', parent: 'forests-and-fuels', name: 'Fire management', color: '#d08a1e', description: 'Lines that hold a fire, and planned burns.' },
+  { slug: 'runoff-and-groundwater', parent: 'practice-area', name: 'Runoff & groundwater', color: '#3c5fa8', description: 'Holding soil in place, catching storm runoff, and putting water back underground.' },
 ];
 
+// A REAL WORKSPACE'S OWN TREE (dev only — firma2-real-data.ts). ProjectFirma
+// files a project on one taxonomy leaf under a branch, and in any number of
+// classification systems. Here the taxonomy is one group whose child groups
+// are the branches, and each system is a top-level group. The tenant's public
+// data carries no descriptions or colours; the colours are dealt in order.
+const REAL_SWATCHES = ['#3c5fa8', '#b4432f', '#2f8f6b', '#d08a1e', '#56708a', '#a24d86', '#167a7a', '#8a5a2b', '#7a8a2a', '#2b88b8', '#c4473a', '#5f7a3a', '#8c6d4f', '#6a5aa8'];
+const swatch = (i: number): string => REAL_SWATCHES[i % REAL_SWATCHES.length];
+const REAL_TAXONOMY = 'taxonomy';
+const realBranches = (): string[] => Array.from(new Set([...realRecords.values()].map((r) => r.taxonomyBranch))).sort();
+
+const REAL_GROUPS: ClassificationGroup[] = [
+  { slug: REAL_TAXONOMY, name: 'Ecological concern', color: '#646464', description: '' },
+  ...realBranches().map((name, i) => ({ slug: slugOf(name), parent: REAL_TAXONOMY, name, color: swatch(i), description: '' })),
+  ...realSystems().map((name, i) => ({ slug: slugOf(name), name, color: swatch(i + 3), description: '' })),
+];
+
+export const CLASSIFICATION_GROUPS: ClassificationGroup[] = REAL ? REAL_GROUPS : MOCK_GROUPS;
+
+export const getClassificationGroup = (slug: string): ClassificationGroup | undefined => CLASSIFICATION_GROUPS.find((g) => g.slug === slug);
+
+/** The groups directly inside a group; with no argument, the top-level groups. */
+export const childGroups = (parent?: string): ClassificationGroup[] => CLASSIFICATION_GROUPS.filter((g) => (g.parent ?? '') === (parent ?? ''));
+
+/** A group's ancestors and then itself, outermost first. */
+export const groupPath = (slug: string): ClassificationGroup[] => {
+  const path: ClassificationGroup[] = [];
+  for (let g = getClassificationGroup(slug); g && !path.includes(g); g = g.parent ? getClassificationGroup(g.parent) : undefined) path.unshift(g);
+  return path;
+};
+
+/** A group's slug and the slug of every group beneath it. */
+export const groupAndDescendants = (slug: string): string[] => [slug, ...childGroups(slug).flatMap((g) => groupAndDescendants(g.slug))];
+
 /**
- * The groups that are areas of work, each holding its practices. Sample-data
+ * The areas of work: the groups directly inside Practice area. Sample-data
  * convention, not a model concept: it tells the map which groups make up its
  * "Practice area" colouring.
  */
-export const PRACTICE_AREA_GROUPS = ['channels-and-fish-passage', 'vegetation-and-wetlands', 'forests-and-fuels', 'runoff-and-groundwater'];
+export const PRACTICE_GROUP = REAL ? REAL_TAXONOMY : 'practice-area';
+export const PRACTICE_AREA_GROUPS = childGroups(PRACTICE_GROUP).map((g) => g.slug);
+
+/**
+ * The group whose classifications are the workspace's goals — what the public
+ * pages, the map and the dashboards mean by "goal". In a real workspace (dev
+ * only) the taxonomy is both this and the practice tree: its limiting factors
+ * are the only classifications that track measures.
+ */
+export const GOAL_GROUP = REAL ? REAL_TAXONOMY : 'plan-goal';
 
 // ---------------------------------------------------------------------------
 // Classifications
@@ -115,7 +178,7 @@ const GOAL_TARGETS: Partial<Record<ClassificationName, GoalTarget[]>> = {
   ],
   'Public access & recreation': [{ measure: 'miles-trail-opened', value: 5, year: 2030 }],
 };
-export const CLASSIFICATIONS: Classification[] = [
+const MOCK_CLASSIFICATIONS: Classification[] = [
   ...(
     [
       ['Salmon & steelhead recovery', '#c4473a', 'Spawning and rearing habitat for listed runs.'],
@@ -145,8 +208,8 @@ export const CLASSIFICATIONS: Classification[] = [
       ['Invasive plant removal', 'vegetation-and-wetlands', '#7a8a2a', 'Arundo, broom and other invaders cleared and retreated.'],
       ['Meadow & marsh rewetting', 'vegetation-and-wetlands', '#2b88b8', 'Water returned to meadows, springs and tidal marsh.'],
       ['Forest thinning', 'forests-and-fuels', '#5f7a3a', 'Small trees and brush cut by hand or machine.'],
-      ['Fuel breaks', 'forests-and-fuels', '#d08a1e', 'Strips cleared so crews can hold a fire.'],
-      ['Prescribed fire', 'forests-and-fuels', '#c4473a', 'Planned burns that clear ground fuel under set conditions.'],
+      ['Fuel breaks', 'fire-management', '#d08a1e', 'Strips cleared so crews can hold a fire.'],
+      ['Prescribed fire', 'fire-management', '#c4473a', 'Planned burns that clear ground fuel under set conditions.'],
       ['Erosion & sediment control', 'runoff-and-groundwater', '#8c6d4f', 'Banks, roads and slopes kept from washing into streams.'],
       ['Stormwater capture', 'runoff-and-groundwater', '#3c5fa8', 'Runoff held, slowed or cleaned before it reaches a stream.'],
       ['Groundwater recharge', 'runoff-and-groundwater', '#167a7a', 'Water spread or held so it soaks back into the aquifer.'],
@@ -160,18 +223,50 @@ export const CLASSIFICATIONS: Classification[] = [
   })),
 ];
 
+const REAL_CLASSIFICATIONS: Classification[] = [
+  // Limiting factors, each in its branch's group.
+  ...Array.from(new Map([...realRecords.values()].filter((r) => r.taxonomyBranch).map((r) => [r.taxonomyLeaf, r.taxonomyBranch])))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, branch], i) => ({ slug: slugOf(name), name: name as ClassificationName, group: slugOf(branch), color: swatch(i), description: '' })),
+  // Every other system's entries, in its own group.
+  ...realSystems().flatMap((system) =>
+    Array.from(new Set([...realRecords.values()].flatMap((r) => (r.classifications[system] ?? []).map((c) => c.name))))
+      .sort()
+      .map((name, i) => ({ slug: slugOf(name), name: name as ClassificationName, group: slugOf(system), color: swatch(i + 5), description: '' })),
+  ),
+];
+
+export const CLASSIFICATIONS: Classification[] = REAL ? REAL_CLASSIFICATIONS : MOCK_CLASSIFICATIONS;
+
 export const getClassification = (slug: string): Classification | undefined => CLASSIFICATIONS.find((c) => c.slug === slug);
 
 export const classificationNamed = (name: string): Classification | undefined => CLASSIFICATIONS.find((c) => c.name === name);
 
+/** The classifications filed directly in a group. */
 export const classificationsInGroup = (group: string): Classification[] => CLASSIFICATIONS.filter((c) => c.group === group);
 
-/** A project's first classification in a group, for one-value-per-project views (map colours). */
-export const classificationInGroup = (project: Pick<Project, 'classifications'>, group: string): ClassificationName | undefined =>
-  project.classifications.find((n) => classificationNamed(n)?.group === group);
+/** Every classification in a group or in any group beneath it. */
+export const classificationsUnderGroup = (group: string): Classification[] => {
+  const within = groupAndDescendants(group);
+  return CLASSIFICATIONS.filter((c) => within.includes(c.group));
+};
 
-/** The practice-area group a project's first practice sits in, for one-value-per-project views (map colours). */
+/** A project's first classification in a group, for one-value-per-project views (map colours). */
+export const classificationInGroup = (project: Pick<Project, 'classifications'>, group: string): ClassificationName | undefined => {
+  const within = groupAndDescendants(group);
+  return project.classifications.find((n) => within.includes(classificationNamed(n)?.group ?? ''));
+};
+
+/** The goals: every classification in the goal group or beneath it. */
+export const goalClassifications = (): Classification[] => classificationsUnderGroup(GOAL_GROUP);
+
+export const isGoal = (c: Pick<Classification, 'group'>): boolean => groupAndDescendants(GOAL_GROUP).includes(c.group);
+
+/** The area of work a project's first practice sits under, for one-value-per-project views (map colours). */
 export const practiceAreaOf = (project: Pick<Project, 'classifications'>): string | undefined => {
-  const group = project.classifications.map((n) => classificationNamed(n)?.group).find((g) => g && PRACTICE_AREA_GROUPS.includes(g));
-  return CLASSIFICATION_GROUPS.find((g) => g.slug === group)?.name;
+  for (const n of project.classifications) {
+    const area = groupPath(classificationNamed(n)?.group ?? '').find((g) => PRACTICE_AREA_GROUPS.includes(g.slug));
+    if (area) return area.name;
+  }
+  return undefined;
 };

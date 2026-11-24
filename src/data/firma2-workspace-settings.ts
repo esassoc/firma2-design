@@ -26,6 +26,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { toMarkup } from '../lib/hugeicon-markup';
 import type { CatalogIcon, IconNode } from '../lib/hugeicon-markup';
+import { REAL } from './firma2-real-data';
 
 export interface SettingsRow {
   /** The record's slug, when a client script keeps the row in step with browser edits. */
@@ -46,7 +47,7 @@ export interface SettingsRow {
 // ---------------------------------------------------------------------------
 
 export const workspaceGeneral = {
-  name: 'Sierra–Coast Watershed Restoration Program',
+  name: REAL?.source.name ?? 'Sierra–Coast Watershed Restoration Program',
   address: 'restoration.projectfirma.org',
   contact: 'program-office@example.org',
   fiscalYearStart: 'July',

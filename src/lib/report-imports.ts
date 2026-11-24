@@ -28,6 +28,7 @@
 import type { ImportDocument } from '../data/firma2-report-import';
 import { removeEntry } from './entry-draft';
 import { deletePageFiles, listFiles, putFile } from './page-files';
+import { readPublishing } from './publish-store';
 import type { PageFile } from './page-files';
 
 const KEY = 'firma2:report-imports:v1';
@@ -186,11 +187,18 @@ export const importedChanges = (slug: string): ImportedChange[] => readImports(s
 export const importedFields = (slug: string): Record<string, string> =>
   Object.fromEntries(importedChanges(slug).flatMap((c) => (c.field ? [[c.field.key, c.field.raw]] : [])));
 
-export const importedContacts = (slug: string): { change: ImportedChange; contact: ImportedContact; from: ReportImport }[] =>
-  readImports(slug).flatMap((from) => from.changes.flatMap((change) => (change.contact ? [{ change, contact: change.contact, from }] : [])));
+/** Changes a manager reverted in the review: the record no longer holds them. */
+const revertedKeys = (slug: string): Set<string> => new Set(readPublishing().reverted[slug] ?? []);
 
-export const importedFunding = (slug: string): { change: ImportedChange; funding: ImportedFunding; from: ReportImport }[] =>
-  readImports(slug).flatMap((from) => from.changes.flatMap((change) => (change.funding ? [{ change, funding: change.funding, from }] : [])));
+export const importedContacts = (slug: string): { change: ImportedChange; contact: ImportedContact; from: ReportImport }[] => {
+  const gone = revertedKeys(slug);
+  return readImports(slug).flatMap((from) => from.changes.flatMap((change) => (change.contact && !gone.has(change.key) ? [{ change, contact: change.contact, from }] : [])));
+};
+
+export const importedFunding = (slug: string): { change: ImportedChange; funding: ImportedFunding; from: ReportImport }[] => {
+  const gone = revertedKeys(slug);
+  return readImports(slug).flatMap((from) => from.changes.flatMap((change) => (change.funding && !gone.has(change.key) ? [{ change, funding: change.funding, from }] : [])));
+};
 
 /** "From deer-creek-completion-report-2025.pdf" — the one-line source of an imported change. */
 export const sourceLine = (from: ReportImport): string =>

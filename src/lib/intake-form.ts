@@ -449,4 +449,19 @@ export const STATUS_STAGE: Record<IntakeStatus, string> = {
   deferred: 'Deferred',
 };
 
+const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+/** An answer as people read it: money as dollars, a location as "lat, lng",
+    a set as a list. Empty when unanswered. Shared by the proposal read back
+    (firma2-intake-flow) and the Review inbox's Proposals view. */
+export const answerText = (q: QuestionBlock, v: unknown, fields: FieldDefinition[] = allFields()): string => {
+  if (!isAnswered(v)) return '';
+  if (Array.isArray(v)) return q.type === 'builtin' && q.key === 'location' ? `${v[0]}, ${v[1]}` : v.join(', ');
+  if (q.type === 'builtin' && q.key === 'estimatedTotalCost') return money.format(Number(v));
+  const field = q.type === 'field' ? fields.find((f) => f.id === q.fieldId) : undefined;
+  if (field?.kind === 'money') return money.format(Number(v));
+  if (field?.kind === 'number') return `${Number(v).toLocaleString('en-US')}${field.unit ? ` ${field.unit}` : ''}`;
+  return String(v);
+};
+
 export const projectName = (p: IntakeProject): string => String(p.answers.projectName ?? '') || 'Untitled project';

@@ -10,6 +10,16 @@
 // Review changes (firma2-project-actions) is the way to the diff. With
 // nothing waiting, neither renders.
 //
+// IMPORTS COUNT. What Import a report added in this browser is waiting on a
+// publish like any hand edit, so the badge counts it the way the review draws
+// it (src/components/review/review-rows.ts: one per field, an import over a
+// hand edit of the same field is one change). It shows for a project whose
+// only waiting changes are imported, and follows an import or its Undo without
+// a reload.
+//
+// HELD COUNTS APART (user, 2026-11-18): a change held at review was looked at
+// and deferred, so the badge says "2 unpublished changes · 1 held".
+//
 // IT ALSO OWNS THE TWO THINGS THIS BROWSER'S REVIEW DID TO THE RECORD.
 // A Publish clears the badge and the Review button; a Revert on the review
 // page put a field back to its published value, so on load this writes that
@@ -49,22 +59,35 @@ const reverts = Object.fromEntries(publishing.changes.filter((c) => c.revert).ma
 </style>
 
 <script>
-  import { pendingKeys, readPublishing } from '../../lib/publish-store';
+  import { readPublishing } from '../../lib/publish-store';
+  import { IMPORTS_EVENT } from '../../lib/report-imports';
+  import { reviewRows } from '../review/review-rows';
 
   const root = document.querySelector<HTMLElement>('.firma2-project-publish-state');
   if (root) {
     const slug = root.dataset.slug!;
     const keys: string[] = JSON.parse(root.dataset.keys ?? '[]');
     const state = readPublishing();
-    const left = pendingKeys(slug, keys, state);
 
-    root.hidden = left.length === 0;
-    const text = root.querySelector('.esa-badge__text');
-    if (text && left.length && root.dataset.first === undefined) {
-      text.textContent = `${left.length} unpublished change${left.length === 1 ? '' : 's'}`;
-    }
-    // The crumb row's way to the diff goes with the badge.
-    document.querySelector('[data-project-review]')?.closest<HTMLElement>('.esa-button')?.toggleAttribute('hidden', left.length === 0);
+    const paint = () => {
+      const rows = reviewRows(slug, keys);
+      const count = rows.count;
+      root.hidden = count === 0;
+      // Held at review: decided later, so said apart from what is simply waiting.
+      const heldMap = readPublishing().held[slug] ?? {};
+      const held = new Set(rows.pending.filter((k) => heldMap[k]).map((k) => JSON.stringify(heldMap[k]))).size;
+      const text = root.querySelector('.esa-badge__text');
+      if (text && count && root.dataset.first === undefined) {
+        const waiting = count - held;
+        text.textContent = [waiting ? `${waiting} unpublished change${waiting === 1 ? '' : 's'}` : '', held ? `${held} held` : ''].filter(Boolean).join(' · ');
+      }
+      // The crumb row's way to the diff goes with the badge.
+      document.querySelector('[data-project-review]')?.closest<HTMLElement>('.esa-button')?.toggleAttribute('hidden', count === 0);
+    };
+    paint();
+    document.addEventListener(IMPORTS_EVENT, (event) => {
+      if ((event as CustomEvent<{ slug: string }>).detail?.slug === slug) paint();
+    });
 
     // Reverted fields read their published value.
     const reverts: Record<string, { field: string; raw: string }> = JSON.parse(root.dataset.reverts ?? '{}');

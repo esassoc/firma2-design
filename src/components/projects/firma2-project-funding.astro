@@ -11,6 +11,21 @@
 // module changes its rounding. The one thing that IS computed here is how the
 // SHARE percentages round for display — see PERCENTAGES below.
 //
+// SOURCES AN IMPORT ADDED ARE THE EXCEPTION, AND THE TABLE SAYS SO
+// (.scratch/project-updates/spec.md, decision 10). Import a report can add a
+// funder a document names; this browser keeps it in src/lib/report-imports.ts
+// and the script appends it as a row, with a line under its name giving the
+// document. One whose name and administering body match a row already here is
+// skipped. Such a row breaks the construction above: the sources no longer sum
+// to the estimate, and nobody has re-estimated the project. So nothing given
+// is restated. The estimated total cost row and the seeded shares stand as
+// authored, still shares of that estimate. The added row shows its amount and
+// NO share, because it is not a slice of the estimate. And one summed row,
+// "Total from all sources", appears above the estimate while added rows
+// exist: the only derived figure, labelled as the sum it is, so the reader
+// sees secured funding and the estimate side by side instead of a 100% that
+// no longer adds up. Undo the import and the table is the authored one again.
+//
 // WHY A PLAIN <table> AND NOT AG GRID. This spoke's precedent for tabular data is
 // AG Grid with the full standard chrome (src/components/shared/grid-chrome.ts,
 // firma2-data-grid-chrome.css) — search, filters, CSV export, record count. That
@@ -45,9 +60,11 @@ interface Props {
    * construction — passed in rather than re-added here (see the note above).
    */
   estimatedTotalCost: number;
+  /** The project's slug, for the sources an import added. Omit where none can be. */
+  slug?: string;
 }
 
-const { funding, estimatedTotalCost } = Astro.props;
+const { funding, estimatedTotalCost, slug } = Astro.props;
 
 // Whole dollars: these are budget figures, not ledger entries, and cents on a
 // $1.2M grant are noise in every column they appear in.
@@ -138,7 +155,7 @@ for (let i = 0; i < leftover; i += 1) {
        The COLUMN SEMANTICS are unchanged: the funder still names its row, the
        amounts still align to their end, and the estimated total cost still sits
        under them as a footer rather than a fourth data row. -->
-  <div class="firma2-project-funding">
+  <div class="firma2-project-funding" data-slug={slug}>
     <div class="firma2-project-funding__grid" data-firma2-funding-grid></div>
 
     <script
@@ -200,6 +217,13 @@ for (let i = 0; i < leftover; i += 1) {
      label weight against the same hairline the old <tfoot> drew. AG Grid renders
      a pinned bottom row into its own section; this is the only thing that
      section needs said about it. */
+  /* The document an added source came from, under its name. Built by the
+     grid at runtime, hence :global. A file name is one unbroken token. */
+  .firma2-project-funding :global(.firma2-project-funding__source) {
+    color: var(--color-content-default-secondary, #60655f);
+    overflow-wrap: anywhere;
+  }
+
   .firma2-project-funding :global(.ag-floating-bottom) {
     font-weight: var(--font-weight-semibold, 600);
     border-block-start: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
@@ -208,14 +232,32 @@ for (let i = 0; i < leftover; i += 1) {
 
 <script>
   import { createCardGrid, gridCurrencyFormatter as currency } from '../shared/grid-chrome';
-  import type { ColDef } from 'ag-grid-community';
+  import type { ColDef, ICellRendererParams } from 'ag-grid-community';
+  import { IMPORTS_EVENT, importedFunding, sourceLine } from '../../lib/report-imports';
 
   interface FundingRow {
     name: string;
     organization: string;
     amount: number;
-    share: number;
+    /** Whole percent of the estimated total cost. Null where a share is not claimed. */
+    share: number | null;
+    /** "From <document>", on a row an import added. */
+    source?: string;
   }
+
+  // A source an import added: its name, then the document it came from.
+  const namedWithSource = (params: ICellRendererParams<FundingRow>): HTMLElement => {
+    const box = document.createElement('span');
+    box.className = 'stack';
+    box.dataset.gap = '2xs';
+    const name = document.createElement('span');
+    name.textContent = params.data?.name ?? '';
+    const source = document.createElement('span');
+    source.className = 'firma2-project-funding__source typography-body-xs';
+    source.textContent = params.data?.source ?? '';
+    box.append(name, source);
+    return box;
+  };
 
   document.querySelectorAll<HTMLElement>('.firma2-project-funding').forEach((root) => {
     const host = root.querySelector<HTMLElement>('[data-firma2-funding-grid]');
@@ -240,6 +282,7 @@ for (let i = 0; i < leftover; i += 1) {
       {
         headerName: 'Source', field: 'name', colId: 'name',
         flex: 2, minWidth: 160, wrapText: true, autoHeight: true,
+        cellRendererSelector: (p) => (p.data?.source ? { component: namedWithSource } : undefined),
       },
       // "Administered by", not "Agency" or "Organization": the funders are a mix
       // of boards, trusts and alliances, and a Local Sponsor Match is
@@ -263,9 +306,32 @@ for (let i = 0; i < leftover; i += 1) {
       },
     ];
 
-    createCardGrid<FundingRow>(host, {
-      rowData: rows,
+    // WHAT THE TABLE HOLDS NOW: the authored rows, then any an import added in
+    // this browser. The header comment argues the total's treatment.
+    const slug = root.dataset.slug;
+    const estimate: FundingRow = { name: 'Estimated total cost', organization: '', amount: estimatedTotalCost, share: 100 };
+    const keyOf = (row: { name: string; organization: string }): string =>
+      `${row.name.trim()}|${row.organization.trim()}`.toLowerCase();
+    const current = (): { rowData: FundingRow[]; pinned: FundingRow[] } => {
+      const added = new Map<string, FundingRow>();
+      const seeded = new Set(rows.map(keyOf));
+      (slug ? importedFunding(slug) : []).forEach(({ funding, from }) => {
+        const key = keyOf(funding);
+        // A later import of the same source replaces the earlier figure.
+        if (!seeded.has(key)) added.set(key, { ...funding, share: null, source: sourceLine(from) });
+      });
+      const rowData = [...rows, ...added.values()];
+      if (added.size === 0) return { rowData, pinned: [estimate] };
+      const sum = rowData.reduce((total, row) => total + row.amount, 0);
+      return { rowData, pinned: [{ name: 'Total from all sources', organization: '', amount: sum, share: null }, estimate] };
+    };
+    const initial = current();
+
+    const api = createCardGrid<FundingRow>(host, {
+      rowData: initial.rowData,
       columnDefs,
+      // Rows added or removed after load are measured like the first ones.
+      onRowDataUpdated: (e) => e.api.resetRowHeights(),
       // This grid never scrolls sideways — four columns, two of them flexed —
       // so the reserved scrollbar gutter was pure empty band between the last
       // funder and the total row. Set per call, not in createCardGrid: the
@@ -286,14 +352,15 @@ for (let i = 0; i < leftover; i += 1) {
       //
       // A pinned bottom row rather than a fourth data row: it is not a funding
       // source, and the old markup made the same distinction with <tfoot>.
-      pinnedBottomRowData: [
-        {
-          name: 'Estimated total cost',
-          organization: '',
-          amount: estimatedTotalCost,
-          share: 100,
-        },
-      ],
+      pinnedBottomRowData: initial.pinned,
     });
+
+    if (slug) {
+      document.addEventListener(IMPORTS_EVENT, () => {
+        const next = current();
+        api.setGridOption('rowData', next.rowData);
+        api.setGridOption('pinnedBottomRowData', next.pinned);
+      });
+    }
   });
 </script>

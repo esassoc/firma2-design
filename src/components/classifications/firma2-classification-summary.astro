@@ -14,6 +14,10 @@
 // is the question the hover card on a project's classification chip raises
 // and this page answers.
 //
+// A GROUP'S PAGE USES IT TOO (`kind="classificationGroup"`, user 2026-11-23):
+// the same sentence and the same four figures, added up across everything
+// filed beneath the group, each project counted once.
+//
 // Renames, descriptions and removals made in Workspace settings are applied
 // in the browser (src/lib/taxonomy-edits.ts).
 //
@@ -22,20 +26,21 @@
 // and an orphan — the same call firma2-project-expenditures makes.
 import EsaStat from '@esa/ecology/esa-stat.astro';
 import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
-import type { Classification } from '../../data/firma2-classifications';
 import type { ClassificationRollup } from '../../data/firma2-classification-rollup';
 import { projects as portfolio } from '../../data/firma2-projects';
 import { currencyFormatter as currency } from '../../lib/format';
 
 interface Props {
-  classification: Classification;
-  rollup: ClassificationRollup;
+  /** The classification — or the group — being summed. */
+  classification: { slug: string; description: string };
+  rollup: Pick<ClassificationRollup, 'projects' | 'estimatedTotalCost' | 'spentToDate' | 'funders'>;
+  kind?: 'classification' | 'classificationGroup';
 }
 
-const { classification, rollup } = Astro.props;
+const { classification, rollup, kind = 'classification' } = Astro.props;
 const spentShare = rollup.estimatedTotalCost > 0 ? Math.round((rollup.spentToDate / rollup.estimatedTotalCost) * 100) : 0;
 ---
-<section class="firma2-classification-summary stack" data-gap="lg" aria-label="Summary" data-slug={classification.slug}>
+<section class="firma2-classification-summary stack" data-gap="lg" aria-label="Summary" data-slug={classification.slug} data-kind={kind}>
   <div data-removed hidden>
     <EsaAlertBox variant="warning" title="Removed">Removed in Workspace settings.</EsaAlertBox>
   </div>
@@ -69,12 +74,13 @@ const spentShare = rollup.estimatedTotalCost > 0 ? Math.round((rollup.spentToDat
 
   document.querySelectorAll<HTMLElement>('.firma2-classification-summary').forEach((root) => {
     const slug = root.dataset.slug ?? '';
+    const kind = root.dataset.kind === 'classificationGroup' ? 'classificationGroup' : 'classification';
     const removed = root.querySelector<HTMLElement>('[data-removed]');
-    if (isRemoved('classification', slug)) {
+    if (isRemoved(kind, slug)) {
       if (removed) removed.hidden = false;
       return;
     }
-    const entry = getEntry('classification', slug);
+    const entry = getEntry(kind, slug);
     if (!entry) return;
     retitle(entry.name);
     const description = root.querySelector('[data-description]');

@@ -87,11 +87,33 @@ Non-negotiable order: **Clarity > Concision > Character.** Front-load. Titles
 60 chars, summaries 160, push 200 — or the component's real limit, whichever is
 tighter. Generate 3+ options and score them; never ship the first draft.
 
+## Requirements — from prototype to user stories
+
+A prototype becomes epics and user stories through the repo-local
+**`prototype-to-stories`** skill (`/prototype-to-stories <feature> [stage]`);
+paths and conventions are in `docs/agents/requirements.md`. Features are
+`exploring` until the user says they are done (`baseline`); after that a
+session-start check reports prototype changes and `sync` updates the stories.
+
+Starting a new feature or prototype: load the **`feature-kickoff`** skill first
+(register the feature, start its spec and manifest, and follow its habits while
+building). While building or changing a prototype, record each settled product
+decision in the feature's spec with the **`decision-log`** skill.
+
 ## Confidentiality
 
 This repo and its deployed site are PUBLIC. Client-sensitive material lives
 ONLY in `docs/private/` (gitignored). Mock data is invented — never copied or
 sanitized from client documents.
+
+**Real workspace, dev only.** `scripts/pull-projectfirma.mjs <host> <tenant>`
+pulls one ProjectFirma tenant into `docs/private/<tenant>/workspace.json`, and
+`astro dev` renders it in place of the invented fixtures
+(`src/data/firma2-real-data.ts`). Every build gets `null` instead, so the
+public site never carries it. `FIRMA2_DATA=mock npm run dev` shows the invented
+data; `FIRMA2_WORKSPACE=<tenant>` picks a folder. Never paste tenant values or
+the web service token into `src/` — fixtures that name a project go through
+`demoProjectName()` / `demoProjectSlug()`.
 
 ## Agent skills
 

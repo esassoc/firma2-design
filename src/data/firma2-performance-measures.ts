@@ -36,6 +36,7 @@
 
 import { classifications } from './firma2-projects';
 import type { ClassificationName } from './firma2-projects';
+import { REAL, realMeasureFor, realRecords, realUnit, slugOf } from './firma2-real-data';
 
 // ---------------------------------------------------------------------------
 // Breakdowns — the questions a reporter answers alongside the number
@@ -270,7 +271,7 @@ export interface PerformanceMeasureDefinition {
   estimateMethod?: string;
 }
 
-export const measures: PerformanceMeasureDefinition[] = [
+const MOCK_MEASURES: PerformanceMeasureDefinition[] = [
   {
     slug: 'acres-forest-fuels-reduction-treatment',
     claim: 'I need to tell my funder how many acres of forest we treat for fuels each year, and by what method.',
@@ -559,6 +560,50 @@ export const measures: PerformanceMeasureDefinition[] = [
     estimateMethod: 'planting-rewetting-carbon',
   },
 ];
+
+// A REAL WORKSPACE'S CATALOG (dev only — firma2-real-data.ts). The tenant's
+// web services give each measure a name, a unit and its subcategory questions,
+// with no definition; a question's options are the ones its projects answered.
+//
+// INFERRED: which classifications track a measure. ProjectFirma has no such
+// link, so a limiting factor tracks every measure one of its own projects
+// expects or reports. Species and other systems are left untracked — a project
+// carries several, and each would count the same work again.
+const realCatalog = (): PerformanceMeasureDefinition[] =>
+  (REAL?.measures ?? []).map((measure, n) => {
+    const rows = [...realRecords.values()].flatMap((record) =>
+      [...record.expected, ...record.reported]
+        .filter((row) => realMeasureFor(row) === measure)
+        .map((row) => ({ record, row })),
+    );
+    const unit = realUnit(measure.unit) as MeasureUnit;
+    return {
+      slug: slugOf(measure.name),
+      name: measure.name,
+      claim: '',
+      definition: measure.description,
+      classifications: Array.from(new Set(rows.map(({ record }) => record.taxonomyLeaf))).sort() as ClassificationName[],
+      unit,
+      decimalPlaces: unit === 'miles' ? 2 : unit === 'acres' ? 1 : 0,
+      countingRule: 'sum',
+      breakdowns: measure.subcategories.map((sub, i) => {
+        const options = new Set<string>();
+        for (const { row } of rows) {
+          if ('subcategories' in row) {
+            for (const s of row.subcategories) if (s.name.trim() === sub.name) options.add(s.option);
+          } else {
+            const at = row.dimensions.findIndex((d) => d.trim() === sub.name);
+            if (at >= 0) for (const r of row.rows) options.add(r.options[at]);
+          }
+        }
+        return { id: `bd-real-${n}-${i}`, question: sub.name, options: [...options].filter(Boolean).sort() };
+      }),
+      reporterGuidance: '',
+      status: 'Published',
+    };
+  });
+
+export const measures: PerformanceMeasureDefinition[] = REAL ? realCatalog() : MOCK_MEASURES;
 
 // ---------------------------------------------------------------------------
 // Derived helpers

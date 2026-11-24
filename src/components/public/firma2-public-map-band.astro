@@ -1,0 +1,295 @@
+---
+// firma2-public-map-band — where the work is, as something to explore: every
+// public project's work areas on a relief map the width of the window, and
+// beside it a panel that drives the map.
+//
+// THE PANEL (2026-11-20, user: "the map experience is very lackluster" — it
+// was a grey canvas with four figures on it and nothing to do):
+//   - the program's size in four figures;
+//   - GOAL CHIPS that filter both the list and the map ("near my topic");
+//   - THE PROJECT LIST. Pointing at or tabbing to a project lifts its work on
+//     the map and quiets the rest; choosing it flies the map there and opens
+//     its popup card.
+//     Clicking a shape on the map marks its row in the list.
+// Every motion here answers the reader's own pointer or key.
+//
+// THE POPUP IS A PHOTO CARD ON THE POINT (decided from /proto/map-card,
+// 2026-11-20; see .scratch/public-views/map-popup-decision.md): the project's
+// Featured photo edge to edge across its head, then name, stage badge, lead
+// organization, county and estimated cost, and a full-width Open project
+// button. Rendered here per project into a <template> the map clones.
+//
+// WITHOUT SCRIPT each row is a plain link to its project's page.
+//
+// The map itself is firma2-project-set-map, driven through its events
+// (firma2:set-map-filter / -hover / -focus / -select).
+//
+// On a phone the panel leaves the map and sits under it, its list a short
+// scrolling box.
+//
+// bcn-lego-checked: esa-stat figures, esa-chip-group for the goal filter (a
+// single-select radiogroup — exactly this); the list rows are links with two
+// lines, which no esa- lego is (esa-link-column is a footer column). The
+// classes place the panel and lay out a row. Beacon is not cloned on this
+// machine.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaStat from '@esa/ecology/esa-stat.astro';
+import Firma2ProjectSetMap from '../shared/firma2-project-set-map.astro';
+import type { PublicGoal, PublicProject } from '../../data/firma2-public-site';
+import { getProjectDetail } from '../../data/firma2-project-detail';
+import { seededFeatured } from '../../data/firma2-featured-photos';
+import { projectSlug } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+import { photoSrc } from '../../lib/project-photos';
+
+interface Props {
+  projects: PublicProject[];
+  goals: PublicGoal[];
+}
+
+const { projects, goals } = Astro.props;
+const count = (values: string[]) => new Set(values).size;
+const cost = projects.reduce((sum, p) => sum + p.estimatedTotalCost, 0);
+const compactUsd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
+
+const rows = [...projects]
+  .sort((a, b) => a.project.projectName.localeCompare(b.project.projectName))
+  .map((p) => {
+    const slug = projectSlug(p.project);
+    const { photos } = getProjectDetail(p.project);
+    const at = seededFeatured(slug, photos.length);
+    return {
+      ...p,
+      slug,
+      meta: `${p.stage} · ${p.project.leadOrganization}`,
+      photo: at < 0 ? undefined : { src: photoSrc(photos[at], 640, 360, 65), alt: photos[at].caption },
+      county: `${p.project.county} County`,
+      cost: compactUsd.format(p.estimatedTotalCost),
+      goals: goals.filter((g) => p.project.classifications.includes(g.goal.name)).map((g) => g.goal.slug),
+    };
+  });
+const ALL = 'all';
+const chips = [{ value: ALL, label: 'All goals', tone: 'brand' }, ...goals.map((g) => ({ value: g.goal.slug, label: g.goal.name, tone: 'brand' }))];
+---
+<div class="firma2-public-map-band" data-map-band>
+  <Firma2ProjectSetMap
+    title="Where the work is"
+    label="Map of the program's projects"
+    items={rows.map((r) => ({ project: r.project }))}
+    audience="public"
+    height="clamp(34rem, 82vh, 48rem)"
+    insetStart={420}
+    hideTitle
+    bleed
+    terrain
+  >
+    <Fragment slot="popups">
+      {rows.map((r) => (
+        <template data-popup={r.slug}>
+          <article class="firma2-public-map-band__card">
+            {r.photo && <img src={r.photo.src} alt={r.photo.alt} width="640" height="360" />}
+            <div class="firma2-public-map-band__card-body stack" data-gap="sm">
+              <div class="stack" data-gap="xs">
+                <h3 class="typography-title-sm-strong">{r.project.projectName}</h3>
+                <div class="cluster" data-gap="xs">
+                  <EsaBadge value={r.stage} variant="secondary" size="sm" />
+                  <span class="firma2-public-map-band__meta typography-body-sm">{r.project.leadOrganization}</span>
+                </div>
+              </div>
+              <dl class="firma2-public-map-band__facts typography-body-sm">
+                <div><dt>County</dt><dd>{r.county}</dd></div>
+                <div><dt>Estimated cost</dt><dd>{r.cost}</dd></div>
+              </dl>
+              <div class="firma2-public-map-band__open"><EsaButton variant="primary" href={withBase(r.href)} iconRight="arrow-right">Open project</EsaButton></div>
+            </div>
+          </article>
+        </template>
+      ))}
+    </Fragment>
+  </Firma2ProjectSetMap>
+  <div class="firma2-public-map-band__panel">
+    <div class="firma2-public-map-band__figures">
+      <EsaStat value={projects.length} label="Projects" />
+      <EsaStat value={count(projects.map((p) => p.project.leadOrganization))} label="Lead organizations" />
+      <EsaStat value={count(projects.map((p) => p.project.county))} label="Counties" />
+      <EsaStat value={compactUsd.format(cost)} label="Estimated cost" />
+    </div>
+    <esa-chip-group class="firma2-public-map-band__chips" label="Show projects for a goal" size="sm" value={ALL} options={JSON.stringify(chips)} data-goal-filter></esa-chip-group>
+    <ul class="firma2-public-map-band__list" aria-label="Projects on the map" data-project-list>
+      {rows.map((r) => (
+        <li data-slug={r.slug} data-goals={r.goals.join(' ')}>
+          <a href={withBase(r.href)} data-row>
+            <span class="typography-label-md-strong">{r.project.projectName}</span>
+            <span class="firma2-public-map-band__meta typography-body-sm">{r.meta}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</div>
+
+<style>
+  .firma2-public-map-band {
+    position: relative;
+  }
+  .firma2-public-map-band__panel {
+    position: absolute;
+    z-index: 1;
+    inset-block: var(--spacing-500);
+    inset-inline-start: max(var(--firma2-public-gutter, var(--spacing-600)), calc((100vw - 76rem) / 2 + var(--firma2-public-gutter, var(--spacing-600))));
+    inline-size: 23rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-400);
+    padding: var(--spacing-500);
+    background: var(--color-background-elevation-floating);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg, var(--radius-md));
+    box-sizing: border-box;
+  }
+  .firma2-public-map-band__figures {
+    --stat-value-size: var(--font-size-500, 1.5rem);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-300) var(--spacing-500);
+  }
+  .firma2-public-map-band__list {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin: 0 calc(-1 * var(--spacing-300));
+    padding: 0;
+    list-style: none;
+    border-block-start: 1px solid var(--color-border-subtle);
+  }
+  .firma2-public-map-band__list li[hidden] {
+    display: none;
+  }
+  .firma2-public-map-band__list a {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-050);
+    padding: var(--spacing-200) var(--spacing-300);
+    border-radius: var(--radius-sm);
+    color: var(--color-content-default);
+    text-decoration: none;
+    /* Scanned row after row: a colour change only, no movement. */
+    transition: background-color 120ms ease;
+  }
+  .firma2-public-map-band__list a[aria-current='true'] {
+    background: var(--color-background-brand-muted);
+  }
+  @media (hover: hover) {
+    .firma2-public-map-band__list a:hover {
+      background: var(--color-background-elevation-sunken);
+    }
+    .firma2-public-map-band__list a[aria-current='true']:hover {
+      background: var(--color-background-brand-muted);
+    }
+  }
+  .firma2-public-map-band__meta {
+    color: var(--color-content-default-secondary);
+  }
+  /* ---- the popup card (cloned into Leaflet's popup, 304px wide) ---- */
+  .firma2-public-map-band__card img {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background: var(--color-background-elevation-sunken);
+  }
+  .firma2-public-map-band__card-body {
+    padding: var(--spacing-400);
+  }
+  .firma2-public-map-band__card h3 {
+    margin: 0;
+    text-wrap: balance;
+  }
+  .firma2-public-map-band__facts {
+    display: flex;
+    gap: var(--spacing-200) var(--spacing-600);
+    margin: 0;
+  }
+  .firma2-public-map-band__facts dt {
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-public-map-band__facts dd {
+    margin: 0;
+    font-weight: var(--typography-font-weight-medium);
+  }
+  /* The door spans the card. */
+  .firma2-public-map-band__open,
+  .firma2-public-map-band__open :global(.esa-button),
+  .firma2-public-map-band__open :global(.esa-button__native) {
+    display: flex;
+    inline-size: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  @media (max-width: 45rem) {
+    .firma2-public-map-band__panel {
+      position: static;
+      inline-size: auto;
+      border-inline: 0;
+      border-radius: 0;
+      padding-inline: var(--firma2-public-gutter, var(--spacing-400));
+    }
+    .firma2-public-map-band__list {
+      max-block-size: 22rem;
+    }
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-chip-group';
+
+  document.querySelectorAll<HTMLElement>('[data-map-band]').forEach((band) => {
+    const map = band.querySelector<HTMLElement>('.firma2-project-set-map');
+    const list = band.querySelector<HTMLElement>('[data-project-list]');
+    const filter = band.querySelector<HTMLElement>('[data-goal-filter]');
+    if (!map || !list) return;
+    const send = (name: string, detail: unknown) => map.dispatchEvent(new CustomEvent(`firma2:set-map-${name}`, { detail }));
+    const items = Array.from(list.querySelectorAll<HTMLElement>('li'));
+    const mark = (slug: string | null, reveal = false) =>
+      items.forEach((li) => {
+        const row = li.querySelector('a')!;
+        const on = li.dataset.slug === slug;
+        on ? row.setAttribute('aria-current', 'true') : row.removeAttribute('aria-current');
+        if (on && reveal) li.scrollIntoView({ block: 'nearest' });
+      });
+
+    items.forEach((li) => {
+      const row = li.querySelector('a')!;
+      const slug = li.dataset.slug!;
+      row.addEventListener('pointerenter', () => send('hover', { slug }));
+      row.addEventListener('pointerleave', () => send('hover', { slug: null }));
+      row.addEventListener('focus', () => send('hover', { slug }));
+      row.addEventListener('blur', () => send('hover', { slug: null }));
+      // A plain click explores; a modified one (new tab) stays a link.
+      row.addEventListener('click', (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        mark(slug);
+        send('hover', { slug: null });
+        send('focus', { slug });
+      });
+    });
+
+    band.addEventListener('firma2:set-map-select', (e) => mark((e as CustomEvent<{ slug: string }>).detail.slug, true));
+
+    filter?.addEventListener('change', (e) => {
+      const goal = (e as CustomEvent<{ value: string }>).detail.value;
+      const shown: string[] = [];
+      items.forEach((li) => {
+        const on = goal === 'all' || (li.dataset.goals ?? '').split(' ').includes(goal);
+        li.hidden = !on;
+        if (on) shown.push(li.dataset.slug!);
+      });
+      mark(null);
+      send('filter', { slugs: goal === 'all' ? null : shown });
+    });
+  });
+</script>

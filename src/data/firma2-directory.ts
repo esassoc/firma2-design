@@ -13,6 +13,7 @@
 
 import { projects } from './firma2-projects';
 import { funderPrograms, getProjectDetail } from './firma2-project-detail';
+import { REAL } from './firma2-real-data';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -27,12 +28,16 @@ const hashOf = (value: string): number => {
 /** The acronym an invented organization's web and mail domains are built on —
  *  the same rule firma2-project-detail uses for contact emails. */
 const domainOf = (organization: string): string =>
-  organization
+  // A real organization (dev only) has a real domain this cannot guess, and a
+  // guess would read as its address. The invented people mail from example.org.
+  REAL
+    ? 'example.org'
+    : organization
     .split(/\s+/)
     .filter((word) => !/^(of|the|and|for|&)$/i.test(word))
     .map((word) => word[0])
-    .join('')
-    .toLowerCase() + '.org';
+        .join('')
+        .toLowerCase() + '.org';
 
 export const organizationSlug = (name: string): string =>
   name.toLowerCase().replace(/[–—]/g, '-').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -181,11 +186,24 @@ const fundedBy = (organization: string): number =>
     ),
   ).length;
 
-const seeds: { name: string; type: OrganizationType }[] = [
-  ...leadNames.map((name) => ({ name, type: leadType(name) })),
-  ...funderNames.map((name) => ({ name, type: FUNDER_TYPES[name] ?? 'State agency' })),
-  ...OTHER_ORGANIZATIONS,
-];
+// A real workspace (dev only) brings its own registry and its own type names.
+// A lead or a fund's organization the registry does not list is added untyped.
+const realSeeds = (): { name: string; type: OrganizationType }[] => {
+  const listed = (REAL?.organizations ?? []).map((o) => ({ name: o.name, type: o.type as OrganizationType }));
+  const known = new Set(listed.map((o) => o.name));
+  const unlisted = [...leadNames, ...funderNames].filter((name) => !known.has(name));
+  return [...listed, ...Array.from(new Set(unlisted)).map((name) => ({ name, type: '' as OrganizationType }))];
+};
+
+const others = REAL ? [] : OTHER_ORGANIZATIONS;
+
+const seeds: { name: string; type: OrganizationType }[] = REAL
+  ? realSeeds()
+  : [
+      ...leadNames.map((name) => ({ name, type: leadType(name) })),
+      ...funderNames.map((name) => ({ name, type: FUNDER_TYPES[name] ?? 'State agency' })),
+      ...OTHER_ORGANIZATIONS,
+    ];
 
 // ---------------------------------------------------------------------------
 // People
@@ -267,10 +285,16 @@ const daysAgo = (days: number): string => {
 };
 
 /** The signed-in reader — the same person AppLayout's account menu names. */
+// In a real workspace (dev only) the reader's organizations are the two that
+// lead the most projects; the reader stays invented.
+const busiestLeads = [...leadNames].sort(
+  (a, b) => projects.filter((p) => p.leadOrganization === b).length - projects.filter((p) => p.leadOrganization === a).length || a.localeCompare(b),
+);
+
 export const CURRENT_USER = {
   name: 'Dana Whitfield',
-  email: 'd.whitfield@cwrb.org',
-  organization: 'California Watershed Restoration Board',
+  email: REAL ? 'd.whitfield@example.org' : 'd.whitfield@cwrb.org',
+  organization: REAL ? busiestLeads[0] : 'California Watershed Restoration Board',
 };
 
 /**
@@ -278,7 +302,7 @@ export const CURRENT_USER = {
  * Two, so the app rail shows its plural case: a board administrator who also
  * sits on a partner trust. Invented, like the rest of the directory.
  */
-export const CURRENT_USER_ORGANIZATIONS: string[] = [CURRENT_USER.organization, 'Feather Headwaters Trust'];
+export const CURRENT_USER_ORGANIZATIONS: string[] = [CURRENT_USER.organization, REAL ? busiestLeads[1] : 'Feather Headwaters Trust'].filter(Boolean);
 
 const roster: { organization: string; role: UserRole; manager: boolean }[] = [];
 const add = (organization: string, role: UserRole, count: number, manager = false) => {
@@ -299,7 +323,7 @@ for (const name of leadNames) {
 for (const name of funderNames.filter((n) => n !== CURRENT_USER.organization)) {
   add(name, 'Viewer', 1 + (hashOf(name) % 2));
 }
-for (const { name, type } of OTHER_ORGANIZATIONS) {
+for (const { name, type } of others) {
   add(name, 'Contributor', 1);
   if (type === 'Local government') add(name, 'Viewer', 1);
 }
@@ -380,7 +404,7 @@ export const organizations: Organization[] = seeds
       name,
       slug: organizationSlug(name),
       type,
-      website: domainOf(name),
+      website: REAL ? '' : domainOf(name),
       description: FUNDER_DESCRIPTIONS[name] ?? '',
       primaryContact: contact?.name ?? '',
       projectsLed: projects.filter((p) => p.leadOrganization === name).length,
@@ -404,12 +428,12 @@ export const organizations: Organization[] = seeds
       // The host board and most lead organizations let their own staff in by
       // domain; funders and contractors invite one by one.
       approvedDomains: [
-        ...(host || (leadNames.includes(name) && h % 3 !== 0)
+        ...(!REAL && (host || (leadNames.includes(name) && h % 3 !== 0))
           ? [{ domain: domainOf(name), status: 'verified' as const, email: contact?.email ?? `admin@${domainOf(name)}`, date: daysAgo(host ? 900 : 20 + (h % 600)) }]
           : []),
         // The board is also bringing in the state agency's own domain; the code
         // went out two days ago and nobody has entered it yet.
-        ...(host ? [{ domain: 'watershedboard.ca.gov', status: 'pending' as const, email: 'a.castillo@watershedboard.ca.gov', date: daysAgo(2) }] : []),
+        ...(host && !REAL ? [{ domain: 'watershedboard.ca.gov', status: 'pending' as const, email: 'a.castillo@watershedboard.ca.gov', date: daysAgo(2) }] : []),
       ],
       // The host agency opened the workspace about two and a half years before
       // the fixture's today; everyone else joined after it.
@@ -428,7 +452,7 @@ export const organizations: Organization[] = seeds
   })
   .sort((a, b) => a.name.localeCompare(b.name));
 
-export const organizationTypes: OrganizationType[] = [
+const MOCK_ORGANIZATION_TYPES: OrganizationType[] = [
   'Nonprofit',
   'Resource conservation district',
   'Tribal government',
@@ -437,6 +461,10 @@ export const organizationTypes: OrganizationType[] = [
   'Federal agency',
   'Private company',
 ];
+
+export const organizationTypes: OrganizationType[] = REAL
+  ? (Array.from(new Set(REAL.organizations.map((o) => o.type))).sort() as OrganizationType[])
+  : MOCK_ORGANIZATION_TYPES;
 
 /** Highest first; each role holds everything below it. */
 export const userRoles: UserRole[] = ['Administrator', 'Contributor', 'Viewer'];

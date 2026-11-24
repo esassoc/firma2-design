@@ -1,0 +1,354 @@
+---
+// PROTOTYPE — variant "Listing" for /proto/project-showcase. Throwaway.
+//
+// AXIS: the Airbnb listing page. The title, then a five-photo mosaic with
+// "Show all photos"; under it a reading column on the left (a highlight box,
+// who leads it, the story, what it delivers as an amenities-style list of
+// rings, the goals) and a STICKY SUMMARY CARD on the right where the booking
+// card would be: the cost, what funds it as one segmented bar, what has been
+// spent, and a start | finish box in the check-in | check-out shape.
+//
+// bcn-lego-checked: prototype — mosaic, rings, segmented bar and summary card are layout for this variant; the photos dialog is a native <dialog> (throwaway); EsaButton for the controls
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { iconSvg } from '@esa/ecology/icon-registry';
+import Firma2ProjectTimeline from '../../components/projects/firma2-project-timeline.astro';
+import Firma2ProjectMap from '../../components/projects/firma2-project-map.astro';
+import type { Showcase } from './model';
+import { num, ring, usd, usdShort } from './model';
+
+interface Props {
+  s: Showcase;
+}
+const { s } = Astro.props;
+const mosaic = s.photos.slice(0, 5);
+const SEG = ['var(--color-background-brand)', 'color-mix(in srgb, var(--color-background-brand) 55%, var(--color-background-elevation-raised))', 'color-mix(in srgb, var(--color-background-brand) 28%, var(--color-background-elevation-raised))', 'var(--color-border-default)'];
+const spentPct = Math.min(100, Math.round((s.spent / s.cost) * 100));
+const initials = s.lead.split(/\s+/).filter((w) => /^[A-Z]/.test(w)).slice(0, 2).map((w) => w[0]).join('');
+---
+<div class="pl">
+  <div class="pl__col">
+    <h1 class="pl__title typography-heading-lg">{s.name}</h1>
+
+    {mosaic.length > 0 && (
+      <div class="pl__mosaic" data-count={Math.min(mosaic.length, 5)}>
+        {mosaic.map((p, i) => {
+          const ph = s.photo(p, i === 0 ? 1200 : 600, i === 0 ? 900 : 450);
+          return <button type="button" class="pl__tile" data-open-photos={i} aria-label={`Open photo: ${ph.alt}`}><img src={ph.src} alt="" width={i === 0 ? 1200 : 600} height={i === 0 ? 900 : 450} loading={i === 0 ? 'eager' : 'lazy'} /></button>;
+        })}
+        <span class="pl__all"><EsaButton variant="secondary" icon="layout-grid" data-open-photos="0">Show all {s.photos.length} photos</EsaButton></span>
+      </div>
+    )}
+
+    <div class="pl__body">
+      <div class="pl__main">
+        <div class="pl__intro">
+          <h2 class="typography-title-strong">{s.type} in {s.county} County</h2>
+          <p class="pl__quiet typography-body-md">{s.stage} · {s.start}–{s.end} · {s.measures.length} performance measures · {s.funding.length} funding sources</p>
+        </div>
+
+        {s.measures.length > 0 && (
+          <div class="pl__highlight">
+            <span class="pl__laurel" aria-hidden="true" set:html={iconSvg('target', 28) ?? ''} />
+            <p class="typography-label-lg-strong">{s.pastHalf} of {s.measures.length} measures are past halfway</p>
+            <div class="pl__highlight-figure">
+              <span class="typography-title-strong">{s.lastReport ?? '—'}</span>
+              <span class="pl__quiet typography-body-sm">Last report</span>
+            </div>
+          </div>
+        )}
+
+        <div class="pl__row pl__host">
+          <span class="pl__avatar" aria-hidden="true">{initials}</span>
+          <div>
+            <p class="typography-label-lg-strong">Led by {s.lead}</p>
+            {s.leadDomain && <p class="pl__quiet typography-body-sm">Verified · {s.leadDomain}</p>}
+          </div>
+        </div>
+
+        <p class="pl__story typography-body-lg">{s.description}</p>
+
+        {s.measures.length > 0 && (
+          <section class="pl__section" aria-labelledby="pl-delivers">
+            <h2 id="pl-delivers" class="typography-title-strong">What this project delivers</h2>
+            <ul class="pl__amenities">
+              {s.measures.map((m) => {
+                const r = ring(m.percent, 16);
+                return (
+                  <li>
+                    <svg class="pl__ring" viewBox="0 0 40 40" width="40" height="40" role="img" aria-label={`${m.percent}% of planned`}>
+                      <circle cx="20" cy="20" r="16" class="pl__ring-track" />
+                      <circle cx="20" cy="20" r="16" class="pl__ring-fill" stroke-dasharray={r.dash} transform="rotate(-90 20 20)" />
+                    </svg>
+                    <div>
+                      <p class="typography-label-md-strong">{num(m.reported)} of {num(m.expected)} {m.unit}</p>
+                      <p class="pl__quiet typography-body-sm">{m.name}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {s.goals.length > 0 && (
+          <section class="pl__section" aria-labelledby="pl-goals">
+            <h2 id="pl-goals" class="typography-title-strong">Goals it works toward</h2>
+            <ul class="pl__amenities">
+              {s.goals.map((g) => (
+                <li>
+                  <span class="pl__goal-icon" aria-hidden="true" set:html={iconSvg(g.icon, 28) ?? ''} />
+                  <div>
+                    <a class="typography-label-md-strong" href={g.href}>{g.name}</a>
+                    <p class="pl__quiet typography-body-sm">{g.description}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+
+      <aside class="pl__card" aria-label="Cost and funding">
+        <p><span class="pl__price">{usd.format(s.cost)}</span> <span class="pl__quiet typography-body-md">estimated cost</span></p>
+        <div class="pl__dates">
+          <div><span class="pl__dates-label">Start</span><span>{s.start}</span></div>
+          <div><span class="pl__dates-label">Finish</span><span>{s.end}</span></div>
+          <div class="pl__dates-wide"><span class="pl__dates-label">Stage</span><span>{s.stage}</span></div>
+        </div>
+        {s.funding.length > 0 && (
+          <div class="pl__funding">
+            <p class="typography-label-md-strong">Funded by</p>
+            <div class="pl__segments" role="img" aria-label={s.funding.map((f) => `${f.name} ${Math.round(f.share * 100)}%`).join(', ')}>
+              {s.funding.map((f, i) => <span style={`flex:${f.share};background:${SEG[Math.min(i, SEG.length - 1)]}`} title={`${f.name}: ${usd.format(f.amount)}`}></span>)}
+            </div>
+            <ul class="pl__legend">
+              {s.funding.map((f, i) => (
+                <li>
+                  <span class="pl__swatch" style={`background:${SEG[Math.min(i, SEG.length - 1)]}`} aria-hidden="true"></span>
+                  <span class="pl__legend-name typography-body-sm">{f.name}<span class="pl__quiet"> · {f.organization}</span></span>
+                  <span class="typography-label-sm-strong">{usdShort.format(f.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div class="pl__spent">
+          <div class="pl__spent-line typography-body-sm"><span>Spent so far</span><span class="typography-label-md-strong">{usd.format(s.spent)}</span></div>
+          <div class="pl__bar"><span style={`--p:${spentPct / 100}`}></span></div>
+          <p class="pl__quiet typography-body-sm">{spentPct}% of the estimated cost</p>
+        </div>
+        <EsaButton variant="primary" href="#pl-map" iconRight="arrow-down">See where the work is</EsaButton>
+      </aside>
+    </div>
+
+    <div class="pl__section pl__timeline"><Firma2ProjectTimeline milestones={s.milestones} readonly /></div>
+  </div>
+  <div id="pl-map" class="pl__map"><Firma2ProjectMap detail={s.detail} readonly /></div>
+
+  <dialog class="pl__dialog" data-photos-dialog aria-label="All photos">
+    <div class="pl__dialog-bar"><EsaButton variant="secondary" icon="x" data-close-photos>Close</EsaButton></div>
+    <div class="pl__dialog-grid">
+      {s.photos.map((p, i) => {
+        const ph = s.photo(p, 1400, 933);
+        return (
+          <figure data-photo-index={i}>
+            <img src={ph.src} alt={ph.alt} width="1400" height="933" loading="lazy" />
+            <figcaption class="typography-body-sm">{ph.alt} · {ph.date}</figcaption>
+          </figure>
+        );
+      })}
+    </div>
+  </dialog>
+</div>
+
+<style>
+  .pl {
+    --_g: var(--firma2-public-gutter, var(--spacing-600));
+    padding-block: var(--spacing-700) 0;
+  }
+  .pl p, .pl h1, .pl h2, .pl figure { margin: 0; }
+  .pl__quiet { color: var(--color-content-default-secondary); }
+  .pl__col {
+    box-sizing: border-box;
+    max-inline-size: 76rem;
+    margin-inline: auto;
+    padding-inline: var(--_g);
+  }
+  .pl__title { margin-block-end: var(--spacing-500) !important; text-wrap: balance; }
+
+  /* The mosaic: one large, four small, rounded only at the outer corners. */
+  .pl__mosaic {
+    position: relative;
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: var(--spacing-200);
+    block-size: clamp(18rem, 40vw, 28rem);
+    border-radius: var(--radius-lg, 12px);
+    overflow: hidden;
+  }
+  .pl__mosaic[data-count='1'] { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .pl__mosaic[data-count='2'] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+  .pl__mosaic[data-count='3'] { grid-template-columns: 2fr 1fr; }
+  .pl__mosaic[data-count='4'] { grid-template-columns: 2fr 1fr 1fr; }
+  .pl__tile:first-child { grid-row: 1 / -1; }
+  .pl__mosaic[data-count='4'] .pl__tile:nth-child(2) { grid-row: 1 / -1; }
+  .pl__tile {
+    padding: 0;
+    border: 0;
+    background: var(--color-background-elevation-sunken);
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .pl__tile img {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    transition: filter 200ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .pl__tile:hover img { filter: brightness(0.85); }
+  }
+  .pl__tile:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color); outline-offset: -4px; }
+  .pl__all { position: absolute; inset: auto var(--spacing-400) var(--spacing-400) auto; }
+  /* Over a photo the button needs its own ground. */
+  .pl__all :global(.esa-button__native) { background: var(--color-background-elevation-raised); color: var(--color-content-default); border-color: var(--color-content-default); }
+
+  .pl__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 24rem;
+    gap: var(--spacing-900);
+    align-items: start;
+    margin-block-start: var(--spacing-700);
+  }
+  .pl__main > * + * {
+    margin-block-start: var(--spacing-600) !important;
+    padding-block-start: var(--spacing-600);
+    border-block-start: 1px solid var(--color-border-subtle);
+  }
+  .pl__intro { display: grid; gap: var(--spacing-100); }
+  .pl__main > .pl__highlight {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--spacing-400);
+    padding: var(--spacing-400) var(--spacing-500);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg, 12px);
+  }
+  .pl__laurel { color: var(--color-content-brand); display: grid; }
+  .pl__highlight-figure { display: grid; justify-items: center; padding-inline-start: var(--spacing-400); border-inline-start: 1px solid var(--color-border-subtle); }
+  .pl__host { display: flex; align-items: center; gap: var(--spacing-400); }
+  .pl__avatar {
+    display: grid;
+    place-items: center;
+    inline-size: 3rem;
+    block-size: 3rem;
+    border-radius: 50%;
+    background: var(--color-background-brand);
+    color: var(--color-content-on-brand);
+    font-weight: var(--typography-font-weight-semibold, 600);
+  }
+  .pl__story { max-inline-size: 62ch; text-wrap: pretty; }
+  .pl__section { display: grid; gap: var(--spacing-500); }
+  .pl__amenities {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+    gap: var(--spacing-500) var(--spacing-600);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .pl__amenities li { display: grid; grid-template-columns: auto 1fr; gap: var(--spacing-400); align-items: center; }
+  .pl__amenities a { color: var(--color-content-default); }
+  .pl__ring-track { fill: none; stroke: var(--color-border-default-subtle); stroke-width: 4; }
+  .pl__ring-fill { fill: none; stroke: var(--color-background-brand); stroke-width: 4; stroke-linecap: round; }
+  .pl__goal-icon { color: var(--color-content-brand); display: grid; inline-size: 40px; place-items: center; }
+  .pl__goal-icon :global(svg) { stroke-width: 1.5; }
+
+  /* The summary card, where Airbnb's booking card sits. */
+  .pl__card {
+    position: sticky;
+    inset-block-start: var(--spacing-600);
+    display: grid;
+    gap: var(--spacing-500);
+    padding: var(--spacing-600);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg, 12px);
+    background: var(--color-background-elevation-raised);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.08);
+  }
+  .pl__price {
+    font-family: var(--typography-font-family-display);
+    font-size: 1.75rem;
+    font-weight: var(--typography-font-weight-bold);
+    letter-spacing: -0.02em;
+  }
+  .pl__dates {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .pl__dates > div { display: grid; gap: 2px; padding: var(--spacing-300); }
+  .pl__dates > div:nth-child(2) { border-inline-start: 1px solid var(--color-border-default); }
+  .pl__dates-wide { grid-column: 1 / -1; border-block-start: 1px solid var(--color-border-default); }
+  .pl__dates-label { font-size: 0.75rem; font-weight: var(--typography-font-weight-bold); text-transform: uppercase; letter-spacing: 0.04em; }
+  .pl__funding { display: grid; gap: var(--spacing-300); }
+  .pl__segments { display: flex; gap: 2px; block-size: 10px; border-radius: 999px; overflow: hidden; }
+  .pl__legend { display: grid; gap: var(--spacing-200); margin: 0; padding: 0; list-style: none; }
+  .pl__legend li { display: grid; grid-template-columns: auto 1fr auto; gap: var(--spacing-200); align-items: baseline; }
+  .pl__swatch { inline-size: 10px; block-size: 10px; border-radius: 3px; }
+  .pl__spent { display: grid; gap: var(--spacing-200); }
+  .pl__spent-line { display: flex; justify-content: space-between; }
+  .pl__bar { block-size: 6px; border-radius: 999px; background: var(--color-border-default-subtle); overflow: hidden; }
+  .pl__bar span { display: block; block-size: 100%; background: var(--color-content-default); transform-origin: left; scale: var(--p) 1; }
+  .pl__card :global(.esa-button), .pl__card :global(.esa-button__native) { display: flex; inline-size: 100%; justify-content: center; box-sizing: border-box; }
+  .pl__card :global(.esa-button__native) { color: var(--color-content-on-brand); }
+
+  .pl__timeline { margin-block-start: var(--spacing-900); }
+  .pl__map { margin-block-start: var(--spacing-900); --firma2-pane-padding: 0px; --firma2-map-plate-inset-inline-start: max(var(--_g), calc((100vw - 76rem) / 2 + var(--_g))); }
+
+  /* All photos: a full-screen sheet. */
+  .pl__dialog {
+    inline-size: 100vw;
+    max-inline-size: none;
+    block-size: 100dvh;
+    max-block-size: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: var(--color-background-default);
+    color: var(--color-content-default);
+  }
+  .pl__dialog::backdrop { background: rgb(0 0 0 / 0.5); }
+  .pl__dialog-bar { position: sticky; top: 0; z-index: 1; padding: var(--spacing-400) var(--_g); background: var(--color-background-default); }
+  .pl__dialog-grid { display: grid; gap: var(--spacing-500); max-inline-size: 56rem; margin-inline: auto; padding: var(--spacing-400) var(--_g) var(--spacing-900); }
+  .pl__dialog-grid img { display: block; inline-size: 100%; block-size: auto; border-radius: var(--radius-md); }
+  .pl__dialog-grid figcaption { margin-block-start: var(--spacing-200); color: var(--color-content-default-secondary); }
+
+  @media (max-width: 64rem) {
+    .pl__body { grid-template-columns: minmax(0, 1fr); }
+    .pl__card { position: static; }
+  }
+  @media (max-width: 45rem) {
+    .pl__mosaic { grid-template-columns: 1fr !important; grid-template-rows: 1fr !important; border-radius: var(--radius-md); }
+    .pl__tile:not(:first-child) { display: none; }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('.pl').forEach((root) => {
+    const dialog = root.querySelector<HTMLDialogElement>('[data-photos-dialog]')!;
+    root.querySelectorAll<HTMLElement>('[data-open-photos]').forEach((el) =>
+      el.addEventListener('click', () => {
+        dialog.showModal();
+        const index = el.dataset.openPhotos ?? '0';
+        dialog.querySelector(`[data-photo-index="${index}"]`)?.scrollIntoView({ block: 'start' });
+      }),
+    );
+    dialog.querySelector('[data-close-photos]')?.addEventListener('click', () => dialog.close());
+  });
+</script>

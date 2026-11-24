@@ -24,6 +24,7 @@
 
 import type { Project, ProjectStage } from './firma2-projects';
 import type { AuditEntry, FundingSource, PerformanceMeasure } from './firma2-project-detail';
+import { REAL } from './firma2-real-data';
 
 /** The fixture's present — firma2-directory's TODAY, restated to keep this module import-free. */
 export const TODAY_ISO = '2026-09-30';
@@ -223,12 +224,29 @@ interface Context {
 }
 
 /**
+ * INVENTED, on a real workspace (dev only): which records are waiting for a
+ * publish. A tenant's public data says nothing about unpublished edits, and
+ * the review screens are empty without some. One unfinished project in four
+ * gets a description edit after its last publish — and the diff it produces
+ * is built from the record's real text.
+ */
+const realSeed = (project: Project, entries: { iso: string }[]): PublishSeed | undefined => {
+  const hash = [...project.projectName].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+  if (project.stage === 'Completed' || hash % 4 !== 0) return undefined;
+  const today = Date.parse(`${TODAY_ISO}T00:00:00Z`);
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+  const latest = entries.reduce((max, e) => (e.iso > max ? e.iso : max), '');
+  const published = iso(Math.min(Date.parse(`${latest}T00:00:00Z`) + 12 * DAY_MS, today - 40 * DAY_MS));
+  return { published, edits: [{ iso: iso(today - (3 + (hash % 30)) * DAY_MS), who: 'lead', change: 'Description edited' }] };
+};
+
+/**
  * Fold the seed into the record's log and derive the diff. Takes the log
  * newest first, as buildAudit returns it, and returns it the same way.
  */
 export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Context): { audit: AuditEntry[]; publishing: Publishing } => {
-  const seed: PublishSeed | undefined = SEEDS[project.projectName];
   let entries = base.map((e) => ({ ...e, iso: isoOfLabel(e.date) }));
+  const seed: PublishSeed | undefined = REAL ? realSeed(project, entries) : SEEDS[project.projectName];
 
   for (const { startsWith, iso } of seed?.redate ?? []) {
     const hit = entries.find((e) => e.change.startsWith(startsWith));

@@ -53,6 +53,8 @@ import {
 } from './firma2-projects';
 import { applyPublishing, type Publishing } from './firma2-publish-history';
 import { workAreaShape } from './firma2-shapes';
+import { REAL, realCenter, realFund, realMeasureFor, realRecords, realUnit, slugOf, type RealProject } from './firma2-real-data';
+import { centroid, pathMiles, ringAcres } from '../lib/geo';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -309,6 +311,10 @@ export interface ProjectPhoto {
    * same stand-in twice.
    */
   seed: number;
+  /** A real workspace's own photo (dev only). Absent: the gallery picks a stand-in. */
+  src?: string;
+  /** Who took it, when the record says. */
+  credit?: string;
 }
 
 /**
@@ -800,13 +806,16 @@ const FUNDERS: Record<string, string> = {
 /** Each outside funder and the grant programs it administers, for the
  *  organization registry — the same table the funding sources are built from,
  *  so a funder's page and a project's funding table can never disagree. */
-export const funderPrograms: Map<string, string[]> = Object.entries(FUNDERS).reduce(
-  (acc, [program, organization]) => {
-    if (organization !== LOCAL_MATCH) acc.set(organization, [...(acc.get(organization) ?? []), program]);
-    return acc;
-  },
-  new Map<string, string[]>(),
-);
+export const funderPrograms: Map<string, string[]> = REAL
+  ? // A real workspace's funds, each under the organization behind it.
+    [...new Set([...realRecords.values()].flatMap((record) => record.funding.map((row) => row.fund)))]
+      .sort()
+      .map(realFund)
+      .reduce((acc, { name, organization }) => acc.set(organization, [...(acc.get(organization) ?? []), name]), new Map<string, string[]>())
+  : Object.entries(FUNDERS).reduce((acc, [program, organization]) => {
+      if (organization !== LOCAL_MATCH) acc.set(organization, [...(acc.get(organization) ?? []), program]);
+      return acc;
+    }, new Map<string, string[]>());
 
 const buildFunding = (
   project: Project,
@@ -1497,6 +1506,8 @@ const CONTACT_ROLES: { role: string; at: 'sponsor' | 'funder' }[] = [
  *  takes, on a domain built from an organization that is itself invented. */
 const emailFor = (name: string, organization: string): string => {
   const parts = name.toLowerCase().split(' ');
+  // Never a guessed address at a real organization (dev only).
+  if (REAL) return `${parts[0][0]}.${parts[parts.length - 1]}@example.org`;
   const domain = organization
     .split(/\s+/)
     .filter((word) => !/^(of|the|and|for|&)$/i.test(word))
@@ -1513,7 +1524,8 @@ const buildContacts = (project: Project, funding: FundingSource[]): ProjectConta
   // outside funder sits second a "Grant manager" at the sponsor's own address.
   const funderOrg =
     funding.find((source) => source.organization !== project.leadOrganization)?.organization ??
-    funding[0].organization;
+    funding[0]?.organization ??
+    project.leadOrganization;
 
   const seed = hashOf(project.projectName);
   return CONTACT_ROLES.map((entry, i) => {
@@ -1775,21 +1787,18 @@ const buildAudit = (
   const entries: { year: number; user: string; change: string }[] = [
     { year: year(start - 2), user: lead.name, change: 'Project created' },
     { year: year(start - 2), user: lead.name, change: 'Description updated' },
-    {
-      year: year(start - 1),
-      user: grantManager.name,
-      change: `Funding source added: ${outsideFunder.name}`,
-    },
+    // A real record can have no funding source yet.
+    ...(outsideFunder
+      ? [{ year: year(start - 1), user: grantManager.name, change: `Funding source added: ${outsideFunder.name}` }]
+      : []),
     {
       year: year(start - 1),
       user: grantManager.name,
       change: `Estimated total cost changed from ${AUDIT_CURRENCY.format(previousCost)} to ${AUDIT_CURRENCY.format(total)}`,
     },
-    {
-      year: year(start),
-      user: fieldContact.name,
-      change: `Work area boundary revised: ${firstAreaLabel}`,
-    },
+    ...(firstAreaLabel
+      ? [{ year: year(start), user: fieldContact.name, change: `Work area boundary revised: ${firstAreaLabel}` }]
+      : []),
   ];
 
   // Only a project that has reported has a filing to log — same gate the
@@ -1846,7 +1855,166 @@ const buildAudit = (
 // Assembly
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// A real workspace's record (dev only — see firma2-real-data.ts)
+// ---------------------------------------------------------------------------
+
+const REAL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** Shapes as the tenant drew them. A point is not a work area here: it is
+ *  where the map opens, and firma2-geography.ts offers it as a location. */
+const realWorkAreas = (record: RealProject): WorkArea[] => {
+  const count = { area: 0, reach: 0 };
+  return record.geometries.flatMap((g): WorkArea[] => {
+    const kind = g.type === 'Polygon' ? 'area' : g.type === 'LineString' ? 'reach' : null;
+    if (!kind) return [];
+    const ring: [number, number][] = (kind === 'area' ? g.coordinates[0] : g.coordinates).map(
+      ([lng, lat]: [number, number]) => [Number(lat.toFixed(6)), Number(lng.toFixed(6))],
+    );
+    const path = kind === 'area' && ring.length > 3 ? ring.slice(0, -1) : ring;
+    if (path.length < 2) return [];
+    count[kind] += 1;
+    const measured = kind === 'area' ? ringAcres(path) : pathMiles(path);
+    return [
+      {
+        // The tenant's shapes are unnamed.
+        label: `${kind === 'area' ? 'Area' : 'Reach'} ${count[kind]}`,
+        kind,
+        path,
+        extent: Math.max(0.01, Number(measured.toFixed(kind === 'area' ? 1 : 2))),
+        extentUnit: kind === 'area' ? 'acres' : 'miles',
+      },
+    ];
+  });
+};
+
+/**
+ * One row per measure: the tenant's subcategory rows added together, and one
+ * period per year of the project's window with what was filed in it. No yearly
+ * plan — ProjectFirma holds one expected value for the whole project.
+ */
+const realProjectMeasures = (project: Project, record: RealProject): PerformanceMeasure[] => {
+  const names = Array.from(new Set([...record.expected, ...record.reported].map((row) => row.measure.trim())));
+  const filedYears = record.reported.flatMap((m) => m.rows.flatMap((row) => Object.keys(row.byYear).map(Number)));
+  const first = Math.min(project.implementationStartYear, ...filedYears);
+  const last = Math.max(project.completionYear, ...filedYears);
+  return names.map((name) => {
+    const expected = record.expected.filter((row) => row.measure.trim() === name);
+    const reported = record.reported.filter((row) => row.measure.trim() === name);
+    const definition = realMeasureFor(expected[0] ?? reported[0]);
+    const series: MeasureYear[] = [];
+    for (let year = first; year <= last; year += 1) {
+      const filed = reported.flatMap((m) => m.rows).filter((row) => String(year) in row.byYear);
+      series.push({
+        year,
+        value: filed.length ? Number(filed.reduce((sum, row) => sum + row.byYear[String(year)], 0).toFixed(4)) : null,
+        status: milestoneStatus(year, project.stage),
+      });
+    }
+    return {
+      name: definition?.name ?? name,
+      unit: realUnit(definition?.unit ?? expected[0]?.unit ?? reported[0]?.unit ?? ''),
+      expected: Number(expected.reduce((sum, row) => sum + (row.value ?? 0), 0).toFixed(4)),
+      reported: reportedTotal(series),
+      series,
+      ...(definition ? { kpi: slugOf(definition.name) } : {}),
+    };
+  });
+};
+
+const realFunding = (project: Project, record: RealProject): FundingSource[] => {
+  const rows = record.funding
+    .map((row) => ({ ...realFund(row.fund), amount: Math.round(row.secured + row.targeted) }))
+    .filter((row) => row.amount > 0);
+  const total = project.estimatedTotalCost || rows.reduce((sum, row) => sum + row.amount, 0) || 1;
+  return rows.map((row) => ({ ...row, share: row.amount / total }));
+};
+
+const realExpenditures = (project: Project, record: RealProject): ExpenditureYear[] => {
+  const byYear = new Map<number, number>();
+  for (const row of record.expenditures) {
+    for (const [year, amount] of Object.entries(row.byYear)) byYear.set(Number(year), (byYear.get(Number(year)) ?? 0) + amount);
+  }
+  return [...byYear.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([year, spent]) => ({ year, spent: Math.round(spent), status: milestoneStatus(year, project.stage) }));
+};
+
+/** The three years the tenant records, as the timeline's events. */
+const realMilestones = (project: Project, record: RealProject): Milestone[] =>
+  (
+    [
+      [record.planningStartYear, 'Planning and design start'],
+      [record.implementationStartYear, 'Implementation start'],
+      [record.completionYear, 'Completion'],
+    ] as [number | null, string][]
+  )
+    .filter(([year]) => year !== null)
+    .map(([year, title]) => ({ date: String(year), title, status: milestoneStatus(year!, project.stage) }));
+
+/** "03/12/2018 2:41 PM" → "12 March 2018", the label every other date here uses. */
+const realNoteDate = (stamp: string): string => {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(stamp);
+  if (m) return `${Number(m[2])} ${REAL_MONTHS[Number(m[1]) - 1]} ${m[3]}`;
+  // The Excel export's form: "2018-03-09 11:48:56".
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(stamp);
+  return iso ? `${Number(iso[3])} ${REAL_MONTHS[Number(iso[2]) - 1]} ${iso[1]}` : stamp;
+};
+
+const buildRealDetail = (project: Project, record: RealProject): ProjectDetail => {
+  const workAreas = realWorkAreas(record);
+  const funding = realFunding(project, record);
+  const measures = realProjectMeasures(project, record);
+  // INVENTED, mostly: a tenant names one primary contact at most, and the
+  // change log and publishing state need three people to attribute to.
+  const contacts = buildContacts(project, funding);
+  // The project lead is real where the tenant's export names a primary contact.
+  if (record.primaryContact) contacts[0] = { ...contacts[0], name: record.primaryContact.name, email: record.primaryContact.email };
+  const vertices = workAreas.flatMap((area) => area.path);
+  const mapCenter: [number, number] =
+    record.latitude !== null && record.longitude !== null
+      ? [record.latitude, record.longitude]
+      : vertices.length
+        ? centroid(vertices)
+        : realCenter ?? BASIN_OUTLET;
+
+  return {
+    project,
+    projectDescription: record.description.trim(),
+    mapCenter,
+    mapZoom: 14,
+    workAreas,
+    measures,
+    funding,
+    expenditures: realExpenditures(project, record),
+    milestones: realMilestones(project, record),
+    contacts,
+    // The tenant's own notes, newest first, under the name each was filed by.
+    comments: [...record.notes].reverse().map((note) => ({
+      author: { name: note.author, role: '', organization: '', email: '' },
+      date: realNoteDate(note.date),
+      body: note.text,
+    })),
+    photos: record.photos.map((photo, i) => ({
+      caption: photo.caption,
+      date: photo.timing === 'Unknown' ? '' : photo.timing,
+      scene: 'stream' as const,
+      seed: i,
+      src: photo.url,
+      credit: photo.credit,
+    })),
+    ...applyPublishing(project, buildAudit(project, contacts, funding, measures, workAreas[0]?.label ?? ''), {
+      description: record.description.trim(),
+      measures,
+      funding,
+      people: { lead: contacts[0].name, grant: contacts[1].name, field: contacts[2].name },
+    }),
+  };
+};
+
 const buildDetail = (project: Project): ProjectDetail => {
+  const record = realRecords.get(project.projectName);
+  if (record) return buildRealDetail(project, record);
   const authored = AUTHORED[project.projectName];
   if (!authored) {
     throw new Error(`No authored detail for "${project.projectName}"`);
@@ -1945,7 +2113,7 @@ export const getProjectDetail = (project: Project): ProjectDetail => {
 {
   const names = new Set(projects.map((p) => p.projectName));
   for (const key of Object.keys(AUTHORED)) {
-    if (!names.has(key)) {
+    if (!REAL && !names.has(key)) {
       throw new Error(`AUTHORED has no matching project: "${key}"`);
     }
   }

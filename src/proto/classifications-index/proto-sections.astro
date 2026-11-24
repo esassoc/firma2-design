@@ -1,0 +1,220 @@
+---
+// PROTOTYPE — variant "Sections" of /proto/classifications-index, the one
+// closest to the reference image: the tree is FLATTENED into one panel per
+// group that holds classifications, each named by its full path, with a
+// segmented meter of how many of its measures have a target. A row of filter
+// chips, each with its count, narrows the page to the classifications in one
+// state. Inside a panel the classifications sit in a ruled grid, every
+// measure listed. Throwaway; nothing in production imports it.
+//
+// AXIS: filter by state. The tree gives way to "which goals need attention".
+//
+// THE STATES ARE FACTS ON THE RECORD — a measure has a target or does not,
+// has a report or does not, has met its target or has not. None is a
+// judgement of pace, which nothing on the record holds.
+//
+// bcn-lego-checked: prototype variant — esa-chip-group the filter,
+// esa-collapsible each panel, firma2-kpi-progress each measure (the goal
+// card's own row), firma2-project-peek-button the side-panel door,
+// esa-empty-state the no-match state. The segmented meter is spans: no esa-
+// meter draws N discrete steps (esa-progress-bar is one continuous fill).
+// Beacon is not cloned on this machine.
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2KpiProgress from '../../components/classifications/firma2-kpi-progress.astro';
+import Firma2ProjectPeekButton from '../../components/projects/firma2-project-peek-button.astro';
+import { STATUS_LABEL, allClassifications, flatGroups, plural } from './tree';
+import type { Status } from './tree';
+
+const panels = flatGroups().filter((g) => g.classifications.length > 0);
+const all = allClassifications();
+const count = (s: Status) => all.filter((c) => c.statuses.includes(s)).length;
+const chips = [
+  { value: 'all', label: `All ${all.length}` },
+  ...(Object.keys(STATUS_LABEL) as Status[]).map((s) => ({ value: s, label: `${STATUS_LABEL[s]} ${count(s)}` })),
+];
+---
+<div class="proto-sections stack" data-gap="lg" data-proto-sections>
+  <esa-chip-group label="Show" size="md" value="all" data-filter data-options={JSON.stringify(chips)}></esa-chip-group>
+
+  <div data-none hidden>
+    <EsaEmptyState size="sm" title="No classifications match" />
+  </div>
+
+  {panels.map((g) => {
+    const measures = g.classifications.flatMap((c) => c.measures);
+    const withTarget = measures.filter((m) => m.hasTarget).length;
+    return (
+      <section class="proto-sections__panel" aria-label={g.path.join(', ')} data-panel>
+        <EsaCollapsible title={g.path.join(' › ')} open>
+          <div class="repel" data-gap="sm">
+            <div class="proto-sections__meter cluster" data-gap="sm">
+              <span class="proto-sections__meter-text">{measures.length ? `${withTarget} of ${measures.length} targets set` : 'No performance measures yet'}</span>
+              {measures.length > 0 && (
+                <span class="proto-sections__segments" aria-hidden="true">
+                  {measures.map((m) => <span data-on={m.hasTarget ? '' : undefined}></span>)}
+                </span>
+              )}
+            </div>
+            <EsaButton variant="secondary" size="md" tag="a" href={g.href}>Open group</EsaButton>
+          </div>
+          <div class="proto-sections__frame">
+            <ul class="proto-sections__cells">
+              {g.classifications.map((c) => (
+                <li class="proto-sections__cell stack" data-gap="sm" data-statuses={c.statuses.join(' ')} data-peek-row>
+                  <div class="stack" data-gap="3xs">
+                    <div class="firma2-peek-pair">
+                      <h3 class="proto-sections__name typography-label-md-strong">
+                        <a class="proto-sections__link" href={c.href}>
+                          <span class="proto-sections__swatch" style={`background:${c.color}`} aria-hidden="true"></span>
+                          <span>{c.name}</span>
+                        </a>
+                      </h3>
+                      <Firma2ProjectPeekButton slug={c.slug} name={c.name} kind="classification" />
+                    </div>
+                    <p class="proto-sections__meta typography-body-sm">{`${plural(c.projects, 'project')} · ${plural(c.funders, 'funder')}`}</p>
+                  </div>
+                  {c.measures.length === 0 ? (
+                    <p class="proto-sections__meta typography-body-md">No performance measures yet</p>
+                  ) : (
+                    <ul class="proto-sections__measures stack" data-gap="xs">
+                      {c.measures.map((m) => (
+                        <li><Firma2KpiProgress compact name={m.name} {...m.input} from={[]} /></li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </EsaCollapsible>
+      </section>
+    );
+  })}
+</div>
+
+<style>
+  .proto-sections [hidden] {
+    display: none !important;
+  }
+
+  .proto-sections__panel :global(.esa-collapsible__summary) {
+    font-family: var(--typography-title-sm-strong-font-family);
+    font-size: var(--typography-title-sm-strong-font-size);
+    font-weight: var(--typography-title-sm-strong-font-weight);
+    line-height: var(--typography-title-sm-strong-line-height);
+  }
+
+  .proto-sections__meter-text,
+  .proto-sections__meta {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* One step per measure: filled where a target is set. The sentence beside
+     it carries the count; the steps only shape it. */
+  .proto-sections__segments {
+    display: inline-flex;
+    gap: 2px;
+    pointer-events: none;
+  }
+
+  .proto-sections__segments :global(span) {
+    inline-size: 0.625rem;
+    block-size: 0.25rem;
+    border-radius: 1px;
+    background: var(--color-border-default, #cecece);
+  }
+
+  .proto-sections__segments :global(span[data-on]) {
+    background: var(--color-content-default, #202020);
+  }
+
+  /* A ruled grid: each cell draws its own end rules and the frame clips the
+     outermost ones, so the rules hold whatever the column count. */
+  .proto-sections__frame {
+    overflow: hidden;
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  .proto-sections__cells {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+    margin: 0 -1px -1px 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .proto-sections__cell {
+    padding: var(--spacing-400, 1rem);
+    border-inline-end: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+    min-inline-size: 0;
+  }
+
+  .proto-sections__name {
+    margin: 0;
+  }
+
+  /* Swatch beside the first line, however far the name wraps. */
+  .proto-sections__link {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-200, 0.5rem);
+    color: inherit;
+    text-decoration: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .proto-sections__link:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .proto-sections__swatch {
+    flex: none;
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  .proto-sections__measures {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-chip-group';
+
+  type Chips = HTMLElement & { options: unknown; value: string };
+
+  document.querySelectorAll<HTMLElement>('[data-proto-sections]').forEach((root) => {
+    const filter = root.querySelector<Chips>('[data-filter]')!;
+    const none = root.querySelector<HTMLElement>('[data-none]')!;
+    // Assigned only after define, or the props shadow the lego's setters.
+    customElements.whenDefined('esa-chip-group').then(() => {
+      filter.options = JSON.parse(filter.dataset.options ?? '[]');
+      filter.value = 'all';
+    });
+
+    filter.addEventListener('change', () => {
+      const want = filter.value;
+      let shown = 0;
+      root.querySelectorAll<HTMLElement>('[data-panel]').forEach((panel) => {
+        let here = 0;
+        panel.querySelectorAll<HTMLElement>('[data-statuses]').forEach((cell) => {
+          const match = want === 'all' || (cell.dataset.statuses ?? '').split(' ').includes(want);
+          cell.hidden = !match;
+          if (match) here += 1;
+        });
+        panel.hidden = here === 0;
+        shown += here;
+      });
+      none.hidden = shown > 0;
+    });
+  });
+</script>

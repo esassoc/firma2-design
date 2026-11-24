@@ -1,0 +1,247 @@
+---
+// PROTOTYPE — variant "Story" for /proto/project-showcase. Throwaway.
+//
+// AXIS: an editorial story told in chapters, photos full-bleed. The Featured
+// photo fills the first screen with the name set on it; then THE PLACE (the
+// earliest photo beside the description), THE RESULTS (each measure as one
+// big line — figure, words, and a long bar to its plan, one measure per row,
+// read like a sentence), THE MONEY (one wide bar: every funder's share, and a
+// bracket for what has been spent), WHERE IT STANDS (the newest photo
+// full-bleed, and the milestones as stops along a line), then the map.
+//
+// bcn-lego-checked: prototype — chapters, bars and the milestone line are layout for this variant
+import Firma2ProjectMap from '../../components/projects/firma2-project-map.astro';
+import type { Showcase } from './model';
+import { num, usd, usdShort } from './model';
+
+interface Props {
+  s: Showcase;
+}
+const { s } = Astro.props;
+// Three different photos where the record has them: the cover is the
+// Featured one, the place is the earliest that is not the cover, the last
+// chapter the newest that is not already used.
+const coverPhoto = s.photos[0];
+const byAge = [...s.detail.photos];
+const placePhoto = byAge.find((p) => p !== coverPhoto);
+const nowPhoto = [...byAge].reverse().find((p) => p !== coverPhoto && p !== placePhoto);
+const cover = coverPhoto ? s.photo(coverPhoto, 2000, 1200) : undefined;
+const before = placePhoto ? s.photo(placePhoto, 1100, 1300) : undefined;
+const after = nowPhoto ? s.photo(nowPhoto, 2000, 1000) : undefined;
+const spentShare = Math.min(1, s.spent / Math.max(1, s.fundingTotal));
+const SEG = ['var(--color-background-brand)', 'color-mix(in srgb, var(--color-background-brand) 55%, var(--color-background-elevation-raised))', 'color-mix(in srgb, var(--color-background-brand) 28%, var(--color-background-elevation-raised))', 'var(--color-border-default)'];
+const done = s.milestones.filter((m) => m.status === 'complete').length;
+---
+<div class="ps">
+  <header class="ps__cover">
+    {cover && <img src={cover.src} alt={cover.alt} width="2000" height="1200" fetchpriority="high" />}
+    <div class="ps__cover-text">
+      <p class="ps__kicker typography-label-lg-strong">{s.type} · {s.county} County · {s.start}–{s.end}</p>
+      <h1 class="ps__headline">{s.name}</h1>
+      <p class="typography-body-lg">Led by {s.lead}</p>
+    </div>
+  </header>
+
+  <section class="ps__chapter ps__place" aria-labelledby="ps-place">
+    {before && <img src={before.src} alt={before.alt} width="1100" height="1300" loading="lazy" />}
+    <div class="ps__place-text">
+      <p class="ps__eyebrow typography-label-md-strong">The place{before ? ` · ${before.date}` : ''}</p>
+      <h2 id="ps-place" class="ps__chapter-title">{s.stage === 'Completed' ? 'What was here, and what was done' : 'What is being done here'}</h2>
+      <p class="ps__lede">{s.description}</p>
+      {before && <p class="ps__quiet typography-body-sm">{before.alt}</p>}
+    </div>
+  </section>
+
+  {s.measures.length > 0 && (
+    <section class="ps__chapter ps__col" aria-labelledby="ps-results">
+      <p class="ps__eyebrow typography-label-md-strong">The results · last reported {s.lastReport ?? '—'}</p>
+      <h2 id="ps-results" class="ps__chapter-title">{s.pastHalf} of {s.measures.length} measures are past halfway</h2>
+      <ol class="ps__lines">
+        {s.measures.map((m) => (
+          <li style={`--p:${m.percent / 100}`}>
+            <p class="ps__line-text"><b>{num(m.reported)}</b> <span>{m.unit}</span> <span class="ps__quiet">— {m.name.charAt(0).toLowerCase() + m.name.slice(1)}</span></p>
+            <div class="ps__track" role="img" aria-label={`${m.percent}% of ${num(m.expected)} planned`}>
+              <span class="ps__fill"></span>
+              <span class="ps__goal typography-body-sm">{num(m.expected)} planned</span>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )}
+
+  <section class="ps__chapter ps__col" aria-labelledby="ps-money">
+    <p class="ps__eyebrow typography-label-md-strong">The money</p>
+    <h2 id="ps-money" class="ps__chapter-title">{usd.format(s.cost)}, {s.funding.length === 1 ? 'from one source' : `from ${s.funding.length} sources`}</h2>
+    {s.funding.length > 0 && (
+      <div class="ps__money">
+        <div class="ps__money-bar">
+          {s.funding.map((f, i) => (
+            <div style={`flex:${f.share};--seg:${SEG[Math.min(i, SEG.length - 1)]}`}>
+              <span class="ps__money-seg"></span>
+              <span class="ps__money-amount">{usdShort.format(f.amount)}</span>
+              <span class="typography-label-md-strong">{f.name}</span>
+              <span class="ps__quiet typography-body-sm">{f.organization}</span>
+            </div>
+          ))}
+          <span class="ps__spent" style={`--s:${spentShare}`}><span class="typography-label-sm-strong">{usdShort.format(s.spent)} spent so far</span></span>
+        </div>
+      </div>
+    )}
+  </section>
+
+  <section class="ps__chapter" aria-labelledby="ps-now">
+    {after && (
+      <figure class="ps__after">
+        <img src={after.src} alt={after.alt} width="2000" height="1000" loading="lazy" />
+        <figcaption class="typography-body-sm">{after.alt} · {after.date}</figcaption>
+      </figure>
+    )}
+    <div class="ps__col">
+      <p class="ps__eyebrow typography-label-md-strong">Where it stands</p>
+      <h2 id="ps-now" class="ps__chapter-title">{done} of {s.milestones.length} milestones done</h2>
+      <ol class="ps__stops" style={`--done:${s.milestones.length > 1 ? (Math.max(0, done - 1) / (s.milestones.length - 1)) : 0}`}>
+        {s.milestones.map((m) => (
+          <li class:list={[`ps__stop--${m.status}`]}>
+            <span class="ps__dot" aria-hidden="true"></span>
+            <span class="typography-label-sm-strong">{m.date}</span>
+            <span class="typography-body-sm">{m.title}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <div class="ps__map"><Firma2ProjectMap detail={s.detail} readonly /></div>
+</div>
+
+<style>
+  .ps {
+    --_g: var(--firma2-public-gutter, var(--spacing-600));
+    --_ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ps p, .ps h1, .ps h2, .ps figure { margin: 0; }
+  .ps__quiet { color: var(--color-content-default-secondary); }
+  .ps__col { box-sizing: border-box; max-inline-size: 76rem; margin-inline: auto; padding-inline: var(--_g); }
+  .ps__eyebrow { color: var(--color-content-brand); margin-block-end: var(--spacing-200) !important; }
+  .ps__chapter { padding-block: var(--spacing-900); }
+  .ps__chapter-title {
+    font-family: var(--typography-font-family-display);
+    font-size: clamp(1.75rem, 3.4vw, 2.75rem);
+    font-weight: var(--typography-font-weight-bold);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    text-wrap: balance;
+    margin-block-end: var(--spacing-700) !important;
+    max-inline-size: 24ch;
+  }
+
+  /* The cover: the first screen is the place. */
+  .ps__cover {
+    position: relative;
+    display: grid;
+    align-items: end;
+    min-block-size: calc(100dvh - 6rem);
+    color: #fff;
+    background: #1d211c;
+  }
+  .ps__cover img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; }
+  .ps__cover::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.1) 55%, transparent); }
+  .ps__cover-text {
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: 76rem;
+    margin-inline: auto;
+    padding: var(--spacing-900) var(--_g);
+    display: grid;
+    gap: var(--spacing-300);
+  }
+  .ps__headline {
+    font-family: var(--typography-font-family-display);
+    font-size: clamp(2.5rem, 6.5vw, 5.5rem);
+    font-weight: var(--typography-font-weight-bold);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+    max-inline-size: 18ch;
+  }
+  .ps__kicker { opacity: 0.9; }
+
+  /* The place: photo beside the words. */
+  .ps__place {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: var(--spacing-800);
+    align-items: center;
+    box-sizing: border-box;
+    max-inline-size: 76rem;
+    margin-inline: auto;
+    padding-inline: var(--_g);
+  }
+  .ps__place img { display: block; inline-size: 100%; block-size: auto; aspect-ratio: 5 / 6; object-fit: cover; border-radius: var(--radius-lg, 12px); }
+  .ps__place .ps__chapter-title { margin-block-end: var(--spacing-500) !important; }
+  .ps__lede { font-size: clamp(1.125rem, 1.6vw, 1.375rem); line-height: 1.55; text-wrap: pretty; margin-block-end: var(--spacing-400) !important; }
+
+  /* The results: one sentence and one long bar per measure. */
+  .ps__lines { display: grid; gap: var(--spacing-600); margin: 0; padding: 0; list-style: none; }
+  .ps__line-text { font-size: 1.125rem; margin-block-end: var(--spacing-200) !important; }
+  .ps__line-text b { font-family: var(--typography-font-family-display); font-size: 2rem; letter-spacing: -0.02em; color: var(--color-content-brand); }
+  .ps__track { position: relative; block-size: 14px; border-radius: 999px; background: var(--color-border-default-subtle); }
+  .ps__fill { position: absolute; inset: 0; border-radius: 999px; background: var(--color-background-brand); transform-origin: left; scale: var(--p) 1; transition: scale 700ms var(--_ease); }
+  .ps__goal { position: absolute; inset-inline-end: 0; inset-block-start: calc(100% + 4px); color: var(--color-content-default-secondary); }
+  @media (hover: hover) and (pointer: fine) {
+    .ps__lines li:hover .ps__fill { animation: ps-grow 700ms var(--_ease) both; }
+  }
+  @keyframes ps-grow { from { scale: 0 1; } }
+
+  /* The money: one bar, every funder's share, a bracket for what is spent. */
+  .ps__money-bar { position: relative; display: flex; gap: 3px; padding-block-start: var(--spacing-700); }
+  .ps__money-bar > div { display: grid; gap: var(--spacing-100); align-content: start; min-inline-size: 0; }
+  .ps__money-seg { block-size: 3rem; background: var(--seg); border-radius: var(--radius-sm); margin-block-end: var(--spacing-300); }
+  .ps__money-bar > div:first-child .ps__money-seg { border-start-start-radius: var(--radius-lg, 12px); border-end-start-radius: var(--radius-lg, 12px); }
+  .ps__money-amount { font-family: var(--typography-font-family-display); font-size: 1.75rem; font-weight: var(--typography-font-weight-bold); letter-spacing: -0.02em; }
+  .ps__spent {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    inline-size: calc(var(--s) * 100%);
+    block-size: var(--spacing-600);
+    border: 2px solid var(--color-content-default);
+    border-block-end: 0;
+    border-radius: 6px 6px 0 0;
+    box-sizing: border-box;
+  }
+  .ps__spent span { position: absolute; inset-block-start: -1.6rem; inset-inline-start: 0; white-space: nowrap; }
+
+  /* Where it stands: the newest photo, then the milestones as stops. */
+  .ps__after { margin-block-end: var(--spacing-800) !important; }
+  .ps__after img { display: block; inline-size: 100%; block-size: clamp(18rem, 50vw, 36rem); object-fit: cover; }
+  .ps__after figcaption { max-inline-size: 76rem; margin-inline: auto; padding: var(--spacing-200) var(--_g) 0; color: var(--color-content-default-secondary); }
+  .ps__stops { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--spacing-400); margin: 0; padding: 0; list-style: none; }
+  .ps__stops::before, .ps__stops::after { content: ''; position: absolute; inset-block-start: 7px; inset-inline-start: 8px; block-size: 2px; }
+  .ps__stops::before { inset-inline-end: 8px; background: var(--color-border-default); }
+  .ps__stops::after { inline-size: calc((100% - 16px) * var(--done)); background: var(--color-background-brand); }
+  .ps__stops li { position: relative; z-index: 1; display: grid; gap: var(--spacing-100); align-content: start; }
+  .ps__dot { inline-size: 16px; block-size: 16px; border-radius: 50%; background: var(--color-background-default); border: 2px solid var(--color-border-default); box-sizing: border-box; margin-block-end: var(--spacing-200); }
+  .ps__stop--complete .ps__dot { background: var(--color-background-brand); border-color: var(--color-background-brand); }
+  .ps__stop--current .ps__dot { border-color: var(--color-background-brand); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-background-brand) 25%, transparent); }
+  .ps__stop--upcoming { color: var(--color-content-default-secondary); }
+
+  .ps__map { --firma2-pane-padding: 0px; --firma2-map-plate-inset-inline-start: max(var(--_g), calc((100vw - 76rem) / 2 + var(--_g))); }
+
+  @media (max-width: 64rem) {
+    .ps__place { grid-template-columns: minmax(0, 1fr); }
+    .ps__place img { aspect-ratio: 4 / 3; }
+  }
+  @media (max-width: 45rem) {
+    .ps__money-bar { flex-direction: column; padding-block-start: var(--spacing-500); }
+    .ps__spent { display: none; }
+    .ps__stops { grid-auto-flow: row; grid-auto-columns: auto; }
+    .ps__stops::before, .ps__stops::after { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ps__fill { animation: none !important; transition: none; }
+  }
+</style>

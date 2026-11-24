@@ -77,9 +77,10 @@ reviews one net diff per project and publishes it.
 | 24 | Workspace sources publish without review: an administrator approved the source and mapping at setup. Their changes appear in the log and Updates feed, not in the review diff. |
 | 25 | Organization and project sources are staged for publish like any other change. |
 | 26 | Setup for an organization or project source is mapped and confirmed once, on the Import a report layout with a "keep this connected" choice. After that, clear changes are staged without the owner; unsure ones wait as flagged items. |
-| 27 | One owner per field. A field kept by a source is read-only by hand. When two sources want one field, the wider owner wins (workspace, then organization, then project); the narrower mapping is switched off and its owner told. |
+| 27 | One owner per field. A field kept by a source is read-only by hand. When two sources want one field, the wider owner wins (workspace, then organization, then project); the narrower mapping is switched off and its owner told. *(Amended by 40, 2026-11-23.)* |
 | 28 | A row matching no project is listed for a manager to match or create. Organization and project sources never create projects. |
 | 29 | An organization's own manager may publish its staged changes, as roles work today. A program that wants its own staff to certify everything gives no organization a manager. |
+| 40 | A GIS subscription has one setting: whether it is the authoritative source for the fields it supplies. **Authoritative:** those fields cannot be edited here; fields the source does not supply, such as most custom fields, stay editable. **Not authoritative:** the fields can be edited here and each edit is sent back to the GIS system, so changes travel both ways. *(2026-11-23; amends 27, which made every source-kept field read-only.)* |
 
 ### Review
 
@@ -101,10 +102,29 @@ reviews one net diff per project and publishes it.
 |---|----------|
 | 39 | `/prototypes/team-5` stays untouched until the Import a report page exists, then is deleted whole, including `mode="update"` on `firma2-my-projects`. Its update form and per-change approval queue have no place under decision 6. |
 
+### How a change reads in review (decided 2026-11-17, from /proto/review-sweep)
+
+- **Struck and marked.** The published value struck, the record's marked, and how far it moved: `~~$398,500~~ → $412,000 +$13,500 (+3.4%)`; years mark only the year that moved and say so ("ends a year later"); prose shows the words that went in or out, in context; something new reads `New: 0.6 miles`. One renderer, `src/lib/review-diff.ts`, for seeded and imported rows.
+- On a first publish a field shows its value alone. No "Goes public as", "Record" or "New" label: the page already says "Not public yet".
+- Rejected: "Public page / Record" side by side (the reader compares the two); a Before / After / Difference table (prose squeezes into narrow columns; poor on a phone); a sentence per change ("Up $13,500 (+3.4%): $412,000, was $398,500"), which reads well cold but runs long and still needs the marked passage for text.
+- **Where the sweep happens: the inbox, on the Review page** (user: "admins very rarely will go to an individual project and do that review there"). The waiting list on the left, each row showing its first changes struck and marked; the selected project's full review on the right (firma2-review-inbox, which renders firma2-review-changes); Publish and next moves down the list in place, with Undo on the toast. The project's own review page stays for links from the project.
+- Rejected layouts: the list then a page per project (a page load per project, and the list said nothing about what changed); expanding rows in the list (a first publish opens into a very tall block, and Publish on a closed row invites publishing unseen); publishing from a summary list (Hold and Revert still meant leaving for the project page).
+
 ## Build order
 
 1. **Build 1.** The Import a report page (decisions 7 to 21) and the source and note in review (31, 32). New invented sample documents covering contacts, funders and named attributes.
-2. **Build 2.** Hold, Revert with a reason, and row markers (33, 34, 36, 38). Built after watching a manager review a real import.
+2. **Build 2.** Hold, Revert with a reason, and row markers (33, 34, 36, 38). Built 2026-11-17 on the user's call, before watching a manager review a real import.
+   - Hold: per row, required note, held keys stay pending and leave the publish; Release puts them back; "Publish and next" skips a project whose every change is held.
+   - Hold takes no note and tells nobody (user, 2026-11-18): review is a pre-publish accuracy check, and Hold is the reviewer's own "I'll come back to this". Revert keeps its required reason, sent to the editors. This narrows decisions 33 and 38.
+   - Snapshot model (user, 2026-11-18): a publish is the whole project as it stands, minus what was held. A held change counts as if it arrived after that snapshot: decided on, just deferred. It leaves Waiting for the inbox's **Held** view (Waiting / Held switch, `?view=held`), which shows who held it and for how long; held changes don't age toward Overdue. Release returns it to Waiting; Revert ends it. The project page badge reads "2 unpublished changes · 1 held". Considered and dropped: whole-project-only publishing with "Send back" in place of Hold (one disputed figure would block the rest).
+   - Proposals moved into the inbox (user, 2026-11-18): Proposals / Waiting / Held. A proposal is a different decision (should this project exist: Approve, or Return with what needs to change), so it keeps its own buttons, but it is made in the same inbox. The "Proposals to approve" block above the page is gone. In the prototype an approved proposal does not yet appear in Waiting as a first publish (the queue is seeded).
+   - The inbox has the project rail (firma2-side-panel holding firma2-review-project-rail): the selected project's Key facts, read-only, "Changing" beside each field in this review (none on a first publish). It collapses from its corner and stays out of the page in Proposals. The work areas map is left out.
+   - Project status in the inbox, decided from /proto/review-meta (user, 2026-11-18): a **byline** under the project name — "Last published 2 March 2026 · Changes by Ivy Nakamura and Renata Alvarez" or "Not public yet", plus Overdue. Not who published last: it doesn't help judge accuracy, and the publish history keeps it. No waiting time, there or in the list ("not necessary"). Rejected: the bold "Last published" row and "Not public yet" box as built (heavier than the changes they introduce), a strip of four equal properties (most height, repeats the list), a Public page section in the rail (gone when the rail is collapsed), a line under Publish ("Replaces the page from …"; drops who published).
+   - The three figures above the inbox are gone (user, 2026-11-18): the toggle counts what waits, the list is oldest first and marks Overdue. "15 of 24 up to date" belongs on a dashboard, not in the sweep.
+   - Open: a hold has no end date yet. Proposed: after one review cycle untouched it returns to Waiting marked "Held since …", and an editor's new edit to the field clears it.
+   - Revert: required reason, kept in the review's history. Imported rows revert their field, measure entry, contact or funding source; a row folded over a hand edit reverts both, to the published value.
+   - Not yet: a *seeded* measure filing has Hold but no Revert. It is fixture data in the measures table, which has no way to drop one year's figure; imported filings revert.
+   - Notify (38) is stated, not sent: the dialog and toast name who gets the note. There is no outbox in the prototype.
 
 ## Testing
 

@@ -29,6 +29,8 @@
 
 // ── Lookups (global, fixed ids) ─────────────────────────────────────────────
 
+import { demoProjectSlug } from './firma2-projects';
+
 export interface Pm2Status { id: 1 | 2 | 3; name: 'Draft' | 'Published' | 'Retired' }
 export const PM2_STATUSES: Pm2Status[] = [
   { id: 1, name: 'Draft' },
@@ -244,12 +246,12 @@ export const PM2_SEED_MEASURES: Pm2Measure[] = [
 // more than one project behind it. Nothing is reported in 2026, the current period.
 
 export const PM2_DEMO_PROJECTS = [
-  'deer-creek-riparian-corridor-enhancement',
-  'navarro-river-large-wood-placement',
-  'truckee-river-streambank-stabilization',
-  'salinas-river-arundo-removal',
-  'klamath-tributary-thermal-refugia',
-  'bear-river-gravel-augmentation',
+  demoProjectSlug('deer-creek-riparian-corridor-enhancement'),
+  demoProjectSlug('navarro-river-large-wood-placement'),
+  demoProjectSlug('truckee-river-streambank-stabilization'),
+  demoProjectSlug('salinas-river-arundo-removal'),
+  demoProjectSlug('klamath-tributary-thermal-refugia'),
+  demoProjectSlug('bear-river-gravel-augmentation'),
 ];
 
 const [DEER, NAVARRO, TRUCKEE, SALINAS, KLAMATH] = PM2_DEMO_PROJECTS;
