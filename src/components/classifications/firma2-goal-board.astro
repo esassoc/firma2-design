@@ -1,0 +1,255 @@
+---
+// firma2-goal-board — the classifications index body: every goal, grouped by
+// classification group, each a card of its KPIs against their goals. The
+// bird's-eye view of an initiative — how the work is tracking toward what it
+// set out to do.
+//
+// GROUPS SORT IT. Each group gets its heading and its stored description, and
+// its goals in a grid of scan cards from the leading edge. The first grid
+// paired cards of unequal KPI counts into ragged rows (user, 2026-10-21); the
+// cards are one height now (firma2-goal-card), so the grid is back.
+//
+// GROUPS COLLAPSE (user, 2026-10-21): each is an esa-collapsible, open on
+// first visit; the ones this reader closed stay closed (localStorage, a
+// convenience — every group opens when storage is unavailable). The lego's
+// summary is a label; here it is restated in the title-strong tokens so the
+// group still reads above its cards' titles. A <summary> is a button to
+// assistive tech, so the group's name labels its <section> instead of an h2.
+//
+// SETTINGS EDITS SHOW HERE. Goals added, renamed or removed in Workspace
+// settings, KPIs linked or unlinked, and targets changed are applied in the
+// browser over the build's figures (src/lib/goal-kpis.ts); a goal added in
+// this browser joins its group with no projects, so its KPIs read "Not
+// reported" until projects take it on.
+//
+// GROUPS FOLLOW SETTINGS TOO: a group added there gets a section here (a copy
+// of the first, emptied) once a goal sits in it or beneath it; renamed,
+// re-described, recoloured and moved groups update; groups and the goals
+// within each follow the order arranged in settings; a group with no goals
+// anywhere beneath it is hidden.
+//
+// GROUPS NEST (user, 2026-11-23): each group is a firma2-goal-board-group,
+// which draws the groups inside it under its own goals. `root` scopes the
+// board to one group — its own goals, then the groups inside it — which is
+// what a group's own page shows of its contents.
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2GoalBoardGroup from './firma2-goal-board-group.astro';
+import Firma2GoalCard from './firma2-goal-card.astro';
+import Firma2KpiProgress from './firma2-kpi-progress.astro';
+import { childGroups, classificationsInGroup, classificationsUnderGroup } from '../../data/firma2-classifications';
+import { kpiFigureTable, rollupClassification } from '../../data/firma2-classification-rollup';
+import { measures } from '../../data/firma2-performance-measures';
+import { projectHref } from '../../data/firma2-projects';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** A group's slug: show only what is in that group. The whole board by default. */
+  root?: string;
+  /** False where the page has no classification side panel to open. */
+  peek?: boolean;
+}
+
+const { root, peek = true } = Astro.props;
+// Every seeded group renders, even an empty one — the script hides what has
+// no goals, and a group can gain goals in this browser.
+const own = root ? classificationsInGroup(root).map(rollupClassification) : [];
+const data = {
+  seeded: kpiFigureTable((p) => withBase(projectHref(p))),
+  catalog: Object.fromEntries(measures.map((m) => [m.slug, { name: m.name, unit: m.unit ?? '', decimals: m.decimalPlaces }])),
+};
+---
+<div class="firma2-goal-board stack" data-gap="lg" data-goal-board data-goals={JSON.stringify(data)} data-group={root ?? ''} data-groups-href={withBase('/prototypes/classifications/groups')}>
+  {root && (
+    <div data-board-empty hidden={classificationsUnderGroup(root).length > 0}>
+      <EsaEmptyState size="sm" title="Nothing in this group" />
+    </div>
+  )}
+  {root && (
+    <div class="firma2-goal-board__grid grid" data-gap="lg" data-cards>
+      {own.map((rollup) => <Firma2GoalCard rollup={rollup} peek={peek} />)}
+    </div>
+  )}
+  <div class="firma2-goal-board__groups stack" data-gap="lg" data-subgroups>
+    {childGroups(root).map((group) => <Firma2GoalBoardGroup group={group} peek={peek} />)}
+  </div>
+  <template data-kpi-row>
+    <li>
+      <Firma2KpiProgress compact name="" unit="" decimals={0} reported={null} committed={null} from={[]} />
+    </li>
+  </template>
+</div>
+
+<style>
+  .firma2-goal-board__grid {
+    --grid-min: 20rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr));
+  }
+
+  .firma2-goal-board__grid:not(:has(> *)),
+  .firma2-goal-board__groups:not(:has(> *)) {
+    display: none;
+  }
+</style>
+
+<script>
+  import { classificationsUnder, entries, groupsIn } from '../../lib/taxonomy-edits';
+  import { recordHref } from '../../lib/taxonomy-record';
+  import { renderKpis } from '../../lib/goal-kpis';
+  import type { GoalData } from '../../lib/goal-kpis';
+
+  document.querySelectorAll<HTMLElement>('[data-goal-board]').forEach((board) => {
+    const data: GoalData = JSON.parse(board.dataset.goals ?? '{}');
+    const template = board.querySelector<HTMLTemplateElement>('template[data-kpi-row]')!;
+    const current = entries('classification');
+    const groups = new Map(entries('classificationGroup').map((g) => [g.slug, g]));
+    // A node is the board itself or a group's section: each has its own card
+    // grid and its own list of the groups inside it.
+    const own = <T extends HTMLElement>(node: HTMLElement, selector: string): T | null =>
+      [...node.querySelectorAll<T>(selector)].find((el) => el.closest('[data-group]') === node) ?? null;
+    // Copies to clone from, taken before anything is removed: any card, and a
+    // section emptied of its cards and of the groups inside it.
+    const cardTemplate = board.querySelector<HTMLElement>('[data-goal-card]')?.cloneNode(true) as HTMLElement | undefined;
+    const sectionTemplate = board.querySelector<HTMLElement>('section[data-group]')?.cloneNode(true) as HTMLElement | undefined;
+    sectionTemplate?.querySelectorAll('[data-goal-card], section[data-group]').forEach((c) => c.remove());
+
+    const sections = new Map([...board.querySelectorAll<HTMLElement>('section[data-group]')].map((s) => [s.dataset.group ?? '', s]));
+    // Groups in stored order, each under its parent; the board's own level is
+    // its root group's, or the top level.
+    const place = (parent: HTMLElement, parentSlug: string, depth: number): void => {
+      const list = own(parent, '[data-subgroups]');
+      if (!list) return;
+      for (const g of groupsIn(parentSlug)) {
+        let section = sections.get(g.slug);
+        if (!section) {
+          if (!sectionTemplate) continue;
+          section = sectionTemplate.cloneNode(true) as HTMLElement;
+          section.dataset.group = g.slug;
+        }
+        sections.delete(g.slug);
+        section.dataset.depth = String(depth);
+        section.setAttribute('aria-label', g.name);
+        if (g.color) section.style.setProperty('--firma2-group-color', g.color);
+        const name = own(section, '.esa-collapsible__title');
+        if (name) name.textContent = g.name;
+        const desc = own(section, '[data-group-desc]');
+        if (desc) desc.textContent = g.description;
+        // A group added in this browser has no page of its own yet; its
+        // settings page is where it lives.
+        const door = own<HTMLAnchorElement>(section, 'a[data-group-open]');
+        if (door) {
+          door.href = g.slug.startsWith('local-')
+            ? recordHref('/prototypes/workspace-settings/classifications/groups', g.slug)
+            : `${board.dataset.groupsHref}/${g.slug}`;
+        }
+        list.append(section);
+        place(section, g.slug, depth + 1);
+        // A group with no goals anywhere beneath it is not shown.
+        section.hidden = classificationsUnder(g.slug).length === 0;
+      }
+    };
+    place(board, board.dataset.group ?? '', 0);
+    // What is left was removed in this browser, or moved off this board.
+    for (const section of sections.values()) section.remove();
+
+    [board, ...board.querySelectorAll<HTMLElement>('section[data-group]')].forEach((node) => {
+      const grid = own(node, '[data-cards]');
+      if (!grid) return;
+      const cards = [...grid.querySelectorAll<HTMLElement>(':scope > [data-goal-card]')];
+      const inGroup = current.filter((e) => e.group === node.dataset.group);
+      const shown = new Set(cards.map((c) => c.dataset.slug));
+
+      // Goals moved here from another group keep their card — its figures
+      // are real. Goals added in this browser get a copy of a card, emptied.
+      for (const e of inGroup.filter((x) => !shown.has(x.slug))) {
+        const moved = board.querySelector<HTMLElement>(`[data-goal-card][data-slug="${CSS.escape(e.slug)}"]`);
+        if (moved) {
+          grid.append(moved);
+          cards.push(moved);
+          continue;
+        }
+        if (!cardTemplate) break;
+        const card = cardTemplate.cloneNode(true) as HTMLElement;
+        card.dataset.slug = e.slug;
+        const h3 = card.querySelector('h3');
+        h3?.setAttribute('id', `goal-${e.slug}`);
+        card.querySelector('[data-kpi-list]')?.setAttribute('aria-labelledby', `goal-${e.slug}`);
+        const link = card.querySelector<HTMLAnchorElement>('[data-card-link]');
+        // No goal page exists for it yet; its settings page is where it lives.
+        if (link) link.href = recordHref('/prototypes/workspace-settings/classifications', e.slug);
+        // Nor a peek: the panel's records are the build's.
+        card.querySelector('.firma2-peek-button')?.remove();
+        const count = card.querySelector('[data-card-count]');
+        if (count) count.textContent = '0 projects';
+        const funders = card.querySelector('[data-card-funders]');
+        if (funders) funders.textContent = '0 funders';
+        grid.append(card);
+        cards.push(card);
+      }
+
+      for (const card of cards) {
+        const e = inGroup.find((x) => x.slug === card.dataset.slug);
+        if (!e) {
+          // Removed goals go; a goal now in another group waits for that
+          // group's section to take its card — or goes, if that group is not
+          // on this board.
+          const home = current.find((x) => x.slug === card.dataset.slug)?.group;
+          if (!home || !board.querySelector(`section[data-group="${CSS.escape(home)}"]`)) card.remove();
+          continue;
+        }
+        const name = card.querySelector('[data-card-name]');
+        if (name) name.textContent = e.name;
+        card.querySelector('.firma2-peek-button [aria-label]')?.setAttribute('aria-label', `Preview ${e.name}`);
+        const swatch = card.querySelector<HTMLElement>('[data-card-swatch]');
+        // The group's colour, as the build drew it (listColorOf).
+        const groupColor = groups.get(e.group ?? '')?.color ?? e.color;
+        if (swatch && groupColor) swatch.style.background = groupColor;
+        const list = card.querySelector<HTMLElement>('[data-kpi-list]')!;
+        const desc = card.querySelector('[data-card-desc]');
+        if (desc && e.description != null) desc.textContent = e.description;
+        const n = renderKpis(list, template, e.slug, data);
+        const empty = card.querySelector<HTMLElement>('[data-kpi-empty]');
+        if (empty) empty.hidden = n > 0;
+        // The card shows three (its CSS); the line counts the rest.
+        const more = card.querySelector<HTMLElement>('[data-kpi-more]');
+        if (more) {
+          more.hidden = n <= 3;
+          more.textContent = `+${n - 3} more ${n - 3 === 1 ? 'measure' : 'measures'}`;
+        }
+      }
+
+      // Stored order within the group.
+      for (const e of inGroup) {
+        const card = grid.querySelector<HTMLElement>(`:scope > [data-goal-card][data-slug="${CSS.escape(e.slug)}"]`);
+        if (card) grid.append(card);
+      }
+    });
+
+    const empty = board.querySelector<HTMLElement>('[data-board-empty]');
+    if (empty) empty.hidden = classificationsUnder(board.dataset.group ?? '').length > 0;
+
+    // Closed groups, remembered per reader. `toggle` does not bubble.
+    const KEY = 'firma2:goal-board:closed';
+    let closed: string[] = [];
+    try {
+      closed = JSON.parse(localStorage.getItem(KEY) ?? '[]');
+    } catch {}
+    board.querySelectorAll<HTMLElement>('section[data-group]').forEach((section) => {
+      const details = section.querySelector('details');
+      if (details && closed.includes(section.dataset.group ?? '')) details.open = false;
+    });
+    board.addEventListener('toggle', () => {
+      // Groups not on this board (a group's own page shows a few) keep
+      // whatever was remembered for them.
+      const here = [...board.querySelectorAll<HTMLElement>('section[data-group]')];
+      const slugs = new Set(here.map((s) => s.dataset.group ?? ''));
+      const now = [
+        ...closed.filter((s) => !slugs.has(s)),
+        ...here.filter((s) => !s.querySelector('details')?.open).map((s) => s.dataset.group ?? ''),
+      ];
+      closed = now;
+      try {
+        localStorage.setItem(KEY, JSON.stringify(now));
+      } catch {}
+    }, true);
+  });
+</script>

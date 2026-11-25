@@ -1,0 +1,509 @@
+---
+// firma2-update-photos — the Photos section of the Team 5 sandbox's project
+// page (/prototypes/team-5). Ported from ProjectFirma2 hackathon Team 5, story
+// 0012 ("Photos and attachments on a project", their project-photos
+// component): a grid of photos, each with a caption, a Before / During / After
+// timing, its review state, and add and remove.
+//
+// HOW IT DIFFERS FROM firma2-project-gallery (the real record page's Photos,
+// left untouched so the sandbox stays separate):
+//   - Tiles render at runtime from the sandbox store (src/lib/update-sandbox),
+//     re-rendered on every sandbox change; the gallery renders at build time.
+//   - Caption and timing are edited on the tile, saved live, and not logged.
+//   - Adding and removing go through the change log: when this seat's edits
+//     wait for review, an added photo shows "Awaiting review" and is not
+//     editable, a removed one stays with "Removal awaiting review", and an
+//     administrator approves or rejects either from the tile.
+//   - Files dropped on the section are added too. Non-images go through
+//     readFile like anything else and land as documents, the way Team 5's
+//     server routed by content type.
+// The grid, the 4:3 frame and the "image click or expand button opens the
+// lightbox" idiom are the gallery's; the viewer is the app-wide
+// firma2-lightbox (BaseLayout mounts it), opened through openLightbox().
+//
+// RE-RENDERS DO NOT INTERRUPT TYPING. Tiles are keyed by attachment id and
+// rebuilt only when something structural changes (review state, seat, file);
+// caption and timing are patched in place, and a focused caption is never
+// overwritten.
+//
+// bcn-lego-checked: walked `ls node_modules/@esa/ecology/src/components/`
+// (2026-11-12). Every control is a lego: EsaButton (Add photos, Approve,
+// Reject, the expand and remove icon buttons — chrome iconOnly, which
+// replaces the deprecated esa-icon-button), EsaBadge (review state),
+// EsaEmptyState, esa-text-field (caption), esa-button-toggle (timing),
+// esa-confirm-dialog (remove). The .astro legos are cloned from <template>s
+// for runtime tiles. esa-file-upload was ruled out: it is a dropzone plus a
+// file list, and here the section itself is the drop target and the tiles are
+// the result. The bespoke parts are the <figure> tile, the 4:3 frame and the
+// name plate for a photo with no image — the gallery's idiom, and this file
+// is their home in the sandbox. Beacon is not cloned on this machine.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+
+interface Props {
+  /** The project whose photos these are (sandbox key). */
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const headingId = `update-photos-${slug}`;
+---
+<section class="firma2-update-photos stack" data-gap="md" data-slug={slug} aria-labelledby={headingId}>
+  <div class="repel" data-gap="sm">
+    <h2 class="firma2-update-photos__title typography-title-strong" id={headingId}>Photos</h2>
+    <div data-editor-only hidden>
+      <EsaButton variant="secondary" appearance="outline" size="md" icon="plus" data-add>Add photos</EsaButton>
+    </div>
+  </div>
+
+  <div data-empty hidden>
+    <EsaEmptyState size="md" title="No photos yet" />
+  </div>
+
+  <ul class="firma2-update-photos__grid grid" data-gap="md" role="list" data-tiles></ul>
+
+  <template data-tpl="expand"><EsaButton class="firma2-update-photos__expand" variant="secondary" size="md" iconOnly icon="expand" label="View photo" /></template>
+  <template data-tpl="remove"><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Remove photo" /></template>
+  <template data-tpl="approve"><EsaButton variant="primary" size="md">Approve</EsaButton></template>
+  <template data-tpl="reject"><EsaButton variant="secondary" appearance="outline" size="md">Reject</EsaButton></template>
+  <template data-tpl="badge-add"><EsaBadge variant="warning" size="sm" value="Awaiting review" /></template>
+  <template data-tpl="badge-remove"><EsaBadge variant="warning" size="sm" value="Removal awaiting review" /></template>
+
+  <!-- Its own wrapper: two sibling custom-element dialogs can come out nested
+       and never draw. -->
+  <div class="firma2-update-photos__confirm">
+    <esa-confirm-dialog variant="danger" confirm-label="Remove" data-confirm></esa-confirm-dialog>
+  </div>
+</section>
+
+<style>
+  .firma2-update-photos [hidden] {
+    display: none !important;
+  }
+
+  .firma2-update-photos__title {
+    margin: 0;
+  }
+
+  /* The gallery's grid: auto-FILL so a two-photo grid keeps photo-sized
+     tracks (see firma2-project-gallery for the measurement). The min is wider
+     than the gallery's 13rem because each tile carries a caption field and a
+     three-segment md toggle. */
+  .firma2-update-photos__grid {
+    --grid-min: 15rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr));
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Files dragged over the section: the whole section is the target. */
+  .firma2-update-photos[data-dragging] {
+    outline: var(--border-width-emphasis, 2px) dashed var(--color-border-brand, #46a758);
+    outline-offset: var(--spacing-200, 0.5rem);
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  .firma2-update-photos :global(.firma2-update-photos__figure) {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-200, 0.5rem);
+  }
+
+  .firma2-update-photos :global(.firma2-update-photos__frame) {
+    position: relative;
+  }
+
+  .firma2-update-photos :global(.firma2-update-photos__image),
+  .firma2-update-photos :global(.firma2-update-photos__plate) {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    aspect-ratio: 4 / 3;
+    border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #e3e5e2);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-background-elevation-sunken, #f4f5f4);
+    box-sizing: border-box;
+  }
+
+  .firma2-update-photos :global(.firma2-update-photos__image) {
+    object-fit: cover;
+    cursor: zoom-in;
+  }
+
+  /* A photo with no image: its file name on a neutral plate. */
+  .firma2-update-photos :global(.firma2-update-photos__plate) {
+    display: grid;
+    place-items: center;
+    padding: var(--spacing-300, 0.75rem);
+    color: var(--color-content-default-secondary, #60655f);
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  /* Not on the record yet: the picture is shown, but quieter. */
+  .firma2-update-photos :global([data-pending='add'] .firma2-update-photos__image) {
+    opacity: 0.6;
+  }
+
+  /* The gallery's expand control: raised by hover or keyboard focus, always
+     there where hover does not exist. */
+  .firma2-update-photos :global(.firma2-update-photos__frame .firma2-update-photos__expand) {
+    position: absolute;
+    inset-block-start: var(--spacing-200, 0.5rem);
+    inset-inline-end: var(--spacing-200, 0.5rem);
+    opacity: 0;
+  }
+  .firma2-update-photos :global(.firma2-update-photos__frame .firma2-update-photos__expand:focus-within) {
+    opacity: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-update-photos :global(.firma2-update-photos__frame:hover .firma2-update-photos__expand) {
+      opacity: 1;
+    }
+  }
+  @media (hover: none) {
+    .firma2-update-photos :global(.firma2-update-photos__frame .firma2-update-photos__expand) {
+      opacity: 1;
+    }
+  }
+  /* Over a photo the outline secondary needs its own ground. */
+  .firma2-update-photos :global(.firma2-update-photos__expand > .esa-button__native:not(:hover)) {
+    background: var(--color-background-elevation-raised, #fff);
+  }
+
+  .firma2-update-photos :global(.firma2-update-photos__caption) {
+    margin: 0;
+    color: var(--color-content-default, #1d211c);
+  }
+
+  .firma2-update-photos :global(.firma2-update-photos__foot) {
+    align-items: center;
+  }
+
+  .firma2-update-photos :global(.firma2-update-photos__byline) {
+    margin: 0;
+    color: var(--color-content-default-secondary, #60655f);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { announce } from '@esa/ecology/announcer';
+  import { openLightbox } from '../../lib/lightbox';
+  import { nameButton } from '../../lib/name-button';
+  import { PHOTO_TIMINGS, editableSlugs } from '../../data/firma2-project-updates';
+  import type { Attachment, PhotoTiming } from '../../data/firma2-project-updates';
+  import {
+    addFiles,
+    approveChange,
+    attachments,
+    canReview,
+    dayLabel,
+    editsWaitForReview,
+    onSandboxChange,
+    readFile,
+    readSettings,
+    rejectChange,
+    removeAttachment,
+    updateAttachment,
+  } from '../../lib/update-sandbox';
+
+  type Field = HTMLElement & { value: string };
+  type Toggle = HTMLElement & { value: string; options: { label: string; value: string }[] };
+  type Confirm = HTMLElement & { heading: string; message: string; show: () => void };
+
+  const TIMING_OPTIONS = PHOTO_TIMINGS.map((t) => ({ label: t, value: t }));
+
+  document.querySelectorAll<HTMLElement>('.firma2-update-photos').forEach((root) => {
+    const slug = root.dataset.slug ?? '';
+    const list = root.querySelector<HTMLUListElement>('[data-tiles]')!;
+    const empty = root.querySelector<HTMLElement>('[data-empty]')!;
+    const editorOnly = root.querySelector<HTMLElement>('[data-editor-only]')!;
+    const addButton = root.querySelector<HTMLElement>('[data-add]')!;
+    const confirm = root.querySelector<Confirm>('[data-confirm]')!;
+
+    const clone = (name: string): HTMLElement =>
+      root.querySelector<HTMLTemplateElement>(`template[data-tpl="${name}"]`)!.content.firstElementChild!.cloneNode(true) as HTMLElement;
+    /** The real control inside an EsaButton clone's wrapper span. */
+    const control = (el: HTMLElement): HTMLElement => el.querySelector<HTMLElement>('button, a') ?? el;
+    const onClick = (el: HTMLElement, go: () => void): void => control(el).addEventListener('click', go);
+
+    const editable = (): boolean => editableSlugs(readSettings().role).includes(slug);
+    const photos = (): Attachment[] => attachments(slug, 'photo');
+    const nameOf = (a: Attachment): string => a.caption || a.fileName;
+
+    // ---- add ------------------------------------------------------------------
+
+    const add = async (files: File[]): Promise<void> => {
+      if (!files.length || !editable()) return;
+      const waits = editsWaitForReview();
+      const read = await Promise.all(files.map(readFile));
+      addFiles(slug, read);
+      const noun = read.every((f) => f.kind === 'photo') ? 'photo' : 'file';
+      const count = read.length === 1 ? `1 ${noun}` : `${read.length} ${noun}s`;
+      announce(waits ? `${count} added, awaiting review` : `${count} added`);
+    };
+
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/*';
+    picker.multiple = true;
+    picker.hidden = true;
+    picker.tabIndex = -1;
+    root.append(picker);
+    picker.addEventListener('change', () => {
+      void add([...(picker.files ?? [])]);
+      // Cleared so choosing the same file again still fires change.
+      picker.value = '';
+    });
+    onClick(addButton, () => picker.click());
+
+    const carriesFiles = (e: DragEvent): boolean => !!e.dataTransfer?.types.includes('Files');
+    root.addEventListener('dragover', (e) => {
+      if (!carriesFiles(e) || !editable()) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+      root.toggleAttribute('data-dragging', true);
+    });
+    root.addEventListener('dragleave', (e) => {
+      if (!root.contains(e.relatedTarget as Node | null)) root.removeAttribute('data-dragging');
+    });
+    root.addEventListener('drop', (e) => {
+      root.removeAttribute('data-dragging');
+      if (!carriesFiles(e) || !editable()) return;
+      e.preventDefault();
+      void add([...(e.dataTransfer?.files ?? [])]);
+    });
+
+    // ---- remove ---------------------------------------------------------------
+
+    const askRemove = (a: Attachment): void => {
+      confirm.heading = `Remove ${a.fileName}?`;
+      confirm.message = editsWaitForReview()
+        ? 'The photo stays until an administrator approves its removal.'
+        : "The photo is removed and this project's changes record it.";
+      confirm.addEventListener(
+        'resolved',
+        (e) => {
+          if (!(e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) return;
+          const waits = editsWaitForReview();
+          const index = photos().findIndex((p) => p.id === a.id);
+          removeAttachment(slug, a.id);
+          announce(waits ? `${a.fileName} removal awaiting review` : `${a.fileName} removed`);
+          // The dialog hands focus back to a trigger that may be gone: land on
+          // the tile now in its place, or on Add photos when none is left.
+          requestAnimationFrame(() => {
+            if (root.contains(document.activeElement) && document.activeElement !== document.body) return;
+            const tile = list.children[Math.min(index, list.children.length - 1)] as HTMLElement | undefined;
+            (tile?.querySelector<HTMLElement>('button, esa-text-field') ?? control(addButton)).focus();
+          });
+        },
+        { once: true },
+      );
+      confirm.show();
+    };
+
+    // ---- tiles ----------------------------------------------------------------
+
+    const show = (id: string): void => {
+      const withImages = photos().filter((p) => p.src);
+      const index = withImages.findIndex((p) => p.id === id);
+      if (index < 0) return;
+      openLightbox({
+        images: withImages.map((p) => ({ src: p.src!, caption: nameOf(p), date: dayLabel(p.at) })),
+        index,
+        heading: 'Photos',
+      });
+    };
+
+    const saveCaption = (a: Attachment, field: Field): void => {
+      const next = (field.value ?? '').trim();
+      const stored = photos().find((p) => p.id === a.id);
+      if (stored && stored.caption !== next) updateAttachment(slug, a.id, { caption: next });
+    };
+
+    /** Editing is open on a photo that is on the record. */
+    const editsInPlace = (a: Attachment, canEdit: boolean): boolean => canEdit && a.pending !== 'add';
+
+    /** What forces a rebuild. Caption and timing are patched in place when editable. */
+    const signature = (a: Attachment, canEdit: boolean, review: boolean): string =>
+      JSON.stringify([a.src, a.fileName, a.pending, a.changeId, a.by, a.at, canEdit, review, editsInPlace(a, canEdit) ? null : [a.caption, a.timing]]);
+
+    const build = (a: Attachment, canEdit: boolean, review: boolean): HTMLLIElement => {
+      const li = document.createElement('li');
+      li.dataset.id = a.id;
+      if (a.pending) li.dataset.pending = a.pending;
+
+      const figure = document.createElement('figure');
+      figure.className = 'firma2-update-photos__figure';
+
+      const frame = document.createElement('div');
+      frame.className = 'firma2-update-photos__frame';
+      if (a.src) {
+        const img = document.createElement('img');
+        img.className = 'firma2-update-photos__image';
+        img.src = a.src;
+        img.alt = nameOf(a);
+        img.width = 640;
+        img.height = 480;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        // This section opens the viewer itself, with its own list.
+        img.setAttribute('data-no-lightbox', '');
+        img.addEventListener('click', () => show(a.id));
+        const expand = clone('expand');
+        nameButton(expand, `View ${nameOf(a)}`);
+        onClick(expand, () => show(a.id));
+        frame.append(img, expand);
+      } else {
+        const plate = document.createElement('div');
+        plate.className = 'firma2-update-photos__plate typography-body-sm';
+        plate.textContent = a.fileName;
+        frame.append(plate);
+      }
+      figure.append(frame);
+
+      const meta = document.createElement('figcaption');
+      meta.className = 'stack';
+      meta.dataset.gap = 'sm';
+
+      if (a.pending) {
+        const badge = document.createElement('div');
+        badge.append(clone(a.pending === 'add' ? 'badge-add' : 'badge-remove'));
+        meta.append(badge);
+      }
+
+      if (editsInPlace(a, canEdit)) {
+        const field = document.createElement('esa-text-field') as Field;
+        field.setAttribute('size', 'md');
+        field.setAttribute('aria-label', 'Caption');
+        field.setAttribute('placeholder', 'Add a caption');
+        field.dataset.caption = '';
+        field.addEventListener('focusout', () => saveCaption(a, field));
+        field.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') saveCaption(a, field);
+        });
+
+        const toggle = document.createElement('esa-button-toggle') as Toggle;
+        toggle.setAttribute('size', 'md');
+        toggle.setAttribute('label', 'Taken');
+        toggle.dataset.timing = '';
+        toggle.addEventListener('change', (e) => {
+          const value = (e as CustomEvent<{ value: string }>).detail?.value as PhotoTiming | undefined;
+          if (value && PHOTO_TIMINGS.includes(value)) updateAttachment(slug, a.id, { timing: value });
+        });
+
+        // Set once the legos are defined: before, a property would shadow their accessors.
+        void customElements.whenDefined('esa-text-field').then(() => (field.value = a.caption));
+        void customElements.whenDefined('esa-button-toggle').then(() => {
+          toggle.options = TIMING_OPTIONS;
+          toggle.value = a.timing ?? '';
+        });
+        meta.append(field, toggle);
+      } else if (a.caption) {
+        const caption = document.createElement('p');
+        caption.className = 'firma2-update-photos__caption typography-body-sm';
+        caption.textContent = a.caption;
+        meta.append(caption);
+      }
+
+      const foot = document.createElement('div');
+      foot.className = 'firma2-update-photos__foot repel';
+      foot.dataset.gap = 'sm';
+      const byline = document.createElement('p');
+      byline.className = 'firma2-update-photos__byline typography-meta';
+      byline.textContent = [editsInPlace(a, canEdit) ? '' : (a.timing ?? ''), a.by, dayLabel(a.at)].filter(Boolean).join(' · ');
+      foot.append(byline);
+      if (canEdit && !a.pending) {
+        const remove = clone('remove');
+        nameButton(remove, `Remove ${a.fileName}`);
+        onClick(remove, () => askRemove(a));
+        foot.append(remove);
+      }
+      meta.append(foot);
+
+      if (review && a.changeId) {
+        const changeId = a.changeId;
+        const actions = document.createElement('div');
+        actions.className = 'cluster';
+        actions.dataset.gap = 'sm';
+        const approve = clone('approve');
+        const reject = clone('reject');
+        control(approve).setAttribute('aria-label', `Approve ${a.fileName}`);
+        control(reject).setAttribute('aria-label', `Reject ${a.fileName}`);
+        onClick(approve, () => approveChange(changeId));
+        onClick(reject, () => rejectChange(changeId));
+        actions.append(approve, reject);
+        meta.append(actions);
+      }
+
+      figure.append(meta);
+      li.append(figure);
+      return li;
+    };
+
+    /** Caption, timing and alt text on a tile kept across a re-render. */
+    const patch = (li: HTMLElement, a: Attachment): void => {
+      const field = li.querySelector<Field>('[data-caption]');
+      if (field && !field.matches(':focus-within')) {
+        void customElements.whenDefined('esa-text-field').then(() => {
+          if (field.value !== a.caption) field.value = a.caption;
+        });
+      }
+      const toggle = li.querySelector<Toggle>('[data-timing]');
+      if (toggle) void customElements.whenDefined('esa-button-toggle').then(() => (toggle.value = a.timing ?? ''));
+      const img = li.querySelector<HTMLImageElement>('.firma2-update-photos__image');
+      if (img) img.alt = nameOf(a);
+      const expand = li.querySelector<HTMLElement>('.firma2-update-photos__expand');
+      if (expand) nameButton(expand, `View ${nameOf(a)}`);
+    };
+
+    const render = (): void => {
+      const items = photos();
+      const canEdit = editable();
+      const review = canReview();
+      editorOnly.hidden = !canEdit;
+      empty.hidden = items.length > 0;
+      list.hidden = items.length === 0;
+
+      const focused = document.activeElement;
+      const hadFocus = !!focused && list.contains(focused);
+      const focusedIndex = hadFocus ? [...list.children].findIndex((c) => c.contains(focused)) : -1;
+
+      const existing = new Map<string, HTMLElement>();
+      [...list.children].forEach((c) => existing.set((c as HTMLElement).dataset.id ?? '', c as HTMLElement));
+      const wanted = new Set(items.map((a) => a.id));
+      existing.forEach((el, id) => {
+        if (!wanted.has(id)) el.remove();
+      });
+
+      items.forEach((a, i) => {
+        const sig = signature(a, canEdit, review);
+        let el = existing.get(a.id);
+        if (el && el.dataset.sig === sig) {
+          patch(el, a);
+        } else {
+          const next = build(a, canEdit, review);
+          next.dataset.sig = sig;
+          if (el) el.replaceWith(next);
+          el = next;
+        }
+        if (list.children[i] !== el) list.insertBefore(el, list.children[i] ?? null);
+      });
+
+      // Focus was on a tile that was rebuilt or removed: keep it in the grid.
+      if (hadFocus && !list.contains(document.activeElement)) {
+        const tile = list.children[Math.min(focusedIndex, list.children.length - 1)] as HTMLElement | undefined;
+        const target = tile?.querySelector<HTMLElement>('button, esa-text-field') ?? (canEdit ? control(addButton) : null);
+        target?.focus();
+      }
+    };
+
+    onSandboxChange(render);
+  });
+</script>

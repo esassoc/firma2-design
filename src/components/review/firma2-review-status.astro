@@ -1,0 +1,145 @@
+---
+// firma2-review-status — the review page's states that are not the diff:
+// who may publish, a project that changed in another tab, and a project with
+// nothing left to publish.
+//
+// ALL THREE ARE ANSWERS, NOT DECORATION. A Contributor who opens the page
+// needs to know why there is no Publish button; a manager whose Publish was
+// stopped needs to know why and what to do; a manager who reverted the last
+// change or arrives on a project already published needs the way on — the
+// next project in the sweep, or back to the queue.
+//
+// The state comes from firma2-review-actions (firma2:review-state), which owns
+// the queue order and the permission check, so the two cannot disagree. The
+// "Published <project>" toast is the previous page's: Publish and next sets it
+// and this page shows it, because the page that published is already gone.
+//
+// bcn-lego-checked: esa-alert-box, esa-empty-state, esa-button and
+// esa-snackbar-container — legos, composed unchanged. The <style> only
+// restates [hidden].
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** Where "Back to Review" goes when the page was not opened from an organization's queue. */
+  queueHref: string;
+  /** Each reader organization's Review page, by slug, for ?from=. */
+  organizationQueues: Record<string, string>;
+}
+
+const { queueHref, organizationQueues } = Astro.props;
+---
+<div class="firma2-review-status" data-queue-href={withBase(queueHref)} data-org-queues={JSON.stringify(Object.fromEntries(Object.entries(organizationQueues).map(([k, v]) => [k, withBase(v)])))}>
+  <div data-readonly hidden>
+    <EsaAlertBox variant="info" title="Managers and administrators publish">
+      Ask a manager of this project's organization.
+    </EsaAlertBox>
+  </div>
+  {/* Decision 8: until its domain is verified, an organization's projects
+      publish only through an administrator. The name fills in from the state. */}
+  <div data-unverified hidden>
+    <EsaAlertBox variant="info" title="An administrator publishes this project">
+      <span data-unverified-text>Its organization isn't verified yet.</span>
+    </EsaAlertBox>
+  </div>
+  <div data-stale hidden>
+    <EsaAlertBox variant="warning" title="This project changed in another tab">
+      <EsaButton variant="secondary" appearance="outline" size="md" data-reload>Reload</EsaButton>
+    </EsaAlertBox>
+  </div>
+  <div data-done hidden>
+    <EsaEmptyState title="Nothing to publish" size="sm">
+      <span class="cluster" data-gap="sm">
+        <span data-next hidden><EsaButton variant="primary" size="md" tag="a" href="#" data-next-link>Next project</EsaButton></span>
+        <EsaButton variant="secondary" appearance="outline" size="md" tag="a" href={withBase(queueHref)} data-back-link>Back to Review</EsaButton>
+      </span>
+    </EsaEmptyState>
+  </div>
+  <esa-snackbar-container class="firma2-review-status__toasts"></esa-snackbar-container>
+</div>
+
+<style>
+  /* Contents, not a box: with every state hidden this must not cost the
+     page's stack a gap between the header and the diff. */
+  .firma2-review-status {
+    display: contents;
+  }
+  .firma2-review-status [hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-snackbar-container';
+  import { undoPublish, undoablePublish } from '../../lib/publish-undo';
+  import { CURRENT_USER } from '../../data/firma2-directory';
+  import { TODAY_ISO } from '../../data/firma2-publish-history';
+
+  type Snackbar = HTMLElement & { show: (config: { message: string; variant?: string; action?: string }) => string; dismiss: (id: string) => void };
+  type State = { slug: string; pending: number; allowed: boolean; blocked: 'threshold' | 'unverified' | null; lead: string; next: { href: string; name: string } | null };
+
+  const root = document.querySelector<HTMLElement>('.firma2-review-status');
+  if (root) {
+    const part = (name: string) => root.querySelector<HTMLElement>(`[data-${name}]`)!;
+    const from = new URLSearchParams(window.location.search).get('from') ?? '';
+    const orgQueues: Record<string, string> = JSON.parse(root.dataset.orgQueues ?? '{}');
+    // Opened from an organization's queue: the way back is to that queue,
+    // in the crumb as well as on the done state.
+    if (orgQueues[from]) {
+      root.querySelector<HTMLAnchorElement>('[data-back-link]')!.href = orgQueues[from];
+      document.querySelectorAll<HTMLAnchorElement>(`.esa-breadcrumbs a[href="${root.dataset.queueHref}"]`).forEach((a) => (a.href = orgQueues[from]));
+    }
+
+    document.addEventListener('firma2:review-state', (event) => {
+      const state = (event as CustomEvent<State>).detail;
+      part('readonly').hidden = state.blocked !== 'threshold' || state.pending === 0;
+      part('unverified').hidden = state.blocked !== 'unverified' || state.pending === 0;
+      if (state.lead) part('unverified-text').textContent = `${state.lead} isn't verified yet.`;
+      part('done').hidden = state.pending > 0;
+      part('next').hidden = !state.next;
+      if (state.next) root.querySelector<HTMLAnchorElement>('[data-next-link]')!.href = state.next.href;
+    });
+    document.addEventListener('firma2:review-stale', () => {
+      part('stale').hidden = false;
+    });
+    root.querySelector('[data-reload]')?.addEventListener('click', () => window.location.reload());
+    document.dispatchEvent(new CustomEvent('firma2:review-request'));
+
+    const toasts = () => root.querySelector<Snackbar>('.firma2-review-status__toasts');
+    const show = (message: string, action?: string) =>
+      customElements.whenDefined('esa-snackbar-container').then(() => toasts()?.show({ message, variant: 'success', action }) ?? '');
+    document.addEventListener('firma2:review-toast', (event) => void show((event as CustomEvent<{ message: string }>).detail.message));
+
+    // UNDO RIDES ON THE PUBLISH TOAST, and the review page's publish history
+    // holds the same act (firma2-review-changes), because a toast's button is
+    // announced as a bare word and can't be reached by keyboard — the lego's
+    // own rule for a toast action. The toast names the project it undoes: on
+    // "Publish and next" it shows on the NEXT project's page.
+    const undoToasts = new Map<string, { slug: string; name: string }>();
+    toasts()?.addEventListener('snackbar-action', (event) => {
+      const id = (event as CustomEvent<{ id: string }>).detail.id;
+      const target = undoToasts.get(id);
+      if (!target) return;
+      undoToasts.delete(id);
+      toasts()?.dismiss(id);
+      const undone = undoPublish(target.slug, CURRENT_USER.name, TODAY_ISO);
+      if (undone) document.dispatchEvent(new CustomEvent('firma2:publish-undone', { detail: { slug: target.slug, name: target.name } }));
+      void show(undone ? `Publish undone. ${target.name}’s changes are back in review.` : `Can’t undo: ${target.name} was published or undone since.`);
+    });
+
+    const toast = sessionStorage.getItem('firma2:review-toast');
+    const undo = sessionStorage.getItem('firma2:review-undo');
+    sessionStorage.removeItem('firma2:review-toast');
+    sessionStorage.removeItem('firma2:review-undo');
+    if (toast) {
+      let target: { slug: string; name: string } | null = null;
+      try { target = undo ? JSON.parse(undo) : null; } catch { target = null; }
+      const offer = target && undoablePublish(target.slug) ? target : null;
+      void show(toast, offer ? 'Undo' : undefined).then((id) => {
+        if (offer && id) undoToasts.set(id, offer);
+      });
+    }
+  }
+</script>

@@ -1,0 +1,180 @@
+---
+// firma2-taxonomy-details — the name and description of a project type or
+// classification (and a classification's group), on its settings page.
+//
+// A FORM, NOT A RECORD: this is a settings surface, so the legos keep their
+// labels and borders (brief §4, "A record reads first; a form shows its
+// boxes"). Always saved: each field writes when the reader leaves it, the
+// same `change` boundary every settings screen uses — no Save button.
+//
+// RENAMING SAYS SO EVERYWHERE ON THE PAGE: the title, the last crumb and the
+// tab follow the name the moment it saves. A blank or duplicate name is
+// refused in place and the stored name stands.
+//
+// A PROJECT TYPE ALSO CARRIES GUIDANCE: one line on when to pick it and how to
+// fill in the rest, shown under every project type picker once this type is
+// chosen (src/lib/vocabulary-guidance.ts). Written once here, on the list.
+//
+// A CLASSIFICATION GROUP ALSO CARRIES A COLOUR AND A PLACE (user, 2026-11-23):
+// its swatch, and the group it sits inside — "None" at the top level. Any
+// group can go under any other; the list leaves out only the group itself and
+// the groups beneath it. A classification can sit in any group, but always in one.
+// Each group is offered by its full path.
+//
+// A CLASSIFICATION OR GROUP ALSO CARRIES AN ICON (user, 2026-11-24): chosen
+// with bcn-icon-picker, drawn beside its name where the name leads.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { CLASSIFICATION_ICON_SUGGESTIONS } from '../../data/firma2-classification-icons';
+import { CLASSIFICATION_GROUPS, groupPath } from '../../data/firma2-classifications';
+import type { TaxonomyKind } from '../../lib/taxonomy-edits';
+
+interface Props {
+  kind: TaxonomyKind;
+  /** The seeded record's slug. Omitted on a draft route, where `?slug=` names it. */
+  slug?: string;
+  /** "project type", "classification" — for the duplicate-name error. */
+  noun: string;
+}
+
+const { kind, slug, noun } = Astro.props;
+// The build's list is only the no-script fallback; the script offers the store's.
+const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: groupPath(g.slug).map((x) => x.name).join(' › ') }));
+---
+<Firma2RailSection title="Details">
+<div class="firma2-taxonomy-details stack" data-gap="md" data-kind={kind} data-slug={slug} data-noun={noun}>
+  <esa-text-field label="Name" size="md" required data-name></esa-text-field>
+  <esa-textarea label="Description" size="md" rows="2" auto-resize data-description></esa-textarea>
+  {kind === 'projectType' && (
+    <esa-text-field label="Guidance" size="md" help-text="Shown when someone picks this type." placeholder="When to pick it and what to draw" data-guidance></esa-text-field>
+  )}
+  {kind === 'classification' && (
+    <esa-select label="Group" size="md" options={JSON.stringify(groupOptions)} data-group></esa-select>
+  )}
+  {kind === 'classificationGroup' && (
+    <esa-select label="Parent group" size="md" options={JSON.stringify([{ value: 'none', label: 'None' }])} data-parent></esa-select>
+  )}
+  {kind === 'classificationGroup' && <esa-color-picker label="Color" size="md" show-input data-color></esa-color-picker>}
+  {(kind === 'classification' || kind === 'classificationGroup') && (
+    <div class="stack" data-gap="xs">
+      <bcn-icon-picker label="Icon" data-icon data-icon-suggestions={JSON.stringify(CLASSIFICATION_ICON_SUGGESTIONS)}>
+        <template data-icon-option><EsaButton variant="chrome" size="md" iconOnly icon="star" aria-label="Icon">Icon</EsaButton></template>
+      </bcn-icon-picker>
+      <span data-icon-remove hidden><EsaButton variant="secondary" size="md" data-remove-icon>Remove icon</EsaButton></span>
+    </div>
+  )}
+</div>
+</Firma2RailSection>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-color-picker';
+  import '../shared/bcn-icon-picker';
+  import { editEntry, getEntry, groupMoveTargets, groupOutline, nameTaken } from '../../lib/taxonomy-edits';
+  import type { TaxonomyKind } from '../../lib/taxonomy-edits';
+  import { pathCrumbs, recordHref, recordSlug, retitle } from '../../lib/taxonomy-record';
+  import { groupTrail } from '../../lib/taxonomy-edits';
+  import { guidanceByKey, setGuidance } from '../../lib/vocabulary-guidance';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+
+  document.querySelectorAll<HTMLElement>('.firma2-taxonomy-details').forEach((root) => {
+    const kind = root.dataset.kind as TaxonomyKind;
+    const slug = recordSlug(root);
+    const entry = getEntry(kind, slug);
+    if (!entry) return;
+    const name = root.querySelector<Field>('[data-name]')!;
+    const description = root.querySelector<Field>('[data-description]')!;
+    const group = root.querySelector<Field>('[data-group]');
+    const guidance = root.querySelector<Field>('[data-guidance]');
+    const parent = root.querySelector<Field>('[data-parent]');
+    const color = root.querySelector<Field>('[data-color]');
+    // esa-select has no empty value to offer; "None" stands for the top level.
+    const TOP = 'none';
+
+    retitle(entry.name);
+    // The crumbs carry the record's full path of groups, as it stands now.
+    const GROUPS = '/prototypes/workspace-settings/classifications/groups';
+    const showPath = (): void => {
+      if (kind !== 'classification' && kind !== 'classificationGroup') return;
+      const now = getEntry(kind, slug);
+      const trail = kind === 'classification' ? groupTrail(now?.group ?? '') : groupTrail(slug).slice(0, -1);
+      pathCrumbs(trail.map((g) => ({ name: g.name, href: recordHref(GROUPS, g.slug) })));
+    };
+    showPath();
+    Promise.all(['esa-text-field', 'esa-textarea', 'esa-select'].map((t) => customElements.whenDefined(t))).then(() => {
+      name.value = entry.name;
+      description.value = entry.description;
+      if (guidance) guidance.value = guidanceByKey('projectType', slug);
+      if (group) {
+        // From the store, so a group added in this browser can be chosen.
+        // Every group: a classification is always in one (out of them all, it
+        // becomes a group — done on the settings list, where it can ask first).
+        (group as Field & { options: unknown }).options = groupOutline().map((o) => ({ value: o.entry.slug, label: o.label }));
+        group.value = entry.group ?? '';
+      }
+      if (parent) {
+        // "None" for the top level, then every group it may go under.
+        (parent as Field & { options: unknown }).options = [{ value: TOP, label: 'None' }, ...groupMoveTargets(slug).map((o) => ({ value: o.entry.slug, label: o.label }))];
+        parent.value = entry.group || TOP;
+      }
+    });
+    if (color) {
+      customElements.whenDefined('esa-color-picker').then(() => (color.value = entry.color ?? '#646464'));
+      color.addEventListener('change', () => {
+        if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color.value ?? '')) editEntry(kind, slug, { color: color.value });
+      });
+    }
+
+    const icon = root.querySelector<HTMLElement & { suggestions: { name: string; label: string; paths: string }[]; value: string }>('[data-icon]');
+    if (icon) {
+      // bcn-lego-checked: bcn-icon-picker is the spoke's icon chooser (stage editor uses it).
+      icon.suggestions = JSON.parse(icon.dataset.iconSuggestions ?? '[]');
+      customElements.whenDefined('bcn-icon-picker').then(() => (icon.value = entry.icon ?? ''));
+      const removeHost = root.querySelector<HTMLElement>('[data-icon-remove]');
+      const showRemove = (has: boolean) => {
+        if (removeHost) removeHost.hidden = !has;
+      };
+      showRemove(Boolean(entry.icon));
+      icon.addEventListener('change', (e) => {
+        const next = (e as CustomEvent<{ name: string; paths: string }>).detail;
+        editEntry(kind, slug, { icon: next.name, iconPaths: next.paths });
+        showRemove(true);
+      });
+      // Removing falls back to the colour square: the patch clears both fields.
+      removeHost?.querySelector('[data-remove-icon]')?.addEventListener('click', () => {
+        editEntry(kind, slug, { icon: '', iconPaths: '' });
+        icon.value = '';
+        showRemove(false);
+      });
+    }
+
+    name.addEventListener('input', () => {
+      if (name.errorText) name.errorText = '';
+    });
+    name.addEventListener('change', () => {
+      const value = (name.value ?? '').trim();
+      const error = !value ? 'Enter a name.' : nameTaken(kind, value, slug) ? `A ${root.dataset.noun} already has this name.` : '';
+      if (error) {
+        name.errorText = error;
+        return;
+      }
+      editEntry(kind, slug, { name: value });
+      retitle(value);
+    });
+    description.addEventListener('change', () => editEntry(kind, slug, { description: (description.value ?? '').trim() }));
+    guidance?.addEventListener('change', () => setGuidance('projectType', slug, guidance.value ?? ''));
+    group?.addEventListener('change', () => {
+      if (!group.value) return;
+      editEntry(kind, slug, { group: group.value });
+      showPath();
+    });
+    // The crumbs follow at once (showPath).
+    parent?.addEventListener('change', () => {
+      editEntry(kind, slug, { group: parent.value === TOP ? '' : parent.value });
+      showPath();
+    });
+  });
+</script>

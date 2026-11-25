@@ -1,0 +1,207 @@
+---
+// firma2-public-site-studio — the frame every part of Workspace settings ›
+// Public site sits in: the parts as links, the part's controls, and the public
+// home beside them as the preview.
+//
+// THE PREVIEW IS THE PUBLIC HOME ITSELF, in a frame marked
+// `data-public-site-preview` so it reads the DRAFT (src/lib/public-site-apply.ts)
+// and follows each control as it changes. Desktop shows the page at 1280px
+// scaled to the column; Phone shows it at 390px, unscaled — the two widths an
+// administrator cannot both be sitting at.
+//
+// DRAFT, THEN PUBLISH (.scratch/public-site-settings/spec.md, decision 2).
+// Controls write the draft. The page header's Publish and Discard changes
+// (marked `data-site-publish` / `data-site-discard` by the page) show only
+// while the draft differs from what the public reads, with an "Unpublished
+// changes" badge. Reset to defaults puts the draft back to the product's
+// arrangement; it is still a draft until published.
+//
+// LINKS, NOT TABS, for the parts — each has its own address, as the settings
+// rail's sections do (firma2-workspace-settings-nav).
+//
+// bcn-lego-checked: esa-button (the part links, Reset), esa-button-toggle (the
+// preview's width), esa-confirm-dialog, esa-snackbar-container, and
+// firma2-rail-section for the preview's heading. The classes split the page
+// into controls and preview and size the frame, as firma2-tenant-branding's do.
+// Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { PUBLIC_HOME_HREF, publicSiteDefaults } from '../../data/firma2-public-site';
+import { PUBLIC_SITE_PARTS, publicSitePartHref } from '../../lib/public-site-config';
+import type { PublicSitePart } from '../../lib/public-site-config';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  current: PublicSitePart;
+}
+
+const { current } = Astro.props;
+const WIDTHS = [
+  { value: 'desktop', label: 'Desktop' },
+  { value: 'phone', label: 'Phone' },
+];
+---
+<div class="firma2-site-studio stack" data-gap="xl" data-site-studio>
+  <script type="application/json" data-public-site-defaults set:html={JSON.stringify(publicSiteDefaults()).replace(/</g, '\\u003c')} />
+  <nav class="cluster" data-gap="xs" aria-label="Public site settings">
+    {PUBLIC_SITE_PARTS.map((part) => (
+      <EsaButton
+        variant={part.key === current ? 'secondary' : 'ghost'}
+        appearance={part.key === current ? 'soft' : undefined}
+        size="md"
+        tag="a"
+        href={withBase(publicSitePartHref(part.key))}
+        aria-current={part.key === current ? 'page' : undefined}
+      >
+        {part.label}
+      </EsaButton>
+    ))}
+  </nav>
+
+  <div class="firma2-site-studio__split">
+    <div class="stack" data-gap="2xl">
+      <slot />
+      <div hidden data-site-reset><EsaButton variant="ghost" size="md" icon="rotate-ccw">Reset to defaults</EsaButton></div>
+    </div>
+
+    <aside class="firma2-site-studio__preview">
+      <Firma2RailSection title="Preview">
+        {/* No `label`: "Preview" beside it is the visible name, and the lego
+            draws a label above itself. The script names the group for a screen
+            reader (the lego has no hidden-label mode). */}
+        <esa-button-toggle slot="actions" size="md" value="desktop" options={JSON.stringify(WIDTHS)} data-site-width></esa-button-toggle>
+        {/* The frame keeps its one border: it is the edge of a page embedded in a page. */}
+        <div class="firma2-site-studio__frame" data-device="desktop" data-site-frame>
+          <iframe src={withBase(PUBLIC_HOME_HREF)} title="Public home page preview" data-public-site-preview></iframe>
+        </div>
+      </Firma2RailSection>
+    </aside>
+  </div>
+
+  <esa-confirm-dialog
+    data-site-discard-confirm
+    variant="danger"
+    heading="Discard changes?"
+    message="The public site stays as last published."
+    confirm-label="Discard changes"
+    cancel-label="Keep editing"
+  ></esa-confirm-dialog>
+  <esa-snackbar-container data-public-site-toasts></esa-snackbar-container>
+</div>
+
+<style>
+  .firma2-site-studio :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-site-studio__split {
+    display: grid;
+    grid-template-columns: minmax(0, 30rem) minmax(0, 1fr);
+    gap: var(--spacing-700);
+    align-items: start;
+  }
+  @media (max-width: 72rem) {
+    .firma2-site-studio__split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .firma2-site-studio__preview {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--spacing-400));
+    min-inline-size: 0;
+  }
+
+  .firma2-site-studio__frame {
+    --_frame-height: clamp(26rem, calc(100dvh - 17rem), 52rem);
+    block-size: var(--_frame-height);
+    overflow: hidden;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-sm);
+    background: var(--color-background-elevation-sunken);
+  }
+  /* Desktop: the page at 1280px, scaled to the column. `--_scale` is the
+     column's width over 1280, set by the script as the column resizes. */
+  .firma2-site-studio__frame iframe {
+    display: block;
+    inline-size: 1280px;
+    block-size: calc(var(--_frame-height) / var(--_scale, 0.5));
+    border: 0;
+    transform: scale(var(--_scale, 0.5));
+    transform-origin: 0 0;
+  }
+  .firma2-site-studio__frame[data-device='phone'] iframe {
+    inline-size: min(390px, 100%);
+    block-size: 100%;
+    margin-inline: auto;
+    transform: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-snackbar-container';
+  import { defaults, toast } from '../../lib/public-site-form';
+  import { discardDraft, hasUnpublished, PUBLIC_SITE_EVENT, publishDraft, readDraft, resetDraft } from '../../lib/public-site-store';
+
+  const NOTE_KEY = 'firma2:public-site-note';
+  const root = document.querySelector<HTMLElement>('[data-site-studio]');
+  if (root && defaults) {
+    const frame = root.querySelector<HTMLElement>('[data-site-frame]')!;
+    const width = root.querySelector<HTMLElement & { value: string }>('[data-site-width]')!;
+    const confirm = root.querySelector<HTMLElement & { open: boolean }>('[data-site-discard-confirm]')!;
+    const resetWrap = root.querySelector<HTMLElement>('[data-site-reset]')!;
+    const marked = (attr: string): HTMLElement[] => [...document.querySelectorAll<HTMLElement>(`[${attr}]`)];
+
+    // The preview's scale follows the column.
+    new ResizeObserver(() => frame.style.setProperty('--_scale', String(frame.clientWidth / 1280))).observe(frame);
+    width.addEventListener('change', () => (frame.dataset.device = width.value));
+    void customElements.whenDefined('esa-button-toggle').then(async () => {
+      await (width as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+      width.shadowRoot?.querySelector('[role="radiogroup"]')?.setAttribute('aria-label', 'Preview width');
+    });
+
+    const paint = (): void => {
+      const dirty = hasUnpublished(defaults.config);
+      [...marked('data-site-status'), ...marked('data-site-publish'), ...marked('data-site-discard')].forEach((el) => (el.hidden = !dirty));
+      resetWrap.hidden = JSON.stringify(readDraft(defaults.config)) === JSON.stringify(defaults.config);
+    };
+    document.addEventListener(PUBLIC_SITE_EVENT, paint);
+    paint();
+
+    // Discard and Reset repaint every control from the stored draft, which a
+    // reload does for all five parts at once; the receipt rides across it.
+    const reloadWith = (note: string): void => {
+      try {
+        sessionStorage.setItem(NOTE_KEY, note);
+      } catch {
+        /* no receipt, the page still reloads */
+      }
+      window.location.reload();
+    };
+    try {
+      const note = sessionStorage.getItem(NOTE_KEY);
+      sessionStorage.removeItem(NOTE_KEY);
+      if (note) toast(note);
+    } catch {
+      /* storage blocked */
+    }
+
+    marked('data-site-publish').forEach((el) =>
+      el.addEventListener('click', () => {
+        if (publishDraft(defaults.config)) toast('Public site published.');
+        else toast('Not published. This browser is out of storage.', 'error');
+      }),
+    );
+    marked('data-site-discard').forEach((el) => el.addEventListener('click', () => (confirm.open = true)));
+    confirm.addEventListener('confirm', () => {
+      discardDraft();
+      reloadWith('Changes discarded.');
+    });
+    resetWrap.addEventListener('click', () => {
+      resetDraft(defaults.config);
+      reloadWith('Reset to defaults. Publish to update the public site.');
+    });
+  }
+</script>

@@ -1,0 +1,69 @@
+---
+// firma2-variant-switch — a prototype comparison control: one esa-button-toggle
+// that shows one of several versions of a page section and hides the rest.
+// Each version is wrapped in an element carrying data-variant="<value>"; the
+// switch shows the matching one. The choice rides in the URL (?view=<value>),
+// so a link opens the version it was copied from.
+//
+// It is design-review chrome, not product UI: it exists so two takes on a
+// screen can be flipped between in place. Remove it when one version wins.
+//
+// bcn-lego-checked: esa-button-toggle IS the control; this only wires it to
+// [data-variant] panels and the URL. Beacon is not cloned here.
+interface Props {
+  /** The versions, in the order the toggle shows them. */
+  variants: { value: string; label: string }[];
+  /** The version shown when the URL names none; defaults to the first. */
+  initial?: string;
+  /** Accessible name for the group. */
+  label?: string;
+}
+
+const { variants, label = 'Version', initial = variants[0]?.value } = Astro.props;
+---
+<esa-button-toggle
+  class="firma2-variant-switch"
+  aria-label={label}
+  size="md"
+  data-variants={JSON.stringify(variants)}
+  data-initial={initial}
+></esa-button-toggle>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+
+  type ToggleEl = HTMLElement & { options: unknown[]; value: string };
+
+  document.querySelectorAll<ToggleEl>('.firma2-variant-switch').forEach((toggle) => {
+    const variants: { value: string; label: string }[] = JSON.parse(toggle.dataset.variants ?? '[]');
+    const values = variants.map((v) => v.value);
+    const fromUrl = new URL(location.href).searchParams.get('view') ?? '';
+    const fallback = values.includes(toggle.dataset.initial ?? '') ? toggle.dataset.initial! : values[0];
+    const initial = values.includes(fromUrl) ? fromUrl : fallback;
+
+    // Plain wrapper divs, so [hidden] holds — no author display rule beats it.
+    const show = (value: string) => {
+      document.querySelectorAll<HTMLElement>('[data-variant]').forEach((panel) => {
+        if (values.includes(panel.dataset.variant ?? '')) panel.hidden = panel.dataset.variant !== value;
+      });
+    };
+    show(initial);
+
+    // Assigned after define — a property set on a not-yet-upgraded element
+    // shadows the lego's accessor for good.
+    customElements.whenDefined('esa-button-toggle').then(() => {
+      toggle.options = variants;
+      toggle.value = initial;
+    });
+
+    toggle.addEventListener('change', (event) => {
+      const value = (event as CustomEvent<{ value: string }>).detail?.value ?? toggle.value;
+      if (!values.includes(value)) return;
+      show(value);
+      const url = new URL(location.href);
+      if (value === fallback) url.searchParams.delete('view');
+      else url.searchParams.set('view', value);
+      history.replaceState(history.state, '', url);
+    });
+  });
+</script>

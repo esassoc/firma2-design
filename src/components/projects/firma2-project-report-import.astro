@@ -1,0 +1,1129 @@
+---
+// firma2-project-report-import — Import a report: a document the project's
+// team already wrote for someone else, read against this project, checked
+// beside its own words, and added in one act.
+//
+// A PAGE, NOT A SHEET (2026-11-13; .scratch/project-updates/spec.md). This was
+// a side sheet on the project page, reading measures only, with room for one
+// quoted line per row. It now reads contacts, funding sources and named record
+// fields too, and the check that makes a confirmation worth something is
+// against the document, which a sheet cannot show. So the review is two
+// columns: the changes, and the document they were read from
+// (firma2-report-source). Selecting a change shows its passage.
+//
+// ONE OF THREE WAYS IN. A project changes by hand on its page, from a document
+// here, or from a data source. All three save to the record at once, wait for
+// a publish before the public sees them, and carry their source. Nothing here
+// is a request for approval.
+//
+// A PERSON COMMITS, ONCE. The reading only proposes. Every row shows where it
+// came from and any arithmetic done to it; every proposed value stays
+// editable; nothing is written until the top bar's "Add N changes"
+// (firma2-report-import-actions). Rows the record already holds arrive
+// unticked, checked in code against the record, never left to the model.
+//
+// WHEN THE READING IS UNSURE IT WRITES NOTHING IN. A row can arrive unticked
+// for four reasons, each named on the row: the record already has it; the
+// report supports two readings (one is written in, a person picks); the report
+// counts something else (empty, with a suggestion to take or ignore); or the
+// reading could not settle the figure at all (empty, and says why). A guess
+// that looks like every other row is how a wrong number gets confirmed.
+//
+// WHAT IS NEVER PROPOSED.
+//   - A LOCATION. Shapes change only from spatial data; a spatial file is sent
+//     to Upload shapes. Coordinates typed in a form are listed as not used.
+//   - AN ORGANIZATION. A funder the workspace does not hold is flagged for the
+//     person to pick an existing one. Creating one is an administrator's act.
+//   - AN ACCOUNT. A contact is a name and an email on the record.
+//   - SPEND. Funders state it by grant; the record holds it by year.
+//   - A FIELD A DATA SOURCE KEEPS. It is shown as kept, with no change.
+//
+// WHAT IS NOT USED IS LISTED, not dropped: that list is the program lead's
+// evidence of a question they are not asking, and the person's proof that the
+// line was seen.
+//
+// REAL WHEN THE READER IS RUNNING, SCRIPTED OTHERWISE. On a localhost page with
+// `node scripts/report-reader.mjs` running, a chosen or dropped file, or pasted
+// text, is read by Claude (the model reads and maps, code does the arithmetic,
+// this page checks the record). Everywhere else, including the deployed site
+// and the sample buttons, the reading is the fixture in
+// src/data/firma2-report-import.ts.
+//
+// WHAT IT WRITES. Measure entries go to the entry store like any other; the
+// import itself (its changes, document, and the note for the reviewer) goes to
+// src/lib/report-imports.ts, which the project page applies and the review
+// reads. The page then returns to the project, which offers Undo.
+//
+// ERRORS. A problem with the chosen file is written under the control and
+// spoken through the hub's shared announcer, the way esa-file-upload reports
+// its own; there is no second live region here.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
+import Firma2ReportSource from '../shared/firma2-report-source.astro';
+import { IMPORT_FIXTURES, IMPORTED_PARAM, SAMPLE_REPORT_NAME, SAMPLE_SHEET_NAME, SAMPLE_TEXT } from '../../data/firma2-report-import';
+import { FACT_ROW_FOR_FIELD } from '../../data/firma2-geography';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  projectSlug: string;
+  projectName: string;
+  /** The project page, where the import returns to. */
+  projectHref: string;
+  /** Closed reporting years, newest first: the periods an entry can land in. */
+  years: number[];
+  /** Units by measure name, for the amount labels. */
+  units: Record<string, string>;
+  /** Reported to date by measure name, for figures a report states as totals. */
+  reported?: Record<string, number>;
+  /** The record's named fields a report may set, in firma2-editable-field's raw format. */
+  fields: Record<string, string>;
+  /** People already on the record. */
+  contacts: { name: string; email: string }[];
+  /** Funding sources already on the record. */
+  funding: { name: string; organization: string }[];
+  /** Every organization the workspace holds, by name. */
+  organizations: string[];
+  /** Everyone in the workspace, to match a named person against. */
+  people: { name: string; email: string }[];
+}
+
+const { projectSlug, projectName, projectHref, years, units, reported = {}, fields, contacts, funding, organizations, people } = Astro.props;
+const fixture = IMPORT_FIXTURES[projectSlug];
+const sourceOptions = [
+  { label: 'File', value: 'file' },
+  { label: 'Paste text', value: 'text' },
+];
+const config = {
+  slug: projectSlug,
+  projectName,
+  returnTo: `${withBase(projectHref)}?${IMPORTED_PARAM}=`,
+  years,
+  units,
+  reported,
+  fields,
+  contacts,
+  funding,
+  organizations,
+  people,
+  factRows: FACT_ROW_FOR_FIELD,
+  sampleSheet: SAMPLE_SHEET_NAME,
+  sampleReport: SAMPLE_REPORT_NAME,
+};
+const uploadShapesHref = withBase(projectHref);
+---
+{fixture && (
+  <div class="firma2-report-import" data-step-now="read" data-config={JSON.stringify(config)} data-fixture={JSON.stringify(fixture)}>
+    <!-- bcn-lego-checked: every control is a lego (esa-button-toggle,
+         esa-file-upload, esa-textarea, esa-checkbox, esa-text-field,
+         esa-select, esa-badge, esa-alert-box, esa-button) and the document
+         pane is firma2-report-source. The classes lay out the proposal rows
+         and the two columns, which no esa- component does. Beacon is not
+         cloned on this machine. -->
+
+    <!-- ===== NOT OFFERED =====
+         Reading a report sends it to an outside AI service, which is the
+         workspace's setting (spec decision 41; src/lib/ai-reading.ts). While it
+         is off or unavailable this page reads nothing: no file control, no
+         paste, no "Read it" — the line that says why, and the way back. The
+         script shows it; `style`, not `hidden`, because `.stack` sets a
+         display of its own. -->
+    <div class="stack" data-gap="md" data-ai-off style="display: none">
+      <p class="typography-body-md" data-ai-off-line></p>
+      <div>
+        <EsaButton variant="secondary" appearance="outline" size="md" tag="a" href={withBase(projectHref)}>Back to the project</EsaButton>
+      </div>
+    </div>
+
+    <!-- ===== READ ===== -->
+    <div class="firma2-report-import__read stack" data-gap="lg" data-step="read">
+      <esa-button-toggle size="md" aria-label="Report source" data-source data-options={JSON.stringify(sourceOptions)}></esa-button-toggle>
+      <div class="stack" data-gap="sm" data-source-panel="file">
+        <esa-file-upload label="Report or spreadsheet (.pdf, .docx, .xlsx, .xls or .csv)" accept=".pdf,.docx,.xlsx,.xls,.csv" max-size-mb="20" data-file></esa-file-upload>
+        <p class="firma2-report-import__error typography-body-sm" data-read-error hidden></p>
+        <div class="cluster" data-gap="xs">
+          <EsaButton variant="ghost" size="md" data-use-sample="sheet">Sample crew log</EsaButton>
+          {fixture.report && (
+            <EsaButton variant="ghost" size="md" data-use-sample="report">Sample funder report</EsaButton>
+          )}
+        </div>
+      </div>
+      <div data-source-panel="text" hidden>
+        <esa-textarea label="Your report" rows="8" data-text value={SAMPLE_TEXT}></esa-textarea>
+      </div>
+      <div data-shapes-block hidden>
+        <EsaAlertBox variant="info" title="That’s a spatial file">
+          <p>Shapes are added with <a href={uploadShapesHref}>Upload shapes</a> on the project.</p>
+        </EsaAlertBox>
+      </div>
+    </div>
+
+    <!-- ===== READING ===== -->
+    <div class="cluster" data-gap="sm" data-step="reading" hidden>
+      <EsaLoadingSpinner size="sm" decorative />
+      <p class="typography-body-md" data-reading-line>Reading your report…</p>
+    </div>
+
+    <!-- ===== REVIEW ===== -->
+    <div class="firma2-report-import__review" data-step="review" hidden>
+      <div class="firma2-report-import__changes stack" data-gap="xl">
+        <p class="typography-title" data-review-heading></p>
+        <div data-other-project-block hidden>
+          <EsaAlertBox variant="warning" title="This report names another project">
+            <p data-other-project></p>
+          </EsaAlertBox>
+        </div>
+        <div class="stack" data-gap="xl" data-groups></div>
+        <div data-not-asked-block hidden>
+          <EsaAlertBox variant="info" title="Not used">
+            <ul class="firma2-report-import__list" data-not-asked></ul>
+          </EsaAlertBox>
+        </div>
+        <p class="typography-body-sm" data-skipped hidden></p>
+        <esa-textarea label="Note for the reviewer (optional)" rows="3" data-note></esa-textarea>
+      </div>
+      <div class="firma2-report-import__source-wrap">
+        <Firma2ReportSource />
+      </div>
+    </div>
+
+    <template data-badge-medium><EsaBadge variant="warning" size="sm" value="Check this" /></template>
+    <template data-badge-low><EsaBadge variant="danger" size="sm" value="Unsure" /></template>
+    <template data-badge-on-file><EsaBadge variant="secondary" size="sm" value="Already on file" /></template>
+    <template data-badge-decide><EsaBadge variant="warning" size="sm" value="Needs a decision" /></template>
+    <template data-badge-no-match><EsaBadge variant="secondary" size="sm" value="No match" /></template>
+    <template data-badge-no-organization><EsaBadge variant="warning" size="sm" value="Not in this workspace" /></template>
+    <template data-badge-kept><EsaBadge variant="secondary" size="sm" value="Kept by a data source" /></template>
+    <template data-suggestion-button><EsaButton variant="ghost" size="md" data-use-suggestion>Use suggestion</EsaButton></template>
+    <template data-show-source-button><EsaButton variant="ghost" size="md" icon="file-text" data-show-source>Show source</EsaButton></template>
+  </div>
+)}
+
+<style>
+  /* Layout primitives set `display`, which beats the UA's [hidden]. Steps
+     and blocks here toggle `hidden`, so it has to win inside this component. */
+  .firma2-report-import [hidden] {
+    display: none !important;
+  }
+
+  /* Choosing a file is a form, so it holds a form's width; the review below
+     it uses the whole page. */
+  .firma2-report-import__read {
+    max-inline-size: 40rem;
+  }
+
+  .firma2-report-import__error {
+    margin: 0;
+    color: var(--color-content-utility-danger, var(--color-text-secondary));
+  }
+
+  /* THE TWO COLUMNS. The changes scroll with the page; the document stays
+     beside them, as tall as the screen allows, and scrolls inside itself. */
+  .firma2-report-import__review {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--spacing-600);
+    align-items: start;
+  }
+
+  .firma2-report-import__source-wrap {
+    --_top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px) + var(--spacing-400));
+    position: sticky;
+    top: var(--_top);
+    display: flex;
+    block-size: calc(var(--firma2-fold, 100dvh) - var(--firma2-band-height, 48px) - var(--spacing-400) * 2);
+    min-block-size: 20rem;
+  }
+
+  .firma2-report-import__source-wrap > :global(*) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .firma2-report-import :global(.firma2-report-import__rows),
+  .firma2-report-import__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-report-import__list {
+    padding-inline-start: var(--spacing-400);
+    list-style: disc;
+  }
+
+  .firma2-report-import :global(.firma2-report-import__group-title) {
+    margin: 0;
+  }
+
+  .firma2-report-import :global(.firma2-report-import__rows > li) {
+    padding: var(--spacing-400);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-sm);
+  }
+
+  /* An unticked row stays readable (it may be ticked back) but recedes. */
+  .firma2-report-import :global(.firma2-report-import__rows > li[data-off]) {
+    background: var(--color-background-elevation-sunken);
+  }
+
+  /* The row whose passage the document is showing wears the passage's tint. */
+  .firma2-report-import :global(.firma2-report-import__rows > li[data-current]) {
+    background: var(--color-background-brand-muted);
+  }
+
+  .firma2-report-import :global(.firma2-report-import__fields) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: var(--spacing-300);
+  }
+
+  .firma2-report-import :global(.firma2-report-import__source) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-report-import :global(.firma2-report-import__rows p) {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* "Show source" is the narrow layout's way to the document; with both
+     columns on screen, selecting the row already shows it. */
+  .firma2-report-import :global(.firma2-report-import__show-source) {
+    display: none;
+  }
+
+  /* Tablet and phone: one column. The document takes the changes' place when
+     a row asks for it, and Back returns. */
+  @media (max-width: 64rem) {
+    .firma2-report-import__review {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .firma2-report-import__source-wrap {
+      position: static;
+      block-size: calc(var(--firma2-fold, 100dvh) - var(--firma2-band-height, 48px) - var(--spacing-600) * 2);
+    }
+
+    .firma2-report-import:not([data-source-open]) .firma2-report-import__source-wrap,
+    .firma2-report-import[data-source-open] .firma2-report-import__changes {
+      display: none;
+    }
+
+    .firma2-report-import :global(.firma2-report-import__show-source) {
+      display: block;
+    }
+
+    .firma2-report-import :global(.firma2-report-source__back) {
+      display: inline-flex;
+    }
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-file-upload';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-checkbox';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import { announce } from '@esa/ecology/announcer';
+  import { addEntry, readEntries } from '../../lib/entry-draft';
+  import { withDraft } from '../../lib/measure-draft';
+  import { askedBreakdowns, liveOptions, measures as catalogSeeds, measureDisplayName, periodName } from '../../data/firma2-performance-measures';
+  import { DROPPED_PARAM } from '../../data/firma2-report-import';
+  import type { ImportDocument, ImportProposal, ImportReading } from '../../data/firma2-report-import';
+  import { CURRENT_USER } from '../../data/firma2-directory';
+  import { aiReadingReason } from '../../lib/ai-reading';
+  import { TODAY_ISO } from '../../data/firma2-publish-history';
+  import { addImport, changeKey, importedChanges, nextImportId, takeHandoff } from '../../lib/report-imports';
+  import type { ImportGroup, ImportedChange } from '../../lib/report-imports';
+  import { paintSource, showAt } from '../../lib/report-source';
+  import type { SourceDocument } from '../../lib/report-source';
+  import { readProjectSource, readSubscriptions } from '../../lib/work-areas';
+  import { pageScroller } from '../../lib/page-scroll';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean; errorText?: string };
+
+  /** The top bar's actions paint from this, and send their clicks back as ACT. */
+  const STATE_EVENT = 'firma2:report-import-state';
+  const ACT_EVENT = 'firma2:report-import-act';
+  /** Fired on `document` after entries are filed, so a measures table repaints. */
+  const ENTRIES_CHANGE_EVENT = 'firma2:entries-change';
+  const READ_DELAY_MS = 1600;
+  const GROUPS: ImportGroup[] = ['Key facts', 'Performance measures', 'Funding sources', 'Contacts'];
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+  /** The questions a reporter answers for a measure: its live breakdowns. */
+  const reportedListsFor = (measureName: string): { name: string; options: string[] }[] => {
+    const seed = catalogSeeds.find((m) => measureDisplayName(m).toLowerCase() === measureName.toLowerCase());
+    if (!seed) return [];
+    return askedBreakdowns(withDraft(seed.slug)).map((b) => ({ name: b.question, options: liveOptions(b) }));
+  };
+
+  const groupOf = (p: ImportProposal): ImportGroup =>
+    p.field ? 'Key facts' : p.funding ? 'Funding sources' : p.contact ? 'Contacts' : 'Performance measures';
+
+  document.querySelectorAll<HTMLElement>('.firma2-report-import').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+
+    const config = JSON.parse(root.dataset.config ?? '{}') as {
+      slug: string;
+      projectName: string;
+      returnTo: string;
+      years: number[];
+      units: Record<string, string>;
+      reported: Record<string, number>;
+      fields: Record<string, string>;
+      contacts: { name: string; email: string }[];
+      funding: { name: string; organization: string }[];
+      organizations: string[];
+      people: { name: string; email: string }[];
+      factRows: Record<string, string>;
+      sampleSheet: string;
+      sampleReport: string;
+    };
+    const { slug, years, units, reported } = config;
+    const fixture: { sheet: ImportReading; text: ImportReading; report?: ImportReading } = JSON.parse(
+      root.dataset.fixture ?? '{}',
+    );
+
+    const source = $<Control>('[data-source]');
+    const fileInput = $<Control>('[data-file]');
+    const textInput = $<Control>('[data-text]');
+    const noteInput = $<Control>('[data-note]');
+    const groupsHost = $('[data-groups]');
+    const pane = $('[data-report-source]');
+
+    let mode: 'file' | 'text' = 'file';
+    let fileName = '';
+    /** The chosen or dropped file itself; null for a sample. */
+    let file: File | null = null;
+    let reading: ImportReading | null = null;
+    /** What the pane is showing, and how the import will record it. */
+    let shown: SourceDocument = { name: '' };
+    let shownKind: 'file' | 'sample' | 'text' = 'sample';
+    let step: 'read' | 'reading' | 'review' = 'read';
+
+    const rows = (): HTMLElement[] => [...groupsHost.querySelectorAll<HTMLElement>('li[data-proposal]')];
+    const picked = (): HTMLElement[] => rows().filter((li) => !li.hasAttribute('data-off') && !li.hasAttribute('data-kept'));
+
+    const announceState = () =>
+      document.dispatchEvent(new CustomEvent(STATE_EVENT, { detail: { step, count: step === 'review' ? picked().length : 0 } }));
+
+    const NO_FILE = 'Choose a file, or switch to Paste text.';
+    const readError = (message: string | null) => {
+      const line = $('[data-read-error]');
+      line.textContent = message ?? '';
+      line.hidden = message === null;
+      if (message) announce(message, { assertive: true });
+    };
+
+    customElements.whenDefined('esa-button-toggle').then(() => {
+      source.options = JSON.parse(source.dataset.options ?? '[]');
+      source.value = 'file';
+    });
+
+    const setMode = (next: 'file' | 'text') => {
+      mode = next;
+      root.querySelectorAll<HTMLElement>('[data-source-panel]').forEach((p) => (p.hidden = p.dataset.sourcePanel !== mode));
+      readError(null);
+    };
+
+    const setStep = (name: 'read' | 'reading' | 'review') => {
+      step = name;
+      root.dataset.stepNow = name;
+      root.querySelectorAll<HTMLElement>('[data-step]').forEach((el) => (el.hidden = el.dataset.step !== name));
+      root.removeAttribute('data-source-open');
+      announceState();
+    };
+
+    const reset = () => {
+      // A sample has no file in the control, so its name must not outlive it.
+      if (!file) fileName = '';
+      reading = null;
+      readError(null);
+      $('[data-shapes-block]').hidden = true;
+      setStep('read');
+    };
+
+    source.addEventListener('change', () => setMode(String(source.value) === 'text' ? 'text' : 'file'));
+
+    // A spatial file is not read here: shapes change only from spatial data,
+    // and Upload shapes owns matching and replacing them.
+    const SPATIAL_NAME = /\.(shp|zip|geojson|kml|kmz|gpkg)$/i;
+
+    fileInput.addEventListener('change', (event) => {
+      const files = (event as CustomEvent<{ files: File[] }>).detail?.files ?? [];
+      file = files[0] ?? null;
+      fileName = file?.name ?? '';
+      $('[data-shapes-block]').hidden = !SPATIAL_NAME.test(fileName);
+      if (fileName) readError(null);
+    });
+
+    // ---- reading ---------------------------------------------------------------
+    /** A document reads as the funder report, a spreadsheet as the crew log. */
+    const isDocument = (name: string): boolean => /\.(pdf|docx?)$/i.test(name);
+
+    // ---- the real reader (scripts/report-reader.mjs) ---------------------------
+    // Looked for only from a localhost page, so the public site never probes
+    // a visitor's machine.
+    const READER = 'http://localhost:4399';
+    const readerUp = async (): Promise<boolean> => {
+      if (!/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) return false;
+      try {
+        return (await fetch(`${READER}/health`, { signal: AbortSignal.timeout(700) })).ok;
+      } catch {
+        return false;
+      }
+    };
+
+    const base64 = (blob: Blob): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+
+    /** A record field's stored value, as the project page holds it now. */
+    const fieldRaw = (key: string): string =>
+      importedChanges(slug).reduce((raw, c) => (c.field?.key === key ? c.field.raw : raw), config.fields[key] ?? '');
+
+    /** What the reader is told about this project: its measures, periods and the fields a report may set. */
+    const target = () => ({
+      project: config.projectName,
+      periods: years,
+      measures: Object.entries(units).map(([name, unit]) => ({ name, unit, questions: reportedListsFor(name) })),
+      fields: [
+        {
+          key: 'timeline',
+          label: 'Timeline',
+          format: 'implementation start year and completion year as "YYYY,YYYY"',
+          value: fieldRaw('timeline'),
+        },
+        { key: 'county', label: 'County', format: 'the county name as written', value: fieldRaw('county') },
+      ],
+    });
+
+    const readForReal = async (name: string, text?: string): Promise<void> => {
+      const response = await fetch(`${READER}/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          ...(text === undefined ? { data: await base64(file!) } : { text }),
+          target: target(),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? 'The reader failed.');
+      reading = result.reading;
+      const other = $('[data-other-project-block]');
+      other.hidden = result.project.matches;
+      $('[data-other-project]').textContent = `It is about “${result.project.inReport}”.`;
+    };
+
+    /** Pasted text is its own document: one page, a passage per paragraph. */
+    const textDocument = (text: string): ImportDocument => ({
+      pages: [
+        {
+          label: 'Pasted text',
+          passages: text
+            .split(/\n{2,}/)
+            .map((block) => block.trim())
+            .filter(Boolean)
+            .map((block, i) => ({ id: `text-${i + 1}`, lines: [block] })),
+        },
+      ],
+    });
+
+    const openReview = (name: string, text: string | undefined) => {
+      shownKind = text !== undefined ? 'text' : file ? 'file' : 'sample';
+      shown =
+        text !== undefined
+          ? { name: 'Pasted text', pages: reading?.document?.pages ?? textDocument(text).pages }
+          : file
+            ? { name, fileUrl: URL.createObjectURL(file), fileType: file.type }
+            : { name, pages: reading?.document?.pages };
+      paintSource(pane, shown);
+      paintReview();
+      setStep('review');
+    };
+
+    // THE WORKSPACE'S SETTING (src/lib/ai-reading.ts). Tested when the page
+    // opens and again at every read, before anything is sent: if it has been
+    // turned off or made unavailable since, the choose step gives way to the
+    // line that says why, and the held file or pasted text is let go. A check
+    // step that is already open stays: that document had already been sent.
+    const withhold = (): boolean => {
+      const reason = aiReadingReason();
+      if (!reason) return false;
+      file = null;
+      fileName = '';
+      root.querySelectorAll<HTMLElement>('[data-step]').forEach((el) => (el.hidden = true));
+      $('[data-ai-off-line]').textContent = reason;
+      $('[data-ai-off]').style.display = '';
+      // The top bar's acts belong to the steps this page no longer shows.
+      document
+        .querySelectorAll<HTMLElement>('.firma2-report-import-actions [data-read-wrap], .firma2-report-import-actions [data-restart-wrap], .firma2-report-import-actions [data-add-wrap]')
+        .forEach((el) => (el.hidden = true));
+      announce(reason);
+      return true;
+    };
+
+    const read = async (name: string) => {
+      if (withhold()) return;
+      $('[data-reading-line]').textContent = `Reading ${name}…`;
+      announce(`Reading ${name}`);
+      $('[data-other-project-block]').hidden = true;
+      setStep('reading');
+      const text = mode === 'text' ? String(textInput.value ?? '') : undefined;
+      if ((file || text !== undefined) && (await readerUp())) {
+        try {
+          await readForReal(name, text);
+          openReview(name, text);
+        } catch (error) {
+          setStep('read');
+          readError(`Couldn’t read ${name}. ${error instanceof Error ? error.message : ''}`.trim());
+        }
+        return;
+      }
+      reading = mode === 'text' ? fixture.text : isDocument(name) && fixture.report ? fixture.report : fixture.sheet;
+      window.setTimeout(() => openReview(name, text), READ_DELAY_MS);
+    };
+
+    const startRead = () => {
+      if (mode === 'file') {
+        if (!fileName) {
+          readError(NO_FILE);
+          return;
+        }
+        if (SPATIAL_NAME.test(fileName)) return;
+        read(fileName);
+      } else {
+        if (!String(textInput.value ?? '').trim()) {
+          textInput.errorText = 'Paste the report text first.';
+          return;
+        }
+        textInput.errorText = '';
+        read('your report');
+      }
+    };
+
+    root.querySelectorAll<HTMLElement>('[data-use-sample]').forEach((button) =>
+      button.addEventListener('click', () => {
+        // A sample has no file behind it, so it always reads as the fixture.
+        file = null;
+        fileName = (button.dataset.useSample === 'report' ? config.sampleReport : config.sampleSheet) ?? '';
+        $('[data-shapes-block]').hidden = true;
+        read(fileName);
+      }),
+    );
+
+    // ---- what the record already holds ----------------------------------------
+    /** Already filed in this browser: same measure, year, figure and answers. */
+    const isOnFile = (p: ImportProposal): boolean =>
+      readEntries(slug).some(
+        (e) =>
+          e.measureKey === `name:${p.measure}` &&
+          e.year === p.year &&
+          e.amount === p.amount &&
+          JSON.stringify(e.answers) === JSON.stringify(p.answers),
+      );
+
+    const badge = (name: string) => $<HTMLTemplateElement>(`[data-badge-${name}]`).innerHTML.trim();
+    const figure = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+    const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+    /** The record's total for a measure: its seeded figure plus what this browser has filed. */
+    const onRecord = (measure: string): number =>
+      (reported[measure] ?? 0) +
+      readEntries(slug)
+        .filter((e) => e.measureKey === `name:${measure}`)
+        .reduce((sum, e) => sum + e.amount, 0);
+
+    const heldContacts = () => [
+      ...config.contacts,
+      ...importedChanges(slug).flatMap((c) => (c.contact ? [c.contact] : [])),
+    ];
+    const heldFunding = () => [
+      ...config.funding,
+      ...importedChanges(slug).flatMap((c) => (c.funding ? [c.funding] : [])),
+    ];
+
+    /** Record fields a workspace data source keeps, and the source's name. */
+    const keptFields = (): Map<string, string> => {
+      const kept = new Map<string, string>();
+      const sub = readProjectSource() === 'subscribed' ? readSubscriptions()[0] : undefined;
+      sub?.mappings.forEach((m) => {
+        const row = config.factRows[m.projectField];
+        if (row && m.layerField) kept.set(row, sub.name);
+      });
+      return kept;
+    };
+
+    interface Resolved {
+      amount: number | null;
+      conversion?: string;
+      onFile: boolean;
+      was?: string;
+      keptBy?: string;
+      /** The funder is not an organization this workspace holds. */
+      noOrganization?: boolean;
+      /** The person is already in the workspace, though not on this record. */
+      matches?: string;
+    }
+
+    /**
+     * What a proposal comes to against THIS record and workspace. Duplicates,
+     * the difference a to-date total leaves, whether an organization exists and
+     * whether a data source keeps a field are facts about the record, so they
+     * are worked out here and never taken from the reading.
+     */
+    const resolve = (p: ImportProposal, kept: Map<string, string>): Resolved => {
+      if (p.field) {
+        const raw = fieldRaw(p.field.key);
+        return { amount: null, onFile: raw === p.field.raw, was: raw.split(',').join('–'), keptBy: kept.get(p.field.key) };
+      }
+      if (p.funding) {
+        const f = p.funding;
+        return {
+          amount: null,
+          onFile: heldFunding().some((h) => same(h.name, f.name) && same(h.organization, f.organization)),
+          noOrganization: !config.organizations.some((o) => same(o, f.organization)),
+        };
+      }
+      if (p.contact) {
+        const c = p.contact;
+        const person = config.people.find((h) => same(h.email, c.email) || same(h.name, c.name));
+        return {
+          amount: null,
+          onFile: heldContacts().some((h) => same(h.email, c.email)),
+          matches: person?.name,
+        };
+      }
+      if (p.unsure) return { amount: null, onFile: false };
+      if (p.cumulative !== undefined) {
+        const held = onRecord(p.measure);
+        const rest = Math.round((p.cumulative - held) * 100) / 100;
+        return {
+          amount: rest > 0 ? rest : null,
+          onFile: rest <= 0,
+          conversion: `${figure.format(p.cumulative)} to date − ${figure.format(held)} on record = ${figure.format(Math.max(rest, 0))}`,
+        };
+      }
+      if (p.noMatch) {
+        // Nothing to compare until a person takes the suggestion; once they
+        // have, the figure they filed is on the record like any other.
+        const taken = p.noMatch.suggestion ? isOnFile({ ...p, amount: p.noMatch.suggestion.amount }) : false;
+        return { amount: null, onFile: taken };
+      }
+      return { amount: p.amount, conversion: p.conversion, onFile: isOnFile(p) };
+    };
+
+    /** A row waits on the person when it arrives unticked for a reason other than "already there". */
+    const waits = (p: ImportProposal, r: Resolved): boolean =>
+      !r.onFile && !r.keptBy && Boolean(p.decide || p.noMatch || p.unsure || r.noOrganization);
+
+    // ---- the document pane -----------------------------------------------------
+    const select = (li: HTMLElement) => {
+      const proposal = reading?.proposals.find((p) => p.id === li.dataset.proposal);
+      if (!proposal) return;
+      rows().forEach((row) => row.toggleAttribute('data-current', row === li));
+      showAt(pane, shown, { passage: proposal.passage, page: proposal.page, quote: proposal.quote });
+    };
+
+    groupsHost.addEventListener('focusin', (event) => {
+      const li = (event.target as Element).closest<HTMLElement>('li[data-proposal]');
+      if (li) select(li);
+    });
+    groupsHost.addEventListener('click', (event) => {
+      const target = event.target as Element;
+      const li = target.closest<HTMLElement>('li[data-proposal]');
+      if (!li) return;
+      select(li);
+      if (target.closest('[data-show-source]')) {
+        root.setAttribute('data-source-open', '');
+        pageScroller()?.scrollTo({ top: 0 });
+      }
+    });
+    pane.querySelector('[data-source-back]')?.addEventListener('click', () => {
+      root.removeAttribute('data-source-open');
+      groupsHost.querySelector<HTMLElement>('li[data-current]')?.scrollIntoView({ block: 'center' });
+    });
+
+    // ---- review ----------------------------------------------------------------
+    const paintHeading = () => {
+      const all = rows();
+      const count = (test: (li: HTMLElement) => boolean) => all.filter(test).length;
+      const tally = [
+        [picked().length, 'ready to add'],
+        [count((li) => li.hasAttribute('data-off') && li.hasAttribute('data-waits')), 'need you'],
+        [count((li) => li.hasAttribute('data-on-file')), 'already on file'],
+        [count((li) => li.hasAttribute('data-kept')), 'kept by a data source'],
+      ] as const;
+      $('[data-review-heading]').textContent = tally
+        .filter(([n]) => n > 0)
+        .map(([n, label]) => `${n} ${label}`)
+        .join(' · ');
+      announceState();
+    };
+
+    const setPicked = (li: HTMLElement, on: boolean) => {
+      li.toggleAttribute('data-off', !on);
+      const pick = li.querySelector<Control>('[data-pick]');
+      if (pick) pick.checked = on;
+      paintHeading();
+    };
+
+    const fieldsOf = (li: HTMLElement) => li.querySelector<HTMLElement>('.firma2-report-import__fields')!;
+
+    const buildRow = (p: ImportProposal, r: Resolved): HTMLElement => {
+      const ticked = !r.onFile && !r.keptBy && !waits(p, r);
+      const li = document.createElement('li');
+      li.className = 'stack';
+      li.dataset.gap = 'sm';
+      li.dataset.proposal = p.id;
+      if (!ticked) li.dataset.off = '';
+      if (r.onFile) li.dataset.onFile = '';
+      if (r.keptBy) li.dataset.kept = '';
+      if (waits(p, r)) li.dataset.waits = '';
+
+      const unit = units[p.measure] ?? '';
+      const label = p.field
+        ? p.field.label
+        : p.funding
+          ? 'Funding source'
+          : p.contact
+            ? `Contact · ${p.contact.role}`
+            : `${p.measure} · ${periodName(p.year)}`;
+      const badges = [
+        r.keptBy ? badge('kept') : '',
+        r.onFile && !r.keptBy ? badge('on-file') : '',
+        !r.onFile && p.decide ? badge('decide') : '',
+        !r.onFile && p.noMatch ? badge('no-match') : '',
+        !r.onFile && r.noOrganization ? badge('no-organization') : '',
+        p.confidence === 'Medium' ? badge('medium') : '',
+        p.confidence === 'Low' ? badge('low') : '',
+      ].join('');
+      const suggestion = r.onFile ? undefined : p.noMatch?.suggestion;
+
+      const body = p.field
+        ? `<p class="typography-body-md">${esc(p.field.display)}${
+            r.was && !r.onFile ? ` <span class="firma2-report-import__source">Was ${esc(r.was)}</span>` : ''
+          }</p>${r.keptBy ? `<p class="typography-body-sm">Kept by ${esc(r.keptBy)}. Change it there.</p>` : ''}`
+        : p.funding
+          ? `<div class="firma2-report-import__fields">
+              <esa-text-field data-funding-name size="md" label="Grant or program"></esa-text-field>
+              <esa-select data-funding-organization size="md" label="Organization"></esa-select>
+              <esa-text-field data-funding-amount size="md" inputmode="decimal" label="Secured ($)"></esa-text-field>
+            </div>
+            ${
+              r.noOrganization && !r.onFile
+                ? `<p class="typography-body-sm">“${esc(p.funding.organization)}” isn’t an organization here. Pick one, or leave this out.</p>`
+                : ''
+            }`
+          : p.contact
+            ? `<p class="typography-body-md">${esc(p.contact.name)}, ${esc(p.contact.organization)}</p>
+               <p class="typography-body-md">${esc(p.contact.email)}</p>
+               ${
+                 r.onFile
+                   ? ''
+                   : `<p class="typography-body-sm">${
+                       r.matches ? `Matches ${esc(r.matches)} in this workspace.` : 'No invitation is sent.'
+                     }</p>`
+               }`
+            : `<div class="firma2-report-import__fields">
+              <esa-text-field data-amount size="md" inputmode="decimal" label="${esc(unit ? `Amount (${unit})` : 'Amount')}"></esa-text-field>
+              <esa-select data-year size="md" label="Reporting period"></esa-select>
+            </div>`;
+
+      li.innerHTML = `
+        <div class="repel">
+          ${
+            r.keptBy
+              ? `<p class="typography-label-md-strong">${esc(label)}</p>`
+              : `<esa-checkbox data-pick label="${esc(label)}"></esa-checkbox>`
+          }
+          <span class="cluster" data-gap="xs">${badges}</span>
+        </div>
+        ${body}
+        <div class="stack" data-gap="2xs">
+          <p class="firma2-report-import__source typography-body-sm">${esc(p.quote)}</p>
+          ${r.conversion ? `<p class="typography-body-sm">${p.cumulative === undefined ? 'Converted: ' : ''}${esc(r.conversion)}</p>` : ''}
+          ${p.unsure ? `<p class="typography-body-sm">${esc(p.unsure)}</p>` : ''}
+          ${p.note ? `<p class="typography-body-sm">${esc(p.note)}</p>` : ''}
+        </div>
+        ${
+          suggestion
+            ? `<div class="cluster" data-gap="xs">
+          <p class="typography-body-sm">Suggested: ${esc(`${figure.format(suggestion.amount)} ${unit}`.trim())}. ${esc(suggestion.basis)}.</p>
+          ${$<HTMLTemplateElement>('[data-suggestion-button]').innerHTML.trim()}
+        </div>`
+            : ''
+        }
+        <div class="firma2-report-import__show-source">${$<HTMLTemplateElement>('[data-show-source-button]').innerHTML.trim()}</div>`;
+
+      if (!r.keptBy) {
+        customElements.whenDefined('esa-checkbox').then(() => {
+          const pick = li.querySelector<Control>('[data-pick]')!;
+          pick.checked = ticked;
+          pick.addEventListener('change', () => {
+            li.toggleAttribute('data-off', !pick.checked);
+            paintHeading();
+          });
+        });
+      }
+
+      if (p.funding) {
+        const f = p.funding;
+        const organization = li.querySelector<Control>('[data-funding-organization]')!;
+        customElements.whenDefined('esa-text-field').then(() => {
+          li.querySelector<Control>('[data-funding-name]')!.value = f.name;
+          li.querySelector<Control>('[data-funding-amount]')!.value = String(f.amount);
+        });
+        customElements.whenDefined('esa-select').then(() => {
+          organization.options = config.organizations.map((o) => ({ label: o, value: o }));
+          organization.value = config.organizations.find((o) => same(o, f.organization)) ?? '';
+        });
+        // Picking an organization is the decision the row was waiting for.
+        organization.addEventListener('change', () => {
+          if (li.hasAttribute('data-waits') && String(organization.value ?? '')) {
+            li.dataset.filled = '';
+            setPicked(li, true);
+          }
+        });
+        return li;
+      }
+
+      if (p.field || p.contact) return li;
+
+      // Taking a suggestion is the person's act: it writes the figure in and
+      // ticks the row, and both can be undone on the row.
+      li.querySelector('[data-use-suggestion]')?.addEventListener('click', () => {
+        li.querySelector<Control>('[data-amount]')!.value = String(suggestion!.amount);
+        li.dataset.filled = '';
+        setPicked(li, true);
+      });
+
+      reportedListsFor(p.measure).forEach((list) => {
+        const answer = document.createElement('esa-select') as Control;
+        answer.setAttribute('size', 'md');
+        answer.setAttribute('label', list.name);
+        answer.dataset.answer = list.name;
+        fieldsOf(li).append(answer);
+        customElements.whenDefined('esa-select').then(() => {
+          answer.options = list.options.map((o) => ({ label: o, value: o }));
+          answer.value = p.answers[list.name] ?? '';
+        });
+      });
+
+      const amountField = li.querySelector<Control>('[data-amount]')!;
+      li.dataset.asRead = r.amount === null ? '' : String(r.amount);
+      customElements.whenDefined('esa-text-field').then(() => {
+        amountField.value = r.amount === null ? '' : String(r.amount);
+      });
+      // A figure typed into a row that arrived empty is the person filling it
+      // in: the row ticks itself, and the review is told it was filled by hand.
+      amountField.addEventListener('change', () => {
+        const typed = Number(String(amountField.value ?? '').replace(/,/g, ''));
+        if (li.dataset.asRead === '' && li.hasAttribute('data-off') && Number.isFinite(typed) && typed > 0) {
+          li.dataset.filled = '';
+          setPicked(li, true);
+        }
+      });
+      customElements.whenDefined('esa-select').then(() => {
+        const year = li.querySelector<Control>('[data-year]')!;
+        year.options = years.map((y) => ({ label: periodName(y), value: String(y) }));
+        year.value = String(p.year);
+      });
+      return li;
+    };
+
+    const paintReview = () => {
+      if (!reading) return;
+      const kept = keptFields();
+      const resolved = reading.proposals.map((p) => ({ p, r: resolve(p, kept) }));
+
+      // Grouped by where each change will sit on the project page, in its order.
+      groupsHost.replaceChildren(
+        ...GROUPS.flatMap((group) => {
+          const mine = resolved.filter(({ p }) => groupOf(p) === group);
+          if (!mine.length) return [];
+          const section = document.createElement('section');
+          section.className = 'stack';
+          section.dataset.gap = 'md';
+          section.innerHTML = `<h2 class="firma2-report-import__group-title typography-title-strong">${esc(group)}</h2>`;
+          const list = document.createElement('ul');
+          list.className = 'firma2-report-import__rows stack';
+          list.dataset.gap = 'md';
+          list.append(...mine.map(({ p, r }) => buildRow(p, r)));
+          section.append(list);
+          return [section];
+        }),
+      );
+
+      $('[data-not-asked-block]').hidden = reading.notAsked.length === 0;
+      $('[data-not-asked]').innerHTML = reading.notAsked.map((t) => `<li>${esc(t)}</li>`).join('');
+      const skipped = $('[data-skipped]');
+      skipped.hidden = reading.skipped.length === 0;
+      skipped.textContent = reading.skipped.length ? `Skipped: ${reading.skipped.join(' ')}` : '';
+      noteInput.value = '';
+      paintHeading();
+      const first = rows()[0];
+      if (first) select(first);
+    };
+
+    // ---- commit ----------------------------------------------------------------
+    const number = (control: Control | null): number => Number(String(control?.value ?? '').replace(/[$,\s]/g, ''));
+
+    const commit = async () => {
+      if (!reading) return;
+      const importId = nextImportId(slug);
+      const kept = keptFields();
+      let bad: HTMLElement | null = null;
+      const fail = (li: HTMLElement, control: Control, message: string) => {
+        control.errorText = message;
+        bad ??= li;
+      };
+
+      // Read and check every ticked row before anything is written.
+      const plans = picked().map((li) => {
+        const p = reading!.proposals.find((x) => x.id === li.dataset.proposal)!;
+        const r = resolve(p, kept);
+        const base = {
+          key: changeKey(importId, p.id),
+          group: groupOf(p),
+          quote: p.quote,
+          passage: p.passage,
+          page: p.page,
+          ...(li.hasAttribute('data-filled') ? { filled: true } : {}),
+        };
+        if (p.field) {
+          return {
+            change: {
+              ...base,
+              label: p.field.label,
+              from: r.was || undefined,
+              to: p.field.display,
+              field: { key: p.field.key, raw: p.field.raw, previousRaw: fieldRaw(p.field.key) },
+            } satisfies ImportedChange,
+          };
+        }
+        if (p.funding) {
+          const nameField = li.querySelector<Control>('[data-funding-name]')!;
+          const organizationField = li.querySelector<Control>('[data-funding-organization]')!;
+          const amountField = li.querySelector<Control>('[data-funding-amount]')!;
+          const name = String(nameField.value ?? '').trim();
+          const organization = String(organizationField.value ?? '');
+          const amount = number(amountField);
+          nameField.errorText = organizationField.errorText = amountField.errorText = '';
+          if (!name) fail(li, nameField, 'Name the grant or program.');
+          if (!organization) fail(li, organizationField, 'Pick an organization.');
+          if (!Number.isFinite(amount) || amount <= 0) fail(li, amountField, 'Enter an amount above zero.');
+          return {
+            change: {
+              ...base,
+              label: 'Funding source',
+              to: `${name}, ${organization}, ${usd.format(amount)}`,
+              ...(amount !== p.funding.amount || name !== p.funding.name ? { edited: true } : {}),
+              funding: { name, organization, amount },
+            } satisfies ImportedChange,
+          };
+        }
+        if (p.contact) {
+          return {
+            change: {
+              ...base,
+              label: `Contact · ${p.contact.role}`,
+              to: `${p.contact.name}, ${p.contact.organization}, ${p.contact.email}`,
+              contact: p.contact,
+            } satisfies ImportedChange,
+          };
+        }
+        const amountField = li.querySelector<Control>('[data-amount]')!;
+        const amount = number(amountField);
+        amountField.errorText = '';
+        if (!Number.isFinite(amount) || amount <= 0) fail(li, amountField, 'Enter a figure above zero.');
+        const answers: Record<string, string> = {};
+        li.querySelectorAll<Control>('[data-answer]').forEach((s) => {
+          const v = String(s.value ?? '');
+          if (v) answers[s.dataset.answer!] = v;
+        });
+        const year = Number(li.querySelector<Control>('[data-year]')!.value);
+        const read = li.dataset.asRead ?? '';
+        return {
+          entry: { measureKey: `name:${p.measure}`, year, amount, answers },
+          change: {
+            ...base,
+            label: `${p.measure} · ${periodName(year)}`,
+            to: `${figure.format(amount)} ${units[p.measure] ?? ''}`.trim(),
+            ...(read !== '' && Number(read) !== amount ? { edited: true } : {}),
+          } satisfies ImportedChange,
+        };
+      });
+
+      if (bad) {
+        (bad as HTMLElement).scrollIntoView({ block: 'center' });
+        return;
+      }
+      if (!plans.length) return;
+
+      const changes = plans.map(({ entry, change }) => {
+        if (!entry) return change;
+        // Logged by the import itself, with the document as its source (addImport).
+        const filed = addEntry(slug, entry, { log: false });
+        return filed ? { ...change, entryId: filed.id } : change;
+      });
+      if (plans.some((plan) => plan.entry)) document.dispatchEvent(new Event(ENTRIES_CHANGE_EVENT));
+
+      await addImport(
+        {
+          id: importId,
+          slug,
+          iso: TODAY_ISO,
+          by: CURRENT_USER.name,
+          document: {
+            name: shown.name,
+            kind: shownKind,
+            ...(shownKind === 'file' ? {} : { pages: shown.pages }),
+          },
+          note: String(noteInput.value ?? '').trim(),
+          changes,
+        },
+        shownKind === 'file' ? file : null,
+      );
+      window.location.assign(`${config.returnTo}${encodeURIComponent(importId)}`);
+    };
+
+    document.addEventListener(ACT_EVENT, (event) => {
+      const act = (event as CustomEvent<{ act: string }>).detail?.act;
+      if (act === 'read') startRead();
+      if (act === 'restart') reset();
+      if (act === 'add') commit();
+    });
+
+    // ---- a file dropped on the project page arrives already chosen -----------
+    const arrive = async () => {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has(DROPPED_PARAM)) return;
+      url.searchParams.delete(DROPPED_PARAM);
+      window.history.replaceState(null, '', url);
+      const dropped = await takeHandoff(slug);
+      if (!dropped) return;
+      file = dropped;
+      fileName = dropped.name;
+      read(fileName);
+    };
+
+    setStep('read');
+    // Not offered at all while the workspace's setting is off or unavailable.
+    if (!withhold()) arrive();
+  });
+</script>

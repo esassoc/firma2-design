@@ -1,0 +1,141 @@
+---
+// firma2-ai-reading — Administration › Security: whether this workspace lets
+// Import a report send documents to an outside AI service to be read.
+//
+// WHY THIS IS ON SECURITY, AFTER THE PAGE CUT "AI AND COMPLIANCE". That cut was
+// of Linear's toggles, which had nothing behind them here. This one has: Import
+// a report reads a document by sending it outside the product, and the document
+// holds names, emails and budgets. The user decided (2026-11-23; spec decision
+// 41 in .scratch/project-updates/spec.md) that it is the workspace's call: off
+// until an administrator agrees, able to be turned off again, and unavailable
+// where a workspace's terms do not allow it. It is where a document leaves the
+// workspace, which is this page's subject.
+//
+// AN AGREEMENT, NOT A SWITCH. Every other row on this page is one edit back, so
+// it commits on change. Turning this on is a statement on the workspace's
+// behalf: the section says what it means first, and the action stays unpressable
+// until the box is ticked. Turning it off asks nothing, because stopping is
+// never the risky direction.
+//
+// WHO SEES IT: administrators. Anyone else is shown nothing here, not a locked
+// row: the page names a role, and a section a person cannot act on is noise.
+//
+// "NOT AVAILABLE" HAS NO CONTROL. The product's operator sets it from outside
+// the workspace; an administrator can read it and change nothing. In this
+// prototype `?ai-reading=unavailable` shows it (src/lib/ai-reading.ts).
+//
+// Kept in this browser (src/lib/ai-reading.ts); the Import a report screens
+// read the same store.
+//
+// bcn-lego-checked: firma2-rail-section is the section, as on the rest of this
+// page; esa-checkbox the agreement, esa-button the two acts; the state is a
+// label composite; `.stack` and `.cluster` the only layout. No <style> block. Beacon is
+// not cloned on this machine.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+---
+<div class="firma2-ai-reading" data-ai-reading>
+  <Firma2RailSection title="Reading by an outside AI service">
+    <div class="stack" data-gap="md">
+      <!-- THE SAVED STATE, always shown, with who set it and when. Words, not
+           a coloured badge: "On" and "Off" are the whole fact, and esa-badge is
+           a count marker whose colour would be the only thing telling the two
+           apart. -->
+      <p class="cluster" data-gap="sm">
+        <span class="typography-label-md" data-ai-state></span>
+        <span class="typography-body-sm" data-ai-when></span>
+      </p>
+
+      <!-- WHAT TURNING IT ON MEANS, stated before the control can be used. The
+           same three facts for every workspace. -->
+      <div class="stack" data-gap="xs" data-ai-terms>
+        <p class="typography-body-md">Turning this on means:</p>
+        <ul class="stack typography-body-md" data-gap="2xs">
+          <li>Reports and pasted text given to Import a report are sent to an outside AI service to be read.</li>
+          <li>Each one goes with the project's performance measures, reporting periods and fields. Funding sources, contacts, organizations and people are not sent.</li>
+          <li>Neither ProjectFirma nor the AI service keeps a document after reading it.</li>
+        </ul>
+      </div>
+
+      <p class="typography-body-md" data-ai-unavailable>This workspace's terms do not allow documents to be sent to an outside service.</p>
+
+      <div class="stack" data-gap="sm" data-ai-turn-on>
+        <esa-checkbox data-ai-agree label="I agree to this on behalf of this workspace"></esa-checkbox>
+        <div>
+          <EsaButton variant="primary" size="md" data-ai-on>Turn on</EsaButton>
+        </div>
+      </div>
+
+      <div data-ai-turn-off>
+        <EsaButton variant="secondary" appearance="outline" size="md" data-ai-off>Turn off</EsaButton>
+      </div>
+    </div>
+  </Firma2RailSection>
+</div>
+
+<script>
+  import '@esa/ecology/esa-checkbox';
+  import { announce } from '@esa/ecology/announcer';
+  import { dateFormatter } from '../../lib/format';
+  import { AI_READING_EVENT, readAiReading, turnOffAiReading, turnOnAiReading } from '../../lib/ai-reading';
+  import { currentActor, currentPerson } from '../../lib/workspace-permissions';
+
+  type Check = HTMLElement & { checked: boolean };
+
+  document.querySelectorAll<HTMLElement>('[data-ai-reading]').forEach((root) => {
+    // Administrators only: nobody else is shown the section, by any route.
+    if (currentActor().role !== 'Administrator') {
+      root.remove();
+      return;
+    }
+
+    const agree = root.querySelector<Check>('[data-ai-agree]');
+    const on = root.querySelector<HTMLElement>('[data-ai-on]');
+    const when = root.querySelector<HTMLElement>('[data-ai-when]');
+    const part = (name: string): HTMLElement | null => root.querySelector<HTMLElement>(`[data-ai-${name}]`);
+    if (!agree || !on || !when) return;
+
+    // `style.display`, not `hidden`: `.stack` and `.cluster` set a display of
+    // their own, which beats the UA rule for [hidden].
+    const show = (el: HTMLElement | null, visible: boolean): void => {
+      if (el) el.style.display = visible ? '' : 'none';
+    };
+
+    // "Turn on" cannot be pressed until the box is ticked. EsaButton's real
+    // control is the native button inside its wrapper.
+    const nativeOn = on.matches('button') ? (on as HTMLButtonElement) : on.querySelector<HTMLButtonElement>('button');
+    const gate = (): void => {
+      if (nativeOn) nativeOn.disabled = !agree.checked;
+      on.closest('.esa-button')?.classList.toggle('esa-button--disabled', !agree.checked);
+    };
+
+    const paint = (): void => {
+      const { state, by, iso } = readAiReading();
+      const label = root.querySelector<HTMLElement>('[data-ai-state]');
+      if (label) label.textContent = state === 'on' ? 'On' : state === 'off' ? 'Off' : 'Not available';
+      const day = iso ? dateFormatter.format(new Date(`${iso}T12:00:00`)) : '';
+      when.textContent = state === 'unavailable' || !by ? '' : `Turned ${state} by ${by} · ${day}`;
+      show(part('terms'), state === 'off');
+      show(part('turn-on'), state === 'off');
+      show(part('turn-off'), state === 'on');
+      show(part('unavailable'), state === 'unavailable');
+      // Turning it on again takes the agreement again.
+      agree.checked = false;
+      gate();
+    };
+
+    agree.addEventListener('change', gate);
+    on.addEventListener('click', () => {
+      if (!agree.checked) return;
+      turnOnAiReading(currentPerson().name);
+      announce('Reading by an outside AI service is on.');
+    });
+    root.querySelector('[data-ai-off]')?.addEventListener('click', () => {
+      turnOffAiReading(currentPerson().name);
+      announce('Reading by an outside AI service is off.');
+    });
+
+    document.addEventListener(AI_READING_EVENT, paint);
+    void customElements.whenDefined('esa-checkbox').then(paint);
+  });
+</script>

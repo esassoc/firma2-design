@@ -1,0 +1,481 @@
+---
+// firma2-access-request-list — the pending requests a manager or an
+// administrator answers (.scratch/access-requests/spec.md, decisions 15, 16,
+// 24). One component for every place a request waits:
+//
+//   kind="join" organization="…"  Organization settings › Members — that
+//                                 organization's requests, for its managers.
+//   kind="join"                   Workspace settings › Users — every
+//                                 organization's, with an Organization column,
+//                                 for administrators.
+//   kind="organization"           Workspace settings › Organizations — new-
+//                                 organization requests, each a door to its
+//                                 review page (reviewBase/<id>).
+//
+// A BAND, AS LINEAR'S PENDING INVITES ARE: a label and a count above rows, and
+// the whole band gone when nothing is pending. A queue that is empty says
+// nothing; it doesn't need an empty state.
+//
+// THE EVIDENCE SITS ON THE EMAIL. Whether the requester's address is at the
+// organization's own domain is the one fact that says they work there, so it is
+// a quiet badge beside the address — "Matches cwrb.org", "Personal email",
+// "Different domain". Flagged, never blocking (decision 18).
+//
+// APPROVE IS ONE CLICK, UNLESS IT CHANGES A ROLE. Approving as asked is the
+// common case and is reversible from the Members list. Raising a Viewer to
+// Contributor changes their role across the whole workspace, so that one asks
+// first and says so (decision 4). Granting less than asked — "Approve to follow
+// only" — and Decline sit in the row's "…".
+//
+// RUNTIME ROWS. Requests live in this browser's store and change while the page
+// is open, so rows are cloned from <template>s rendered with the same legos the
+// rest of the settings tables use, and redrawn on every store change.
+//
+// bcn-lego-checked: esa-button for Approve/Review, esa-dropdown-menu around an
+// icon esa-button for "…", esa-badge for evidence and overdue, esa-confirm-dialog
+// for a role change, esa-dialog + esa-textarea for Decline, esa-snackbar-container
+// for results — all composed unchanged. The table is firma2-settings-table's (no
+// esa- table lego; esa-grid is documentation-only). Beacon is not cloned on this
+// machine. The only CSS is the band header's rhythm and the message line.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaIcon from '@esa/ecology/esa-icon.astro';
+import './firma2-settings-table.css';
+import { CURRENT_USER, organizations, users } from '../../data/firma2-directory';
+
+interface Props {
+  kind: 'join' | 'organization';
+  /** Join requests for one organization only; omit for every organization. */
+  organization?: string;
+  /** New-organization requests: each row links to `${reviewBase}/${id}`. */
+  reviewBase?: string;
+  title?: string;
+}
+
+const { kind, organization, reviewBase = '', title = 'Requests' } = Astro.props;
+const scoped = kind === 'join' && !!organization;
+// Lucide's badge-check, only for the ICONS=lucide build; Hugeicons maps it.
+const BADGE_CHECK = '<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m9 12 2 2 4-4"/>';
+
+// What the client needs to judge evidence and role changes, without importing
+// the whole directory into the browser.
+const websites = Object.fromEntries(organizations.map((o) => [o.name, o.website]));
+const roles = Object.fromEntries(users.map((u) => [u.email, u.role]));
+// Who answers when an organization has no manager: administrators (decision 16).
+// An organization whose own members include an administrator is run by them —
+// the host board — so it is not "without a manager".
+const managed = organizations
+  .filter((o) =>
+    users.some((u) => u.status === 'Active' && u.organizations.includes(o.name) && (u.managerOf.includes(o.name) || u.role === 'Administrator')),
+  )
+  .map((o) => o.name);
+---
+<section
+  class="firma2-access-request-list stack"
+  data-gap="sm"
+  data-kind={kind}
+  data-organization={organization}
+  data-review-base={reviewBase}
+  data-websites={JSON.stringify(websites)}
+  data-roles={JSON.stringify(roles)}
+  data-managed={JSON.stringify(managed)}
+  data-answerer={CURRENT_USER.name}
+  data-empty
+>
+  <div class="firma2-access-request-list__band cluster" data-gap="xs">
+    <h2 class="typography-label-md">{title}</h2>
+    <span class="typography-meta" data-request-count></span>
+  </div>
+  <div class="firma2-settings-table-scroll">
+    <table class="firma2-settings-table firma2-settings-table--actions" aria-label={organization ? `Requests to join ${organization}` : title}>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          {!scoped && <th scope="col" class="firma2-access-request-list__wide">Organization</th>}
+          {kind === 'join' && <th scope="col" class="firma2-access-request-list__wide">Asks to</th>}
+          <th scope="col" class="firma2-access-request-list__wide">Waiting</th>
+          <th scope="col" class="firma2-settings-table__act"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody data-request-body></tbody>
+    </table>
+  </div>
+
+  <template data-request-row>
+    <tr>
+      <th scope="row">
+        <span data-slot="name"></span>
+        <span class="firma2-settings-table__meta typography-body-sm cluster" data-gap="xs">
+          <span data-slot="email"></span>
+          <span data-slot="evidence"></span>
+        </span>
+        <span class="firma2-access-request-list__message typography-body-sm" data-slot="message"></span>
+        <span class="firma2-access-request-list__narrow firma2-settings-table__meta typography-body-sm" data-slot="narrow"></span>
+      </th>
+      {!scoped && (
+        <td class="firma2-access-request-list__wide">
+          <span data-slot="organization"></span>
+          <span class="firma2-settings-table__meta typography-body-sm" data-slot="organization-meta"></span>
+        </td>
+      )}
+      {kind === 'join' && <td class="firma2-access-request-list__wide" data-slot="asked"></td>}
+      <td class="firma2-access-request-list__wide" data-slot="waiting"></td>
+      <td class="firma2-settings-table__act">
+        <span class="cluster" data-gap="xs" data-slot="actions">
+          {kind === 'join' ? (
+            <>
+              <EsaButton variant="secondary" size="md" data-request-approve>Approve</EsaButton>
+              <esa-dropdown-menu class="firma2-settings-table__menu" position="below-end">
+                <EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="More actions" data-request-more />
+              </esa-dropdown-menu>
+            </>
+          ) : (
+            <EsaButton variant="secondary" size="md" href="#" data-request-review>Review</EsaButton>
+          )}
+        </span>
+      </td>
+    </tr>
+  </template>
+
+  {/* Evidence and overdue badges, one per variant, filled in at clone time.
+      A match is the expected case, so it is a quiet verified mark, not a pill;
+      only the exceptions (personal, different domain) earn a badge's words.
+      The tooltip and label name the domain, filled in at clone time. */}
+  <template data-badge="match"><esa-tooltip class="firma2-access-request-list__verified" text="Email matches"><EsaIcon name="badge-check" size="sm" label="Email matches" paths={BADGE_CHECK} /></esa-tooltip></template>
+  <template data-badge="personal"><EsaBadge value="Personal email" variant="warning" size="sm" /></template>
+  <template data-badge="other"><EsaBadge value="Different domain" variant="secondary" size="sm" /></template>
+  <template data-badge="overdue"><EsaBadge value="Overdue" variant="warning" size="sm" /></template>
+  <template data-badge="admins"><EsaBadge value="No manager" variant="secondary" size="sm" /></template>
+
+  <esa-confirm-dialog class="firma2-access-request-list__confirm"></esa-confirm-dialog>
+
+  <esa-dialog class="firma2-access-request-list__decline" heading="Decline request" size="sm" show-close-button>
+    <esa-textarea
+      label="Reason (optional)"
+      help-text="Sent to them with the decline."
+      size="md"
+      rows="3"
+      data-decline-reason
+    ></esa-textarea>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="danger" size="md" data-decline-submit>Decline request</EsaButton>
+      <EsaButton variant="ghost" size="md" data-decline-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <esa-snackbar-container class="firma2-access-request-list__toasts"></esa-snackbar-container>
+</section>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-snackbar-container';
+  import '@esa/ecology/esa-tooltip';
+  import { readRequests, approveRequest, declineRequest, CHANGED } from '../../lib/access-requests';
+  import {
+    askedLabel,
+    daysSince,
+    domainOfEmail,
+    evidenceFor,
+    OVERDUE_DAYS,
+    type AccessRequest,
+    type AskedAccess,
+  } from '../../data/firma2-access-requests';
+
+  type Menu = HTMLElement & { items: { label: string; action: string; variant?: string }[] };
+  type Confirm = HTMLElement & { heading: string; message: string; confirmLabel: string; cancelLabel: string; show(): void };
+  type Dialog = HTMLElement & { heading: string; show(): void; close(): void };
+  type Textarea = HTMLElement & { value: string };
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
+
+  const waitingText = (days: number) => (days === 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`);
+
+  function init(root: HTMLElement) {
+    const kind = root.dataset.kind as 'join' | 'organization';
+    const organization = root.dataset.organization || '';
+    const reviewBase = root.dataset.reviewBase ?? '';
+    const websites: Record<string, string> = JSON.parse(root.dataset.websites ?? '{}');
+    const roles: Record<string, string> = JSON.parse(root.dataset.roles ?? '{}');
+    const managed = new Set<string>(JSON.parse(root.dataset.managed ?? '[]'));
+    const answerer = root.dataset.answerer ?? '';
+
+    const body = root.querySelector<HTMLElement>('[data-request-body]')!;
+    const rowTemplate = root.querySelector<HTMLTemplateElement>('[data-request-row]')!;
+    const count = root.querySelector<HTMLElement>('[data-request-count]')!;
+    const confirm = root.querySelector<Confirm>('.firma2-access-request-list__confirm')!;
+    const decline = root.querySelector<Dialog>('.firma2-access-request-list__decline')!;
+    const reason = root.querySelector<Textarea>('[data-decline-reason]')!;
+    const toasts = root.querySelector<Toasts>('.firma2-access-request-list__toasts');
+
+    const badge = (name: string, text?: string): Node => {
+      const node = root.querySelector<HTMLTemplateElement>(`[data-badge="${name}"]`)!.content.cloneNode(true) as DocumentFragment;
+      if (text) node.querySelector('.esa-badge__text')!.textContent = text;
+      return node;
+    };
+
+    const mine = (): AccessRequest[] =>
+      readRequests()
+        .filter((r) => r.status === 'pending' && r.kind === kind && (!organization || r.organization === organization))
+        // Longest-waiting first: the one most likely to be stranded.
+        .sort((a, b) => a.created.localeCompare(b.created));
+
+    let byId = new Map<string, AccessRequest>();
+
+    function render() {
+      const list = mine();
+      byId = new Map(list.map((r) => [r.id, r]));
+      // A [hidden] attribute loses to .stack's display rule, so the band is
+      // hidden by a data flag the stylesheet owns.
+      root.toggleAttribute('data-empty', list.length === 0);
+      count.textContent = String(list.length);
+      body.replaceChildren(...list.map(row));
+    }
+
+    function row(r: AccessRequest): HTMLElement {
+      const tr = (rowTemplate.content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+      tr.dataset.request = r.id;
+      const slot = (name: string) => tr.querySelector<HTMLElement>(`[data-slot="${name}"]`);
+
+      slot('name')!.textContent = r.name;
+      slot('email')!.textContent = r.email;
+      const website = kind === 'organization' ? r.website : websites[r.organization];
+      const evidence = evidenceFor(r.email, website);
+      const mark = badge(evidence) as DocumentFragment;
+      if (evidence === 'match') {
+        const words = `Email matches ${domainOfEmail(r.email)}`;
+        mark.querySelector('esa-tooltip')?.setAttribute('text', words);
+        const icon = mark.querySelector('[role="img"]');
+        icon?.setAttribute('aria-label', words);
+        // Focusable, so a keyboard Tab or a touch tap opens the tooltip (it
+        // shows on focusin) — hover alone would leave phones with no words.
+        icon?.setAttribute('tabindex', '0');
+      }
+      slot('evidence')!.append(mark);
+      const message = slot('message')!;
+      if (r.message) message.textContent = `“${r.message}”`;
+      else message.remove();
+
+      const org = slot('organization');
+      if (org) {
+        org.textContent = r.organization;
+        const meta = slot('organization-meta')!;
+        if (kind === 'organization') meta.textContent = [r.orgType, r.website].filter(Boolean).join(' · ');
+        else if (!managed.has(r.organization)) meta.append(badge('admins'));
+        else meta.remove();
+      }
+      const asked = slot('asked');
+      if (asked) asked.textContent = askedLabel[r.asked];
+
+      const days = daysSince(r.created);
+      const waiting = slot('waiting')!;
+      waiting.textContent = waitingText(days);
+      // Past a week, administrators have been told; the row says why it's here.
+      // The badge goes on its own line inside the cell — a flex class on the
+      // <td> itself would take it out of the table layout.
+      if (days >= OVERDUE_DAYS) {
+        const line = document.createElement('span');
+        line.className = 'firma2-access-request-list__overdue';
+        line.append(badge('overdue'));
+        waiting.append(line);
+      }
+
+      // Narrow, the columns fold into one line under the name (see the CSS).
+      slot('narrow')!.textContent = [
+        organization ? '' : r.organization,
+        kind === 'join' ? askedLabel[r.asked] : '',
+        `waiting ${waitingText(days).toLowerCase()}`,
+      ].filter(Boolean).join(' · ');
+
+      if (kind === 'organization') {
+        const review = tr.querySelector<HTMLAnchorElement>('[data-request-review]');
+        review?.setAttribute('href', `${reviewBase}/${r.id}`);
+        review?.setAttribute('aria-label', `Review ${r.organization}`);
+        return tr;
+      }
+
+      tr.querySelector('[data-request-approve]')?.setAttribute('aria-label', `Approve ${r.name}`);
+      tr.querySelector('[data-request-more]')?.setAttribute('aria-label', `More actions for ${r.name}`);
+      const menu = tr.querySelector<Menu>('esa-dropdown-menu');
+      void customElements.whenDefined('esa-dropdown-menu').then(() => {
+        if (!menu) return;
+        menu.items = [
+          ...(r.asked === 'Contributor' ? [{ label: 'Approve to follow only', action: 'approve-viewer' }] : []),
+          { label: 'Decline…', action: 'decline', variant: 'danger' },
+        ];
+      });
+      return tr;
+    }
+
+    // ---- Approve ------------------------------------------------------------
+
+    let pending: { id: string; granted: AskedAccess } | null = null;
+
+    function approve(r: AccessRequest, granted: AskedAccess) {
+      const current = roles[r.email] ?? 'Viewer';
+      // Only a raise needs a question: a Viewer (or a newcomer) becoming a
+      // Contributor everywhere. Administrators and Contributors keep their role.
+      if (granted === 'Contributor' && current === 'Viewer') {
+        pending = { id: r.id, granted };
+        Object.assign(confirm, {
+          heading: `Approve ${r.name} as a Contributor?`,
+          message: `They’ll edit ${r.organization}’s projects, and their workspace role changes from Viewer to Contributor.`,
+          confirmLabel: 'Approve',
+          cancelLabel: 'Cancel',
+        });
+        confirm.show();
+        return;
+      }
+      finishApprove(r.id, granted);
+    }
+
+    function finishApprove(id: string, granted: AskedAccess) {
+      const r = byId.get(id);
+      if (!r) return;
+      approveRequest(id, granted, answerer);
+      // An administrator keeps their role; everyone else holds what was granted.
+      const role = (roles[r.email] ?? 'Viewer') === 'Administrator' ? 'an Administrator' : `a ${granted}`;
+      const where = organization ? '' : ` ${r.organization}`;
+      toasts?.show({ message: `${r.name} joined${where} as ${role}.`, variant: 'success' });
+    }
+
+    confirm.addEventListener('confirm', () => {
+      if (pending) finishApprove(pending.id, pending.granted);
+      pending = null;
+    });
+    confirm.addEventListener('cancel', () => { pending = null; });
+
+    body.addEventListener('click', (event) => {
+      const button = (event.target as Element).closest('[data-request-approve]');
+      const id = button?.closest<HTMLElement>('tr')?.dataset.request;
+      const r = id ? byId.get(id) : undefined;
+      if (r) approve(r, r.asked);
+    });
+
+    // ---- The "…": approve lower, decline ------------------------------------
+
+    let declining: string | null = null;
+
+    body.addEventListener('menu-action', async (event) => {
+      const action = (event as CustomEvent<string>).detail;
+      const id = (event.target as Element).closest<HTMLElement>('tr')?.dataset.request;
+      const r = id ? byId.get(id) : undefined;
+      if (!r) return;
+      if (action === 'approve-viewer') finishApprove(r.id, 'Viewer');
+      if (action === 'decline') {
+        declining = r.id;
+        await customElements.whenDefined('esa-dialog');
+        decline.heading = `Decline ${r.name}’s request?`;
+        reason.value = '';
+        decline.show();
+      }
+    });
+
+    root.querySelector('[data-decline-cancel]')?.addEventListener('click', () => decline.close());
+    root.querySelector('[data-decline-submit]')?.addEventListener('click', () => {
+      const r = declining ? byId.get(declining) : undefined;
+      declining = null;
+      decline.close();
+      if (!r) return;
+      declineRequest(r.id, answerer, reason.value);
+      toasts?.show({ message: `Request from ${r.name} declined.`, variant: 'success' });
+    });
+
+    render();
+    window.addEventListener(CHANGED, render);
+    window.addEventListener('storage', render);
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-access-request-list').forEach(init);
+</script>
+
+<style>
+  .firma2-access-request-list[data-empty] {
+    display: none;
+  }
+
+  /* NARROW, THE COLUMNS FOLD UNDER THE NAME — the Members table's rule, so
+     Approve stays on screen at phone width instead of past a sideways scroll.
+     Only one of the two is ever displayed, so a screen reader hears it once. */
+  .firma2-access-request-list {
+    container-type: inline-size;
+  }
+  .firma2-access-request-list__narrow {
+    display: none;
+  }
+  @container (max-width: 34rem) {
+    .firma2-access-request-list .firma2-access-request-list__wide {
+      display: none;
+    }
+    .firma2-access-request-list .firma2-access-request-list__narrow {
+      display: block;
+    }
+  }
+  /* The band header: label and count on one line, the user grid's band rhythm. */
+  .firma2-access-request-list__band {
+    align-items: baseline;
+  }
+  .firma2-access-request-list__band h2 {
+    margin: 0;
+  }
+  .firma2-access-request-list__band [data-request-count] {
+    color: var(--color-text-secondary);
+  }
+  /* ONE TOP LINE PER ROW. A request row is tall (email, evidence, the quoted
+     message), and the shared --actions rule centres every cell in it, so the
+     organization, ask and wait floated mid-row while the name sat at the top.
+     Here every cell starts on the name's line, and Approve is nudged so its
+     label sits on that same line: the 40px button centred on one line box. */
+  .firma2-access-request-list .firma2-settings-table th,
+  .firma2-access-request-list .firma2-settings-table td {
+    vertical-align: top;
+  }
+  .firma2-access-request-list .firma2-settings-table .firma2-settings-table__act {
+    padding-block-start: calc(var(--spacing-400) - (40px - 1lh) / 2);
+  }
+  /* The short answers never break: "Edit its projects" and "9 days" each read
+     as one value, and the slack goes to the name and message instead. */
+  .firma2-access-request-list [data-slot='asked'],
+  .firma2-access-request-list [data-slot='waiting'],
+  .firma2-access-request-list thead th {
+    white-space: nowrap;
+  }
+  .firma2-access-request-list [data-slot='waiting'] {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Approve and its "…" stay on one line: the action column is sized to its
+     content (width: 1%), and a wrapping cluster would fold them into a stack. */
+  .firma2-access-request-list [data-slot='actions'] {
+    flex-wrap: nowrap;
+  }
+  /* Built with createElement, so it carries no Astro scope attribute. */
+  .firma2-access-request-list :global(.firma2-access-request-list__overdue) {
+    display: block;
+    margin-block-start: var(--spacing-100, 0.25rem);
+  }
+  /* The verified mark: success green, centred on the email's line. Cloned at
+     runtime, so it is reached through :global. */
+  .firma2-access-request-list [data-slot='evidence'] {
+    /* The email line is a block (the table's meta rule wins over .cluster),
+       so the mark sits inline: centred on the text, not on its baseline. */
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+  }
+  .firma2-access-request-list :global(.firma2-access-request-list__verified) {
+    display: inline-flex;
+    align-self: center;
+    /* The solid success fill (green-11), not the content token: that one is
+       green-12, near-black, tuned for text on a green wash. Step 11 is the
+       one that reads green on a plain row, in both themes. */
+    color: var(--color-background-utility-success);
+  }
+  /* The requester's own words, under their name: read in their voice. */
+  .firma2-access-request-list__message {
+    display: block;
+    max-width: 48ch;
+    color: var(--color-text-default);
+    font-weight: normal;
+  }
+</style>

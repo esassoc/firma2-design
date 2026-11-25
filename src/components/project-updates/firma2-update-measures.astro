@@ -1,0 +1,369 @@
+---
+// firma2-update-measures — the "Performance measures" section of a project page
+// in the Team 5 sandbox (/prototypes/team-5): one tile per measure with the
+// total reported, a small bar per year, and this year's line; a door to the
+// update screen beside the heading.
+//
+// PORTED FROM TEAM 5, stories 0010 (project performance measures editor) and
+// 0016 (the project page's measures card) — their project-measures component,
+// rebuilt on this spoke's legos so the owner can keep or drop it. Static
+// markup comes from the project's measures at build; the 2026 figure is then
+// laid over from the sandbox store (currentValue on `measure:<i>:2026`) and
+// re-applied on every onSandboxChange, so a saved or approved update moves the
+// headline, the 2026 bar and the 2026 line.
+//
+// HOW IT DIFFERS FROM firma2-project-measures (the record page's section):
+// that one is a measures-down, years-across TABLE with targets, rings and a
+// years view switch. This is Team 5's simpler tile grid, kept apart on purpose
+// so the two can be compared. Neither is wrapped or modified by the other.
+//
+// KNOWN GAP — THE COUNTING RULE. A cumulative total is only legal for measures
+// that SUM (standing spoke decision). PerformanceMeasure has no counting-rule
+// field, and Team 5's tile summed whenever its DTO said `Sums` — here every
+// measure is summed, as the sandbox data cannot tell. A measure that is a
+// snapshot (a latest reading) would print a wrong headline.
+//
+// CHANGES FROM TEAM 5, and the rule that forced each:
+//   - The card subtitle "What this project has accomplished, reported each
+//     year" is cut (verbal restraint: no text about the page).
+//   - The empty state carries a title only; their description restated the
+//     button beside the heading (copy is cut by default).
+//   - Their custom hover tooltip is a native `title` plus an accessible name
+//     on each bar. esa-tooltip's host is an inline-block around an inline-flex
+//     anchor, which cannot take a percentage-height bar in a flexible column.
+//     Bars are not tab stops: up to 25 per tile was a keyboard trap in all but
+//     name. Every figure is still reachable by a screen reader.
+//   - Year labels thin out on long windows (more than eight years): first,
+//     last and this year stay; the rest are in each bar's accessible name.
+//   - Bars are neutral, this year in the brand fill (containers stay neutral;
+//     colour lives in data) — their two teal steps had no token here.
+//
+// bcn-lego-checked: walked node_modules/@esa/ecology/src/components/. The
+// tiles ARE esa-card (outlined, compact). The headline is not esa-stat: its
+// label sits under the value, and here the unit has to sit beside the figure
+// with the expected line under it. The bars are not esa-chart: a full AG
+// Charts instance per tile for up to 25 rectangles is the wrong weight, and it
+// cannot draw a null year as an empty slot distinct from a reported zero.
+// esa-progress-bar is one ratio, not a series. So the bar strip is CSS bars on
+// an <ol>, scoped to this section. Beacon is not cloned on this machine.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '@esa/tokens/layouts.css';
+import '@esa/tokens/typography.css';
+import { projects, projectSlug } from '../../data/firma2-projects';
+import { getProjectDetail } from '../../data/firma2-project-detail';
+import { UPDATE_YEAR, sandboxUpdateHref, targetsFor } from '../../data/firma2-project-updates';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** The project's slug — projectSlug(project). */
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const project = projects.find((p) => projectSlug(p) === slug);
+const measures = project ? getProjectDetail(project).measures : [];
+const canReport = targetsFor(slug).some((t) => t.year === UPDATE_YEAR);
+
+const number = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+const fmt = (n: number): string => number.format(n);
+/** Long windows keep first, last and this year's label; the rest live in each bar's name. */
+const showYear = (i: number, count: number, year: number): boolean => count <= 8 || i === 0 || i === count - 1 || year === UPDATE_YEAR;
+const barLabel = (year: number, value: number | null, unit: string): string =>
+  value === null ? `${year}: nothing reported` : `${year}: ${fmt(value)} ${unit}`;
+/** Height as a share of the tile's best year; a reported zero still shows a stub. */
+const barHeight = (value: number | null, max: number): number => (value === null ? 0 : max > 0 ? Math.max(4, (value / max) * 100) : 4);
+
+const tiles = measures.map((m, index) => {
+  const max = Math.max(0, ...m.series.map((s) => s.value ?? 0));
+  const total = m.series.reduce((sum, s) => sum + (s.value ?? 0), 0);
+  const current = m.series.find((s) => s.year === UPDATE_YEAR);
+  return {
+    index,
+    name: m.name,
+    unit: m.unit,
+    expected: m.expected,
+    total,
+    current,
+    series: m.series.map((s) => ({ year: s.year, value: s.value })),
+    max,
+  };
+});
+---
+<section class="firma2-update-measures stack" data-gap="md" data-slug={slug} aria-labelledby={`firma2-update-measures-${slug}`}>
+  <div class="repel" data-gap="sm">
+    <h2 id={`firma2-update-measures-${slug}`} class="typography-heading-md firma2-update-measures__title">Performance measures</h2>
+    <div class="cluster" data-gap="xs">
+      <span class="firma2-update-measures__pending" data-pending hidden>
+        <EsaBadge variant="warning" size="md" value="0 awaiting review" />
+      </span>
+      {canReport && (
+        <EsaButton variant="secondary" appearance="outline" size="md" tag="a" href={withBase(sandboxUpdateHref(slug))}>
+          Report {UPDATE_YEAR} work
+        </EsaButton>
+      )}
+    </div>
+  </div>
+
+  {tiles.length === 0 ? (
+    <EsaEmptyState title="No performance measures reported yet" size="md" />
+  ) : (
+    <ul class="grid firma2-update-measures__grid" data-gap="md" role="list">
+      {tiles.map((tile) => (
+        <li
+          class="firma2-update-measures__tile"
+          data-tile
+          data-index={tile.index}
+          data-unit={tile.unit}
+          data-series={JSON.stringify(tile.series)}
+        >
+          <EsaCard variant="outlined" padding="compact" title={tile.name}>
+            <div class="stack" data-gap="2xs">
+              <p class="firma2-update-measures__headline">
+                <span class="typography-display-sm firma2-update-measures__value" data-total>{fmt(tile.total)}</span>
+                <span class="typography-body-md firma2-update-measures__unit">{tile.unit}</span>
+              </p>
+              <p class="typography-body-sm firma2-update-measures__expected">of {fmt(tile.expected)} {tile.unit} expected</p>
+
+              <ol class="firma2-update-measures__bars" role="list" aria-label={`${tile.name} by year`}>
+                {tile.series.map((s, i) => (
+                  <li
+                    class:list={['firma2-update-measures__slot', s.year === UPDATE_YEAR && 'is-current']}
+                    data-year={s.year}
+                  >
+                    <span class="firma2-update-measures__track">
+                      <span
+                        class:list={['firma2-update-measures__bar', s.value === null && 'is-empty']}
+                        role="img"
+                        aria-label={barLabel(s.year, s.value, tile.unit)}
+                        title={barLabel(s.year, s.value, tile.unit)}
+                        style={`--bar-height: ${barHeight(s.value, tile.max)}%`}
+                      ></span>
+                    </span>
+                    <span
+                      class:list={[
+                        'firma2-update-measures__year',
+                        s.year === UPDATE_YEAR ? 'typography-label-sm-strong' : 'typography-label-sm',
+                      ]}
+                      aria-hidden="true"
+                    >
+                      {showYear(i, tile.series.length, s.year) ? s.year : ''}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+
+              {tile.current && (
+                <p
+                  class:list={['typography-body-sm firma2-update-measures__current', tile.current.value === null && 'is-empty']}
+                  data-current
+                >
+                  {tile.current.value === null
+                    ? `Nothing reported for ${UPDATE_YEAR}`
+                    : `${fmt(tile.current.value)} ${tile.unit} in ${UPDATE_YEAR}`}
+                </p>
+              )}
+            </div>
+          </EsaCard>
+        </li>
+      ))}
+    </ul>
+  )}
+</section>
+
+<script>
+  import { UPDATE_YEAR, targetsFor } from '../../data/firma2-project-updates';
+  import { currentValue, onSandboxChange, pendingChanges } from '../../lib/update-sandbox';
+
+  const number = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+  const fmt = (n: number): string => number.format(n);
+  const barLabel = (year: number, value: number | null, unit: string): string =>
+    value === null ? `${year}: nothing reported` : `${year}: ${fmt(value)} ${unit}`;
+  const barHeight = (value: number | null, max: number): number => (value === null ? 0 : max > 0 ? Math.max(4, (value / max) * 100) : 4);
+
+  type Point = { year: number; value: number | null };
+
+  const renderSection = (section: HTMLElement): void => {
+    const slug = section.dataset.slug ?? '';
+    const targets = targetsFor(slug);
+
+    const pending = pendingChanges(slug).filter((c) => c.domain === 'measure').length;
+    const badge = section.querySelector<HTMLElement>('[data-pending]');
+    if (badge) {
+      badge.hidden = pending === 0;
+      const text = badge.querySelector('.esa-badge__text');
+      if (text) text.textContent = `${pending} awaiting review`;
+    }
+
+    section.querySelectorAll<HTMLElement>('[data-tile]').forEach((tile) => {
+      const unit = tile.dataset.unit ?? '';
+      const target = targets.find((t) => t.id === `measure:${tile.dataset.index}:${UPDATE_YEAR}`);
+      const series: Point[] = JSON.parse(tile.dataset.series ?? '[]');
+      if (target) {
+        const raw = currentValue(slug, target);
+        const value = raw === '' || !Number.isFinite(Number(raw)) ? null : Number(raw);
+        series.forEach((p) => {
+          if (p.year === UPDATE_YEAR) p.value = value;
+        });
+      }
+
+      const max = Math.max(0, ...series.map((p) => p.value ?? 0));
+      const total = series.reduce((sum, p) => sum + (p.value ?? 0), 0);
+      const totalEl = tile.querySelector('[data-total]');
+      if (totalEl) totalEl.textContent = fmt(total);
+
+      series.forEach((p) => {
+        const bar = tile.querySelector<HTMLElement>(`[data-year="${p.year}"] .firma2-update-measures__bar`);
+        if (!bar) return;
+        const label = barLabel(p.year, p.value, unit);
+        bar.classList.toggle('is-empty', p.value === null);
+        bar.style.setProperty('--bar-height', `${barHeight(p.value, max)}%`);
+        bar.setAttribute('aria-label', label);
+        bar.title = label;
+      });
+
+      const line = tile.querySelector<HTMLElement>('[data-current]');
+      const now = series.find((p) => p.year === UPDATE_YEAR);
+      if (line && now) {
+        line.classList.toggle('is-empty', now.value === null);
+        line.textContent = now.value === null ? `Nothing reported for ${UPDATE_YEAR}` : `${fmt(now.value)} ${unit} in ${UPDATE_YEAR}`;
+      }
+    });
+  };
+
+  const sections = document.querySelectorAll<HTMLElement>('.firma2-update-measures[data-slug]');
+  if (sections.length) onSandboxChange(() => sections.forEach(renderSection));
+</script>
+
+<style>
+  /* Author display rules beat the UA [hidden]; the pending badge's wrapper is toggled with it. */
+  .firma2-update-measures [hidden] {
+    display: none !important;
+  }
+
+  .firma2-update-measures__title {
+    margin: 0;
+    color: var(--color-text-primary);
+  }
+
+  .firma2-update-measures__grid {
+    --grid-min: 15rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .firma2-update-measures__tile {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .firma2-update-measures__tile > :global(.esa-card) {
+    flex: 1 1 auto;
+  }
+
+  .firma2-update-measures__headline {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--spacing-150, 0.375rem);
+    margin: 0;
+  }
+
+  .firma2-update-measures__value {
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-update-measures__unit,
+  .firma2-update-measures__expected {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  /* The bar strip: one column per year on a shared baseline. */
+  .firma2-update-measures__bars {
+    --_bars-height: 5.5rem;
+    list-style: none;
+    margin: var(--spacing-300, 0.75rem) 0 0;
+    padding: 0;
+    display: flex;
+    align-items: stretch;
+    gap: var(--spacing-050, 0.125rem);
+  }
+
+  .firma2-update-measures__slot {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-100, 0.25rem);
+  }
+
+  .firma2-update-measures__track {
+    height: var(--_bars-height);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    border-bottom: 1px solid var(--color-border-default, #d9d9d9);
+  }
+
+  .firma2-update-measures__bar {
+    display: block;
+    width: 100%;
+    max-width: 2.25rem;
+    height: var(--bar-height, 0%);
+    background: var(--color-content-default-tertiary, #8d8d8d);
+    border-radius: var(--radius-xs, 2px) var(--radius-xs, 2px) 0 0;
+    transition: height 300ms ease;
+  }
+
+  .is-current .firma2-update-measures__bar {
+    background: var(--color-background-brand, #46a758);
+  }
+
+  /* No report is not zero: a reported zero is a solid stub; a year with no report draws
+     no bar at all, only the baseline. This year's empty slot is the one gap worth
+     pointing at — a dashed outline where its bar goes (Team 5's treatment). */
+  .firma2-update-measures__bar.is-empty {
+    height: 0;
+    background: transparent;
+  }
+
+  .is-current .firma2-update-measures__bar.is-empty {
+    height: 40%;
+    background: transparent;
+    border: 1px dashed var(--color-border-brand, #46a758);
+    border-bottom: none;
+  }
+
+  .firma2-update-measures__year {
+    min-height: 1lh;
+    text-align: center;
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .is-current .firma2-update-measures__year {
+    color: var(--color-text-primary);
+  }
+
+  .firma2-update-measures__current {
+    margin: var(--spacing-200, 0.5rem) 0 0;
+    color: var(--color-text-primary);
+  }
+
+  .firma2-update-measures__current.is-empty {
+    color: var(--color-text-secondary);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-update-measures__bar {
+      transition: none;
+    }
+  }
+</style>

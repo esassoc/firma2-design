@@ -12,9 +12,16 @@ import '@esa/tokens/layouts.css';
 import '@esa/tokens/focus.css';
 import '@esa/tokens/a11y.css';
 import '../styles/theme-firma2.css';
+import '../styles/tenant-brand.css';
+import '../styles/interface-prefs.css';
 // Runtime handoff inspector — self-gating: dormant unless the current route
 // has a bundle at public/handoff/<slug>/ (generated via `npx handoff`).
 import HandoffInspector from '@esa/handoff/HandoffInspector.astro';
+// The walkthrough bar for guided flows (?flow=…) — prototype chrome, inert
+// until a flow is started in this tab. Mounted here so it follows the reader
+// onto pages with and without the app shell.
+import Firma2FlowGuide from '../components/shared/firma2-flow-guide.astro';
+import Firma2Lightbox from '../components/shared/firma2-lightbox.astro';
 
 // ACCESSIBILITY ASSURANCE (optional). If this project has a conformance obligation
 // — Section 508, EN 301 549, a procurement clause — add data-a11y-assurance="wcag-aa" to
@@ -67,7 +74,14 @@ const { title = 'ProjectFirma 2.0' } = Astro.props;
 <html lang="en" data-theme="firma2">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    {/* The browser chrome takes the colour at the very top of the page: the app
+        frame (--color-background-elevation-sunken = olive-3 light, #0d0e0c dark).
+        One tag per scheme for a first paint that follows the OS; applyScheme() in
+        src/lib/scheme.ts rewrites both when data-scheme is toggled by hand. */}
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eff1ef" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d0e0c" />
+    <meta name="color-scheme" content="light dark" />
     {/* THE COLOUR SCHEME, APPLIED BEFORE FIRST PAINT.
         `is:inline` and blocking on purpose: a bundled module script is deferred,
         so a dark-scheme reader would watch the page render light and then flip
@@ -89,7 +103,59 @@ const { title = 'ProjectFirma 2.0' } = Astro.props;
         var dark = pref === 'dark'
           || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.setAttribute('data-scheme', dark ? 'dark' : 'light');
+        // Explicit light/dark outranks the OS: pin both theme-color tags to it.
+        if (pref !== 'system') {
+          var tc = dark ? '#0d0e0c' : '#eff1ef', m = document.querySelectorAll('meta[name="theme-color"]');
+          for (var j = 0; j < m.length; j++) m[j].setAttribute('content', tc);
+        }
         document.documentElement.setAttribute('data-scheme-preference', pref);
+      })();
+    </script>
+    {/* INTERFACE PREFERENCES — underline links, pointer cursors — before first
+        paint, for the same reason as the scheme. A DELIBERATE DUPLICATE of
+        readPref() + applyPref() in src/lib/interface-prefs.ts; change one,
+        change the other. Only the non-default state writes an attribute. */}
+    <script is:inline>
+      (function () {
+        var u, p;
+        try {
+          u = localStorage.getItem('firma2-underline-links');
+          p = localStorage.getItem('firma2-pointer-cursors');
+        } catch (e) { return; }
+        if (u === 'on') document.documentElement.setAttribute('data-underline-links', '');
+        if (p === 'off') document.documentElement.setAttribute('data-pointer-cursors', 'off');
+      })();
+    </script>
+    {/* THE TENANT'S BRAND, applied before first paint for the same reason. A
+        DELIBERATE DUPLICATE of brandVars() + onBrand() in src/lib/tenant-brand.ts
+        — change the percentages there, change them here. */}
+    <script is:inline>
+      (function () {
+        try {
+          var b = JSON.parse(localStorage.getItem('firma2:tenant-brand:v1') || 'null');
+          if (!b || !/^#[0-9a-f]{6}$/i.test(b.primary)) return;
+          var h = b.primary, s = document.documentElement.style, i;
+          var T = [4, 8, 14, 22, 32, 46, 62, 80], S = [88, 62, 38], DT = [3, 6, 14, 22, 30, 38, 48, 60], DL = [88, 65, 30];
+          for (i = 0; i < 8; i++) {
+            s.setProperty('--tenant-brand-' + (i + 1), 'color-mix(in oklab, ' + h + ' ' + T[i] + '%, white)');
+            s.setProperty('--tenant-brand-dark-' + (i + 1), 'color-mix(in oklab, ' + h + ' ' + DT[i] + '%, #111210)');
+          }
+          for (i = 0; i < 3; i++) {
+            s.setProperty('--tenant-brand-' + (i + 10), 'color-mix(in oklab, ' + h + ' ' + S[i] + '%, black)');
+            s.setProperty('--tenant-brand-dark-' + (i + 10), 'color-mix(in oklab, ' + h + ' ' + DL[i] + '%, white)');
+          }
+          s.setProperty('--tenant-brand-9', h);
+          s.setProperty('--tenant-brand-dark-9', h);
+          var lum = function (x) {
+            var v = parseInt(x.slice(1), 16), c = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map(function (n) {
+              n /= 255; return n <= 0.03928 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4);
+            });
+            return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+          };
+          var L = lum(h), white = 1.05 / (L + 0.05), dark = (L + 0.05) / (lum('#1b1d1a') + 0.05);
+          s.setProperty('--tenant-on-brand', white >= dark ? '#ffffff' : '#1b1d1a');
+          document.documentElement.setAttribute('data-tenant-brand', '');
+        } catch (e) { /* storage blocked or corrupt — the house brand stands */ }
       })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -97,7 +163,46 @@ const { title = 'ProjectFirma 2.0' } = Astro.props;
     <!-- TODO(spoke-init): add the brand's Google Fonts <link> tags -->
     <title>{title}</title>
     <style is:global>
+      /* CLOSED OVERLAYS STAY CLOSED WHILE THEIR SCRIPT LOADS. The page paints
+         before the deferred module scripts define the legos, and an undefined
+         dialog has no shadow root to keep its content shut — the Shortcuts
+         dialog's rows were painted over the page on every navigation. These
+         are all hidden at rest, so hiding them until :defined costs nothing. */
+      :is(esa-dialog, esa-side-dialog, esa-confirm-dialog, esa-command-palette, esa-snackbar-container):not(:defined) {
+        display: none;
+      }
       *, *::before, *::after { box-sizing: border-box; }
+      /* THE SEARCH OVERLAY HAS TO LIFT WITHOUT A SCRIM. This theme pins the
+         overlay backdrop to transparent, so esa-entity-search's shadow is its
+         whole elevation — and the hub's --elevation-6 is one diffuse layer at
+         20% black in BOTH schemes: soft-edged in light, invisible in dark,
+         where the panel read as one more card. Tokens re-pinned on the host
+         only (they inherit into its shadow root), so no other elevation-6
+         surface moves. Dark also lifts the highlighted row: `sunken` there is
+         neutral-0, darker than the panel, so the active result read as a hole.
+         bcn-lego-checked: token re-pin on an esa- lego's host, no UI primitive;
+         the lego's own border and fills are shadow-DOM hub code. Here, not in
+         theme-firma2.css, because that file is generated. */
+      esa-entity-search {
+        --elevation-6:
+          0 1px 2px rgb(0 0 0 / 0.06),
+          0 4px 12px -2px rgb(0 0 0 / 0.08),
+          0 24px 64px -12px rgb(0 0 0 / 0.24);
+      }
+      html[data-scheme="dark"] esa-entity-search {
+        --elevation-6:
+          0 2px 6px rgb(0 0 0 / 0.5),
+          0 28px 72px -8px rgb(0 0 0 / 0.8);
+        --color-background-elevation-sunken: var(--firma2-neutral-5);
+      }
+      /* Its entrance, on the same host. The lego reads --animation-enter but the
+         token is defined nowhere, so it ran on a generic ease-out and ignored
+         the house curve this theme pins; and it has no reduced-motion path at
+         all, which is the part that was actually missing. */
+      esa-entity-search { --animation-enter: 140ms var(--easing-enter, ease-out); }
+      @media (prefers-reduced-motion: reduce) {
+        esa-entity-search { --animation-enter: 0s; }
+      }
       /* The BROWSER'S half of the scheme — scrollbars, form-control internals,
          the canvas behind an over-scroll, and the default of anything the token
          layer does not paint. `data-scheme` alone moves our tokens and leaves
@@ -107,6 +212,38 @@ const { title = 'ProjectFirma 2.0' } = Astro.props;
          this is also not a brand fact — every spoke's dark scheme wants it. */
       html { color-scheme: light; }
       html[data-scheme="dark"] { color-scheme: dark; }
+      /* NATIVE-FEEL BASELINE (mobile-native skill; .scratch/mobile-foundation/03).
+         bcn-lego-checked: platform-layer html/media rules and a token re-pin, no
+         UI primitive; esa-button renders in light DOM so the control rule reaches
+         it, the Lit legos' shadow-root buttons are a hub gap.
+         The pane, not the document, is the scroller, so the root can refuse the
+         rubber band and pull-to-refresh. */
+      html {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        overscroll-behavior: none;
+      }
+      body { overscroll-behavior: none; }
+      /* Controls, never content: no double-tap-zoom delay, no long-press text
+         selection or callout on a button label. */
+      button, a, [role="button"] {
+        touch-action: manipulation;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+      }
+      /* iOS zooms the page into any focused field under 16px. The md field value
+         is body-md (textarea) / microcopy-md-subtle (text-field, select), both
+         --font-size-200 (12.3px at 390). Re-point those two composites, which
+         inherit into the legos' shadow roots, instead of hard-coding a size.
+         html[data-theme] outranks the hub's :root declaration. */
+      @media (pointer: coarse) {
+        html[data-theme] {
+          --typography-body-md-font-size: max(1rem, var(--font-size-200));
+          --typography-microcopy-md-subtle-font-size: max(1rem, var(--font-size-200));
+        }
+      }
       body {
         margin: 0;
         font-family: var(--typography-font-family-sans, system-ui, sans-serif);
@@ -126,10 +263,36 @@ const { title = 'ProjectFirma 2.0' } = Astro.props;
       a { color: var(--color-content-link, #43608a); text-decoration: none; }
       img { display: block; max-width: 100%; }
       button { font-family: inherit; cursor: pointer; background: none; border: 0; }
+
+      /* SECONDARY BUTTONS ARE OUTLINE BUTTONS in this spoke (user, 2026-11-02) —
+         a deliberate DEVIATION from Ecology, whose secondary is a brand step-3
+         wash with a gray border. Here it rests transparent with brand text and
+         a brand border; the step-3 wash shows only on hover/press. Covers
+         appearance="outline" too, whose hub border is the near-invisible step 3.
+         The border is step 9 (--color-background-brand, the primary fill) —
+         the step the hub's own outline appearance draws, and the first brand
+         step that clears 3:1 against the page (steps 6-8 do not).
+         Spoke-only by choice; the hub change was declined to keep other spokes
+         as they are. html[data-theme] (0,1,1) outranks the lego's scoped rules.
+         bcn-lego-checked: re-skins the esa-button secondary variant, no new UI
+         primitive; esa-button is light DOM so a global rule reaches it. */
+      html[data-theme] .esa-button--variant-secondary:is(.esa-button--appearance-fill, .esa-button--appearance-outline) > .esa-button__native {
+        background: transparent;
+        color: var(--color-content-brand);
+        border-color: var(--color-background-brand, #46a758);
+      }
+      html[data-theme] .esa-button--variant-secondary:is(.esa-button--appearance-fill, .esa-button--appearance-outline) > .esa-button__native:hover:not(:disabled) {
+        background: var(--color-background-brand-muted);
+      }
+      html[data-theme] .esa-button--variant-secondary.esa-button--active:is(.esa-button--appearance-fill, .esa-button--appearance-outline) > .esa-button__native {
+        background: var(--color-background-brand-muted-hover);
+      }
     </style>
   </head>
   <body>
     <slot />
+    <Firma2FlowGuide />
+    <Firma2Lightbox />
     <HandoffInspector />
     <script>
       // A "System" reader tracks the OS for as long as the tab is open — the
@@ -137,7 +300,17 @@ const { title = 'ProjectFirma 2.0' } = Astro.props;
       // BASE layout so it covers every page, not only the screen that owns the
       // control: the setting is app-wide, so its live behaviour has to be too.
       import { watchSystemScheme } from '../lib/scheme';
+      import { syncShadowCursors } from '../lib/interface-prefs';
       watchSystemScheme();
+      // "Use pointer cursors" off has to reach inside the legos' shadow roots,
+      // which the inline script above cannot. No-op while the setting is on.
+      syncShadowCursors();
     </script>
-  </body>
+    <script>
+    // The tenant's vocabulary, applied to every page's marked labels and the
+    // nav. See src/lib/vocabulary.ts.
+    import { bootVocabulary } from '../lib/vocabulary';
+    bootVocabulary();
+  </script>
+</body>
 </html>

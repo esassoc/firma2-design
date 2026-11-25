@@ -1,0 +1,123 @@
+---
+// bcn-goal-meter — one KPI against its goal: what was reported, what projects
+// have committed, and the goal itself, on one track.
+//
+// bcn-lego-checked: esa-progress-bar is the nearest lego and draws ONE value
+// against 100% (checked its source: value/mode/size/variant/label/showValue,
+// no second series, no marker). This meter has to show two authored figures
+// against a third — reported and committed against the goal — which is a
+// bullet chart, not a progress bar. Beacon is not cloned on this machine.
+// bcn-goal-meter is the reusable home; the classification index and detail
+// pages both render it.
+//
+// THE GOAL IS THE END OF THE TRACK. Reported fills from the start in the
+// brand fill; committed sits behind it in the muted brand step, so the part
+// of the track past committed is what nobody has promised yet — the
+// under-planned gap an index of goals exists to show. Either figure past the
+// goal pins at the end and the readout says by how much.
+//
+// THE READOUT CARRIES THE NUMBERS; the bar only shapes them. The muted step
+// against the track is too low a contrast to be the only channel, and
+// forced-colors mode flattens fills, so every figure is also in the text.
+// role="meter" names reported against the goal for assistive tech; committed
+// is in the readout it describes.
+//
+// No goal: the track scales to the larger of reported and committed, and the
+// readout says the goal is missing rather than inventing one.
+import { meterView } from '../../lib/goal-meter';
+
+interface Props {
+  /** The KPI's name — the meter's accessible name. */
+  label: string;
+  unit: string;
+  reported: number | null;
+  committed: number | null;
+  goal?: number;
+  /** The year the goal is due. */
+  goalYear?: number;
+  /** Fraction digits the catalog measure reports at. */
+  decimals?: number;
+}
+
+const { label, unit, reported, committed, goal, goalYear, decimals = 0 } = Astro.props;
+// The arithmetic and wording live in src/lib/goal-meter.ts, so a page that
+// repaints this meter from browser edits produces exactly this markup's text.
+const { scale, reportedPct, committedPct, reportedText, committedText, goalText } = meterView({
+  label, unit, reported, committed, goal, goalYear, decimals,
+});
+---
+<div class="bcn-goal-meter stack" data-gap="2xs">
+  <div
+    class="bcn-goal-meter__track"
+    role="meter"
+    aria-label={label}
+    aria-valuemin="0"
+    aria-valuemax={scale || 1}
+    aria-valuenow={reported ?? 0}
+    aria-valuetext={`${reportedText}. ${goalText}.`}
+  >
+    <span class="bcn-goal-meter__committed" style={`inline-size:${committedPct}%`} hidden={committedText == null} data-meter-committed></span>
+    <span class="bcn-goal-meter__reported" style={`inline-size:${reportedPct}%`} data-meter-reported></span>
+  </div>
+  <p class="bcn-goal-meter__readout repel typography-body-sm" aria-hidden="true">
+    <span>
+      <strong class="bcn-goal-meter__reported-text" data-meter-reported-text>{reportedText}</strong>
+      <span data-meter-committed-text hidden={committedText == null}>{committedText ? ` · ${committedText}` : ''}</span>
+    </span>
+    <span data-meter-goal-text>{goalText}</span>
+  </p>
+</div>
+
+<style>
+  .bcn-goal-meter {
+    --_meter-track: var(--color-background-elevation-sunken, #f0f0f0);
+    --_meter-reported: var(--color-background-brand, #46a758);
+    /* The brand fill mixed a third of the way onto the track. The ramp's own
+       muted step was tried first and measured indistinguishable from the
+       sunken track at 8px; a mix of the two tokens stays on both and reads. */
+    --_meter-committed: color-mix(in srgb, var(--_meter-reported) 38%, var(--_meter-track));
+    --_meter-height: var(--spacing-200, 0.5rem);
+  }
+
+  .bcn-goal-meter__track {
+    position: relative;
+    block-size: var(--_meter-height);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--_meter-track);
+    overflow: hidden;
+  }
+
+  .bcn-goal-meter__committed,
+  .bcn-goal-meter__reported {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+  }
+
+  .bcn-goal-meter__committed {
+    background: var(--_meter-committed);
+  }
+
+  .bcn-goal-meter__reported {
+    background: var(--_meter-reported);
+  }
+
+  .bcn-goal-meter__readout {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .bcn-goal-meter__reported-text {
+    color: var(--color-content-default, #202020);
+    font-weight: var(--typography-font-weight-medium, 500);
+  }
+
+  @media (forced-colors: active) {
+    .bcn-goal-meter__track {
+      outline: 1px solid CanvasText;
+    }
+    .bcn-goal-meter__reported {
+      background: Highlight;
+    }
+  }
+</style>

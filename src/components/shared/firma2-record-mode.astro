@@ -1,0 +1,110 @@
+---
+// firma2-record-mode — Edit / Update beside a record's title, and the view and
+// edit modes they switch between. The same pair custom pages carry.
+//
+// A RECORD OPENS TO READ. Every in-place field is read-only, and every control
+// that changes the record's makeup — Add contact, Add source, Add milestone,
+// Add photo, a measure's remove, the add-a-measure row, the work-area tools —
+// steps aside. Edit brings all of it back; Update ends the edit. Reading acts
+// stay in both modes: tabs, Share, Fact sheet, History, the map, the lightbox,
+// comments.
+//
+// WHAT UPDATE DOES HERE. On this page each change already saves where it is
+// made (a field when you leave it, an area when you finish it), the way the
+// sections were built, so Update does not hold and write a batch the way a
+// custom page's does — it closes the edit, and confirms it if anything
+// changed. A change still open when Update is pressed is committed by the
+// same click that leaves it.
+//
+// HOW A SECTION TAKES PART: mark a control `data-edit-only` and it is hidden
+// while reading (this file's global rule — for an EsaButton the attribute
+// lands on the inner <button>, so the lego's wrapper is matched by `:has()`).
+// A section with behaviour to gate asks `isViewMode()` / `onRecordMode()` from
+// src/lib/record-mode.ts.
+//
+// `?edit` in the address opens the record in edit mode.
+//
+// bcn-lego-checked: two esa-buttons (ghost Edit, primary Update) in spans the
+// script toggles, and an esa-snackbar-container for the confirmation — legos
+// composed unchanged. The one stylesheet rule is the page-wide hide for
+// [data-edit-only]; there is no lego for a page mode to hang it on.
+import EsaButton from '@esa/ecology/esa-button.astro';
+
+interface Props {
+  /** What the confirmation names — "Project". */
+  noun: string;
+}
+
+const { noun } = Astro.props;
+---
+{/* Set while the page is still parsing, so the edit controls are never
+    painted and then removed. The module below re-asserts it and tells the
+    page; this only spares the flash. */}
+<script is:inline>document.documentElement.dataset.recordMode = new URLSearchParams(location.search).has('edit') ? 'edit' : 'view';</script>
+<div class="firma2-record-mode" data-record-mode-switch data-noun={noun}>
+  {/* Spans, toggled by the script: EsaButton forwards data-* and style to its
+      inner <button>, so hiding that would leave the wrapper holding a gap. */}
+  <span data-mode-edit-wrap><EsaButton variant="ghost" size="md" data-mode-edit>Edit</EsaButton></span>
+  <span style="display: none" data-mode-update-wrap><EsaButton variant="primary" size="md" data-mode-update>Update</EsaButton></span>
+</div>
+<esa-snackbar-container data-record-mode-toasts></esa-snackbar-container>
+
+<script>
+  import '@esa/ecology/esa-snackbar-container';
+  import { setRecordMode, onRecordMode } from '../../lib/record-mode';
+
+  type Toasts = HTMLElement & { show(o: { message: string; variant: string }): void };
+
+  document.querySelectorAll<HTMLElement>('[data-record-mode-switch]').forEach((bar) => {
+    const edit = bar.querySelector<HTMLElement>('[data-mode-edit]')!;
+    const update = bar.querySelector<HTMLElement>('[data-mode-update]')!;
+    const editWrap = bar.querySelector<HTMLElement>('[data-mode-edit-wrap]')!;
+    const updateWrap = bar.querySelector<HTMLElement>('[data-mode-update-wrap]')!;
+    let changed = false;
+
+    onRecordMode((mode) => {
+      const editing = mode === 'edit';
+      const wasFocused = bar.contains(document.activeElement);
+      editWrap.style.display = editing ? 'none' : '';
+      updateWrap.style.display = editing ? '' : 'none';
+      // Focus follows the swap, so a keyboard user is not left on a button
+      // that just disappeared.
+      if (wasFocused) (editing ? update : edit).focus();
+    });
+
+    // A field committed while editing is the change Update confirms. Sections
+    // with their own saves (an entry, an area) confirm those themselves.
+    document.addEventListener('firma2:field-save', () => {
+      if (document.documentElement.dataset.recordMode === 'edit') changed = true;
+    });
+
+    edit.addEventListener('click', () => {
+      changed = false;
+      setRecordMode('edit');
+    });
+    update.addEventListener('click', () => {
+      setRecordMode('view');
+      if (!changed) return;
+      changed = false;
+      customElements.whenDefined('esa-snackbar-container').then(() => {
+        document.querySelector<Toasts>('[data-record-mode-toasts]')?.show({
+          message: `${bar.dataset.noun} updated.`,
+          variant: 'success',
+        });
+      });
+    });
+
+    setRecordMode(new URLSearchParams(location.search).has('edit') ? 'edit' : 'view');
+  });
+</script>
+
+<style>
+  /* Read-only means the record's makeup cannot change, so its edit controls
+     are not on screen at all — not dimmed, which would claim they exist and
+     are refused. !important because each lego's own display rule would
+     otherwise win. */
+  :global(html[data-record-mode='view'] [data-edit-only]),
+  :global(html[data-record-mode='view'] .esa-button:has(> [data-edit-only])) {
+    display: none !important;
+  }
+</style>

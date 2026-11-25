@@ -1,0 +1,228 @@
+---
+// firma2-member-grid — the Members page: everyone with an active account, the
+// organizations they are with and their role, searchable by name or email and
+// filterable by role and by organization.
+//
+// THE READING SIDE OF firma2-user-grid. Workspace settings › Users is where an
+// administrator runs accounts, and it is built for that: status bands, last
+// active, a "…" per row, the change-role and suspend dialogs. None of it is a
+// reader's business, so this is the same grid surface (grid-chrome's
+// wireDataGrid, the shared frame) with none of the account machinery — a mode
+// on the user grid would have been a second component hidden inside the first.
+//
+// THE NAME IS A DOOR to the person's page; each organization is a door to its
+// own. The Organizations column lists every one — most people have one, a few
+// two — because "which organization is she with" is half the reason to open
+// this page, and "+1" would hide the answer.
+//
+// MANAGER RIDES ON THE ROLE, as on Users: it is a per-organization flag, shown
+// here so a reader can see who runs an organization, set on that
+// organization's Members settings.
+//
+// Same chrome as firma2-project-grid and firma2-organization-grid — search and
+// filters in one row, CSV at the right, the count under the grid.
+//
+// bcn-lego-checked: ecology has NO table/grid lego — esa-grid is a
+// documentation-only page with nothing to import; checked the full
+// node_modules/@esa/ecology/src/components catalog. Beacon is not cloned on
+// this machine. This is the spoke's established AG Grid surface, framed by
+// shared/firma2-data-grid-chrome.css. Every control around it IS a lego:
+// esa-text-field, esa-filter-container + esa-filter-dropdown, esa-button,
+// esa-empty-state; the Manager badge clones server-rendered esa-badge markup.
+// No <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { CURRENT_USER_ORGANIZATIONS, organizations, userRoles } from '../../data/firma2-directory';
+import { organizationPageHref } from '../../data/firma2-organization-pages';
+import { memberHref, members } from '../../data/firma2-members';
+import { withBase } from '../../lib/base';
+
+const roleOptions = [
+  { value: 'Administrator', label: 'Administrators' },
+  { value: 'Contributor', label: 'Contributors' },
+  { value: 'Viewer', label: 'Viewers' },
+];
+
+// "No organization" first: it is the row type this filter alone can find.
+const NO_ORGANIZATION = '__none__';
+const organizationOptions = [
+  { value: NO_ORGANIZATION, label: 'No organization' },
+  ...organizations.filter((o) => members.some((m) => m.organizations.includes(o.name))).map((o) => ({ value: o.name, label: o.name })),
+];
+
+// An organization's page exists for every organization the reader may see; a
+// private one they are not in is named and not linked.
+const orgHrefs = Object.fromEntries(
+  organizations
+    .filter((o) => o.visibility !== 'private' || CURRENT_USER_ORGANIZATIONS.includes(o.name))
+    .map((o) => [o.name, withBase(organizationPageHref(o.slug))]),
+);
+
+const rows = members.map((m) => ({
+  name: m.name,
+  email: m.email,
+  role: m.role,
+  manager: m.role === 'Contributor' && m.managerOf.length > 0,
+  organizations: m.organizations,
+  organizationHrefs: m.organizations.map((o) => orgHrefs[o] ?? ''),
+  href: withBase(memberHref(m.name)),
+}));
+---
+<section class="firma2-member-grid stack" data-gap="md" data-role-order={JSON.stringify(userRoles)} data-no-organization={NO_ORGANIZATION}>
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__controls-filters cluster">
+      <div class="firma2-data-grid__search">
+        <esa-text-field
+          label="Search members"
+          placeholder="Name or email"
+          size="md"
+          data-members-search
+        ></esa-text-field>
+      </div>
+      <EsaFilterContainer>
+        <esa-filter-dropdown
+          data-members-role-filter
+          name="role"
+          label="Role"
+          size="md"
+          multiple
+          placeholder="Search roles"
+          options={JSON.stringify(roleOptions)}
+        ></esa-filter-dropdown>
+        <esa-filter-dropdown
+          data-members-org-filter
+          name="organization"
+          label="Organization"
+          data-aliasable-attr="label"
+          size="md"
+          multiple
+          placeholder="Search organizations"
+          options={JSON.stringify(organizationOptions)}
+        ></esa-filter-dropdown>
+      </EsaFilterContainer>
+    </div>
+    <EsaButton variant="chrome" iconOnly icon="download" label="Download CSV" size="sm" data-members-csv />
+  </div>
+
+  <div class="firma2-data-grid__grid" data-members-grid></div>
+
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-members-count>{rows.length} members</span>
+  </footer>
+
+  {/* Server-rendered legos the cell renderers clone. */}
+  <div data-members-manager-template hidden aria-hidden="true">
+    <EsaBadge value="Manager" variant="secondary" size="sm" />
+  </div>
+  <div data-members-empty hidden aria-hidden="true">
+    <EsaEmptyState size="sm" title="No matching members" />
+  </div>
+
+  <script type="application/json" data-members-data set:html={JSON.stringify(rows)}></script>
+</section>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-filter-dropdown';
+  import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import { label } from '../../lib/vocabulary';
+  import type { ColDef } from 'ag-grid-community';
+
+  interface Row {
+    name: string;
+    email: string;
+    role: string;
+    manager: boolean;
+    organizations: string[];
+    organizationHrefs: string[];
+    href: string;
+  }
+
+  function initMemberGrid(root: HTMLElement) {
+    const emptyState = root.querySelector<HTMLElement>('[data-members-empty] > *');
+    const managerHTML = root.querySelector<HTMLElement>('[data-members-manager-template]')?.innerHTML ?? '';
+    const roleOrder: string[] = JSON.parse(root.dataset.roleOrder ?? '[]');
+    const none = root.dataset.noOrganization ?? '';
+    let roleValues: string[] = [];
+    let orgValues: string[] = [];
+
+    const handle = wireDataGrid<Row>({
+      root,
+      gridSelector: '[data-members-grid]',
+      dataSelector: '[data-members-data]',
+      searchSelector: '[data-members-search]',
+      countSelector: '[data-members-count]',
+      csvSelector: '[data-members-csv]',
+      countNoun: 'members',
+      csvFileName: 'projectfirma-members.csv',
+      suppressCellFocus: true,
+      columnDefs: [
+        {
+          headerName: 'Name', field: 'name', colId: 'name', flex: 1, minWidth: 180,
+          cellClass: 'firma2-grid-name', tooltipField: 'name',
+          getQuickFilterText: (p) => p.data?.name ?? '',
+          cellRenderer: (p: { data?: Row }) =>
+            p.data ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>` : '',
+        },
+        {
+          headerName: label('Organizations'), colId: 'organizations', flex: 1.6, minWidth: 240,
+          valueGetter: (p) => p.data?.organizations.join('; ') ?? '',
+          tooltipValueGetter: (p) => p.data?.organizations.join(', ') || undefined,
+          getQuickFilterText: () => '',
+          cellRenderer: (p: { data?: Row }) => {
+            const row = p.data;
+            if (!row) return '';
+            if (row.organizations.length === 0) return '<span class="firma2-grid-readonly">None</span>';
+            return row.organizations
+              .map((name, i) =>
+                row.organizationHrefs[i]
+                  ? `<a class="firma2-grid-link" href="${esc(row.organizationHrefs[i])}">${esc(name)}</a>`
+                  : esc(name),
+              )
+              .join(', ');
+          },
+        },
+        {
+          headerName: 'Role', field: 'role', colId: 'role', width: 220,
+          comparator: (a: string, b: string) => roleOrder.indexOf(a) - roleOrder.indexOf(b),
+          getQuickFilterText: () => '',
+          cellRenderer: (p: { data?: Row }) =>
+            p.data?.manager
+              ? `<span class="firma2-grid-status cluster" data-gap="xs">${esc(p.data.role)}${managerHTML}</span>`
+              : esc(p.data?.role ?? ''),
+        },
+        {
+          headerName: 'Email', field: 'email', colId: 'email', flex: 1, minWidth: 220, tooltipField: 'email',
+          getQuickFilterText: (p) => p.data?.email ?? '',
+          cellRenderer: (p: { data?: Row }) =>
+            p.data ? `<a class="firma2-grid-link" href="mailto:${esc(p.data.email)}">${esc(p.data.email)}</a>` : '',
+        },
+      ] satisfies ColDef[],
+      gridOptions: {
+        overlayNoRowsTemplate: emptyState?.outerHTML,
+        isExternalFilterPresent: () => roleValues.length > 0 || orgValues.length > 0,
+        doesExternalFilterPass: (node) => {
+          const row = node.data as Row | undefined;
+          if (!row) return false;
+          const inOrg =
+            orgValues.length === 0 ||
+            (row.organizations.length === 0 ? orgValues.includes(none) : row.organizations.some((o) => orgValues.includes(o)));
+          return (roleValues.length === 0 || roleValues.includes(row.role)) && inOrg;
+        },
+      },
+    });
+    if (!handle) return;
+
+    const onSelection = (apply: (values: string[]) => void) => (event: Event) => {
+      apply((event as CustomEvent<{ value?: string[] }>).detail?.value ?? []);
+      handle.gridApi.onFilterChanged();
+    };
+    root.querySelector('[data-members-role-filter]')?.addEventListener('selection-change', onSelection((v) => { roleValues = v; }));
+    root.querySelector('[data-members-org-filter]')?.addEventListener('selection-change', onSelection((v) => { orgValues = v; }));
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-member-grid').forEach(initMemberGrid);
+</script>

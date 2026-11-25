@@ -1,0 +1,187 @@
+---
+// firma2-custom-pages-settings — Administration › Custom pages: whether the
+// workspace keeps its own pages (the Pages group of the app rail), who may
+// create, edit and delete them, who sees a new one, and who hears when one
+// changes.
+//
+// THE PUBLIC SITE'S OWN SWITCHES MOVED (2026-11-24): Public access and Contact
+// details now sit on Workspace settings › Public site › Site details, with the
+// rest of what the public sees. "Everyone, including the public site" stays
+// here: it is a choice about a new PAGE's audience.
+//
+// ONE SWITCH FIRST. Custom pages are a feature a workspace opts into; every
+// other section only means something once it is on, so turning it off hides
+// them rather than leaving a page of controls that govern nothing. Off hides
+// the pages from the rail and deletes none, so it is one switch back and does
+// not ask first — the toast says the pages are kept.
+//
+// SECURITY'S CONSTRUCTION, UNCHANGED. Rail sections; switches are
+// firma2-switch-list rows; every "who can" is a labelled esa-select on the
+// same audience ladder as Security › Workspace permissions, so the two pages
+// read alike. Each control commits on change; no Save.
+//
+// THE FEATURE SWITCH IS REAL in this browser: it persists through
+// src/lib/custom-pages.ts and the app rail drops its Pages group while it is
+// off. Everything below it is still a mock — nothing else persists.
+//
+// bcn-lego-checked: firma2-rail-section is each section; esa-switch-toggle and
+// esa-select are the controls; esa-snackbar-container the receipt — all
+// composed unchanged, the same set as firma2-workspace-security. No CSS of its
+// own. Beacon is not cloned on this machine.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import '../shared/firma2-switch-list.css';
+import {
+  customPagesSettings as cp,
+  PERMISSION_AUDIENCES,
+  CUSTOM_PAGE_PERMISSIONS,
+  CUSTOM_PAGE_VISIBILITY,
+  CUSTOM_PAGE_PUBLISHING,
+  CUSTOM_PAGE_HISTORY,
+  CUSTOM_PAGE_EVENTS,
+  CUSTOM_PAGE_NOTIFY_WHO,
+  CUSTOM_PAGE_NOTIFY_HOW,
+} from '../../data/firma2-workspace-settings';
+
+const json = (v: unknown) => JSON.stringify(v);
+---
+<div class="stack" data-gap="2xl">
+  <Firma2RailSection title="Availability">
+    <div class="firma2-switch-list">
+      <div class="firma2-switch-list__row">
+        <esa-switch-toggle
+          name="custom-pages"
+          label="Custom pages"
+          label-position="before"
+          checked={cp.on ? true : undefined}
+          data-custom-pages-toggle
+        ></esa-switch-toggle>
+      </div>
+    </div>
+  </Firma2RailSection>
+
+  <!-- A plain div, so `hidden` is not out-ranked by a layout class. -->
+  <div data-custom-pages-settings hidden={!cp.on}>
+    <div class="stack" data-gap="2xl">
+      <Firma2RailSection title="Permissions">
+        <div class="stack" data-gap="md">
+          {CUSTOM_PAGE_PERMISSIONS.map((p) => (
+            <esa-select
+              name={p.key}
+              label={p.label}
+              help-text={p.hint}
+              size="md"
+              options={json(PERMISSION_AUDIENCES)}
+              data-seed={p.value}
+            ></esa-select>
+          ))}
+        </div>
+      </Firma2RailSection>
+
+      <Firma2RailSection title="Publishing">
+        <div class="stack" data-gap="lg">
+          <esa-select
+            name="pages-visibility"
+            label="New pages are visible to"
+            size="md"
+            options={json(CUSTOM_PAGE_VISIBILITY)}
+            data-seed={cp.visibility}
+          ></esa-select>
+          <div class="firma2-switch-list">
+            {CUSTOM_PAGE_PUBLISHING.map((s) => (
+              <div class="firma2-switch-list__row">
+                <esa-switch-toggle name={s.key} label={s.label} label-position="before" checked={s.on ? true : undefined} data-hint={s.hint}></esa-switch-toggle>
+                {s.hint && <p class="firma2-switch-list__hint typography-body-sm">{s.hint}</p>}
+              </div>
+            ))}
+          </div>
+          <esa-select
+            name="pages-history"
+            label="Keep earlier versions for"
+            size="md"
+            options={json(CUSTOM_PAGE_HISTORY)}
+            data-seed={cp.history}
+          ></esa-select>
+        </div>
+      </Firma2RailSection>
+
+      <Firma2RailSection title="Notifications">
+        <div class="stack" data-gap="lg">
+          <div class="firma2-switch-list">
+            {CUSTOM_PAGE_EVENTS.map((s) => (
+              <div class="firma2-switch-list__row">
+                <esa-switch-toggle name={s.key} label={s.label} label-position="before" checked={s.on ? true : undefined} data-hint={s.hint}></esa-switch-toggle>
+                {s.hint && <p class="firma2-switch-list__hint typography-body-sm">{s.hint}</p>}
+              </div>
+            ))}
+          </div>
+          <esa-select
+            name="pages-notify-who"
+            label="Who’s notified"
+            size="md"
+            options={json(CUSTOM_PAGE_NOTIFY_WHO)}
+            data-seed={cp.notifyWho}
+          ></esa-select>
+          <esa-select
+            name="pages-notify-how"
+            label="How often"
+            size="md"
+            options={json(CUSTOM_PAGE_NOTIFY_HOW)}
+            data-seed={cp.notifyHow}
+          ></esa-select>
+        </div>
+      </Firma2RailSection>
+    </div>
+  </div>
+
+</div>
+
+<esa-snackbar-container class="firma2-custom-pages-settings__toasts"></esa-snackbar-container>
+
+<script>
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-snackbar-container';
+  import { readPagesEnabled, writePagesEnabled } from '../../lib/custom-pages';
+
+  type SwitchEl = HTMLElement & { checked: boolean; updateComplete: Promise<unknown> };
+  type Toasts = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
+
+  const toasts = document.querySelector<Toasts>('.firma2-custom-pages-settings__toasts');
+
+  // Seeds, assigned only after define — a `.value` set on a not-yet-upgraded
+  // element becomes an own property that shadows the lego's setter for good.
+  customElements.whenDefined('esa-select').then(() => {
+    document.querySelectorAll<HTMLElement & { value: string }>('esa-select[data-seed]').forEach((el) => {
+      el.value = el.dataset.seed ?? '';
+    });
+  });
+
+  // Each switch's description, handed to its inner button as aria-description —
+  // the lego has no description prop (esassoc/ecology#40); same as Security.
+  customElements.whenDefined('esa-switch-toggle').then(() => {
+    document.querySelectorAll<SwitchEl>('.firma2-switch-list esa-switch-toggle[data-hint]').forEach(async (el) => {
+      await el.updateComplete;
+      el.shadowRoot?.querySelector('[role="switch"]')?.setAttribute('aria-description', el.dataset.hint ?? '');
+    });
+  });
+
+  // THE FEATURE SWITCH. Off hides the settings beneath it — they govern
+  // nothing while the feature is off — and says the pages are kept. The stored
+  // answer wins over the server's default, and is assigned only after define.
+  const dependent = document.querySelector<HTMLElement>('[data-custom-pages-settings]');
+  const featureSwitch = document.querySelector<SwitchEl>('[data-custom-pages-toggle]');
+  customElements.whenDefined('esa-switch-toggle').then(() => {
+    const on = readPagesEnabled();
+    if (featureSwitch) featureSwitch.checked = on;
+    if (dependent) dependent.hidden = !on;
+  });
+  featureSwitch?.addEventListener('change', (e) => {
+    const on = (e.currentTarget as SwitchEl).checked;
+    writePagesEnabled(on);
+    if (dependent) dependent.hidden = !on;
+    toasts?.show({
+      message: on ? 'Custom pages turned on' : 'Custom pages turned off. Your pages are kept.',
+      variant: 'success',
+    });
+  });
+</script>

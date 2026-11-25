@@ -184,10 +184,14 @@ SHEET.replaceSync(`
   /* Text colour on approach — the same step every secondary glyph in this spoke
      uses. Deliberately NOT the brand: resizing a rail is not the primary action
      on any screen it appears on. */
-  :host(:hover),
   :host(:focus-visible),
   :host([dragging]) {
     color: var(--color-content-default-secondary, #6f6f6f);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    :host(:hover) {
+      color: var(--color-content-default-secondary, #6f6f6f);
+    }
   }
 
   .grip {

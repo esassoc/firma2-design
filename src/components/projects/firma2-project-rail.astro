@@ -1,118 +1,84 @@
 ---
-// firma2-project-rail — WHAT THE PROJECT RECORD'S RAIL HOLDS, arranged as three
-// tabs: Key facts, Contacts, Comments.
+// firma2-project-rail — WHAT THE PROJECT RECORD'S RAIL HOLDS, in two MODES the
+// top bar's icons switch between (firma2-rail-modes; user, 2026-10-22):
+//   details  Key facts, then Contacts.
+//   map      the work areas map with its list — the map alone, at a height
+//            that reads, rather than a strip squeezed between the facts.
+// Pinned, one mode shows at a time; unpinned (tablet, phone) both stack under
+// the page, details first. `workAreas={false}` (the map-first page, whose pane
+// is the map) renders the details alone, with no modes.
 //
-// WHY TABS, AND NOT A THIRD AND FOURTH STACKED SECTION. The rail is pinned to
-// the fold for the whole page, which is its entire reason for existing: the
-// numbers a reader needs in order to READ the main column must not scroll away
-// from it. A rail that stacks three sections spends that guarantee — the facts
-// hold the fold, and everything under them is below it again, so contacts and
-// comments would be a scroll inside a column that exists so you do not have to
-// scroll. Tabs keep every one of the three ONE CLICK from the fold instead of
-// one, two and three screens down.
+// THE RAIL IS WHAT YOU SET (user, 2026-10-22, after Linear's project page). The
+// record sorts its content by Linear's test rather than the earlier "series vs
+// scalar" one: things you READ — the description, the conversation, the
+// tracked tables — go in the main column; things you SET — values picked from a
+// list, the people on the record, the shapes on the ground — go in the rail.
+// Linear's sidebar is exactly that list: properties, members, and a read-only
+// progress graph for the thing the main column tracks. Ours is the same, with
+// the map where the graph is. (A Connections graph — the record's one-hop
+// links — sat last in this column from 2026-10-09 until the user removed it
+// from the product on 2026-10-22.)
 //
-// THE THREE ARE PEERS, WHICH IS THE TEST TABS HAVE TO PASS. Tabs are the wrong
-// control for a primary thing plus two secondary ones — they hide the primary
-// half the time. These three are genuinely alternatives: WHAT this project is
-// (the scalars), WHO to call about it, and WHAT has been said about it. A
-// reader arrives wanting exactly one of them and knows which before the page
-// loads. Key facts leads because it is the one the main column is read against.
+// MODES, NOT TABS, AND NOT ONE STACK. The rail was three tabs (Key facts,
+// Contacts, Comments), then one stack (facts, map, contacts). The stack put an
+// 18rem map between the facts and the people, too small to read the ground
+// and big enough to push Contacts off the screen. As its own mode the map gets
+// the room a map needs and the details read as one sheet. The switch is in the
+// page's top bar, not a tab row inside the rail, so it is there even when the
+// rail is closed (user, 2026-10-22).
 //
-// THE ORDER IS THE FREQUENCY ORDER, not a taxonomy. Facts are consulted on
-// every visit; contacts on the visit where something needs doing; comments on
-// the visit where a number looks wrong. That is also decreasing tie to the
-// page's own question, which is why it survives both readings.
+// WORK AREAS ARE THE MAP. It comes WHOLE (firma2-work-areas at its `rail`
+// size, tools and all), not as a thumbnail linking somewhere else, because
+// there is no second map for a thumbnail to stand in for. Linear keeps its
+// progress graph in the sidebar beside the document for the same reason.
+// `workAreas={false}` is for the one surface where the rail floats over a map
+// already: the map-first page.
 //
-// THE COMMENT COUNT RIDES ON THE TAB, and it is the one badge in here. A tab
-// whose content might be EMPTY needs to say so from the outside — otherwise the
-// only way to learn there is nothing to read is to go and look. Contacts takes
-// no badge: it is always three, so a count there is a number that never moves.
-// Key facts takes none for the same reason. The badge only renders above zero;
-// a "0" would be the same wasted trip with an extra glyph.
+// EVERY SECTION IS A COMPONENT, and this file is their manifest — it owns the
+// stack and nothing else. Each section renders its own heading now that no tab
+// names it.
 //
-// EVERY PANEL IS A COMPONENT, and this file is their manifest — it owns the tab
-// wiring and nothing else. No panel knows it is in a tab except in the one way
-// it has to: each hides its own heading, because the tab label already says it.
-//
-// bcn-lego-checked: esa-tab-layout IS the lego and this composes it rather than
-// re-implementing it — the ARIA tablist, the roving Arrow/Home/End keyboard
-// navigation, the active-tab state, the badges and the panel swap are all the
-// lego's. It is a Lit web component (`.ts` in the catalog), so it is registered
-// in a client script and used as a custom element; the panels are slotted light
-// DOM, which is what lets three .astro components live inside a runtime tab
-// control with no runtime rendering of their own. The only bespoke line here is
-// the :not(:defined) guard — see the note on it below.
+// bcn-lego-checked: the stack is the hub's `.stack` primitive; every section
+// is a spoke component composed of legos (firma2-rail-section, firma2-editable-
+// field, esa-badge, esa-button …). The tab lego this file used to compose
+// (esa-tab-layout) is gone with the tabs, not re-implemented.
 import Firma2ProjectFacts from './firma2-project-facts.astro';
+import Firma2ProjectGisFields from '../gis/firma2-project-gis-fields.astro';
+import Firma2WorkAreas from './firma2-work-areas.astro';
 import Firma2ProjectContacts from './firma2-project-contacts.astro';
-import Firma2ProjectComments from './firma2-project-comments.astro';
 import type { ProjectDetail } from '../../data/firma2-project-detail';
 
 interface Props {
   detail: ProjectDetail;
+  /** Whether the Work areas map is in the stack. False on the map-first page, whose pane is the map. */
+  workAreas?: boolean;
 }
 
-const { detail } = Astro.props;
+const { detail, workAreas = true } = Astro.props;
 ---
-<!-- `size="md"` is the app's control rung — the same 40-ish step every field and
-     button in this spoke is pinned to, so the tab row reads as chrome of the
-     same weight as the controls under it rather than as a smaller sub-navigation.
-     `underline` is the default appearance and the right one here: the segmented
-     appearance draws a filled track, which would put a second surface inside a
-     rail that is already a surface. -->
-<esa-tab-layout
-  class="firma2-project-rail"
-  size="md"
-  appearance="underline"
-  data-record-tabs
-  data-comment-count={detail.comments.length}
->
-  <div slot="panel-0">
-    <Firma2ProjectFacts detail={detail} />
-  </div>
-  <div slot="panel-1">
+<div class="firma2-project-rail stack" data-gap="2xl">
+  <!-- DETAILS. Key facts carries every property; the four the main column
+       repeats in its strip (Stage, Timeline, Estimated cost, Lead
+       organization) are here too, on purpose — the rail is the complete
+       sheet, the strip is the identity. The description is NOT here: it is a
+       section of the main column (firma2-project-description). Shown first
+       server-side; firma2-rail-modes switches to a remembered mode. -->
+  <!-- `md` between the facts and Contacts: Contacts folds like the facts'
+       groups, so it keeps their rhythm rather than a section's. -->
+  <div class="stack" data-gap="md" data-rail-mode-panel={workAreas ? 'details' : undefined} data-active>
+    <div class="stack" data-gap="2xl">
+      <Firma2ProjectFacts detail={detail} showDescription={false} />
+      <!-- Renders nothing until a GIS subscription has brought a field across. -->
+      <Firma2ProjectGisFields project={detail.project} />
+    </div>
     <Firma2ProjectContacts contacts={detail.contacts} />
   </div>
-  <div slot="panel-2">
-    <Firma2ProjectComments comments={detail.comments} />
-  </div>
-</esa-tab-layout>
 
-<style>
-  /* BEFORE THE CUSTOM ELEMENT UPGRADES there is no shadow root and therefore no
-     panel switching, so all three panels are just three divs in the document —
-     the whole rail's content at once, for however long the module takes to
-     arrive. `:defined` is the platform's own hook for that window: until the
-     element is registered, everything but the first panel is hidden, and the
-     moment it is, this rule stops matching and the lego's slot takes over. The
-     first panel stays visible throughout, so the rail never renders empty and
-     nothing moves when the upgrade lands.
-
-     This is the guard, not a re-implementation of the control: it names no
-     tab, holds no state, and does nothing after the element is defined. */
-  .firma2-project-rail:not(:defined) > [slot^='panel-']:not([slot='panel-0']) {
-    display: none;
-  }
-</style>
-
-<script>
-  import '@esa/ecology/esa-tab-layout';
-
-  // `tabs` is an ARRAY PROPERTY on the lego, not an attribute — it cannot be
-  // expressed in markup, which is why the labels live here rather than beside
-  // the panels they name. They must stay in step with each panel's own hidden
-  // heading (firma2-rail-section's `titleHidden`): the heading is what a screen
-  // reader announces for the region, the label is what everyone else reads, and
-  // they should be the same word.
-  customElements.whenDefined('esa-tab-layout').then(() => {
-    document.querySelectorAll<HTMLElement>('esa-tab-layout[data-record-tabs]').forEach((el) => {
-      const comments = Number(el.dataset.commentCount ?? 0);
-      (el as HTMLElement & { tabs: unknown }).tabs = [
-        { label: 'Key facts' },
-        { label: 'Contacts' },
-        // Above zero only — see the module header on why an empty thread is the
-        // one thing in here worth announcing from outside.
-        comments > 0 ? { label: 'Comments', badge: comments } : { label: 'Comments' },
-      ];
-    });
-  });
-</script>
+  <!-- MAP. The work areas and nothing else: the map, its tools in Edit mode,
+       and the list of areas under it. -->
+  {workAreas && (
+    <div data-rail-mode-panel="map">
+      <Firma2WorkAreas project={detail.project} variant="rail" />
+    </div>
+  )}
+</div>

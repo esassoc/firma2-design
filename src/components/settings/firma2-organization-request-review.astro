@@ -1,0 +1,391 @@
+---
+// firma2-organization-request-review — an administrator's review of one
+// new-organization request (.scratch/access-requests/spec.md, decisions 7, 8,
+// 18, 28, 29). Opened from Organizations › Requested.
+//
+// THE EVIDENCE FIRST, THE DECISION LAST. A name proves nothing (decision 6),
+// so the page leads with who asked and whether their address sits at the
+// website they gave — the same badge the Requested band shows, computed once in
+// firma2-access-requests so the two cannot disagree. Flagged, never blocking:
+// a personal address is a reason to look harder, not a refusal.
+//
+// SIMILAR ORGANIZATIONS ARE A WAY OUT, not a warning. Each row links to that
+// organization's record and offers to add the requester there instead, which
+// turns a duplicate into a join (decision 28's spirit: nobody is left stuck).
+// No similar names is said, not left blank — "none" is what lets the
+// administrator approve without going to check.
+//
+// THE ADMINISTRATOR MAY CORRECT the name and type before approving (spec,
+// assumptions) — a form, so the legos draw their borders at rest. The website
+// is evidence, so it stays as given.
+//
+// APPROVE SAYS WHAT IT DOES. It adds the organization and makes the requester
+// a Contributor and its first Manager (decision 8); the line above the buttons
+// says so, so the role change is never a surprise and needs no second click.
+//
+// RETURNS TO THE LIST. Every answer writes to the request store
+// (src/lib/access-requests.ts) and goes back to Organizations, which confirms
+// once: an approval through added-organizations' note (the new row is there),
+// a decline or a redirect through answered-request-note.
+//
+// A CLOSED REQUEST (answered in another tab, or revisited) shows what became of
+// it instead of the form, so it cannot be answered twice.
+//
+// bcn-lego-checked: firma2-rail-section is each section; esa-badge the
+// evidence; esa-text-field + esa-select the corrections; esa-button the
+// actions; esa-confirm-dialog the add-to-existing question; esa-dialog +
+// esa-textarea the decline (the same dialog firma2-access-request-list uses);
+// esa-alert-box the closed state;
+// firma2-verified-mark beside each similar name. The facts are a native <dl>
+// (firma2-settings-security's construction) and the similar names a
+// firma2-settings-table (no esa- table lego; esa-grid is documentation-only).
+// Beacon is not cloned on this machine. `.stack`/`.cluster` lay it out; no
+// <style> block.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import Firma2VerifiedMark from '../shared/firma2-verified-mark.astro';
+import './firma2-settings-table.css';
+import {
+  CURRENT_USER,
+  organizations,
+  organizationTypes,
+} from '../../data/firma2-directory';
+import {
+  daysSince,
+  evidenceFor,
+  similarOrganizations,
+  type AccessRequest,
+} from '../../data/firma2-access-requests';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  request: AccessRequest;
+}
+
+const { request: r } = Astro.props;
+const listHref = withBase('/prototypes/workspace-settings/organizations');
+const firstName = r.name.split(' ')[0];
+
+const evidence = evidenceFor(r.email, r.website);
+const EVIDENCE = {
+  match: { value: 'Matches website', variant: 'success' },
+  personal: { value: 'Personal email', variant: 'warning' },
+  other: { value: 'Different domain', variant: 'secondary' },
+} as const;
+
+const similar = similarOrganizations(r.organization, r.website)
+  .map((name) => organizations.find((o) => o.name === name)!)
+  .filter(Boolean);
+
+const days = daysSince(r.created);
+const asked = days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
+
+const typeOptions = JSON.stringify(organizationTypes.map((t) => ({ value: t, label: t })));
+---
+<div
+  class="firma2-organization-request-review"
+  data-request={r.id}
+  data-list-href={listHref}
+  data-answerer={CURRENT_USER.name}
+  data-names={JSON.stringify(organizations.map((o) => o.name))}
+>
+  {/* Plain divs carry `hidden`: a layout class's display out-ranks it. */}
+  <div data-review-closed hidden>
+    <EsaAlertBox variant="info" title="Request closed">
+      <p class="typography-body-md" data-review-closed-text></p>
+    </EsaAlertBox>
+  </div>
+
+  <div data-review-open>
+    <div class="stack" data-gap="2xl">
+      <Firma2RailSection title="Request">
+        <dl class="stack" data-gap="md">
+          <div class="stack" data-gap="2xs">
+            <dt class="typography-label-md">Requested by</dt>
+            <dd class="typography-body-md">{r.name}</dd>
+          </div>
+          <div class="stack" data-gap="2xs">
+            <dt class="typography-label-md">Email</dt>
+            <dd class="typography-body-md cluster" data-gap="xs">
+              <span>{r.email}</span>
+              <EsaBadge value={EVIDENCE[evidence].value} variant={EVIDENCE[evidence].variant} size="sm" />
+            </dd>
+          </div>
+          <div class="stack" data-gap="2xs">
+            <dt class="typography-label-md">Website</dt>
+            <dd class="typography-body-md">{r.website || 'None given'}</dd>
+          </div>
+          {r.message && (
+            <div class="stack" data-gap="2xs">
+              <dt class="typography-label-md">Message</dt>
+              <dd class="typography-body-md">“{r.message}”</dd>
+            </div>
+          )}
+          <div class="stack" data-gap="2xs">
+            <dt class="typography-label-md">Asked</dt>
+            <dd class="typography-body-md">{asked}</dd>
+          </div>
+        </dl>
+      </Firma2RailSection>
+
+      <Firma2RailSection title="Similar organizations">
+        {similar.length === 0 ? (
+          <p class="typography-body-md">No similar names.</p>
+        ) : (
+          <div class="firma2-settings-table-scroll">
+            <table class="firma2-settings-table firma2-settings-table--actions" aria-label={`Organizations like ${r.organization}`}>
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Members</th>
+                  <th scope="col" class="firma2-settings-table__act"><span class="visually-hidden">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {similar.map((o) => (
+                  <tr>
+                    <th scope="row">
+                      <a href={withBase(`/prototypes/workspace-settings/organizations/${o.slug}`)}>{o.name}</a>
+                      <span class="firma2-settings-table__meta typography-body-sm cluster" data-gap="xs">
+                        <span>{o.type}</span>
+                        <Firma2VerifiedMark organization={o} />
+                      </span>
+                    </th>
+                    <td>{o.people}</td>
+                    <td class="firma2-settings-table__act">
+                      <EsaButton
+                        variant="secondary"
+                        size="md"
+                        data-review-existing={o.name}
+                        aria-label={`Add ${r.name} to ${o.name} instead`}
+                      >Add {firstName} here</EsaButton>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Firma2RailSection>
+
+      <Firma2RailSection title="Organization">
+        <div class="stack" data-gap="md">
+          <esa-text-field
+            name="name"
+            label="Name"
+            size="md"
+            required
+            autocomplete="off"
+            data-seed={r.organization}
+            data-review-name
+          ></esa-text-field>
+          <esa-select
+            name="type"
+            label="Type"
+            size="md"
+            options={typeOptions}
+            data-seed={r.orgType ?? ''}
+            data-review-type
+          ></esa-select>
+        </div>
+      </Firma2RailSection>
+
+      <div class="stack" data-gap="lg">
+        <p class="typography-body-md">{r.name} becomes a Contributor and the organization’s first Manager.</p>
+        {/* House order: the primary first. */}
+        <div class="cluster" data-gap="xs">
+          <EsaButton variant="primary" size="md" data-review-approve>Approve</EsaButton>
+          <EsaButton variant="ghost" size="md" data-review-decline>Decline…</EsaButton>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <esa-confirm-dialog class="firma2-organization-request-review__confirm"></esa-confirm-dialog>
+
+  <esa-dialog class="firma2-organization-request-review__decline" heading={`Decline ${r.name}’s request?`} size="sm" show-close-button>
+    <esa-textarea
+      label="Reason (optional)"
+      help-text="Sent to them with the decline."
+      size="md"
+      rows="3"
+      data-review-reason
+    ></esa-textarea>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="danger" size="md" data-review-decline-submit>Decline request</EsaButton>
+      <EsaButton variant="ghost" size="md" data-review-decline-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+</div>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-textarea';
+  import { getRequest, createRequest, approveRequest, declineRequest, CHANGED } from '../../lib/access-requests';
+  import { addOrganization, readAddedOrganizations } from '../../lib/added-organizations';
+  import { noteAnswer } from '../../lib/answered-request-note';
+  import { organizationSlug } from '../../data/firma2-directory';
+  import type { Organization, OrganizationType } from '../../data/firma2-directory';
+  import type { AccessRequest } from '../../data/firma2-access-requests';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+  type Confirm = HTMLElement & { heading: string; message: string; confirmLabel: string; cancelLabel: string; show(): void };
+  type Dialog = HTMLElement & { show(): void; close(): void };
+
+  function init(root: HTMLElement) {
+    const id = root.dataset.request ?? '';
+    const listHref = root.dataset.listHref ?? '';
+    const answerer = root.dataset.answerer ?? '';
+    const open = root.querySelector<HTMLElement>('[data-review-open]')!;
+    const closed = root.querySelector<HTMLElement>('[data-review-closed]')!;
+    const closedText = root.querySelector<HTMLElement>('[data-review-closed-text]')!;
+    const name = root.querySelector<Field>('[data-review-name]')!;
+    const type = root.querySelector<Field>('[data-review-type]')!;
+    const approve = root.querySelector<HTMLButtonElement>('[data-review-approve]')!;
+    const confirm = root.querySelector<Confirm>('.firma2-organization-request-review__confirm')!;
+    const decline = root.querySelector<Dialog>('.firma2-organization-request-review__decline')!;
+    const reason = root.querySelector<Field>('[data-review-reason]')!;
+
+    // A request answered elsewhere (another tab, an earlier visit) shows what
+    // became of it, and the form goes — it cannot be answered twice.
+    const CLOSED: Record<Exclude<AccessRequest['status'], 'pending'>, (r: AccessRequest) => string> = {
+      approved: (r) => `Approved by ${r.answeredBy ?? 'an administrator'}.`,
+      declined: (r) => `Declined by ${r.answeredBy ?? 'an administrator'}${r.reason ? `: “${r.reason}”` : '.'}`,
+      withdrawn: (r) => `${r.name} withdrew it.`,
+    };
+    const sync = () => {
+      const r = getRequest(id);
+      const isOpen = !r || r.status === 'pending';
+      open.hidden = !isOpen;
+      closed.hidden = isOpen;
+      if (r && r.status !== 'pending') closedText.textContent = CLOSED[r.status](r);
+    };
+    sync();
+    window.addEventListener(CHANGED, sync);
+    window.addEventListener('storage', sync);
+
+    // Seeds, assigned only after define — a `.value` set on a not-yet-upgraded
+    // element becomes an own property that shadows the lego's setter for good.
+    customElements.whenDefined('esa-text-field').then(() => { name.value = name.dataset.seed ?? ''; });
+    customElements.whenDefined('esa-select').then(() => { type.value = type.dataset.seed ?? ''; });
+    name.addEventListener('input', () => { if (name.errorText) name.errorText = ''; });
+
+    // Names already taken, including organizations added in this browser.
+    const taken = new Set<string>(
+      [...(JSON.parse(root.dataset.names ?? '[]') as string[]), ...readAddedOrganizations().map((o) => o.name)]
+        .map((n) => n.trim().toLowerCase()),
+    );
+
+    // ---- Approve: add the organization, the requester its first Manager ----
+
+    approve.addEventListener('click', () => {
+      const r = getRequest(id);
+      if (!r || r.status !== 'pending') return;
+      const value = (name.value ?? '').trim();
+      const error = !value
+        ? 'Enter the organization’s name.'
+        : taken.has(value.toLowerCase())
+          ? 'An organization already has this name.'
+          : '';
+      if (error) {
+        name.errorText = error;
+        name.focus();
+        return;
+      }
+      const organization: Organization = {
+        name: value,
+        slug: organizationSlug(value),
+        type: (type.value || r.orgType || '') as OrganizationType,
+        website: r.website ?? '',
+        description: '',
+        primaryContact: r.name,
+        projectsLed: 0,
+        projectsFunded: 0,
+        people: 1,
+        projects: 0,
+        // Decision 30: an approved organization starts Public with Approval
+        // required; its manager can change both. Its domain is not verified
+        // until someone at it enters a code (decision 8), so none is listed.
+        visibility: 'public',
+        joining: 'approval',
+        approvedDomains: [],
+        // Today in the reader's own time zone — toISOString() is UTC.
+        created: new Date().toLocaleDateString('en-CA'),
+        programs: [],
+        addedBy: answerer,
+        requestedBy: r.name,
+      };
+      approveRequest(r.id, 'Contributor', answerer);
+      addOrganization(organization, { name: value });
+      window.location.assign(listHref);
+    });
+
+    // ---- Add them to an existing organization instead ----------------------
+
+    let existing: string | null = null;
+
+    root.querySelectorAll<HTMLElement>('[data-review-existing]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const r = getRequest(id);
+        if (!r || r.status !== 'pending') return;
+        existing = button.dataset.reviewExisting ?? null;
+        await customElements.whenDefined('esa-confirm-dialog');
+        Object.assign(confirm, {
+          heading: `Add ${r.name} to ${existing}?`,
+          message: `They’ll edit its projects as a Contributor. No new organization is added.`,
+          confirmLabel: `Add ${r.name.split(' ')[0]}`,
+          cancelLabel: 'Cancel',
+        });
+        confirm.show();
+      });
+    });
+
+    confirm.addEventListener('confirm', () => {
+      const r = getRequest(id);
+      const target = existing;
+      existing = null;
+      if (!r || !target) return;
+      // The duplicate becomes a join: a join request in their name, approved
+      // as asked, and the new-organization request closed with the reason they
+      // will read. The store has no "redirected" status, so a decline carries it.
+      const join = createRequest({
+        kind: 'join',
+        name: r.name,
+        email: r.email,
+        organization: target,
+        asked: r.asked,
+        message: r.message,
+        via: r.via,
+      });
+      approveRequest(join.id, r.asked, answerer);
+      declineRequest(r.id, answerer, `Added to ${target} instead.`);
+      noteAnswer(`${r.name} added to ${target}.`);
+      window.location.assign(listHref);
+    });
+    confirm.addEventListener('cancel', () => { existing = null; });
+
+    // ---- Decline, with an optional reason ----------------------------------
+
+    root.querySelector('[data-review-decline]')?.addEventListener('click', async () => {
+      await customElements.whenDefined('esa-dialog');
+      reason.value = '';
+      decline.show();
+    });
+    root.querySelector('[data-review-decline-cancel]')?.addEventListener('click', () => decline.close());
+    root.querySelector('[data-review-decline-submit]')?.addEventListener('click', () => {
+      const r = getRequest(id);
+      decline.close();
+      if (!r || r.status !== 'pending') return;
+      declineRequest(r.id, answerer, reason.value);
+      noteAnswer(`Request for ${r.organization} declined.`);
+      window.location.assign(listHref);
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-organization-request-review').forEach(init);
+</script>

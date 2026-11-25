@@ -1,0 +1,326 @@
+---
+// firma2-area-group-form — what an area group is: where its areas come from,
+// the field they are named by, its own name, and a line saying what it is.
+// One form in two modes, because adding a group and editing one ask the same
+// questions:
+//
+//   mode="new"   the add page. Nothing is saved until "Add geospatial areas",
+//                which opens the new group's page — where its areas already are.
+//   mode="edit"  the group's own page. Each change saves as it is made, like
+//                every other settings record, and the areas beside it follow.
+//
+// ONE ACTION, AND THE SOURCE IS ITS FIRST QUESTION (user, 2026-11-24). Adding
+// geospatial areas is the same act whether they come from a layer already on
+// Map layers or from a file in hand, so there is one door and the source is
+// asked inside it — not two buttons, and not a detour through Map layers
+// first. A file also becomes a layer on Map layers when the group is added, so
+// the areas can be styled and drawn without a second upload.
+//
+// THE SOURCE COMES FIRST. It decides the rest: the fields on offer, and a name
+// to start from (the layer's own, until the person types one).
+//
+// ONE GROUP PER LAYER. A second group on the same layer would file every
+// project twice under the same places, so a layer a group already reads is
+// not offered again.
+//
+// ONLY LAYERS THAT SEND SHAPES. A WMS or a map server sends a picture of a
+// boundary; there are no areas in it to read.
+//
+// FAKED: reading the file. Any file reads as the sample habitat areas
+// (AREA_FILE_SAMPLES); the two sample links are there for a reviewer with no
+// file to hand, as on the work-area upload.
+//
+// bcn-lego-checked: esa-button-toggle, esa-select, esa-file-upload,
+// esa-text-field, esa-textarea, esa-button, esa-alert-box — all legos. The
+// sample links are text buttons inside a sentence, as in
+// firma2-work-area-upload: esa-button has no inline-in-prose form. Same
+// construction as firma2-taxonomy-create-form. Beacon is not cloned.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  mode: 'new' | 'edit';
+}
+
+const { mode } = Astro.props;
+const listHref = withBase('/prototypes/workspace-settings/geospatial-areas');
+const layersHref = withBase('/prototypes/workspace-settings/map-layers');
+---
+<form
+  class="firma2-area-group-form stack"
+  data-gap="xl"
+  novalidate
+  data-mode={mode}
+  data-list-href={listHref}
+  data-record-href={`${listHref}/group`}
+>
+  {mode === 'new' && <esa-button-toggle data-source label="Source" size="md"></esa-button-toggle>}
+
+  <div data-from-layer>
+    <esa-select data-layer label="Layer" size="md" help-text="Each shape in the layer is one area."></esa-select>
+  </div>
+  <div data-no-layers hidden>
+    <EsaAlertBox variant="info" title="No layer to read">
+      <p class="typography-body-md"><span data-no-layers-text></span> <a href={layersHref}>Add a layer on Map layers</a>{mode === 'new' && ', or upload a file'}.</p>
+    </EsaAlertBox>
+  </div>
+
+  {mode === 'new' && (
+    <div class="stack" data-gap="md" data-from-file hidden>
+      <div class="stack" data-gap="sm" data-pick>
+        <esa-file-upload label="Zipped shapefile, .gdb folder or GeoJSON" accept=".zip,.geojson,.json" max-size-mb="50" data-file></esa-file-upload>
+        <p class="typography-body-sm">
+          No file to hand? Try
+          <button type="button" class="firma2-area-group-form__link" data-sample="habitat">sample habitat areas</button>
+          or
+          <button type="button" class="firma2-area-group-form__link" data-sample="noprj">a shapefile missing its .prj</button>.
+        </p>
+      </div>
+      <div data-refused hidden>
+        <EsaAlertBox variant="danger" title="File not accepted">
+          <p class="typography-body-md" data-refusal></p>
+        </EsaAlertBox>
+      </div>
+      <div class="repel" data-gap="md" data-read hidden>
+        <span class="typography-body-md" data-read-text></span>
+        <EsaButton variant="secondary" size="md" data-again>Choose another file</EsaButton>
+      </div>
+    </div>
+  )}
+
+  <div class="stack" data-gap="xl" data-rest>
+    <esa-select data-field label="Name areas by" size="md"></esa-select>
+    <esa-text-field data-name label="Name" size="md" required></esa-text-field>
+    <esa-textarea data-description label="Description" size="md" rows="2"></esa-textarea>
+    {mode === 'edit' && <esa-color-picker data-color label="Color" size="md" help-text="Its areas use it unless one has its own."></esa-color-picker>}
+    {mode === 'new' && (
+      <div class="cluster" data-gap="xs">
+        <EsaButton variant="primary" size="md" type="submit">Add geospatial areas</EsaButton>
+        <EsaButton variant="ghost" size="md" tag="a" href={listHref}>Cancel</EsaButton>
+      </div>
+    )}
+  </div>
+</form>
+
+<style>
+  .firma2-area-group-form[hidden],
+  .firma2-area-group-form [hidden] {
+    display: none !important;
+  }
+
+  .firma2-area-group-form__link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-content-link, #2a7e3b);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-color-picker';
+  import '@esa/ecology/esa-file-upload';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import { MAP_SWATCHES } from '../../data/firma2-geography';
+  import type { ReferenceLayer } from '../../data/firma2-geography';
+  import { AREA_FILE_SAMPLES } from '../../data/firma2-geospatial-areas';
+  import type { AreaFile } from '../../data/firma2-geospatial-areas';
+  import { groupColor, nameFields, newAreaGroupId, shapeLayers } from '../../lib/geospatial-areas';
+  import { retitle } from '../../lib/taxonomy-record';
+  import { readAreaGroups, readLayers, writeAreaGroups, writeLayers } from '../../lib/work-areas';
+
+  type Field = HTMLElement & { value: string; errorText: string; options: unknown };
+
+  document.querySelectorAll<HTMLFormElement>('.firma2-area-group-form').forEach(async (form) => {
+    const editing = form.dataset.mode === 'edit';
+    const id = editing ? new URLSearchParams(window.location.search).get('id') ?? '' : '';
+    const current = () => readAreaGroups().find((g) => g.id === id) ?? null;
+    if (editing && !current()) {
+      // The group page says the group is gone (firma2-area-group-areas); nothing to edit.
+      form.hidden = true;
+      return;
+    }
+    const part = <T extends HTMLElement = HTMLElement>(name: string) => form.querySelector<T>(`[data-${name}]`);
+    const source = part<Field>('source');
+    const layer = part<Field>('layer')!;
+    const field = part<Field>('field')!;
+    const name = part<Field>('name')!;
+    const description = part<Field>('description')!;
+    const color = part<Field & { swatches: unknown }>('color');
+
+    // A layer another group reads is not offered; this group's own always is.
+    const taken = new Set(readAreaGroups().filter((g) => g.id !== id).map((g) => g.layerId));
+    const offered = shapeLayers().filter((l) => !taken.has(l.id));
+    part('no-layers-text')!.textContent = shapeLayers().length ? 'Every layer with shapes already has geospatial areas.' : 'No reference layer sends shapes yet.';
+
+    // Assigned only after define — a value set earlier shadows the lego's setter.
+    await Promise.all(['esa-select', 'esa-text-field', 'esa-textarea', ...(source ? ['esa-button-toggle', 'esa-file-upload'] : [])].map((tag) => customElements.whenDefined(tag)));
+    const layerOf = (layerId: string) => readLayers().find((l) => l.id === layerId);
+
+    const group = current();
+    let from: 'layer' | 'file' = 'layer';
+    let file: AreaFile | null = null;
+    // A new group starts with its source's name, and follows it until the person types their own.
+    let typed = editing;
+
+    /** The fields on offer and the starting name, from whichever source is chosen. */
+    const offer = (keep?: string) => {
+      const picked = from === 'layer' ? layerOf(layer.value) : undefined;
+      const fields = from === 'file' ? file?.fields ?? [] : picked ? nameFields(picked) : [];
+      field.options = fields.map((f) => ({ value: f, label: f }));
+      field.value = keep && fields.includes(keep) ? keep : picked?.popupField && fields.includes(picked.popupField) ? picked.popupField : fields[0] ?? '';
+      if (!typed) name.value = (from === 'file' ? file?.layerName : picked?.name) ?? '';
+    };
+    const show = () => {
+      const noLayers = from === 'layer' && !offered.length;
+      part('from-layer')!.hidden = from !== 'layer' || noLayers;
+      part('no-layers')!.hidden = !noLayers;
+      const fromFile = part('from-file');
+      if (fromFile) {
+        fromFile.hidden = from !== 'file';
+        part('pick')!.hidden = Boolean(file && !file.refusal);
+        part('refused')!.hidden = !file?.refusal;
+        part('read')!.hidden = !file || Boolean(file.refusal);
+        if (file?.refusal) part('refusal')!.textContent = file.refusal;
+        else if (file) part('read-text')!.textContent = `${file.fileName}: ${file.shapes} ${file.shapes === 1 ? 'area' : 'areas'}`;
+      }
+      part('rest')!.hidden = from === 'layer' ? noLayers : !file || Boolean(file.refusal);
+    };
+
+    layer.options = offered.map((l) => ({ value: l.id, label: l.name }));
+    layer.value = group && offered.some((l) => l.id === group.layerId) ? group.layerId : offered[0]?.id ?? '';
+    if (source) {
+      source.options = [
+        { value: 'layer', label: 'Map layer' },
+        { value: 'file', label: 'File upload' },
+      ];
+      source.value = from;
+      source.addEventListener('change', () => {
+        from = source.value === 'file' ? 'file' : 'layer';
+        offer();
+        show();
+      });
+    }
+    offer(group?.nameField);
+    name.value = group?.name ?? name.value;
+    description.value = group?.description ?? '';
+    if (group) retitle(group.name);
+    if (group && color) {
+      await customElements.whenDefined('esa-color-picker');
+      color.swatches = MAP_SWATCHES;
+      color.value = groupColor(group, layerOf(group.layerId) ?? null);
+      color.addEventListener('change', () => save());
+    }
+    show();
+
+    const read = (sample: AreaFile, fileName = sample.fileName) => {
+      file = { ...sample, fileName };
+      offer();
+      show();
+    };
+    part('file')?.addEventListener('change', (event) => {
+      const files = (event as CustomEvent<{ files?: File[] }>).detail?.files ?? [];
+      // Faked: whatever is chosen reads as the sample habitat areas, under its own file name.
+      if (!files[0]) return;
+      // The lego's `accept` only filters the file dialog; a dropped file gets past it.
+      if (!/\.(zip|geojson|json)$/i.test(files[0].name)) {
+        read({ ...AREA_FILE_SAMPLES.noprj, refusal: `${files[0].name} is not a zipped shapefile, a zipped .gdb folder or GeoJSON.` }, files[0].name);
+        return;
+      }
+      read(AREA_FILE_SAMPLES.habitat, files[0].name);
+    });
+    form.querySelectorAll<HTMLElement>('[data-sample]').forEach((button) =>
+      button.addEventListener('click', () => read(AREA_FILE_SAMPLES[button.dataset.sample as 'habitat' | 'noprj'])),
+    );
+    part('again')?.addEventListener('click', () => {
+      file = null;
+      offer();
+      show();
+    });
+
+    const nameError = (): string => {
+      const value = (name.value ?? '').trim();
+      if (!value) return 'Enter a name.';
+      return readAreaGroups().some((g) => g.id !== id && g.name.toLowerCase() === value.toLowerCase()) ? 'This name is already in use.' : '';
+    };
+    const save = () => {
+      if (!editing) return;
+      const error = nameError();
+      name.errorText = error;
+      const was = current();
+      if (!was) return;
+      const next = {
+        ...was,
+        layerId: layer.value || was.layerId,
+        nameField: field.value,
+        description: description.value ?? '',
+        ...(color?.value ? { color: color.value } : {}),
+        // A blank or taken name is not saved; the rest of the change is.
+        name: error ? was.name : name.value.trim(),
+      };
+      writeAreaGroups(readAreaGroups().map((g) => (g.id === id ? next : g)));
+      retitle(next.name);
+    };
+
+    layer.addEventListener('change', () => {
+      offer();
+      save();
+    });
+    field.addEventListener('change', save);
+    name.addEventListener('input', () => {
+      typed = true;
+      if (name.errorText) name.errorText = '';
+    });
+    name.addEventListener('change', save);
+    description.addEventListener('change', save);
+    name.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key === 'Enter' && !editing) form.requestSubmit();
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (editing) return;
+      const error = nameError();
+      if (error) {
+        name.errorText = error;
+        name.focus();
+        return;
+      }
+      const groupName = name.value.trim();
+      const groupId = newAreaGroupId(groupName);
+      let layerId = layer.value;
+      if (from === 'file' && file) {
+        // The file becomes a reference layer, so Map layers can style and draw it.
+        // Faked: it is kept as a GeoJSON layer whose "URL" is the file's name.
+        const uploaded: ReferenceLayer = {
+          id: `upload-${groupId}`,
+          name: groupName,
+          kind: 'geojson',
+          url: file.fileName,
+          description: description.value ?? '',
+          popupField: field.value,
+          minZoom: null,
+          onByDefault: false,
+          active: true,
+          publisherColours: false,
+          stroke: '#6b7280',
+          strokeWidth: 1.5,
+          fill: '#6b7280',
+          fillOpacity: 0.08,
+          draws: 'habitat',
+          fields: file.fields,
+        };
+        writeLayers([...readLayers(), uploaded]);
+        layerId = uploaded.id;
+      }
+      writeAreaGroups([...readAreaGroups(), { id: groupId, name: groupName, description: description.value ?? '', layerId, nameField: field.value }]);
+      window.location.assign(`${form.dataset.recordHref}?id=${encodeURIComponent(groupId)}`);
+    });
+  });
+</script>

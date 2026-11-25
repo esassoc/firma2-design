@@ -61,11 +61,30 @@ export const resolveScheme = (preference: SchemePreference): 'light' | 'dark' =>
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 };
 
+/** The app frame colour per scheme — the colour at the very top of the page
+ *  (--color-background-elevation-sunken: olive-3 light, #0d0e0c dark). */
+const FRAME_COLOR = { light: '#eff1ef', dark: '#0d0e0c' } as const;
+
+/**
+ * Keep the browser chrome in step with the scheme. The two media-scoped
+ * theme-color tags follow the OS; an explicit choice must outrank it, so both
+ * are pinned to the chosen frame colour. "System" restores each tag to its own
+ * scheme's colour. Duplicated (pinning only) in BaseLayout's head script.
+ */
+const syncThemeColor = (preference: SchemePreference, resolved: 'light' | 'dark'): void => {
+  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta) => {
+    const own = meta.media.includes('dark') ? 'dark' : 'light';
+    meta.content = FRAME_COLOR[preference === 'system' ? own : resolved];
+  });
+};
+
 /** Write both attributes on <html>. Does not persist — see `setScheme`. */
 export const applyScheme = (preference: SchemePreference): void => {
   const root = document.documentElement;
-  root.setAttribute('data-scheme', resolveScheme(preference));
+  const resolved = resolveScheme(preference);
+  root.setAttribute('data-scheme', resolved);
   root.setAttribute('data-scheme-preference', preference);
+  syncThemeColor(preference, resolved);
 };
 
 /**

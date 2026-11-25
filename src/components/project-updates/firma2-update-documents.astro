@@ -1,0 +1,352 @@
+---
+// firma2-update-documents — the Team 5 sandbox's Documents section on the
+// project page: the documents attached to the project, each with a caption,
+// who added it and when, and its review state; add by button or by dropping
+// files on the section, remove with a confirm.
+//
+// PORTED FROM Team 5's ProjectFirma2 hackathon branch, story 0012 ("Project
+// photos and attachments", project-documents component), rebuilt on this
+// spoke's legos and its sandbox store (src/lib/update-sandbox.ts). Rows render
+// in the browser from the store and repaint on every sandbox change, so the
+// update screen, this page and the change queue agree.
+//
+// STANDING CONFLICT, STATED PLAINLY: this spoke decided (owner, 2026) that
+// files render INLINE in rich text only and there is no Files list. This
+// component contradicts that on purpose. It exists only so the sandbox at
+// /prototypes/team-5 can show Team 5's Documents list for a keep/drop
+// decision; it is not a pattern to reuse elsewhere.
+//
+// CHANGED FROM TEAM 5, and why:
+//   - No download: the prototype holds no file, so the name is plain text
+//     (a dead link or a disabled button would promise what is not there).
+//   - No per-row file-type icon: icons mark structure, never items.
+//   - No table: a short ruled list (firma2-proposal-list's idiom), so a row
+//     stacks name, who/when and caption without column headers.
+//   - No esa-card: sections here are not cards. Controls are md.
+//
+// bcn-lego-checked: esa-file-list renders name + download/remove only — it
+// cannot carry a caption field, a review badge or approve/reject, and its
+// remove skips confirmation and draws a per-row file icon; esa-file-upload is
+// a dropzone with its own staged rows, not a record list. Rows therefore
+// compose esa-text-field (caption), EsaBadge (review state), EsaButton
+// (Approve, Reject, chrome icon-only Remove — esa-icon-button is a deprecated
+// shim over it), EsaEmptyState and esa-confirm-dialog, cloned from <template>s
+// at runtime. The hidden <input type=file> is the picker behind the "Add
+// documents" EsaButton — Team 5's page-wide drop plus a button, which
+// esa-file-upload's built-in dropzone does not model. Beacon is not cloned in
+// this checkout.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+
+interface Props {
+  /** The project's slug — the store key for its files. */
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const headingId = `update-documents-${slug}`;
+---
+<section class="firma2-update-documents stack" data-gap="sm" data-slug={slug} aria-labelledby={headingId}>
+  <div class="repel" data-gap="sm">
+    <h2 class="typography-title-strong firma2-update-documents__title" id={headingId} tabindex="-1">Documents</h2>
+    <span data-add hidden>
+      <EsaButton variant="secondary" appearance="outline" size="md" data-add-button>Add documents</EsaButton>
+      <input type="file" multiple hidden data-picker />
+    </span>
+  </div>
+
+  <ul class="firma2-update-documents__rows" role="list" data-rows></ul>
+
+  <div data-empty hidden>
+    <EsaEmptyState title="No documents yet" description="Drop files here, or use Add documents." size="md" />
+  </div>
+
+  <template data-badge="add"><EsaBadge variant="warning" size="sm" value="Awaiting review" /></template>
+  <template data-badge="remove"><EsaBadge variant="warning" size="sm" value="Removal awaiting review" /></template>
+  <template data-approve><EsaButton variant="primary" size="md" data-approve-button>Approve</EsaButton></template>
+  <template data-reject><EsaButton variant="secondary" appearance="outline" size="md" data-reject-button>Reject</EsaButton></template>
+  <template data-remove><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Remove" data-remove-button /></template>
+
+  {/* Its own wrapper: sibling custom-element dialogs can come out nested and never draw. */}
+  <div class="firma2-update-documents__dialog">
+    <esa-confirm-dialog variant="danger" confirm-label="Remove" cancel-label="Cancel" data-confirm></esa-confirm-dialog>
+  </div>
+</section>
+
+<style>
+  .firma2-update-documents [hidden] {
+    display: none !important;
+  }
+
+  .firma2-update-documents__title {
+    margin: 0;
+  }
+
+  .firma2-update-documents[data-dropping] {
+    outline: 2px dashed var(--color-border-focus);
+    outline-offset: var(--spacing-200);
+    border-radius: var(--radius-control);
+  }
+
+  .firma2-update-documents__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Ruled like firma2-proposal-list: a hairline between rows, no card. */
+  .firma2-update-documents :global(.firma2-update-documents__row) {
+    display: grid;
+    gap: var(--spacing-200);
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-update-documents :global(.firma2-update-documents__row:last-child) {
+    border-block-end: 0;
+  }
+
+  .firma2-update-documents :global(.firma2-update-documents__name) {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-200);
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .firma2-update-documents :global(.firma2-update-documents__meta) {
+    margin: 0;
+    color: var(--color-content-default-secondary);
+  }
+
+  .firma2-update-documents :global(.firma2-update-documents__caption) {
+    margin: 0;
+    max-inline-size: 72ch;
+  }
+
+  .firma2-update-documents :global(.firma2-update-documents__caption-field) {
+    display: block;
+    max-inline-size: 40rem;
+  }
+
+  .firma2-update-documents :global(.firma2-update-documents__actions) {
+    flex-shrink: 0;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { editableSlugs } from '../../data/firma2-project-updates';
+  import type { Attachment } from '../../data/firma2-project-updates';
+  import {
+    addFiles,
+    approveChange,
+    attachments,
+    canReview,
+    dayLabel,
+    editsWaitForReview,
+    onSandboxChange,
+    readFile,
+    readSettings,
+    rejectChange,
+    removeAttachment,
+    updateAttachment,
+  } from '../../lib/update-sandbox';
+
+  type Confirm = HTMLElement & { heading: string; message: string; show(): void };
+  type TextField = HTMLElement & { value: string };
+
+  document.querySelectorAll<HTMLElement>('.firma2-update-documents').forEach((root) => {
+    const slug = root.dataset.slug!;
+    const list = root.querySelector<HTMLElement>('[data-rows]')!;
+    const empty = root.querySelector<HTMLElement>('[data-empty]')!;
+    const add = root.querySelector<HTMLElement>('[data-add]')!;
+    const picker = root.querySelector<HTMLInputElement>('[data-picker]')!;
+    const heading = root.querySelector<HTMLElement>('h2')!;
+    const confirm = root.querySelector<Confirm>('[data-confirm]')!;
+
+    const editable = () => editableSlugs(readSettings().role).includes(slug);
+
+    const clone = (selector: string): HTMLElement =>
+      root.querySelector<HTMLTemplateElement>(`template${selector}`)!.content.firstElementChild!.cloneNode(true) as HTMLElement;
+
+    /** An EsaButton clone: the wrapper span is returned; the name goes on the real button. */
+    const button = (selector: string, name: string): HTMLElement => {
+      const wrapper = clone(selector);
+      const native = wrapper.querySelector('button') ?? wrapper;
+      native.setAttribute('aria-label', name);
+      native.removeAttribute('title');
+      return wrapper;
+    };
+
+    // ---- Rows -------------------------------------------------------------
+
+    const row = (file: Attachment, mayEdit: boolean, reviewer: boolean): HTMLLIElement => {
+      const li = document.createElement('li');
+      li.className = 'firma2-update-documents__row';
+      li.dataset.id = file.id;
+
+      const top = document.createElement('div');
+      top.className = 'repel';
+      top.dataset.gap = 'sm';
+
+      const who = document.createElement('div');
+      who.className = 'stack';
+      who.dataset.gap = 'xs';
+
+      const name = document.createElement('p');
+      name.className = 'firma2-update-documents__name typography-label-md-strong';
+      const text = document.createElement('span');
+      text.textContent = file.fileName;
+      name.append(text);
+      if (file.pending) name.append(clone(`[data-badge="${file.pending}"]`));
+
+      const meta = document.createElement('p');
+      meta.className = 'firma2-update-documents__meta typography-body-sm';
+      meta.textContent = `Added by ${file.by} on ${dayLabel(file.at)}`;
+      who.append(name, meta);
+      top.append(who);
+
+      const actions = document.createElement('div');
+      actions.className = 'firma2-update-documents__actions cluster';
+      actions.dataset.gap = 'xs';
+      if (reviewer && file.changeId) {
+        actions.append(
+          button('[data-approve]', `Approve ${file.fileName}`),
+          button('[data-reject]', `Reject ${file.fileName}`),
+        );
+      } else if (mayEdit && !file.pending) {
+        actions.append(button('[data-remove]', `Remove ${file.fileName}`));
+      }
+      if (actions.childElementCount) top.append(actions);
+      li.append(top);
+
+      if (mayEdit && !file.pending) {
+        const field = document.createElement('esa-text-field') as TextField;
+        field.className = 'firma2-update-documents__caption-field';
+        field.setAttribute('size', 'md');
+        field.setAttribute('aria-label', `Caption for ${file.fileName}`);
+        field.setAttribute('placeholder', 'Add a caption');
+        field.dataset.caption = file.id;
+        void customElements.whenDefined('esa-text-field').then(() => {
+          field.value = file.caption;
+        });
+        li.append(field);
+      } else if (file.caption) {
+        const caption = document.createElement('p');
+        caption.className = 'firma2-update-documents__caption typography-body-md';
+        caption.textContent = file.caption;
+        li.append(caption);
+      }
+      return li;
+    };
+
+    // A caption being typed in is never repainted under the cursor; the paint
+    // that arrives meanwhile runs when focus leaves the list.
+    let stale = false;
+    const typing = () => !!document.activeElement?.closest?.('.firma2-update-documents__caption-field') && root.contains(document.activeElement);
+
+    const paint = () => {
+      if (typing()) {
+        stale = true;
+        return;
+      }
+      stale = false;
+      const files = attachments(slug, 'document');
+      const mayEdit = editable();
+      const reviewer = canReview();
+      add.hidden = !mayEdit;
+      list.replaceChildren(...files.map((f) => row(f, mayEdit, reviewer)));
+      list.hidden = !files.length;
+      empty.hidden = !!files.length;
+    };
+
+    root.addEventListener('focusout', () => {
+      // Focus settles on its new target after focusout; check then.
+      queueMicrotask(() => {
+        if (stale && !typing()) paint();
+      });
+    });
+
+    // ---- Captions ---------------------------------------------------------
+
+    root.addEventListener('change', (event) => {
+      const field = (event.target as HTMLElement).closest<TextField>('[data-caption]');
+      if (!field) return;
+      updateAttachment(slug, field.dataset.caption!, { caption: field.value.trim() });
+    });
+
+    // ---- Adding -----------------------------------------------------------
+
+    const take = async (chosen: FileList | null) => {
+      if (!chosen?.length || !editable()) return;
+      // Added here, a file is a document — even an image.
+      const files = await Promise.all([...chosen].map(async (f) => ({ ...(await readFile(f)), kind: 'document' as const, src: undefined })));
+      addFiles(slug, files);
+    };
+
+    root.querySelector('[data-add-button]')?.addEventListener('click', () => picker.click());
+    picker.addEventListener('change', async () => {
+      await take(picker.files);
+      picker.value = '';
+    });
+
+    const carriesFiles = (event: DragEvent) => !!event.dataTransfer?.types.includes('Files');
+    root.addEventListener('dragover', (event) => {
+      if (!carriesFiles(event) || !editable()) return;
+      event.preventDefault();
+      event.dataTransfer!.dropEffect = 'copy';
+      root.dataset.dropping = '';
+    });
+    root.addEventListener('dragleave', (event) => {
+      if (!root.contains(event.relatedTarget as Node | null)) delete root.dataset.dropping;
+    });
+    root.addEventListener('drop', (event) => {
+      delete root.dataset.dropping;
+      if (!carriesFiles(event) || !editable()) return;
+      event.preventDefault();
+      void take(event.dataTransfer!.files);
+    });
+
+    // ---- Remove, approve, reject -----------------------------------------
+
+    let removing: string | null = null;
+
+    list.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      const id = target.closest<HTMLElement>('[data-id]')?.dataset.id;
+      if (!id) return;
+      const file = attachments(slug, 'document').find((f) => f.id === id);
+      if (!file) return;
+
+      if (target.closest('[data-remove-button]')) {
+        removing = id;
+        confirm.heading = `Remove ${file.fileName}?`;
+        confirm.message = editsWaitForReview()
+          ? 'The removal waits for an administrator’s review; until then the document stays on this project.'
+          : 'The document is removed, and the removal is recorded in this project’s changes.';
+        confirm.show();
+        return;
+      }
+      if (!file.changeId) return;
+      if (target.closest('[data-approve-button]')) approveChange(file.changeId);
+      else if (target.closest('[data-reject-button]')) rejectChange(file.changeId);
+      else return;
+      // The row repaints and its button with it; keep focus in the section.
+      heading.focus();
+    });
+
+    confirm.addEventListener('confirm', () => {
+      if (removing) removeAttachment(slug, removing);
+      removing = null;
+      heading.focus();
+    });
+    confirm.addEventListener('cancel', () => {
+      removing = null;
+    });
+
+    void customElements.whenDefined('esa-confirm-dialog').then(() => onSandboxChange(paint));
+  });
+</script>

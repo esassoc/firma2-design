@@ -1,0 +1,98 @@
+---
+// firma2-support-request-form — sending a support request: what kind it is, a
+// subject, and the message.
+//
+// ASKS ONLY WHAT THE ANSWERER NEEDS TO START. Who is asking and their
+// organization are known from the account, so they are not asked; the page a
+// request was sent from, attachments and priority are left out until someone
+// misses them.
+//
+// SENT WITH A BUTTON, checked on submit: a subject and a message are both
+// required, each error sits on its own field and clears on the next keystroke.
+// The first field in error takes focus.
+//
+// THEN BACK TO THE LIST, where the new request is the top open row and is
+// confirmed once. WHAT IS FAKED: it is kept in this browser
+// (src/lib/support-request-edits.ts) and nobody is emailed.
+//
+// Same construction as firma2-organization-create-form: form legos with their
+// own labels (a form shows its boxes), the primary then Cancel.
+//
+// bcn-lego-checked: every control is a lego — esa-select, esa-text-field,
+// esa-textarea, esa-button — in the `.stack` and `.cluster` primitives. No
+// <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { SUPPORT_REQUEST_KINDS } from '../../data/firma2-support-requests';
+import { withBase } from '../../lib/base';
+
+const listHref = withBase('/prototypes/support-requests');
+const kindOptions = SUPPORT_REQUEST_KINDS.map((k) => ({ value: k, label: k }));
+---
+<form class="firma2-support-request-form stack" data-gap="lg" novalidate data-list-href={listHref}>
+  <div class="stack" data-gap="md">
+    <esa-select name="kind" label="Type" size="md" options={JSON.stringify(kindOptions)} data-seed={SUPPORT_REQUEST_KINDS[0]} data-kind></esa-select>
+    <esa-text-field name="subject" label="Subject" size="md" required data-subject></esa-text-field>
+    <esa-textarea name="message" label="Message" size="md" rows="6" required data-message></esa-textarea>
+  </div>
+  <div class="cluster" data-gap="xs">
+    <EsaButton variant="primary" size="md" type="submit">Send request</EsaButton>
+    <EsaButton variant="ghost" size="md" tag="a" href={listHref}>Cancel</EsaButton>
+  </div>
+</form>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import { addSupportRequest, noteJustSent } from '../../lib/support-request-edits';
+  import { currentPerson } from '../../lib/workspace-permissions';
+  import type { SupportRequestKind } from '../../data/firma2-support-requests';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+
+  document.querySelectorAll<HTMLFormElement>('.firma2-support-request-form').forEach((form) => {
+    const kind = form.querySelector<Field>('[data-kind]')!;
+    const subject = form.querySelector<Field>('[data-subject]')!;
+    const message = form.querySelector<Field>('[data-message]')!;
+
+    // Assigned only after define — a `.value` set on a not-yet-upgraded element
+    // becomes an own property that shadows the lego's setter for good.
+    customElements.whenDefined('esa-select').then(() => { kind.value = kind.dataset.seed ?? ''; });
+
+    for (const field of [subject, message]) {
+      field.addEventListener('input', () => {
+        if (field.errorText) field.errorText = '';
+      });
+    }
+    // Enter in the subject submits, as it would in a native input — the lego's
+    // input sits in a shadow root, so implicit submission never fires.
+    subject.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key === 'Enter') form.requestSubmit();
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const s = (subject.value ?? '').trim();
+      const m = (message.value ?? '').trim();
+      if (!s) subject.errorText = 'Enter a subject.';
+      if (!m) message.errorText = 'Write what you need help with.';
+      if (!s || !m) {
+        (!s ? subject : message).focus();
+        return;
+      }
+      const person = currentPerson();
+      const sent = addSupportRequest({
+        subject: s,
+        kind: (kind.value || kind.dataset.seed) as SupportRequestKind,
+        message: m,
+        requester: { name: person.name, email: person.email, organization: person.organizations[0] ?? '', member: true },
+      });
+      if (!sent) {
+        subject.errorText = 'Couldn’t save in this browser.';
+        return;
+      }
+      noteJustSent(sent.id);
+      window.location.href = form.dataset.listHref ?? '';
+    });
+  });
+</script>

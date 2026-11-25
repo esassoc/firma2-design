@@ -92,6 +92,7 @@
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import type { ProjectDetail, WorkArea } from '../../data/firma2-project-detail';
+import { projectSlug } from '../../data/firma2-projects';
 
 interface Props {
   /** The project whose work areas are drawn. Only mapCenter, mapZoom and
@@ -117,20 +118,24 @@ interface Props {
    * would be a second answer that can drift from the first.
    */
   variant?: 'section' | 'canvas';
+  /** Omit the section's Add affordance — the public project page renders
+      this same section for readers who cannot edit. */
+  readonly?: boolean;
 }
 
-const { detail, variant = 'section' } = Astro.props;
+const { detail, variant = 'section', readonly = false } = Astro.props;
 const { workAreas, mapCenter, mapZoom } = detail;
 
 // "4.1 miles", "62 acres". Formatted ONCE, server-side, and shipped in the
 // payload — the legend row and the shape's tooltip are the same fact in two
 // places, and two format sites is how they drift apart.
-const extentLabel = (area: WorkArea) => `${area.extent} ${area.extentUnit}`;
+const extentLabel = (area: WorkArea) => (area.extent === null ? '' : `${area.extent} ${area.unit}`);
 
 // Everything the client script needs, serialized rather than fetched. `path`
 // travels verbatim; Leaflet reads [lat, lng] pairs, which is exactly what
 // WorkArea.path already is.
 const mapConfig = {
+  slug: projectSlug(detail.project),
   center: mapCenter,
   zoom: mapZoom,
   areas: workAreas.map((area) => ({
@@ -188,8 +193,8 @@ const mapConfig = {
        which is a different and false statement. Per-row editing and removal
        inside this section are not built yet. -->
   <div class="firma2-project-map__plate firma2-project-map__plate--head cluster" data-gap="md">
-    <h3 class="firma2-project-map__title typography-title-sm-strong">Work areas</h3>
-    <EsaButton variant="chrome" size="sm" icon="plus">Add area</EsaButton>
+    <h3 class="firma2-project-map__title typography-title-sm-strong" data-aliasable>Work areas</h3>
+    {!readonly && <EsaButton variant="chrome" size="sm" icon="plus">Add area</EsaButton>}
   </div>
 
   <!-- THE LEGEND AND THE TEXT ALTERNATIVE ARE THE SAME ELEMENT. A visually
@@ -234,7 +239,6 @@ const mapConfig = {
       <EsaEmptyState
         size="sm"
         title="No work areas mapped"
-        description="Add a work area to map this project."
       />
     )}
   </div>
@@ -256,6 +260,8 @@ const mapConfig = {
   }
 
   interface MapConfig {
+    /** The project, for its colour (src/lib/map-color.ts). */
+    slug: string;
     center: LatLng;
     zoom: number;
     areas: MapArea[];
@@ -270,74 +276,10 @@ const mapConfig = {
     paddingBottomRight?: [number, number];
   }
 
-  // Leaflet is a CDN global, not an npm dependency of this spoke (same version
-  // and same CDN as cb-fish-design), so there are no types to import and `any`
-  // is the honest annotation rather than a fictional interface.
-  type Leaflet = any;
-
-  const LEAFLET_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4';
-
-  let leafletReady: Promise<Leaflet> | null = null;
-
-  /**
-   * Load Leaflet and resolve when `window.L` exists.
-   *
-   * THIS IS THE ONE REAL HAZARD IN THIS FILE. Astro hoists a processed <script>
-   * into the <head> as type="module", so this code can run BEFORE a plain
-   * <script src> written further down the body — document order is not
-   * execution order, and reading window.L at module scope would find undefined.
-   * So the component injects its own <link> and <script> and awaits the load
-   * event instead of trusting placement. Self-contained and order-independent:
-   * this section works wherever a page drops it, and works if a page drops two
-   * of it (the data- attributes make the injection idempotent, and a tag that
-   * is already in flight is simply awaited rather than duplicated).
-   */
-  function loadLeaflet(): Promise<Leaflet> {
-    const w = window as unknown as { L?: Leaflet };
-    if (w.L) return Promise.resolve(w.L);
-    if (leafletReady) return leafletReady;
-
-    if (!document.querySelector('link[data-leaflet-css]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = `${LEAFLET_BASE}/leaflet.min.css`;
-      link.setAttribute('data-leaflet-css', '');
-      document.head.append(link);
-    }
-
-    let tag = document.querySelector<HTMLScriptElement>('script[data-leaflet-js]');
-    if (!tag) {
-      tag = document.createElement('script');
-      tag.src = `${LEAFLET_BASE}/leaflet.min.js`;
-      tag.async = true;
-      tag.setAttribute('data-leaflet-js', '');
-      document.head.append(tag);
-    }
-
-    const script = tag;
-    leafletReady = new Promise<Leaflet>((resolve, reject) => {
-      // Re-checked inside the executor: the tag may have finished loading
-      // between the check above and this line, and a load event already fired
-      // never fires again.
-      if (w.L) {
-        resolve(w.L);
-        return;
-      }
-      script.addEventListener(
-        'load',
-        () => (w.L ? resolve(w.L) : reject(new Error('Leaflet loaded without window.L'))),
-        { once: true },
-      );
-      script.addEventListener('error', () => reject(new Error('Leaflet failed to load')), { once: true });
-    });
-    return leafletReady;
-  }
-
-  /** Resolve a design token to the concrete string Leaflet needs for an SVG
-   *  attribute. Read off <html>, which is where BaseLayout sets data-theme, so
-   *  this picks up the spoke's theme and not just the hub defaults. */
-  const token = (name: string, fallback: string) =>
-    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  // Loader, basemap, scheme-following, resize-following and every visual
+  // treatment are shared with the other maps (src/lib/leaflet.ts, map.css).
+  import { createMap, loadLeaflet, projectShapeStyle } from '../../lib/leaflet';
+  import type { Leaflet } from '../../lib/leaflet';
 
   async function initProjectMap(root: HTMLElement) {
     const canvas = root.querySelector<HTMLElement>('.firma2-project-map__canvas');
@@ -356,83 +298,26 @@ const mapConfig = {
       return;
     }
 
-    // scrollWheelZoom off: a map inside a scrolling page that eats the wheel
-    // traps the reader halfway down the record. Drag, double-click, the zoom
-    // buttons and the keyboard all still zoom.
-    const map = L.map(canvas, { scrollWheelZoom: false }).setView(config.center, config.zoom);
+    // scrollWheelZoom off (createMap's default): a map inside a scrolling page
+    // that eats the wheel traps the reader halfway down the record. The
+    // callback repaints the shapes when the scheme flips, because their colours
+    // are read from tokens the scheme just changed.
+    const map = createMap(L, canvas, {}, () =>
+      config.areas.forEach((area, i) => shapes[i].setStyle(projectShapeStyle(config.slug, area.kind))),
+    ).setView(config.center, config.zoom);
 
-    // THE BASEMAP IS THE ONE THING ON THIS SECTION THAT TOKENS CANNOT REACH.
-    // Every other Leaflet surface here — the canvas behind the tiles, the zoom
-    // bar, the attribution strip, the shape tooltips — is painted from semantic
-    // roles in the <style> block below, so all of it followed the dark scheme
-    // the day the scheme existed. The tiles are raster PNGs rendered on CARTO's
-    // servers, so the only lever is WHICH RASTER SET to ask for, and it has to
-    // be chosen in script. Leaving it on `light_all` put a white map, at full
-    // brightness, in the middle of an otherwise dark page — the single loudest
-    // thing on the screen, and on the atlas variant it is the whole screen.
-    //
-    // `dark_all` is the same cartography as `light_all` from the same source at
-    // the same zooms, inverted — not a different map. So the grayscale basemap
-    // this section was designed around (roads and streams legible, nothing
-    // competing with the work areas drawn on top) holds in both schemes.
-    const basemapUrl = () =>
-      document.documentElement.getAttribute('data-scheme') === 'dark'
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-
-    const tiles = L.tileLayer(basemapUrl(), {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(map);
-
-    // THE SHAPE STYLES ARE FUNCTIONS, NOT CONSTANTS, and that is the whole of
-    // why: `token()` reads a computed custom property, which resolves against
-    // whatever `data-scheme` says AT THE MOMENT IT IS CALLED. Held in a const at
-    // init, the categorical ramp is frozen at the scheme the page loaded in —
-    // theme-firma2.css re-points categorical-1 from #3e9b4f to #46a758 in dark,
-    // so a reader who switched schemes with the map on screen kept the light
-    // green over dark tiles. Rebuilt per call, the same function serves the
-    // first paint and every repaint after it.
-    //
-    // A unit has an inside, so it gets one: a light wash that lets the basemap's
-    // roads and streams read through, under a thin edge that is the actual claim
-    // being made about the boundary.
-    const areaStyle = () => {
-      const areaColor = token('--color-background-dataviz-categorical-1', '#3e9b4f');
-      return {
-        color: areaColor,
-        weight: 2,
-        opacity: 0.9,
-        fillColor: areaColor,
-        fillOpacity: 0.22,
-      };
-    };
-
-    // A reach has no inside — it is a line of work along a channel — so the
-    // weight goes into the stroke instead of a fill. Rounded joins because these
-    // follow a watercourse, and mitred corners on a meander read as a survey
-    // line rather than a stream.
-    const reachStyle = () => ({
-      color: token('--color-background-dataviz-categorical-2', '#3e63dd'),
-      weight: 4,
-      opacity: 0.95,
-      lineCap: 'round',
-      lineJoin: 'round',
-    });
-
-    const shapes = config.areas.map((area) => {
+    const shapes: Leaflet[] = config.areas.map((area) => {
       const shape =
         area.kind === 'area'
-          ? L.polygon(area.path, areaStyle())
-          : L.polyline(area.path, reachStyle());
+          ? L.polygon(area.path, projectShapeStyle(config.slug, 'area'))
+          : L.polyline(area.path, projectShapeStyle(config.slug, 'reach'));
 
       // Sticky so the label tracks the cursor across a large polygon instead of
       // pinning to a centroid that may be off screen at this zoom.
       shape.bindTooltip(`${area.label} — ${area.extentLabel}`, {
         sticky: true,
         direction: 'top',
-        className: 'firma2-project-map__tip',
+        className: 'firma2-map-tip',
       });
 
       return shape.addTo(map);
@@ -477,58 +362,7 @@ const mapConfig = {
       fitToShapes(detail?.paddingTopLeft, detail?.paddingBottomRight);
     });
 
-    // THE COLUMN CAN CHANGE WIDTH WITHOUT THE WINDOW CHANGING SIZE, and Leaflet
-    // has no way to know. It listens to `resize` on the window and nothing else,
-    // so every layout move that is not a window move leaves it painting tiles for
-    // a box that is no longer there — a grey strip down whichever edge grew. Both
-    // of this page's rails can now be dragged and collapsed (bcn-edge-handle), so
-    // this is no longer an edge case: it is one drag away on every visit.
-    //
-    // A ResizeObserver rather than a listener for the handle's event, because the
-    // dependency runs the wrong way otherwise — the map would have to know which
-    // controls exist on the page it happens to be laid out in. Watching its own
-    // box catches every cause, including the nav rail collapsing, which was
-    // already silently wrong before any of this.
-    //
-    // invalidateSize ONLY — deliberately not fitToShapes. Re-framing on a resize
-    // would throw away a pan or a zoom the reader had just made, which is the
-    // more annoying failure of the two. `firma2-map:reflow` stays the way a
-    // parent asks for the frame back.
-    //
-    // rAF-coalesced: a drag fires the observer on every frame it moves, and
-    // invalidateSize forces a layout read plus a tile pass.
-    let reflowFrame = 0;
-    new ResizeObserver(() => {
-      if (reflowFrame) return;
-      reflowFrame = requestAnimationFrame(() => {
-        reflowFrame = 0;
-        map.invalidateSize();
-      });
-    }).observe(canvas);
-
-    // FOLLOW THE SCHEME WHILE THE PAGE IS OPEN. Reading data-scheme once at init
-    // covers a reader who arrives already dark; it does not cover the two cases
-    // that actually happen — someone changing the setting on the Settings screen
-    // and coming back, and a "System" reader whose machine flips at sunset with
-    // this page still on screen (src/lib/scheme.ts rewrites the attribute live
-    // for exactly that). Both surface here as one attribute mutation.
-    //
-    // A MutationObserver on <html>, which is the same mechanism esa-chart uses
-    // to re-theme itself (it watches data-theme / data-scheme / a11y-assurance).
-    // There is no event for "a custom property resolved to a different value",
-    // so the attribute that caused it is the signal.
-    //
-    // setUrl swaps the raster set in place: Leaflet keeps the tiles already
-    // painted until the replacements load, so the map darkens rather than
-    // blanking. setStyle re-reads the ramp for shapes that are already drawn —
-    // `config.areas` and `shapes` are built by one .map() call, so index i is
-    // the same work area in both, which is what makes the kind lookup honest.
-    new MutationObserver(() => {
-      tiles.setUrl(basemapUrl());
-      config.areas.forEach((area, i) => {
-        shapes[i].setStyle(area.kind === 'area' ? areaStyle() : reachStyle());
-      });
-    }).observe(document.documentElement, { attributeFilter: ['data-scheme'] });
+    // Resize- and scheme-following both live in createMap.
 
     if (shapes.length > 0) {
       // FRAME AROUND THE PLATES, NOT INTO THE RAW BOX. A symmetric `padding` was
@@ -630,7 +464,7 @@ const mapConfig = {
      The min-block-size is the floor that keeps this a map and not a letterbox
      on a short window. */
   .firma2-project-map {
-    --firma2-map-offset: calc(var(--firma2-band-height, 148px) + var(--spacing-600, 2rem));
+    --firma2-map-offset: calc(var(--firma2-band-height, 48px) + var(--spacing-600, 2rem));
 
     /* WHERE THE PLATES SIT, AS A KNOB RATHER THAN A CONSTANT. The step itself
        is unchanged — --spacing-400 from whichever edge each plate takes — but
@@ -654,8 +488,8 @@ const mapConfig = {
     --firma2-map-plate-inset: var(--spacing-400, 1rem);
 
     position: relative;
-    margin-inline: calc(var(--spacing-500, 1.5rem) * -1);
-    block-size: calc(100dvh - var(--firma2-map-offset));
+    margin-inline: calc(var(--firma2-pane-padding, var(--spacing-500, 1.5rem)) * -1);
+    block-size: calc(var(--firma2-fold, 100dvh) - var(--firma2-map-offset));
     min-block-size: 30rem;
     /* Leaflet stacks its own panes up to z-index 700 (popupPane), which is high
        enough to punch through an overlay later. A new stacking context keeps all
@@ -817,7 +651,7 @@ const mapConfig = {
     block-size: 0.875em;
     background: color-mix(
       in srgb,
-      var(--color-background-dataviz-categorical-1, #3e9b4f) 22%,
+      var(--color-background-dataviz-categorical-1, #3e9b4f) 18%,
       transparent
     );
     border: var(--border-width-default, 1px) solid
@@ -831,22 +665,8 @@ const mapConfig = {
     background: var(--color-background-dataviz-categorical-2, #3e63dd);
   }
 
-  /* ---- Leaflet's own chrome, re-homed on the tokens -------------------------
-     :global() because Leaflet builds these nodes at runtime, so they never
-     receive Astro's scope attribute. Each selector is still anchored to
-     .firma2-project-map, which DOES carry it, so nothing here escapes this
-     section. Values only — no layout, no focus suppression: Leaflet 1.9.4's
-     stylesheet contains no `outline: none`, and none is added here, so the
-     container and the zoom buttons keep the ring focus.css gives them. */
-
-  .firma2-project-map :global(.leaflet-control-attribution) {
-    background: var(--color-background-elevation-raised, #fcfcfc);
-    color: var(--color-content-default-secondary, #646464);
-  }
-
-  .firma2-project-map :global(.leaflet-control-attribution a) {
-    color: var(--color-content-link, #2a7e3b);
-  }
+  /* Leaflet's own chrome (zoom bar, attribution, tooltips) is styled once for
+     every map in src/styles/map.css. */
 
   /* THE HEAD PLATE TOOK LEAFLET'S CORNER. Leaflet puts its zoom control at
      top-left by default and this variant now floats a title plate in exactly
@@ -863,39 +683,4 @@ const mapConfig = {
     margin-block-start: 5rem;
   }
 
-  .firma2-project-map :global(.leaflet-bar) {
-    border: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
-    border-radius: var(--radius-sm, 0.25rem);
-    box-shadow: var(--elevation-1, 0 1px 4px rgba(0, 0, 0, 0.06));
-  }
-
-  .firma2-project-map :global(.leaflet-bar a) {
-    background-color: var(--color-background-elevation-raised, #fcfcfc);
-    border-bottom-color: var(--color-border-default-subtle, #d9d9d9);
-    color: var(--color-content-default, #202020);
-  }
-
-  .firma2-project-map :global(.leaflet-bar a:hover) {
-    background-color: var(--color-background-default-hover, #f0f0f0);
-  }
-
-  /* The shape tooltip. Leaflet's default is a white box with a 0.4-alpha black
-     shadow; this is the same box built from the floating-surface tokens so it
-     reads as this product's popover rather than as the library's. */
-  .firma2-project-map :global(.firma2-project-map__tip) {
-    padding: var(--spacing-200, 0.5rem) var(--spacing-300, 0.75rem);
-    background: var(--color-background-elevation-floating, #fcfcfc);
-    border: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
-    border-radius: var(--radius-sm, 0.25rem);
-    color: var(--color-content-default, #202020);
-    box-shadow: var(--elevation-2, 0 2px 12px 0 rgba(0, 0, 0, 0.04));
-  }
-
-  /* Leaflet draws the tooltip's arrow as a transparent border box and colours
-     the one edge facing the shape. Only the top edge is styled because the
-     tooltip is bound `direction: 'top'` and Leaflet honours that even while
-     sticky, so the other three classes never land on this element. */
-  .firma2-project-map :global(.firma2-project-map__tip.leaflet-tooltip-top::before) {
-    border-top-color: var(--color-border-default, #cecece);
-  }
 </style>

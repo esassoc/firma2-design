@@ -1,276 +1,187 @@
 ---
 // firma2-project-gallery — the photos on the project record: what the work
-// looks like on the ground, dated and captioned, for the reader the map and the
-// measures cannot reach. A member of the public judging "is this real" trusts a
-// photo of a working landscape before any number on this page; the gallery is
-// that answer, and its captions are stored record data, not page copy.
+// looks like on the ground, for the reader the map and the measures cannot
+// reach. A member of the public judging "is this real" trusts a photo of a
+// working landscape before any number on this page; the gallery is that answer.
 //
-// STOCK STAND-INS, HOTLINKED FROM UNSPLASH (user-directed 2026-08-25; the
-// first pass drew illustrated SVG scenes). No real project photography can
-// appear here — the repo and its deployed site are public, and a photo of a
-// real client site is exactly what mock data must never borrow — so each photo
-// record renders a LANDSCAPE PHOTOGRAPH from Unsplash's library instead:
-// generic California-plausible ground, no people identifiable, no client
-// anything. The Unsplash License (unsplash.com/license) grants free use
-// without attribution. Determinism holds because the pools below are FIXED
-// photo IDs picked by the record's own seed — same record, same image, every
-// build; no API, no search, no randomness.
+// WHAT A PHOTO CARRIES (2026-11-24, .scratch/project-photos/spec.md). Beyond
+// caption and date, the record stores where in the work it was taken (Before /
+// During / After), the named photo point it was taken from, an optional
+// collection, whether the public may see it, the real day it was taken, the
+// work area in frame, credit, and alt text. Featured is one of those facts,
+// not a separate store. Before-and-after pairs are not a flag: they are two
+// photos at one photo point (src/lib/photo-meta.ts: pointsOf).
 //
-// THE POOL IS KEYED BY THE PHOTO'S SCENE KIND (stream / meadow / forest /
-// channel, assigned per program in the data module), so a fuels project shows
-// conifer country and a riparian project shows moving water. Within one
-// project no image repeats: buildPhotos spaces sibling seeds 11 apart, and 11
-// is coprime with every pool length below, so consecutive picks walk the pool
-// without landing twice — a gallery with the same photograph twice reads as a
-// data bug. Across projects images DO repeat, which is what stock is.
+// THE GALLERY IS BUILT TWICE. At build time from the seed, so the page is
+// right before any script runs and a peek (whose scripts never run — see the
+// template-script trap) still shows photos. At runtime the script lays this
+// browser's edits over the seed (src/lib/photo-meta.ts), reorders and hides
+// tiles, and clones the tile <template> for a photo added in the browser.
 //
-// THE CAPTION STAYS THE RECORD'S DATUM. A stand-in photograph will never
-// literally show "browse protection on first-season plantings" — that gap is
-// inherent to stock and accepted for a prototype; the caption is the field a
-// real tenant stores with an upload and the thing this section actually
-// demonstrates.
+// EDITING. A tile's pencil opens the docked bcn-side-sheet beside the grid;
+// every field saves as it changes (the record has no Save). The grid reorders
+// by drag (bcn-sortable-list, layout="grid") or by the grip's menu. Reordering
+// is switched off while a filter hides tiles: moving a photo past ones you
+// cannot see is not a move you can check.
 //
-// THE LIGHTBOX (user-directed 2026-08-25). A tile is a 234px index of a
-// photograph, not the photograph; hovering (or keyboard-focusing) a tile
-// raises one quiet expand control, and opening it hands the photo a modal
-// viewer at screen size — esa-dialog, so Esc, the scrim, light-dismiss, focus
-// containment and the close button are the lego's, not reimplemented here.
-// The viewer is a CAROUSEL over the record's own photo list: chevrons and
-// arrow keys walk it, wrapping at the ends, with the caption, date and the
-// "N of M" position under the frame. One dialog per gallery, re-pointed by
-// script — its skeleton is authored HERE as markup; the script only swaps
-// src and textContent, never builds elements.
+// ADDING. "Add photos" and a drop on the card take many files at once. Each
+// file's EXIF fills the day taken and, when it has a GPS position, the nearest
+// work area; the bar above the grid then sets stage or collection for the
+// whole batch. FAKED: an added photo's pixels are a blob URL, so it lasts until
+// the page reloads (see photo-meta.ts).
 //
-// bcn-lego-checked: no esa- lego renders an image grid, a lightbox or a
-// carousel — walked the catalog (`ls node_modules/@esa/ecology/src/
-// components/`, 2026-08-25): esa-dialog is the modal surface and IS the
-// lightbox shell here; esa-button (iconOnly) is every control; esa-card,
-// esa-empty-state, the .grid primitive and typography composites carry the
-// rest. The bespoke parts are the <figure> tile and the carousel wiring
-// (index state + arrow keys), and firma2-project-gallery is their reusable
-// home. Beacon is not cloned on this machine.
+// STOCK STAND-INS, HOTLINKED FROM UNSPLASH (user-directed 2026-08-25). No real
+// project photography can appear in this public repo, so each seeded photo
+// renders a landscape from a fixed pool by its own seed (src/lib/
+// project-photos.ts). The caption stays the record's datum.
+//
+// bcn-lego-checked: no esa- lego renders an image grid or a lightbox (catalog
+// walked 2026-11-24). Everything else is one: esa-card, esa-button,
+// esa-button-toggle (stage), esa-select (collection, point, work area),
+// esa-text-field, esa-textarea, esa-date-picker, esa-switch-toggle,
+// esa-confirm-dialog, esa-empty-state, bcn-side-sheet, bcn-sortable-list and
+// the app-wide firma2-lightbox. The bespoke part is the tile
+// (firma2-photo-tile) and the wiring here. Beacon is not cloned on this
+// machine.
 import EsaCard from '@esa/ecology/esa-card.astro';
 import '../shared/firma2-card-section.css';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import type { ProjectPhoto } from '../../data/firma2-project-detail';
+import { photoSrc } from '../../lib/project-photos';
+import { stageLabel } from '../../lib/photo-meta';
+import Firma2PhotoTile from './firma2-photo-tile.astro';
 
 interface Props {
   /** The record's photos, oldest first — the order buildPhotos() emits. */
   photos: ProjectPhoto[];
+  /** The public project page renders this same section for readers who cannot edit. */
+  readonly?: boolean;
+  /** The project's slug. Omitted, the record page's route supplies it; with neither (a peek) there are no edit controls. */
+  slug?: string;
+  /** The project's work areas, with a centre point each, so a photo's GPS can name the one it is near. */
+  workAreas?: { label: string; center: [number, number] }[];
+  /** A preview (the peek rail): shows every photo, offers no edit controls, runs no script. */
+  inert?: boolean;
 }
 
-const { photos } = Astro.props;
+const { photos, readonly = false, slug, workAreas = [], inert = false } = Astro.props;
 
-// Curated Unsplash photo IDs per scene kind — every one fetched and REVIEWED
-// on a rendered contact sheet before earning its slot (an ID that 404s or
-// resolves to a beach would ship 24 broken galleries). Ordering within a pool
-// is deliberate: the most scene-typical frames first, context frames (uplands,
-// access roads, valley floors) later, because low-index picks are the ones
-// short galleries land on. Some IDs serve two pools — a valley oak is both a
-// meadow and a floodplain — which is fine across projects; uniqueness only
-// matters within one gallery, and the seed stride guarantees that per pool.
-const SCENE_IMAGES: Record<ProjectPhoto['scene'], string[]> = {
-  stream: [
-    '1506744038136-46273834b3fb', // river across a granite valley floor
-    '1473448912268-2022ce9509d8', // river running through conifer forest
-    '1432405972618-c60b0225b8f9', // creek falls into a boulder pool
-    '1433086966358-54859d0ed716', // falls in a forested gorge
-    '1502082553048-f009c37129b9', // lone valley oak on a grassland floodplain
-    '1426604966848-d7adac402bff', // pines on a valley floor below granite
-  ],
-  meadow: [
-    '1470071459604-3b5ec3a7fe05', // green hills under first light
-    '1465146344425-f00d5f5c8f07', // poppies through dry grass
-    '1502082553048-f009c37129b9', // lone valley oak on open grassland
-    '1469474968028-56623f02e42e', // rocky upland meadow at dusk
-    '1439066615861-d1af74d74000', // still pond with a monitoring platform
-    '1444927714506-8492d94b4e3d', // hazy blue ridgelines
-  ],
-  forest: [
-    '1441974231531-c6227db76b6e', // sunlit trail through mixed conifer
-    '1418065460487-3e41a6c84dc5', // mist over a conifer ridge
-    '1425913397330-cf8af2ff40a1', // sunbeams through a pine stand
-    '1476231682828-37e571bc172f', // aerial: road curving through forest
-    '1473773508845-188df298d2d1', // aerial: unbroken conifer canopy
-    '1426604966848-d7adac402bff', // valley-floor pines below a granite wall
-    '1448375240586-882707db888b', // closed-canopy stand, pre-treatment dark
-  ],
-  channel: [
-    '1473448912268-2022ce9509d8', // river through conifers
-    '1439066615861-d1af74d74000', // basin holding still water
-    '1432405972618-c60b0225b8f9', // creek falls and boulder pool
-    '1470071459604-3b5ec3a7fe05', // green hills above the corridor
-    '1476231682828-37e571bc172f', // aerial: road through forest
-    '1444927714506-8492d94b4e3d', // hazy ridgelines above the watershed
-  ],
-};
+// The seeded photos as the script reads them: the same records plus both
+// crops, so a tile and the viewer show one picture at two sizes.
+const seed = photos.map((photo, i) => ({
+  ...photo,
+  id: `p${i}`,
+  thumb: photoSrc(photo, 640, 480),
+  full: photoSrc(photo, 1600, 1200, 70),
+}));
 
-const imageId = (photo: ProjectPhoto): string => {
-  const pool = SCENE_IMAGES[photo.scene];
-  return pool[photo.seed % pool.length];
-};
-
-// Exact 4:3 crops from the CDN, so both surfaces get uniform frames whatever
-// the source's native shape: 2× the ~234px tile for the grid, and a
-// screen-size 1600×1200 for the lightbox — the SAME crop at two resolutions,
-// so opening a photo enlarges it rather than reframing it.
-const srcFor = (photo: ProjectPhoto): string =>
-  `https://images.unsplash.com/photo-${imageId(photo)}?auto=format&fit=crop&w=640&h=480&q=60`;
-const fullFor = (photo: ProjectPhoto): string =>
-  `https://images.unsplash.com/photo-${imageId(photo)}?auto=format&fit=crop&w=1600&h=1200&q=70`;
-
-const hasPhotos = photos.length > 0;
-const hasCarousel = photos.length > 1;
+// Build time shows the seed's public photos to a visitor and all of them to an
+// editor; the script corrects either from this browser's edits.
+const shown = seed.filter((photo) => !readonly || photo.public);
+const hasPhotos = seed.length > 0;
+const editable = !readonly && !inert;
 ---
 <EsaCard title="Photos">
-  <!-- ADD, not edit — this section is a COLLECTION, the same rule every
-       collection section on this page states in full on its own header (see
-       firma2-project-timeline). sm is the shared section-header control size;
-       inert, not disabled, per the page's standing stance on unwired
-       affordances. -->
-  <EsaButton slot="actions" variant="chrome" size="sm" icon="plus">Add photo</EsaButton>
-
-  {!hasPhotos ? (
-    <!-- REACHABLE, by construction: buildPhotos gives some proposals nothing,
-         because a record with no photos is a real state on any tenant. The
-         description is the recovery action, not an apology for the feature. -->
-    <EsaEmptyState size="sm" title="No photos yet" description="Add site photos as the work begins." />
-  ) : (
-    <ul class="firma2-project-gallery grid" data-gap="md" role="list">
-      {photos.map((photo, i) => (
-        <li>
-          <figure class="firma2-project-gallery__figure">
-            <div class="firma2-project-gallery__frame">
-              {/* alt="" is a decision, not an omission: the figcaption directly
-                  below says what the photo shows — the one description a real
-                  upload would store — and an alt repeating it would announce
-                  every frame twice. loading="lazy" because this card sits five
-                  sections down; the images are the page's only external
-                  requests and none should compete with the record itself. */}
-              <img
-                class="firma2-project-gallery__image"
-                src={srcFor(photo)}
-                alt=""
-                width="640"
-                height="480"
-                loading="lazy"
-                decoding="async"
-              />
-              {/* ONE affordance per tile, and it is a real button. Hidden at
-                  rest and raised by hover — or by keyboard focus, which is the
-                  half hover-revealed controls usually forget — and always
-                  visible where hover does not exist (touch), because an
-                  invisible tap target is a control nobody was told about. The
-                  label carries the caption so eight tiles do not announce as
-                  eight identical "View photo" buttons. */}
-              <EsaButton
-                class="firma2-project-gallery__expand"
-                variant="secondary"
-                size="sm"
-                iconOnly
-                icon="expand"
-                label={`View photo: ${photo.caption}`}
-                data-lightbox-open={String(i)}
-              />
-            </div>
-            <figcaption class="firma2-project-gallery__caption">
-              <span class="typography-body-sm">{photo.caption}</span>
-              <span class="firma2-project-gallery__date typography-meta">{photo.date}</span>
-            </figcaption>
-          </figure>
-        </li>
-      ))}
-    </ul>
+  {editable && (
+    <EsaButton slot="actions" variant="chrome" size="sm" icon="plus" data-edit-only data-photo-add>Add photos</EsaButton>
   )}
 
-  {hasPhotos && (
-    <>
-      {/* THE VIEWER — one dialog, re-pointed to whichever photo opened it.
-          heading="Photos" names the dialog for a screen reader and puts the
-          lego's own close button in reach; everything below the header is the
-          photograph at the largest size the viewport allows, with the record's
-          caption under it where the tile put it. The chevrons ride the frame's
-          edges (the carousel idiom), wrap at the ends, and only exist at all
-          when there is more than one photo — a one-photo "carousel" is a
-          button that goes nowhere. */}
-      <esa-dialog class="firma2-project-gallery__lightbox" heading="Photos" show-close-button>
-        <figure class="firma2-project-gallery__stage-figure">
-          <div class="firma2-project-gallery__stage">
-            <img
-              class="firma2-project-gallery__stage-image"
-              data-lightbox-image
-              src={fullFor(photos[0])}
-              alt=""
-              width="1600"
-              height="1200"
-              decoding="async"
-            />
-            {hasCarousel && (
-              <>
-                <EsaButton
-                  class="firma2-project-gallery__nav firma2-project-gallery__nav--prev"
-                  variant="secondary"
-                  size="md"
-                  iconOnly
-                  icon="chevron-left"
-                  label="Previous photo"
-                  data-lightbox-prev
-                />
-                <EsaButton
-                  class="firma2-project-gallery__nav firma2-project-gallery__nav--next"
-                  variant="secondary"
-                  size="md"
-                  iconOnly
-                  icon="chevron-right"
-                  label="Next photo"
-                  data-lightbox-next
-                />
-              </>
-            )}
+  <div class="firma2-project-gallery stack" data-gap="md" data-gallery data-readonly={readonly ? '' : undefined} data-inert={inert ? '' : undefined} data-slug={slug}>
+    {editable && <input class="visually-hidden" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" data-photo-input />}
+
+    {/* The bar above the grid. Filters show once there is something to filter;
+        the batch row shows only right after a drop. */}
+    {!inert && (
+      <div class="firma2-project-gallery__filters cluster" data-gap="md" data-align="end" data-filters hidden>
+        <esa-button-toggle size="md" label="Stage" data-filter-stage></esa-button-toggle>
+        <div class="firma2-project-gallery__collection" data-collection-wrap hidden>
+          <esa-select size="md" label="Collection" data-filter-collection></esa-select>
+        </div>
+      </div>
+    )}
+
+    {editable && (
+      <div class="firma2-project-gallery__batch cluster" data-gap="md" data-align="end" data-batch hidden>
+        <p class="typography-body-sm firma2-project-gallery__batch-note" data-batch-note></p>
+        <esa-button-toggle size="md" label="Stage for all" data-batch-stage></esa-button-toggle>
+        <EsaButton variant="secondary" appearance="outline" size="md" data-batch-done>Done</EsaButton>
+      </div>
+    )}
+
+    <div class="firma2-project-gallery__empty" data-empty hidden={shown.length > 0 || undefined}>
+      <EsaEmptyState size="sm" title="No photos yet" description={editable ? 'Drop photos here, or choose Add photos.' : undefined} />
+    </div>
+
+    {editable ? (
+      <bcn-sortable-list layout="grid" label="Photos" data-sortable>
+        <template data-sort-handle><EsaButton variant="secondary" size="sm" iconOnly icon="menu" aria-label="Move" data-edit-only>Move</EsaButton></template>
+        <ol class="firma2-project-gallery__grid grid" data-gap="md" role="list" data-tiles>
+          {shown.map((photo, i) => (
+            <Firma2PhotoTile id={photo.id} index={i} src={photo.thumb} caption={photo.caption} alt={photo.alt} date={photo.date} stageLabel={stageLabel(photo.stage)} point={photo.point} readonly={false} editable />
+          ))}
+        </ol>
+      </bcn-sortable-list>
+    ) : (
+      <ol class="firma2-project-gallery__grid grid" data-gap="md" role="list" data-tiles>
+        {shown.map((photo, i) => (
+          <Firma2PhotoTile id={photo.id} index={i} src={photo.thumb} caption={photo.caption} alt={photo.alt} date={photo.date} stageLabel={stageLabel(photo.stage)} point={photo.point} readonly editable={false} />
+        ))}
+      </ol>
+    )}
+
+    {/* The tile a photo added in the browser (or one a visitor's filter
+        brought back) is cloned from. */}
+    {!inert && (
+      <template data-tile-template>
+        <Firma2PhotoTile id="" index={0} src="" caption="" alt="" date="" stageLabel="" readonly={!editable} editable={editable} />
+      </template>
+    )}
+
+    {/* Data for the script: the seed and the work areas. The viewer's payload
+        is built at click time, so a filter scopes the carousel. */}
+    <script type="application/json" data-photos-seed set:html={JSON.stringify(seed)} />
+    <script type="application/json" data-work-areas set:html={JSON.stringify(workAreas)} />
+
+    {editable && (
+      <bcn-side-sheet class="firma2-project-gallery__sheet" heading="Photo details" position="right" data-photo-sheet>
+        <div class="stack" data-gap="md">
+          <esa-text-field size="md" label="Caption" data-f="caption"></esa-text-field>
+          <esa-textarea size="md" label="Description for screen readers" rows="2" help-text="What is visible in the picture, not what the work is." data-f="alt"></esa-textarea>
+          <esa-button-toggle size="md" label="Stage" data-f="stage"></esa-button-toggle>
+          <div class="stack" data-gap="sm">
+            <esa-select size="md" label="Photo point" help-text="Photos from one point can be compared over time." data-f="point"></esa-select>
+            <div data-new-wrap="point" hidden><esa-text-field size="md" label="New photo point" placeholder="e.g. Culvert, looking upstream" data-new="point"></esa-text-field></div>
           </div>
-          <figcaption class="firma2-project-gallery__stage-caption repel" data-gap="md">
-            <span class="firma2-project-gallery__stage-text">
-              <span class="typography-body-md" data-lightbox-caption></span>
-              <span class="firma2-project-gallery__date typography-meta" data-lightbox-date></span>
-            </span>
-            {hasCarousel && (
-              <span class="firma2-project-gallery__count typography-meta" data-lightbox-count></span>
-            )}
-          </figcaption>
-        </figure>
-      </esa-dialog>
+          <div class="stack" data-gap="sm">
+            <esa-select size="md" label="Collection" help-text="A set shown together, like a planting day." data-f="collection"></esa-select>
+            <div data-new-wrap="collection" hidden><esa-text-field size="md" label="New collection" placeholder="e.g. Planting day" data-new="collection"></esa-text-field></div>
+          </div>
+          <esa-date-picker size="md" label="Taken on" data-f="takenOn"></esa-date-picker>
+          <esa-select size="md" label="Work area" data-f="workArea"></esa-select>
+          <esa-text-field size="md" label="Credit" data-f="credit"></esa-text-field>
+          <esa-switch-toggle size="md" label="Show on the public page" data-f="public"></esa-switch-toggle>
+          <div class="cluster" data-gap="sm" data-align="center">
+            <EsaButton variant="secondary" appearance="outline" size="md" icon="star" data-sheet-feature>Make featured</EsaButton>
+            <span class="typography-meta firma2-project-gallery__feature-note" data-feature-note hidden>Leads the public page.</span>
+          </div>
+        </div>
+        <div slot="footer" class="cluster" data-gap="xs">
+          <EsaButton variant="secondary" appearance="outline" size="md" icon="trash-2" data-sheet-remove>Remove photo</EsaButton>
+        </div>
+      </bcn-side-sheet>
+    )}
 
-      <script
-        type="application/json"
-        data-lightbox-photos
-        set:html={JSON.stringify(
-          photos.map((photo) => ({ full: fullFor(photo), caption: photo.caption, date: photo.date })),
-        )}
-      />
-    </>
-  )}
+    {/* Its own wrapper: two sibling custom-element dialogs can come out nested. */}
+    {editable && <div class="firma2-project-gallery__confirm"><esa-confirm-dialog variant="danger" confirm-label="Remove" data-confirm></esa-confirm-dialog></div>}
+  </div>
 </EsaCard>
 
 <style>
-  /* The .grid primitive flows the tiles; the min is what decides how many sit
-     abreast. 13rem lands three-up in the content column at desktop widths and
-     wraps to two, then one, as the column narrows — no media query to hold.
-
-     auto-FILL, overriding the primitive's one auto-FIT line. The difference
-     only shows when there are fewer photos than the row fits: auto-fit
-     collapses the unused tracks and stretches the real ones, so a two-photo
-     gallery grew 500px tracks around 4:3 photos — and the first cure tried
-     (capping the FIGURE at 22rem) just moved the damage: the photo stopped
-     growing but its track did not, and the ~150px of track slack between
-     tiles read as unexplained padding (measured at 1800px, gap 16px declared,
-     167px rendered). auto-fill keeps the empty tracks, so every real tile
-     stays photo-sized, the rendered gap IS the declared gap at every count,
-     and a full gallery is identical under either keyword. Same minmax, same
-     --grid-min — one keyword differs. The primitive has no knob for this
-     (checked layouts.css 2026-08-25); a data-fill variant on .grid is a
-     /request-lego candidate. */
-  .firma2-project-gallery {
+  /* auto-FILL, not the primitive's auto-FIT: with fewer photos than a row
+     fits, auto-fit stretches the real tracks and the slack reads as padding
+     (measured 2026-08-25). Same minmax, one keyword differs. */
+  .firma2-project-gallery__grid {
     --grid-min: 13rem;
     grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr));
     list-style: none;
@@ -278,231 +189,489 @@ const hasCarousel = photos.length > 1;
     padding: 0;
   }
 
-  .firma2-project-gallery__figure {
+  .firma2-project-gallery__batch-note {
     margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-200, 0.5rem);
+    flex: 1 1 14rem;
   }
 
-  /* The expand control's positioning context. Nothing else — the frame takes
-     its size from the image, so the tile's geometry is exactly what it was
-     before the control existed. */
-  .firma2-project-gallery__frame {
-    position: relative;
+  /* A filtered or empty gallery keeps its ground: the empty state sits where
+     the grid was, at the grid's own width. */
+  .firma2-project-gallery [hidden] {
+    display: none !important;
   }
 
-  /* One aspect for every frame — a gallery scans as a gallery because the
-     frames agree, and 4:3 is the shape a field photo actually arrives in. The
-     CDN crop already delivers 4:3; aspect-ratio + object-fit restate it so the
-     box holds its shape BEFORE the image arrives (no reflow on lazy-load) and
-     even if a pool entry ever ships un-cropped. The hairline does for a photo
-     what a mat does for a print: says where it ends on a near-white card. */
-  .firma2-project-gallery__image {
-    display: block;
-    inline-size: 100%;
-    block-size: auto;
-    aspect-ratio: 4 / 3;
-    object-fit: cover;
-    border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #e3e5e2);
-    border-radius: var(--radius-sm, 4px);
-    /* The frame keeps its ground while the photo loads — the sunken step, the
-       same role the map canvas rests on, so an empty frame reads as loading
-       rather than broken. */
-    background: var(--color-background-elevation-sunken, #f4f5f4);
+  .firma2-project-gallery__grid > :global([hidden]) {
+    display: none !important;
   }
 
-  /* Hidden at rest, raised by pointer hover on the frame or by keyboard focus
-     on the button itself (:focus-within, because the focusable is the lego's
-     inner native button). opacity, not display, so the control is focusable
-     while invisible — a Tab stop that exists only on hover would be
-     unreachable by exactly the users who cannot hover.
-
-     :global() because the class rides an esa-button's wrapper, which carries
-     the lego's scope hash, not this file's; containment under the frame (this
-     file's element) keeps the reach local. */
-  .firma2-project-gallery__frame :global(.firma2-project-gallery__expand) {
-    position: absolute;
-    inset-block-start: var(--spacing-200, 0.5rem);
-    inset-inline-end: var(--spacing-200, 0.5rem);
-    opacity: 0;
-    transition: opacity var(--transition-base, 0.2s ease);
+  /* The sheet host is inline; fixed takes it out of the card's flow. */
+  .firma2-project-gallery__sheet {
+    position: fixed;
+    --side-dialog-width: 400px;
   }
 
-  .firma2-project-gallery__frame:hover :global(.firma2-project-gallery__expand),
-  .firma2-project-gallery__frame :global(.firma2-project-gallery__expand:focus-within) {
-    opacity: 1;
-  }
-
-  /* No hover, no reveal moment — the control is simply there. */
-  @media (hover: none) {
-    .firma2-project-gallery__frame :global(.firma2-project-gallery__expand) {
-      opacity: 1;
-    }
-  }
-
-  .firma2-project-gallery__caption {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-050, 0.125rem);
-    color: var(--color-content-default, #1d211c);
-  }
-
-  .firma2-project-gallery__date {
+  .firma2-project-gallery__feature-note {
     color: var(--color-content-default-secondary, #60655f);
   }
 
-  /* ── The viewer ────────────────────────────────────────────────────────── */
-
-  /* fit-content, because the photograph is what sizes this dialog: the image
-     states its own bounds below (viewport-derived, 4:3 held), and the lego's
-     fixed 480px default would either letterbox it or crop it. The hook is the
-     lego's published re-skin surface, not a reach into its shadow. */
-  .firma2-project-gallery__lightbox {
-    --dialog-width: fit-content;
+  /* The sort grip is placed in the tile's slot; the tile's own opacity rules
+     reveal it, so the slot only needs to hold the button. */
+  .firma2-project-gallery__grid :global(.bcn-sort-grip) {
+    position: static;
   }
 
-  .firma2-project-gallery__stage-figure {
-    margin: 0;
-    padding: var(--spacing-400, 1rem);
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-300, 0.75rem);
-  }
-
-  .firma2-project-gallery__stage {
-    position: relative;
-  }
-
-  /* As large as the viewport honestly allows while the whole dialog — header,
-     caption row included — stays on screen. The height bound starts from the
-     lego's own 85vh dialog ceiling and SUBTRACTS the ~12rem the header bar,
-     the caption row and the paddings spend, then converts to width through
-     the 4:3 ratio — budgeting the image against the viewport alone was the
-     first version, and the dialog's overflow:hidden answered by clipping the
-     caption off the bottom. A fixed aspect means every photo in the carousel
-     lands in the IDENTICAL box, so paging never resizes the dialog — the
-     stable-frame rule, applied to a surface whose content changes on every
-     click. */
-  .firma2-project-gallery__stage-image {
-    display: block;
-    inline-size: min(86vw, calc((85vh - 14rem) * 4 / 3), 64rem);
-    /* Explicit, because the width/height ATTRIBUTES map to presentational
-       width/height styles on a replaced element — without this line the
-       attribute's 1200px wins over the aspect-ratio and the frame renders
-       portrait. Same trap the grid tile hit, same fix. */
-    block-size: auto;
-    aspect-ratio: 4 / 3;
-    object-fit: cover;
-    border-radius: var(--radius-sm, 4px);
-    background: var(--color-background-elevation-sunken, #f4f5f4);
-  }
-
-  /* The chevrons ride the frame's vertical center — the carousel idiom, where
-     the eye already is. Solid secondary buttons rather than chrome ghosts:
-     a transparent glyph over a photograph has whatever contrast the sky
-     happens to give it. :global() for the same wrapper-scope reason as the
-     expand control. */
-  .firma2-project-gallery__stage :global(.firma2-project-gallery__nav) {
-    position: absolute;
-    inset-block-start: 50%;
-    translate: 0 -50%;
-  }
-
-  .firma2-project-gallery__stage :global(.firma2-project-gallery__nav--prev) {
-    inset-inline-start: var(--spacing-300, 0.75rem);
-  }
-
-  .firma2-project-gallery__stage :global(.firma2-project-gallery__nav--next) {
-    inset-inline-end: var(--spacing-300, 0.75rem);
-  }
-
-  .firma2-project-gallery__stage-caption {
-    align-items: baseline;
-  }
-
-  .firma2-project-gallery__stage-text {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-050, 0.125rem);
-  }
-
-  .firma2-project-gallery__count {
-    color: var(--color-content-default-secondary, #60655f);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  /* Locked while a filter hides tiles: no grips, no drag. */
+  .firma2-project-gallery[data-filtered] :global([data-sort-grip-slot]) {
+    display: none;
   }
 </style>
 
 <script>
-  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-date-picker';
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '../shared/bcn-side-sheet';
+  import '../shared/bcn-sortable-list';
+  import { announce } from '@esa/ecology/announcer';
+  import { openLightbox, type LightboxImage } from '../../lib/lightbox';
+  import { FEATURED_EVENT, slugFromLocation } from '../../lib/featured-photo';
+  import { readExif, monthLabel } from '../../lib/exif';
+  import { nameButton } from '../../lib/name-button';
+  import {
+    PHOTO_META_EVENT,
+    STAGES,
+    addPhoto,
+    featurePhoto,
+    namesOf,
+    orderPhotos,
+    patchPhoto,
+    patchPhotos,
+    removePhoto,
+    resolvePhotos,
+    stageLabel,
+    type PhotoMetaPatch,
+    type ResolvedPhoto,
+  } from '../../lib/photo-meta';
 
-  type Dialog = HTMLElement & { show: () => void; close: () => void; open: boolean };
+  type Field = HTMLElement & { value: string; checked?: boolean; options?: { value: string; label: string }[] };
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
+  type Confirm = HTMLElement & { show: () => void; heading: string; message: string };
 
-  interface LightboxPhoto {
-    full: string;
-    caption: string;
-    date: string;
-  }
+  const NONE = '';
+  const NEW = '__new__';
+  const ALL = 'all';
 
-  // One gallery per page today (the project detail route); document scope is
-  // the same seam the record-actions sheet uses. The payload is server-
-  // rendered JSON — the script re-points a skeleton authored as markup and
-  // never constructs an element.
-  const lightbox = document.querySelector<Dialog>('.firma2-project-gallery__lightbox');
-  const payload = document.querySelector<HTMLScriptElement>('[data-lightbox-photos]');
+  document.querySelectorAll<HTMLElement>('[data-gallery]').forEach((root) => {
+    const readonly = root.hasAttribute('data-readonly');
+    const slug = root.dataset.slug || slugFromLocation();
+    const card = root;
+    if (root.hasAttribute('data-inert')) return;
+    const q = <T extends HTMLElement>(selector: string): T | null => card.querySelector<T>(selector);
 
-  if (lightbox && payload) {
-    const photos = JSON.parse(payload.textContent ?? '[]') as LightboxPhoto[];
-    const image = lightbox.querySelector<HTMLImageElement>('[data-lightbox-image]');
-    const caption = lightbox.querySelector<HTMLElement>('[data-lightbox-caption]');
-    const date = lightbox.querySelector<HTMLElement>('[data-lightbox-date]');
-    const count = lightbox.querySelector<HTMLElement>('[data-lightbox-count]');
-    let index = 0;
+    const seed = JSON.parse(q<HTMLScriptElement>('[data-photos-seed]')?.textContent ?? '[]') as (ResolvedPhoto & { thumb: string; full: string })[];
+    const areas = JSON.parse(q<HTMLScriptElement>('[data-work-areas]')?.textContent ?? '[]') as { label: string; center: [number, number] }[];
+    const grid = q<HTMLElement>('[data-tiles]');
+    // No project to act on (a peek, whose scripts never run in practice): the
+    // server-rendered tiles stand and the tiles open the viewer from the seed.
+    if (!grid) return;
 
-    const render = (): void => {
-      const photo = photos[index];
-      if (!photo || !image) return;
-      image.src = photo.full;
-      if (caption) caption.textContent = photo.caption;
-      if (date) date.textContent = photo.date;
-      if (count) count.textContent = `${index + 1} of ${photos.length}`;
-      // The neighbors warm the cache while the current photo is being looked
-      // at, so paging swaps instantly instead of restating the network.
-      [index + 1, index - 1].forEach((n) => {
-        const neighbor = photos[(n + photos.length) % photos.length];
-        if (neighbor) new Image().src = neighbor.full;
+    const images = new Map<string, { thumb: string; full: string }>(seed.map((p) => [p.id, { thumb: p.thumb, full: p.full }]));
+    const filters = q<HTMLElement>('[data-filters]')!;
+    const stageFilter = q<Field>('[data-filter-stage]')!;
+    const collectionWrap = q<HTMLElement>('[data-collection-wrap]')!;
+    const collectionFilter = q<Field>('[data-filter-collection]')!;
+    const empty = q<HTMLElement>('[data-empty]')!;
+    const template = q<HTMLTemplateElement>('[data-tile-template]');
+
+    let photos: ResolvedPhoto[] = [];
+    let stage = ALL;
+    let collection = ALL;
+
+    const visible = (): ResolvedPhoto[] =>
+      photos.filter((p) => (!readonly || p.public) && (stage === ALL || p.stage === stage) && (collection === ALL || p.collection === collection));
+
+    // -- painting one tile from its record ----------------------------------
+
+    const tileFor = (id: string): HTMLElement | null => grid.querySelector<HTMLElement>(`:scope > [data-photo-id="${id}"]`);
+
+    const setText = (tile: HTMLElement, hook: string, text: string): void => {
+      const el = tile.querySelector<HTMLElement>(hook);
+      if (el && el.textContent !== text) el.textContent = text;
+    };
+
+    const paintTile = (tile: HTMLElement, photo: ResolvedPhoto): void => {
+      const img = tile.querySelector<HTMLImageElement>('[data-photo-image]')!;
+      const src = images.get(photo.id)?.thumb ?? '';
+      if (src && img.getAttribute('src') !== src) img.src = src;
+      img.alt = photo.alt || '';
+      setText(tile, '[data-photo-caption]', photo.caption);
+      setText(tile, '[data-photo-stage]', stageLabel(photo.stage));
+      setText(tile, '[data-photo-date]', photo.date);
+      const sep = tile.querySelector<HTMLElement>('[data-photo-sep]');
+      if (sep) sep.hidden = !photo.date;
+      const point = tile.querySelector<HTMLElement>('[data-photo-point]');
+      if (point) {
+        point.textContent = photo.point ?? '';
+        point.hidden = !photo.point;
+      }
+      const featuredBadge = tile.querySelector<HTMLElement>('[data-featured-badge]');
+      if (featuredBadge) featuredBadge.hidden = !photo.featured;
+      const wrap = tile.querySelector<HTMLElement>('[data-feature-wrap]');
+      if (wrap) wrap.hidden = photo.featured || !photo.id.startsWith('p');
+      const internal = tile.querySelector<HTMLElement>('[data-internal-badge]');
+      if (internal) internal.hidden = photo.public;
+      tile.dataset.sortKey = photo.id;
+      tile.dataset.sortLabel = photo.caption || 'Photo';
+      const named = (hook: string, label: string): void => {
+        const el = tile.querySelector<HTMLElement>(hook);
+        if (el) nameButton(el, label);
+      };
+      named('[data-photo-expand]', `View photo: ${photo.caption}`);
+      named('[data-photo-feature]', `Make featured: ${photo.caption}`);
+      named('[data-photo-edit]', `Edit details: ${photo.caption}`);
+    };
+
+    const paint = (): void => {
+      photos = resolvePhotos(slug, seed);
+      const shown = visible();
+      const ids = new Set(shown.map((p) => p.id));
+
+      // A removed photo's tile leaves; a filtered one is only hidden, so the
+      // filter can bring it back without a template.
+      const all = new Set(photos.filter((p) => !readonly || p.public).map((p) => p.id));
+      grid.querySelectorAll<HTMLElement>(':scope > [data-photo-id]').forEach((tile) => {
+        if (!all.has(tile.dataset.photoId ?? '')) tile.remove();
       });
+      let cursor = 0;
+      photos.forEach((photo) => {
+        if (readonly && !photo.public && !tileFor(photo.id)) return;
+        let tile = tileFor(photo.id);
+        if (!tile) {
+          tile = template?.content.firstElementChild?.cloneNode(true) as HTMLElement | null;
+          if (!tile) return;
+          tile.dataset.photoId = photo.id;
+        }
+        // Placing an in-grid node moves it: this is the reorder.
+        const at = grid.children[cursor];
+        cursor += 1;
+        if (at !== tile) grid.insertBefore(tile, at ?? null);
+        tile.hidden = !ids.has(photo.id);
+        paintTile(tile, photo);
+      });
+
+      // The filters show when there is a choice to make.
+      const stages = new Set(photos.map((p) => p.stage));
+      const collections = namesOf(photos, 'collection');
+      filters.hidden = photos.length < 2 || (stages.size < 2 && collections.length === 0);
+      collectionWrap.hidden = collections.length === 0;
+      if (collection !== ALL && !collections.includes(collection)) collection = ALL;
+      collectionFilter.options = [{ value: ALL, label: 'All collections' }, ...collections.map((c) => ({ value: c, label: c }))];
+      collectionFilter.value = collection;
+
+      empty.hidden = shown.length > 0;
+      root.toggleAttribute('data-filtered', stage !== ALL || collection !== ALL);
+      // A filter hides tiles, so the grid cannot be reordered through it.
+      grid.querySelectorAll<HTMLElement>(':scope > li').forEach((li) => li.toggleAttribute('data-sort-locked', root.hasAttribute('data-filtered')));
     };
 
-    const step = (delta: number): void => {
-      index = (index + delta + photos.length) % photos.length;
-      render();
-    };
+    // -- filters --------------------------------------------------------------
 
-    document.querySelectorAll<HTMLElement>('[data-lightbox-open]').forEach((opener) => {
-      opener.addEventListener('click', () => {
-        index = Number(opener.getAttribute('data-lightbox-open')) || 0;
-        render();
-        lightbox.show();
+    void customElements.whenDefined('esa-button-toggle').then(() => {
+      const options = [{ value: ALL, label: 'All' }, ...STAGES];
+      (stageFilter as unknown as { options: unknown }).options = options;
+      stageFilter.value = ALL;
+      stageFilter.addEventListener('change', (e) => {
+        stage = (e as CustomEvent<{ value: string }>).detail.value || ALL;
+        paint();
       });
     });
+    collectionFilter.addEventListener('change', (e) => {
+      collection = (e as CustomEvent<{ value: string }>).detail.value || ALL;
+      paint();
+    });
 
-    lightbox.querySelector('[data-lightbox-prev]')?.addEventListener('click', () => step(-1));
-    lightbox.querySelector('[data-lightbox-next]')?.addEventListener('click', () => step(1));
+    // -- the viewer -----------------------------------------------------------
 
-    // Arrow keys page the carousel while the dialog is open — the keyboard
-    // twin of the chevrons, listening on the dialog host so it works wherever
-    // focus sits inside (Esc and Tab stay the lego's business).
-    lightbox.addEventListener('keydown', (event) => {
-      if (photos.length < 2 || !lightbox.open) return;
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        step(1);
-      } else if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        step(-1);
+    const toImage = (p: ResolvedPhoto): LightboxImage => ({
+      src: images.get(p.id)?.full ?? '',
+      caption: p.caption,
+      alt: p.alt || undefined,
+      date: p.date,
+      tag: [stageLabel(p.stage), p.point].filter(Boolean).join(' · '),
+    });
+    const showViewer = (index: number): void => {
+      const list = visible();
+      openLightbox({ images: list.map(toImage), index, heading: collection !== ALL ? collection : 'Photos' });
+    };
+    grid.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      const tile = target.closest<HTMLElement>(':scope > li') ?? target.closest<HTMLElement>('[data-photo-id]');
+      if (!tile || !grid.contains(tile)) return;
+      if (target.closest('[data-photo-edit]')) return openSheet(tile.dataset.photoId ?? '');
+      if (target.closest('[data-photo-feature]')) return makeFeatured(tile.dataset.photoId ?? '');
+      if (target.closest('[data-photo-expand]') || target.closest('[data-photo-image]')) {
+        showViewer([...grid.children].filter((li) => !(li as HTMLElement).hidden).indexOf(tile));
       }
     });
-  }
+
+    if (readonly) {
+      window.addEventListener(PHOTO_META_EVENT, paint);
+      window.addEventListener(FEATURED_EVENT, paint);
+      paint();
+      return;
+    }
+
+    // -- featured -------------------------------------------------------------
+
+    const makeFeatured = (id: string): void => {
+      featurePhoto(slug, id);
+      const photo = photos.find((p) => p.id === id);
+      announce(`${photo?.caption ?? 'Photo'} now leads the public page`);
+    };
+
+    // -- reorder --------------------------------------------------------------
+
+    q<HTMLElement>('[data-sortable]')?.addEventListener('sort-change', (event) => {
+      const moved = (event as CustomEvent<{ order: string[] }>).detail.order;
+      // The grid holds every photo when no filter is on, so its order is the record's.
+      if (!root.hasAttribute('data-filtered')) orderPhotos(slug, moved);
+    });
+
+    // -- the details sheet ----------------------------------------------------
+
+    const sheet = q<Sheet>('[data-photo-sheet]')!;
+    const confirm = q<Confirm>('[data-confirm]')!;
+    const field = (name: string): Field => sheet.querySelector<Field>(`[data-f="${name}"]`)!;
+    const newWrap = (name: string): HTMLElement => sheet.querySelector<HTMLElement>(`[data-new-wrap="${name}"]`)!;
+    const newField = (name: string): Field => sheet.querySelector<Field>(`[data-new="${name}"]`)!;
+    let editing = '';
+    let opener: HTMLElement | null = null;
+
+    const current = (): ResolvedPhoto | undefined => photos.find((p) => p.id === editing);
+
+    const choices = (key: 'point' | 'collection', none: string, add: string) => [
+      { value: NONE, label: none },
+      ...namesOf(photos, key).map((n) => ({ value: n, label: n })),
+      { value: NEW, label: add },
+    ];
+
+    const fillSheet = (): void => {
+      const p = current();
+      if (!p) return;
+      field('caption').value = p.caption;
+      field('alt').value = p.alt;
+      field('stage').value = p.stage;
+      field('point').options = choices('point', 'None', 'New photo point…');
+      field('point').value = p.point ?? NONE;
+      field('collection').options = choices('collection', 'None', 'New collection…');
+      field('collection').value = p.collection ?? NONE;
+      newWrap('point').hidden = true;
+      newWrap('collection').hidden = true;
+      field('takenOn').value = p.takenOn;
+      field('workArea').options = [{ value: NONE, label: 'None' }, ...areas.map((a) => ({ value: a.label, label: a.label }))];
+      field('workArea').value = p.workArea ?? NONE;
+      field('credit').value = p.credit ?? '';
+      field('public').checked = p.public;
+      const featuredHere = p.featured;
+      const canFeature = p.id.startsWith('p');
+      const featureButton = sheet.querySelector<HTMLElement>('[data-sheet-feature]')!;
+      featureButton.hidden = featuredHere || !canFeature;
+      sheet.querySelector<HTMLElement>('[data-feature-note]')!.hidden = !featuredHere;
+    };
+
+    const openSheet = (id: string): void => {
+      editing = id;
+      opener = tileFor(id)?.querySelector<HTMLElement>('[data-photo-edit] button, [data-photo-edit]') ?? null;
+      void Promise.all(
+        ['esa-select', 'esa-text-field', 'esa-textarea', 'esa-button-toggle', 'esa-date-picker', 'esa-switch-toggle'].map((tag) => customElements.whenDefined(tag)),
+      ).then(() => {
+        (field('stage') as unknown as { options: unknown }).options = STAGES;
+        fillSheet();
+        sheet.show();
+      });
+    };
+
+    const save = (patch: PhotoMetaPatch): void => {
+      if (editing) patchPhoto(slug, editing, patch);
+    };
+
+    const on = (name: string, handler: (value: string, event: CustomEvent) => void): void => {
+      field(name).addEventListener('change', (e) => handler((e as CustomEvent<{ value: string }>).detail?.value ?? '', e as CustomEvent));
+    };
+    on('caption', (v) => save({ caption: v.trim() }));
+    on('alt', (v) => save({ alt: v.trim() }));
+    on('stage', (v) => v && save({ stage: v as ResolvedPhoto['stage'] }));
+    on('takenOn', (v) => save({ takenOn: v, date: monthLabel(v) || current()?.date || '' }));
+    on('workArea', (v) => save({ workArea: v || undefined }));
+    on('credit', (v) => save({ credit: v.trim() || undefined }));
+    field('public').addEventListener('change', (e) => save({ public: (e as CustomEvent<{ checked: boolean }>).detail.checked }));
+
+    // A name that is not in the list yet is typed in, then saved on commit.
+    (['point', 'collection'] as const).forEach((key) => {
+      on(key, (v) => {
+        const isNew = v === NEW;
+        newWrap(key).hidden = !isNew;
+        if (isNew) return newField(key).focus();
+        save({ [key]: v || undefined });
+      });
+      const commit = (): void => {
+        const name = newField(key).value.trim();
+        if (!name) return;
+        save({ [key]: name });
+        announce(`${key === 'point' ? 'Photo point' : 'Collection'} ${name} saved`);
+        requestAnimationFrame(fillSheet);
+      };
+      newField(key).addEventListener('change', commit);
+    });
+
+    sheet.querySelector('[data-sheet-feature]')?.addEventListener('click', () => {
+      if (editing) makeFeatured(editing);
+    });
+    sheet.addEventListener('close', () => {
+      editing = '';
+      opener?.focus?.();
+    });
+
+    sheet.querySelector('[data-sheet-remove]')?.addEventListener('click', () => {
+      const p = current();
+      if (!p) return;
+      confirm.heading = `Remove ${p.caption || 'this photo'}?`;
+      confirm.message = 'The photo leaves this record and its public page.';
+      confirm.addEventListener(
+        'resolved',
+        (e) => {
+          if (!(e as CustomEvent<{ confirmed: boolean }>).detail.confirmed) return;
+          removePhoto(slug, p.id);
+          sheet.close();
+          announce(`${p.caption || 'Photo'} removed`);
+        },
+        { once: true },
+      );
+      confirm.show();
+    });
+
+    // -- adding many at once --------------------------------------------------
+
+    const input = q<HTMLInputElement>('[data-photo-input]')!;
+    const addButton = q<HTMLElement>('[data-photo-add]');
+    const batch = q<HTMLElement>('[data-batch]')!;
+    const batchNote = q<HTMLElement>('[data-batch-note]')!;
+    const batchStage = q<Field>('[data-batch-stage]')!;
+    let batchIds: string[] = [];
+
+    const metersApart = (a: [number, number], b: [number, number]): number => {
+      const k = Math.PI / 180;
+      const x = (b[1] - a[1]) * k * Math.cos(((a[0] + b[0]) / 2) * k);
+      const y = (b[0] - a[0]) * k;
+      return Math.hypot(x, y) * 6371000;
+    };
+
+    const nearestArea = (position: [number, number]): string | undefined => {
+      const ranked = areas
+        .map((a) => ({ label: a.label, d: metersApart(position, a.center) }))
+        .sort((a, b) => a.d - b.d)[0];
+      // A work area is a footprint, not a point: past a few kilometres the photo is not of it.
+      return ranked && ranked.d < 3000 ? ranked.label : undefined;
+    };
+
+    const addFiles = async (files: File[]): Promise<void> => {
+      const pictures = files.filter((f) => f.type.startsWith('image/'));
+      if (!pictures.length) return;
+      let read = 0;
+      batchIds = [];
+      for (const file of pictures) {
+        const exif = await readExif(file);
+        if (exif.takenOn || exif.position) read += 1;
+        const url = URL.createObjectURL(file);
+        const photo = addPhoto(slug, {
+          thumb: url,
+          full: url,
+          caption: file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim(),
+          takenOn: exif.takenOn ?? new Date().toISOString().slice(0, 10),
+          date: monthLabel(exif.takenOn ?? new Date().toISOString().slice(0, 10)),
+          workArea: exif.position ? nearestArea(exif.position) : undefined,
+        });
+        images.set(photo.id, { thumb: url, full: url });
+        batchIds.push(photo.id);
+        // addPhoto painted before its pixels were known; paint once more with them.
+        paint();
+      }
+      batchNote.textContent =
+        `${pictures.length} ${pictures.length === 1 ? 'photo' : 'photos'} added. ` +
+        (read ? `Date or location read from ${read} of ${pictures.length}.` : 'None had a date or location to read.');
+      batch.hidden = false;
+      (batchStage as unknown as { value: string }).value = '';
+      announce(batchNote.textContent);
+    };
+
+    addButton?.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      void addFiles([...(input.files ?? [])]);
+      input.value = '';
+    });
+    void customElements.whenDefined('esa-button-toggle').then(() => {
+      (batchStage as unknown as { options: unknown }).options = STAGES;
+      batchStage.addEventListener('change', (e) => {
+        const v = (e as CustomEvent<{ value: string }>).detail.value;
+        if (v && batchIds.length) patchPhotos(slug, batchIds, { stage: v as ResolvedPhoto['stage'] });
+      });
+    });
+    q<HTMLElement>('[data-batch-done]')?.addEventListener('click', () => {
+      batch.hidden = true;
+      batchIds = [];
+    });
+
+    // The whole card is the drop target.
+    let depth = 0;
+    card.addEventListener('dragenter', (e) => {
+      if (!(e as DragEvent).dataTransfer?.types.includes('Files')) return;
+      depth += 1;
+      root.setAttribute('data-dragging', '');
+    });
+    card.addEventListener('dragleave', () => {
+      depth = Math.max(depth - 1, 0);
+      if (!depth) root.removeAttribute('data-dragging');
+    });
+    card.addEventListener('dragover', (e) => {
+      if ((e as DragEvent).dataTransfer?.types.includes('Files')) e.preventDefault();
+    });
+    card.addEventListener('drop', (e) => {
+      const files = [...((e as DragEvent).dataTransfer?.files ?? [])];
+      if (!files.length) return;
+      e.preventDefault();
+      depth = 0;
+      root.removeAttribute('data-dragging');
+      void addFiles(files);
+    });
+
+    window.addEventListener(PHOTO_META_EVENT, () => {
+      paint();
+      if (editing) fillSheetValues();
+    });
+    window.addEventListener(FEATURED_EVENT, paint);
+
+    // A save repaints the grid; the sheet's own fields already show what was
+    // typed, so only the featured controls need to follow.
+    const fillSheetValues = (): void => {
+      const p = current();
+      if (!p) return;
+      sheet.querySelector<HTMLElement>('[data-sheet-feature]')!.hidden = p.featured || !p.id.startsWith('p');
+      sheet.querySelector<HTMLElement>('[data-feature-note]')!.hidden = !p.featured;
+    };
+
+    paint();
+  });
 </script>
+
+<style is:global>
+  /* Files dragged over the card: the card is the target. */
+  .firma2-project-gallery[data-dragging] {
+    outline: var(--border-width-emphasis, 2px) dashed var(--color-border-brand, #46a758);
+    outline-offset: var(--spacing-200, 0.5rem);
+    border-radius: var(--radius-sm, 4px);
+  }
+</style>

@@ -1,0 +1,1012 @@
+---
+// firma2-intake-flow — a new project, from its first screen to its approval.
+// The member's side of the intake form (spec: .scratch/project-intake/spec.md):
+// New project, the draft's steps, its review, and — once submitted — the
+// read-only proposal a manager approves or returns.
+//
+// IT IS NOT A ONE-SITTING WIZARD (product brief, "Setup is not a wizard").
+// Continue on the first screen creates a draft project with its own link;
+// from then on every answer saves as it is given, the steps can be visited in
+// any order, and leaving costs nothing. Submit waits for every required
+// question that is shown.
+//
+// THE FORM DECIDES WHAT IS ASKED, this decides nothing: screens, questions,
+// conditions and the after-submit message come from the published form
+// (src/lib/intake-form.ts), and each question is drawn by the same renderer
+// the builder's canvas uses (src/lib/intake-render.ts). `?preview=1` fills the
+// builder's unpublished copy instead and saves nothing.
+//
+// AN ORGANIZATION NOBODY HAS ADDED YET (.scratch/access-requests/spec.md,
+// decision 28). Under the lead organization question, "Not listed — request
+// it" opens a short request — name, type, website, a message — that goes to
+// the administrators, who alone create organizations. The draft takes the
+// requested name as its lead at once so the author keeps drafting, and
+// Submit waits, with the reason beside it, until an administrator approves.
+// Declined or withdrawn, the draft stays the author's to re-point. A dialog,
+// not a page (adds are pages): the author is mid-draft, and leaving the draft
+// to ask would cost the context the request is for.
+//
+// THE STEPS ARE AN OUTLINE beside the step (decided 2026-11-12 from
+// /proto/intake-steps; spec, Comments): every step with what it still needs —
+// "2 required left", "Optional", "Done" — so a member back after a week sees
+// what is left without opening each step. The outline is the progress; there
+// is no separate bar. Sticky under the top bar; stacked above the step below
+// 64rem.
+//
+// KEYBOARD (forms pass, same day): Enter in a one-line answer continues, and
+// Cmd/Ctrl+Enter continues from anywhere, a long answer included; the two
+// dialogs send on Enter and Cmd/Ctrl+Enter the same way.
+//
+// FOUR STATES, ONE PAGE: draft and returned are the steps; submitted, approved
+// and deferred are the proposal read back, with the manager's Approve and
+// Return on a submitted one.
+//
+// bcn-lego-checked: firma2-page-header (title, crumbs, status, actions),
+// esa-alert-box (returned, preview, submitted, still missing), esa-button
+// (cloned from templates for the step list and the review's Edit links),
+// esa-badge (status), esa-dialog + esa-textarea (Return), esa-dialog +
+// esa-text-field + esa-select + esa-textarea (the organization request), esa-dropdown-menu
+// (Move to Deferred), esa-snackbar-container (confirmations), every question
+// a runtime esa-* field. No esa- stepper or outline exists, and esa-button
+// cannot carry a status glyph over a two-line wrapping label, so the outline's
+// rows are native buttons built in the script — the spoke home until an esa-
+// stepper lands (spec, Components: /request-lego).
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2PageHeader from '../shared/firma2-page-header.astro';
+import { withBase } from '../../lib/base';
+import { DEFAULT_FORM_TITLE } from '../../data/firma2-intake';
+
+interface Props {
+  mode: 'new' | 'draft';
+}
+const { mode } = Astro.props;
+const config = {
+  mode,
+  intakeHref: withBase('/prototypes/projects/intake'),
+  myProjectsHref: withBase('/prototypes/map'),
+  reviewHref: withBase('/prototypes/review'),
+};
+---
+<div class="firma2-intake-flow stack" data-gap="xl" data-config={JSON.stringify(config)}>
+  <Firma2PageHeader title={DEFAULT_FORM_TITLE} crumbs={[{ label: 'Projects', href: withBase('/prototypes/projects') }, { label: 'New project' }]}>
+    <span slot="status" class="cluster" data-gap="xs">
+      <span data-status="draft" hidden><EsaBadge variant="secondary" size="md" value="Draft" /></span>
+      <span data-status="returned" hidden><EsaBadge variant="warning" size="md" value="Returned" /></span>
+      <span data-status="submitted" hidden><EsaBadge variant="info" size="md" value="Waiting for approval" /></span>
+      <span data-status="approved" hidden><EsaBadge variant="success" size="md" value="Approved" /></span>
+      <span data-status="declined" hidden><EsaBadge variant="secondary" size="md" value="Declined" /></span>
+    </span>
+    <span slot="actions" class="cluster" data-gap="xs" data-decide hidden>
+      <EsaButton variant="primary" size="md" data-approve>Approve</EsaButton>
+      <EsaButton variant="secondary" size="md" data-return>Return</EsaButton>
+      <esa-dropdown-menu position="below-end" data-more>
+        <EsaButton variant="secondary" size="md" iconOnly icon="ellipsis" aria-label="More actions">More actions</EsaButton>
+      </esa-dropdown-menu>
+    </span>
+  </Firma2PageHeader>
+
+  <div data-banner="preview" hidden>
+    <EsaAlertBox variant="info" title="Preview of unpublished changes">
+      <p class="typography-body-md">Nothing you enter here is saved.</p>
+    </EsaAlertBox>
+  </div>
+  <div data-banner="returned" hidden>
+    <EsaAlertBox variant="warning" title="Sent back for changes">
+      <p class="typography-body-md" data-return-comment></p>
+    </EsaAlertBox>
+  </div>
+  <div data-banner="submitted" hidden>
+    <EsaAlertBox variant="success" title="Project submitted">
+      <div data-after-submit></div>
+    </EsaAlertBox>
+  </div>
+  <!-- THE WORKSPACE IS NOT ACCEPTING NEW PROJECTS (docs/data-model.md, decision
+       15). Shown in place of the first screen to anyone but an administrator. -->
+  <div data-banner="closed" hidden>
+    <EsaAlertBox variant="info" title="This workspace isn’t accepting new projects">
+      <p class="typography-body-md">Ask an administrator to add yours.</p>
+    </EsaAlertBox>
+  </div>
+  <div data-banner="missing-draft" hidden>
+    <EsaAlertBox variant="warning" title="This project isn’t in this browser">
+      <p class="typography-body-md">Start a new project instead.</p>
+    </EsaAlertBox>
+  </div>
+
+  <!-- THE STEPS -->
+  <div class="firma2-intake-flow__layout" data-steps hidden>
+    <nav class="firma2-intake-flow__outline" aria-label="Steps">
+      <ol class="firma2-intake-flow__steps" data-step-list></ol>
+    </nav>
+    <div class="stack" data-gap="xl">
+    <section class="stack" data-gap="lg" aria-labelledby="intake-step-title">
+      <div class="stack" data-gap="2xs">
+        <p class="typography-body-md firma2-intake-flow__count" data-step-count></p>
+        <h2 class="typography-heading-md firma2-intake-flow__title" id="intake-step-title" data-step-title></h2>
+      </div>
+      <div class="stack" data-gap="lg" data-step-body></div>
+    </section>
+    <!-- Windows wizard order: Back, then the step's primary. -->
+    <div class="cluster firma2-intake-flow__footer" data-gap="xs">
+      <span data-back-wrap><EsaButton variant="secondary" size="md" data-back>Back</EsaButton></span>
+      <span data-next-wrap><EsaButton variant="primary" size="md" data-next>Continue</EsaButton></span>
+      <p class="typography-body-sm firma2-intake-flow__lead-wait" data-lead-wait hidden></p>
+      <span data-submit-wrap hidden><EsaButton variant="primary" size="md" data-submit>Submit for approval</EsaButton></span>
+    </div>
+    </div>
+  </div>
+
+  <!-- THE PROPOSAL, READ BACK -->
+  <div class="stack" data-gap="xl" data-summary hidden></div>
+
+  <esa-dialog class="firma2-intake-flow__return" heading="Return this project" size="md" show-close-button>
+    <esa-textarea label="What needs to change?" size="md" rows="4" required data-return-text></esa-textarea>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="primary" size="md" data-return-confirm>Return project</EsaButton>
+      <EsaButton variant="secondary" size="md" data-return-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <esa-dialog class="firma2-intake-flow__org-request" heading="Request an organization" size="md" show-close-button>
+    <div class="stack" data-gap="lg">
+      <esa-text-field label="Organization name" size="md" required autocomplete="organization" data-org-name></esa-text-field>
+      <esa-select label="Type" size="md" required data-org-type></esa-select>
+      <esa-text-field label="Website" size="md" inputmode="url" autocomplete="url" placeholder="example.org" help-text="Its own site, so an administrator can match it to your email." data-org-website></esa-text-field>
+      <esa-textarea label="Message (optional)" size="md" rows="3" data-org-message></esa-textarea>
+    </div>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <EsaButton variant="primary" size="md" data-org-send>Send request</EsaButton>
+      <EsaButton variant="ghost" size="md" data-org-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <esa-snackbar-container class="firma2-intake-flow__toasts"></esa-snackbar-container>
+
+  <template data-tpl="edit"><EsaButton variant="ghost" size="md">Edit</EsaButton></template>
+  <template data-tpl="org-request"><EsaButton variant="ghost" size="md">Not listed — request it</EsaButton></template>
+  <template data-tpl="picker"><EsaButton variant="ghost" size="md">Help me choose</EsaButton></template>
+</div>
+
+<style>
+  .firma2-intake-flow :global([hidden]) {
+    display: none !important;
+  }
+
+  /* The header's status and actions are handed to the app's top bar, outside
+     this root, where the rule above cannot reach — and .cluster's display
+     beats the UA [hidden], so Approve / Return showed on every draft. */
+  :global([data-firma2-top-bar] :is([data-decide], [data-status])[hidden]) {
+    display: none !important;
+  }
+
+  /* What isn't the steps — banners, the read-back — keeps the reading width;
+     the page runs wide only so the outline can sit beside the step. */
+  .firma2-intake-flow > :not([data-steps], .firma2-page-header, esa-dialog, esa-snackbar-container, template) {
+    max-width: 48rem;
+  }
+
+  .firma2-intake-flow__layout {
+    display: grid;
+    grid-template-columns: 16rem minmax(0, 48rem);
+    gap: var(--spacing-800);
+    align-items: start;
+  }
+
+  /* Sticky under the top bar; a long outline scrolls inside itself rather
+     than running past the fold. The padding is room for the rows' focus
+     ring, which the scrollport would otherwise clip. */
+  .firma2-intake-flow__outline {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px) + var(--spacing-500));
+    max-height: calc(100dvh - var(--firma2-band-height, 48px) - 7rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--spacing-100);
+    margin: calc(var(--spacing-100) * -1);
+  }
+
+  .firma2-intake-flow__steps {
+    display: grid;
+    gap: var(--spacing-050);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__step) {
+    display: grid;
+    grid-template-columns: 1.25rem 1fr;
+    gap: var(--spacing-300);
+    align-items: start;
+    width: 100%;
+    padding: var(--spacing-200) var(--spacing-300);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-primary);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    transition: background-color 150ms ease-out;
+  }
+
+  @media (hover: hover) {
+    .firma2-intake-flow :global(.firma2-intake-flow__step:not(:disabled):hover) {
+      background: var(--color-background-elevation-sunken);
+    }
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__step:focus-visible) {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset, 2px);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__step[aria-current]) {
+    background: var(--color-background-elevation-sunken);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__step[aria-current] .firma2-intake-flow__step-name) {
+    font-weight: var(--font-weight-semibold, 600);
+  }
+
+  /* On the new-project page only the first screen exists until Continue. */
+  .firma2-intake-flow :global(.firma2-intake-flow__step:disabled) {
+    color: var(--color-text-secondary);
+    cursor: default;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__step-mark) {
+    display: flex;
+    height: 1.5rem;
+    align-items: center;
+    color: var(--color-text-tertiary, var(--color-text-secondary));
+  }
+
+  .firma2-intake-flow :global([data-state="done"] .firma2-intake-flow__step-mark) {
+    color: var(--color-content-brand);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__step-text) {
+    display: grid;
+    gap: var(--spacing-050);
+    min-width: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__step-meta) {
+    color: var(--color-text-secondary);
+  }
+
+  @media (max-width: 64rem) {
+    .firma2-intake-flow__layout {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--spacing-600);
+    }
+
+    .firma2-intake-flow__outline {
+      position: static;
+      max-height: none;
+      overflow: visible;
+    }
+  }
+
+  .firma2-intake-flow__count,
+  .firma2-intake-flow__title {
+    margin: 0;
+  }
+
+  .firma2-intake-flow__count {
+    color: var(--color-text-secondary);
+  }
+
+  /* "Not listed — request it" sits under the lead organization question it
+     answers, a small step below the field rather than a full question's gap. */
+  .firma2-intake-flow :global([data-block-id] > .esa-button) {
+    margin-block-start: var(--spacing-200);
+  }
+
+  /* A closed list's tools — "Used here" / "All" and "Help me choose" — sit
+     under the list they act on, a small step below it like the request
+     button; the path's questions open beneath them on the sunken surface, so
+     they read as a side trip from the question, not as the next question. */
+  .firma2-intake-flow :global(.vocabulary-picker__tools) {
+    margin-block-start: var(--spacing-300);
+  }
+
+  .firma2-intake-flow :global(.vocabulary-picker__chooser) {
+    margin-block-start: var(--spacing-300);
+    padding: var(--spacing-400);
+    border-radius: var(--radius-md);
+    background: var(--color-background-elevation-sunken);
+  }
+
+  /* Why Submit waits, on the footer row beside it; the buttons keep the end. */
+  .firma2-intake-flow__lead-wait {
+    flex: 1 1 16rem;
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-flow__footer {
+    justify-content: flex-end;
+    padding-block-start: var(--spacing-600);
+    border-block-start: 1px solid var(--color-border-default);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-location__map) {
+    height: 16rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-default);
+  }
+
+  /* A question whose label or help is formatted draws them itself
+     (intake-render's controlMarkup), in the lego's own label and help roles
+     so it reads as the plain questions around it do. */
+  .firma2-intake-flow :global(.firma2-intake-q__label),
+  .firma2-intake-flow :global(.firma2-intake-q__help) {
+    margin: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-q__label) {
+    color: var(--form-label-color, var(--color-text-secondary));
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-q__required) {
+    margin-inline-start: var(--spacing-100);
+    color: var(--color-content-utility-danger);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-q__help) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-q a) {
+    color: var(--color-content-brand);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__text > :first-child) {
+    margin-block-start: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__text > :last-child) {
+    margin-block-end: 0;
+  }
+
+  /* The review and the read-back: one definition list per screen. */
+  .firma2-intake-flow :global(.firma2-intake-flow__screen-head) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-300);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__screen-head h3) {
+    margin: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__answers) {
+    display: grid;
+    grid-template-columns: minmax(10rem, 16rem) 1fr;
+    gap: var(--spacing-300) var(--spacing-600);
+    margin: 0;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__answers dt) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__answers dd) {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__unanswered) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__missing) {
+    color: var(--color-content-utility-danger);
+  }
+
+  .firma2-intake-flow :global(.firma2-intake-flow__missing-list) {
+    margin: 0;
+    padding-inline-start: var(--spacing-500);
+  }
+
+  /* A question an answer just revealed settles in from 4px above — the same
+     arrival as the builder's new blocks. --animation-enter is 0ms under reduced motion. */
+  @keyframes firma2-intake-flow-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  .firma2-intake-flow :global([data-arriving]) {
+    animation: firma2-intake-flow-arrive var(--animation-enter, 150ms cubic-bezier(0.23, 1, 0.32, 1));
+  }
+
+  @media (max-width: 40rem) {
+    .firma2-intake-flow :global(.firma2-intake-flow__answers) {
+      grid-template-columns: 1fr;
+      gap: var(--spacing-100);
+    }
+
+    .firma2-intake-flow :global(.firma2-intake-flow__answers dd) {
+      margin-block-end: var(--spacing-300);
+    }
+  }
+</style>
+
+<script>
+  import { scrollPageToTop } from '../../lib/page-scroll';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-radio-group';
+  import '@esa/ecology/esa-checkbox-group';
+  import '@esa/ecology/esa-combobox';
+  import '@esa/ecology/esa-date-picker';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-snackbar-container';
+  import '@esa/ecology/esa-button-toggle';
+  import { enhancePicker } from '../../lib/vocabulary-picker';
+  import type { ListId } from '../../lib/vocabulary-guidance';
+  import type { Answers, IntakeForm, IntakeProject, QuestionBlock, Screen } from '../../data/firma2-intake';
+  import { CURRENT_USER, CURRENT_USER_ORGANIZATIONS, organizationTypes, type OrganizationType } from '../../data/firma2-directory';
+  import { CHANGED as REQUESTS_CHANGED, createRequest, readRequests } from '../../lib/access-requests';
+  import {
+    answerKey,
+    answerText,
+    clearHidden,
+    createDraft,
+    decide,
+    formFor,
+    dropClosedSolicitation,
+    getIntakeProject,
+    isAcceptingProjects,
+    isAnswered,
+    isQuestion,
+    missingRequired,
+    projectName,
+    saveIntakeProject,
+    submitProject,
+    visibleScreens,
+  } from '../../lib/intake-form';
+  import { hydrateQuestions, controlMarkup, readControl } from '../../lib/intake-render';
+  import { allFields } from '../../lib/project-type-draft';
+  import { currentActor } from '../../lib/workspace-permissions';
+  import { iconSvg } from '../../lib/hugeicons-registry';
+
+  type Control = HTMLElement & { value: unknown };
+  type Toasts = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
+  type Dialog = HTMLElement & { show: () => void; close: () => void };
+  type Menu = HTMLElement & { items: { label: string; action: string }[] };
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-intake-flow').forEach((root) => {
+    // The header's status, actions and crumb render in the app's top bar, outside
+    // this root (firma2-page-header hands them over), so lookups fall back to it.
+    const bar = document.querySelector<HTMLElement>('[data-firma2-top-bar="app"]');
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => (root.querySelector<T>(sel) ?? bar?.querySelector<T>(sel))!;
+    const { mode, intakeHref, reviewHref }: { mode: 'new' | 'draft'; intakeHref: string; myProjectsHref: string; reviewHref: string } = JSON.parse(root.dataset.config ?? '{}');
+    const params = new URLSearchParams(location.search);
+    const preview = params.get('preview') === '1';
+    const form: IntakeForm = formFor(preview);
+    const fields = allFields();
+    const toasts = $<Toasts>('.firma2-intake-flow__toasts');
+
+    let project: IntakeProject | undefined = mode === 'draft' ? getIntakeProject(params.get('id') ?? '') : undefined;
+    // A draft or returned project drops a solicitation that has since closed.
+    let answers: Answers = project ? (project.status === 'draft' || project.status === 'returned' ? dropClosedSolicitation({ ...project.answers }) : { ...project.answers }) : {};
+    let step = 0;
+
+    // An EsaButton clone is a wrapper span around the real <button>: its text
+    // goes in the label, its states on the button.
+    const native = (wrap: HTMLElement) => wrap.querySelector<HTMLButtonElement>('button') ?? (wrap as HTMLButtonElement);
+    const labelled = (wrap: HTMLElement, text: string) => {
+      (wrap.querySelector('.esa-button__label') ?? native(wrap)).textContent = text;
+      return wrap;
+    };
+    // Disabled is drawn from the wrapper's class and enforced by the button's attribute.
+    const setDisabled = (button: HTMLElement, off: boolean) => {
+      native(button).disabled = off;
+      button.closest('.esa-button')?.classList.toggle('esa-button--disabled', off);
+    };
+    const tpl = (name: string) => ($<HTMLTemplateElement>(`template[data-tpl="${name}"]`).content.firstElementChild!.cloneNode(true) as HTMLElement);
+    // THE TITLE IS THE FORM'S NAME, on every state of the page. Which project
+    // this is goes in the last crumb (and the tab), so typing a name never
+    // renames the page you are filling in.
+    const h1 = root.querySelector('h1');
+    if (h1) h1.textContent = form.title;
+    const crumb = bar?.querySelector<HTMLElement>('.esa-breadcrumbs__current') ?? null;
+    const setProject = (name: string) => {
+      if (crumb) crumb.textContent = name;
+      document.title = `${name} — ${form.title} — ProjectFirma 2.0`;
+    };
+    const banner = (name: string, on: boolean) => ($(`[data-banner="${name}"]`).hidden = !on);
+
+    // ---- answers, as people read them ------------------------------------------
+    const show = (q: QuestionBlock, v: unknown): string => answerText(q, v, fields);
+
+    const answersList = (screen: Screen, missing: Set<string>) => {
+      const rows = screen.blocks.filter(isQuestion).map((q) => {
+        const value = show(q, answers[answerKey(q)]);
+        const dd = value
+          ? esc(value)
+          : missing.has(q.id)
+            ? '<span class="firma2-intake-flow__missing">Required</span>'
+            : '<span class="firma2-intake-flow__unanswered">Not answered</span>';
+        return `<dt class="typography-body-md">${esc(q.label || 'Untitled question')}</dt><dd class="typography-body-md">${dd}</dd>`;
+      });
+      const dl = document.createElement('dl');
+      dl.className = 'firma2-intake-flow__answers';
+      dl.innerHTML = rows.join('');
+      return dl;
+    };
+
+    // ---- the steps -------------------------------------------------------------
+    // The screens shown for the answers so far, then the review.
+    const screens = () => visibleScreens(form, answers);
+    const stepCount = () => screens().length + 1;
+    const isReview = () => step >= screens().length;
+
+    const save = () => {
+      if (preview || !project) return;
+      project = { ...project, answers };
+      saveIntakeProject(project);
+    };
+
+    // The outline: every step, and under it what it still needs.
+    const questionsOf = (screen: Screen) => screen.blocks.filter(isQuestion);
+    const stepMeta = (screen: Screen): { text: string; done: boolean } => {
+      const qs = questionsOf(screen);
+      const left = qs.filter((q) => q.required && !isAnswered(answers[answerKey(q)])).length;
+      if (left) return { text: left === 1 ? '1 required left' : `${left} required left`, done: false };
+      // Nothing required and nothing answered is not "done" — it is a step the member may skip.
+      const started = qs.some((q) => isAnswered(answers[answerKey(q)]));
+      if (!qs.some((q) => q.required) && !started) return { text: 'Optional', done: false };
+      return { text: 'Done', done: true };
+    };
+
+    const paintStepList = () => {
+      const all = screens();
+      const missing = missingRequired(form, answers).length;
+      const rows = [
+        ...all.map((s, i) => ({ name: s.title || `Step ${i + 1}`, ...stepMeta(s) })),
+        { name: 'Review and submit', text: missing ? `${missing} required across the form` : 'Ready to submit', done: false },
+      ];
+      $('[data-step-list]').replaceChildren(
+        ...rows.map((r, i) => {
+          const li = document.createElement('li');
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'firma2-intake-flow__step';
+          b.dataset.state = r.done ? 'done' : 'open';
+          if (i === step) b.setAttribute('aria-current', 'step');
+          // On the new-project page only the first screen exists until Continue.
+          b.disabled = mode === 'new' && !preview && i > 0;
+          b.innerHTML = `<span class="firma2-intake-flow__step-mark">${iconSvg(r.done ? 'circle-check' : 'circle', 18)}</span><span class="firma2-intake-flow__step-text"><span class="typography-body-md firma2-intake-flow__step-name">${esc(r.name)}</span><span class="typography-body-sm firma2-intake-flow__step-meta">${esc(r.text)}</span></span>`;
+          b.addEventListener('click', () => go(i));
+          li.append(b);
+          return li;
+        }),
+      );
+    };
+
+    const paintReview = () => {
+      const body = $('[data-step-body]');
+      const missing = missingRequired(form, answers);
+      const missingIds = new Set(missing.map((m) => m.id));
+      const parts: HTMLElement[] = [];
+      if (missing.length) {
+        const box = document.createElement('div');
+        box.className = 'stack';
+        box.dataset.gap = 'xs';
+        box.innerHTML = `<p class="typography-body-md"><strong>Answer ${missing.length === 1 ? 'one required question' : `${missing.length} required questions`} to submit.</strong></p>`;
+        parts.push(box);
+      }
+      screens().forEach((screen, i) => {
+        const section = document.createElement('section');
+        section.className = 'stack';
+        section.dataset.gap = 'sm';
+        const head = document.createElement('div');
+        head.className = 'firma2-intake-flow__screen-head';
+        head.innerHTML = `<h3 class="typography-title-strong">${esc(screen.title || `Step ${i + 1}`)}</h3>`;
+        const edit = tpl('edit');
+        native(edit).setAttribute('aria-label', `Edit ${screen.title || `step ${i + 1}`}`);
+        native(edit).addEventListener('click', () => go(i));
+        head.append(edit);
+        section.append(head, answersList(screen, missingIds));
+        parts.push(section);
+      });
+      body.replaceChildren(...parts);
+      const wait = leadWait();
+      const note = $('[data-lead-wait]');
+      note.textContent = wait;
+      note.hidden = !wait;
+      setDisabled(root.querySelector<HTMLElement>('[data-submit]')!, missing.length > 0 || !!wait);
+    };
+
+    // ---- a lead organization that is only requested ------------------------------
+    // This author's latest new-organization request for the draft's lead, if
+    // the lead is one they asked for rather than one the workspace has.
+    const leadRequest = () => {
+      const lead = String(answers.leadOrganization ?? '').trim().toLowerCase();
+      if (!lead) return undefined;
+      return readRequests().find(
+        (r) => r.kind === 'organization' && r.email === CURRENT_USER.email && r.organization.trim().toLowerCase() === lead,
+      );
+    };
+    /** Why Submit waits on the lead organization, or '' if it doesn't. */
+    const leadWait = (): string => {
+      const request = leadRequest();
+      if (!request || request.status === 'approved') return '';
+      if (request.status === 'pending') return `${request.organization} needs an administrator’s approval before you can submit.`;
+      return `${request.organization} wasn’t added. Choose another lead organization to submit.`;
+    };
+
+    // The request button under the lead question, and the requested name kept
+    // among its choices so the combobox can show it as the answer.
+    const mountOrgRequest = (body: HTMLElement) => {
+      const control = body.querySelector<Control & { options: { label: string; value: string }[] }>('[data-answer="leadOrganization"]');
+      if (!control) return;
+      const request = leadRequest();
+      if (request && !control.options.some((o) => o.value === request.organization)) {
+        control.options = [...control.options, { label: `${request.organization} (requested)`, value: request.organization }];
+        control.value = request.organization;
+      }
+      if (preview) return;
+      const button = tpl('org-request');
+      native(button).addEventListener('click', () => void openOrgRequest());
+      control.closest('[data-block-id]')?.append(button);
+    };
+
+    const paintScreen = async (screen: Screen) => {
+      const body = $('[data-step-body]');
+      body.replaceChildren(
+        ...screen.blocks.map((b) => {
+          const div = document.createElement('div');
+          div.dataset.blockId = b.id;
+          if (b.type === 'text') {
+            div.className = 'firma2-intake-flow__text typography-body-md';
+            div.innerHTML = b.html; // stored by firma2-rich-text, through its schema
+          } else {
+            div.innerHTML = controlMarkup(b, fields, { labelled: true });
+          }
+          return div;
+        }),
+      );
+      await hydrateQuestions(body, screen.blocks.filter(isQuestion), answers, fields, true);
+      mountOrgRequest(body);
+      mountPickers(body, screen);
+    };
+
+    // ---- closed lists: guidance, "Used here", "Help me choose" -------------------
+    // The list a question picks from, when it picks from one that can carry
+    // guidance: the project types, or a custom field's single choice.
+    const listOf = (q: QuestionBlock): ListId | null => {
+      if (q.type === 'builtin') return q.key === 'projectType' ? 'projectType' : null;
+      return fields.find((f) => f.id === q.fieldId)?.kind === 'choice' ? `field:${q.fieldId}` : null;
+    };
+    const pickerState = new Map<string, boolean>();
+    const mountPickers = (body: HTMLElement, screen: Screen) => {
+      screen.blocks.filter(isQuestion).forEach((q) => {
+        const list = listOf(q);
+        const control = body.querySelector<Control>(`[data-answer="${CSS.escape(answerKey(q))}"]`);
+        if (!list || !control) return;
+        void enhancePicker(control, {
+          list,
+          // A formatted help is drawn by the renderer itself, outside the lego.
+          help: q.helpHtml ? undefined : q.help,
+          button: (text) => labelled(tpl('picker'), text),
+          state: pickerState,
+        });
+      });
+    };
+
+    const paint = async (focus = false) => {
+      const all = screens();
+      step = Math.min(step, all.length);
+      paintStepList();
+      $('[data-step-count]').textContent = `Step ${step + 1} of ${stepCount()}`;
+      const review = isReview();
+      $('[data-step-title]').textContent = review ? 'Review and submit' : all[step].title || `Step ${step + 1}`;
+      $('[data-back-wrap]').hidden = step === 0;
+      $('[data-next-wrap]').hidden = review;
+      $('[data-submit-wrap]').hidden = !review;
+      if (!review) $('[data-lead-wait]').hidden = true;
+      if (review) paintReview();
+      else await paintScreen(all[step]);
+      if (focus) {
+        const h = $('[data-step-title]');
+        h.tabIndex = -1;
+        h.focus({ preventScroll: true });
+        scrollPageToTop();
+      }
+    };
+
+    const go = (i: number) => {
+      step = i;
+      void paint(true);
+    };
+
+    // An answer changed: keep it, and repaint only when it changed what is shown.
+    const shownKey = () => screens().map((s) => `${s.id}:${s.blocks.map((b) => b.id).join(',')}`).join('|');
+    $('[data-step-body]').addEventListener('change', (e) => {
+      const el = (e.target as HTMLElement).closest<Control>('[data-answer]');
+      if (!el) return;
+      const before = shownKey();
+      answers = { ...answers, [el.dataset.answer!]: readControl(el) };
+      // Validate late, forgive early: an error shown on Continue clears the moment it is answered.
+      const errored = el as Control & { errorText?: string };
+      if (errored.errorText && isAnswered(answers[el.dataset.answer!])) errored.errorText = '';
+      if (el.dataset.answer === 'projectName') setProject(String(answers.projectName || (mode === 'new' ? 'New project' : 'Untitled project')));
+      if (shownKey() !== before) {
+        answers = clearHidden(form, answers);
+        const active = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[data-answer]')?.dataset.answer;
+        const had = new Set([...root.querySelectorAll<HTMLElement>('[data-step-body] > [data-block-id]')].map((el) => el.dataset.blockId));
+        void paint().then(() => {
+          if (active) root.querySelector<HTMLElement>(`[data-answer="${CSS.escape(active)}"]`)?.focus();
+          // What the answer just revealed settles in, so it reads as caused by
+          // the answer rather than as the page jumping.
+          root.querySelectorAll<HTMLElement>('[data-step-body] > [data-block-id]').forEach((el) => {
+            if (had.has(el.dataset.blockId)) return;
+            el.dataset.arriving = '';
+            el.addEventListener('animationend', () => delete el.dataset.arriving, { once: true });
+          });
+        });
+      } else paintStepList();
+      save();
+    });
+
+    // Enter in a one-line answer continues, as Enter submits a form; Cmd/Ctrl+Enter
+    // continues from anywhere, a long answer included. A combobox keeps Enter
+    // for picking its option, and the review has nothing to type in.
+    // Cmd/Ctrl+Enter listens on the document: a click on a choice's label
+    // leaves focus on the page, not in the step, and the shortcut still means
+    // "continue". Never while a dialog is open — its own keys apply there.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing || isReview() || $('[data-steps]').hidden) return;
+      if (root.querySelector('esa-dialog[open]')) return;
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        root.querySelector<HTMLButtonElement>('[data-next]')?.click();
+        return;
+      }
+      const field = (e.target as HTMLElement).closest<HTMLElement>('[data-answer]');
+      if (field?.tagName !== 'ESA-TEXT-FIELD' || !root.contains(field)) return;
+      e.preventDefault();
+      root.querySelector<HTMLButtonElement>('[data-next]')?.click();
+    });
+
+    $('[data-next]').addEventListener('click', () => {
+      if (mode === 'new' && !preview && step === 0) {
+        // The draft needs a name to be found again; everything else can wait for Submit.
+        if (!isAnswered(answers.projectName)) {
+          const name = root.querySelector<HTMLElement & { errorText: string }>('[data-answer="projectName"]');
+          if (name) {
+            name.errorText = 'Name the project to save a draft.';
+            name.focus();
+          }
+          return;
+        }
+        const draft = createDraft(answers, CURRENT_USER.name);
+        location.assign(`${intakeHref}?id=${encodeURIComponent(draft.id)}&step=2`);
+        return;
+      }
+      go(step + 1);
+    });
+    $('[data-back]').addEventListener('click', () => go(step - 1));
+    $('[data-submit]').addEventListener('click', () => {
+      if (preview) {
+        showSubmitted(true);
+        return;
+      }
+      if (!project || leadWait()) return;
+      // One click, one submission: the button goes quiet and says why until the page leaves.
+      const submitBtn = root.querySelector<HTMLElement>('[data-submit]')!;
+      setDisabled(submitBtn, true);
+      labelled(submitBtn.closest<HTMLElement>('.esa-button') ?? submitBtn, 'Submitting…');
+      const next = submitProject(project.id, form);
+      if (!next) {
+        labelled(submitBtn.closest<HTMLElement>('.esa-button') ?? submitBtn, 'Submit for approval');
+        return paint();
+      }
+      location.assign(`${intakeHref}?id=${encodeURIComponent(next.id)}&submitted=1`);
+    });
+
+    // ---- the proposal, read back -----------------------------------------------
+    const approver = () => {
+      const actor = currentActor();
+      if (actor.role === 'Administrator') return true;
+      return actor.manager && CURRENT_USER_ORGANIZATIONS.includes(String(answers.leadOrganization ?? ''));
+    };
+
+    const showSubmitted = (justNow: boolean) => {
+      $('[data-steps]').hidden = true;
+      const summary = $('[data-summary]');
+      summary.hidden = false;
+      if (justNow) {
+        $('[data-after-submit]').innerHTML = form.afterSubmit;
+        banner('submitted', true);
+      }
+      summary.replaceChildren(
+        ...visibleScreens(form, answers).map((screen, i) => {
+          const section = document.createElement('section');
+          section.className = 'stack';
+          section.dataset.gap = 'sm';
+          section.innerHTML = `<h2 class="typography-title-strong">${esc(screen.title || `Step ${i + 1}`)}</h2>`;
+          section.append(answersList(screen, new Set()));
+          return section;
+        }),
+      );
+    };
+
+    const paintStatus = () => {
+      // No badge until there is a project: the first screen is not a draft until Continue saves it.
+      const status = project?.status;
+      [...root.querySelectorAll<HTMLElement>('[data-status]'), ...(bar?.querySelectorAll<HTMLElement>('[data-status]') ?? [])].forEach((el) => (el.hidden = !status || el.dataset.status !== status || preview));
+    };
+
+    // ---- deciding --------------------------------------------------------------
+    // A dialog opens on its first field — except on touch, where that would
+    // throw the keyboard up over the dialog before the reader has seen it.
+    const focusFirst = (field: HTMLElement) => {
+      if (matchMedia('(pointer: coarse)').matches) return;
+      requestAnimationFrame(() => field.focus());
+    };
+    const returnDialog = $<Dialog>('.firma2-intake-flow__return');
+    const returnText = $<Control & { errorText: string }>('[data-return-text]');
+    $('[data-approve]').addEventListener('click', () => {
+      if (!project) return;
+      project = decide(project.id, 'approved', CURRENT_USER.name);
+      toasts.show({ message: `${projectName(project!)} approved. Now in Planning & Design.`, variant: 'success' });
+      start();
+    });
+    $('[data-return]').addEventListener('click', () => {
+      returnText.value = '';
+      returnText.errorText = '';
+      returnDialog.show();
+      focusFirst(returnText);
+    });
+    returnText.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        root.querySelector<HTMLButtonElement>('[data-return-confirm]')?.click();
+      }
+    });
+    returnText.addEventListener('change', () => {
+      if (returnText.errorText && String(returnText.value ?? '').trim()) returnText.errorText = '';
+    });
+    $('[data-return-cancel]').addEventListener('click', () => returnDialog.close());
+    $('[data-return-confirm]').addEventListener('click', () => {
+      const comment = String(returnText.value ?? '').trim();
+      if (!comment) {
+        returnText.errorText = 'Say what needs to change.';
+        returnText.focus();
+        return;
+      }
+      if (!project) return;
+      project = decide(project.id, 'returned', CURRENT_USER.name, comment);
+      returnDialog.close();
+      toasts.show({ message: `Returned to ${project!.createdBy}.`, variant: 'success' });
+      start();
+    });
+    customElements.whenDefined('esa-dropdown-menu').then(() => {
+      $<Menu>('[data-more]').items = [{ label: 'Decline', action: 'decline' }];
+    });
+    $('[data-more]').addEventListener('menu-action', (e) => {
+      if ((e as CustomEvent<{ action: string }>).detail.action !== 'decline' || !project) return;
+      project = decide(project.id, 'declined', CURRENT_USER.name);
+      toasts.show({ message: `${projectName(project!)} declined.`, variant: 'success' });
+      start();
+    });
+
+    // ---- requesting an organization ---------------------------------------------
+    type Field = HTMLElement & { value: string; errorText: string };
+    const orgDialog = $<Dialog>('.firma2-intake-flow__org-request');
+    const orgName = $<Field>('[data-org-name]');
+    const orgType = $<Field & { options: { label: string; value: string }[] }>('[data-org-type]');
+    const orgWebsite = $<Field>('[data-org-website]');
+    const orgMessage = $<Field>('[data-org-message]');
+    const openOrgRequest = async () => {
+      await Promise.all(['esa-dialog', 'esa-text-field', 'esa-select', 'esa-textarea'].map((t) => customElements.whenDefined(t)));
+      orgType.options = organizationTypes.map((t) => ({ label: t, value: t }));
+      for (const f of [orgName, orgType, orgWebsite, orgMessage]) {
+        f.value = '';
+        f.errorText = '';
+      }
+      orgDialog.show();
+      focusFirst(orgName);
+    };
+    orgDialog.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      const inside = (e.target as HTMLElement).closest('esa-text-field, esa-textarea');
+      if (!inside) return;
+      if (inside.tagName === 'ESA-TEXTAREA' && !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      root.querySelector<HTMLButtonElement>('[data-org-send]')?.click();
+    });
+    for (const f of [orgName, orgType]) {
+      f.addEventListener('change', () => {
+        if (f.errorText && String(f.value ?? '').trim()) f.errorText = '';
+      });
+    }
+    $('[data-org-cancel]').addEventListener('click', () => orgDialog.close());
+    $('[data-org-send]').addEventListener('click', () => {
+      const name = String(orgName.value ?? '').trim();
+      const type = String(orgType.value ?? '');
+      const website = String(orgWebsite.value ?? '').trim();
+      orgName.errorText = name ? '' : 'Enter the organization’s name.';
+      orgType.errorText = type ? '' : 'Choose a type.';
+      // The website is evidence, not a gate: a mismatch is flagged to the
+      // administrator, and a small group may have none (spec decision 18).
+      const first = [orgName, orgType].find((f) => f.errorText);
+      if (first) {
+        first.focus();
+        return;
+      }
+      createRequest({
+        kind: 'organization',
+        name: CURRENT_USER.name,
+        email: CURRENT_USER.email,
+        organization: name,
+        orgType: type as OrganizationType,
+        website: website || undefined,
+        asked: 'Contributor',
+        message: String(orgMessage.value ?? '').trim() || undefined,
+        via: 'intake',
+      });
+      answers = { ...answers, leadOrganization: name };
+      save();
+      orgDialog.close();
+      toasts.show({ message: `${name} requested and set as the lead organization.`, variant: 'success' });
+      void paint();
+    });
+    // An administrator answering in another tab changes whether Submit waits.
+    window.addEventListener(REQUESTS_CHANGED, () => isReview() && void paint());
+    window.addEventListener('storage', () => isReview() && void paint());
+
+    // ---- begin -----------------------------------------------------------------
+    function start() {
+      paintStatus();
+      $('[data-decide]').hidden = true;
+      banner('returned', false);
+      banner('preview', preview);
+      // Starting a new one is what the switch governs; a draft already begun
+      // carries on, and the builder's Preview always runs.
+      if (mode === 'new' && !preview && !isAcceptingProjects() && currentActor().role !== 'Administrator') {
+        banner('closed', true);
+        $('[data-steps]').hidden = true;
+        return;
+      }
+      if (mode === 'draft' && !project) {
+        banner('missing-draft', true);
+        $('[data-steps]').hidden = true;
+        return;
+      }
+      setProject(project ? projectName(project) : 'New project');
+      const status = project?.status ?? 'draft';
+      if (status === 'draft' || status === 'returned') {
+        if (status === 'returned' && project?.returnComment) {
+          $('[data-return-comment]').textContent = `${project.decidedBy ?? 'The manager'}: “${project.returnComment}”`;
+          banner('returned', true);
+        }
+        $('[data-summary]').hidden = true;
+        $('[data-steps]').hidden = false;
+        const asked = Number(params.get('step') ?? '1') - 1;
+        step = Math.max(0, Math.min(asked, screens().length));
+        void paint();
+        return;
+      }
+      showSubmitted(params.get('submitted') === '1' && status === 'submitted');
+      if (status === 'submitted' && approver()) $('[data-decide]').hidden = false;
+    }
+
+    start();
+  });
+</script>

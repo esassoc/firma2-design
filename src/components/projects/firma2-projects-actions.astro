@@ -1,0 +1,85 @@
+---
+// firma2-projects-actions — the Projects index's page actions, and what a
+// workspace's project source does to them (hackathon team 2, decision 15).
+//
+// WITHHELD, NOT DISABLED. When projects are kept current from a GIS
+// subscription, a sync creates them, so New project would make a record no
+// layer knows — and either import would give a record a second owner. They
+// leave rather than grey out: a disabled button invites "why", and the answer
+// lives in workspace settings, not here.
+//
+// IMPORT IS ONE SECONDARY MENU. Both imports are onboarding acts — a program's
+// project list, a partner's file of boundaries — where the everyday paths are
+// New project and Upload shapes on a project's own page. One "Import" holds
+// both rather than putting two secondaries beside the primary. Importing
+// projects also needs the Import data permission (Security settings).
+//
+// NEW PROJECT ALSO LEAVES when the workspace is not accepting new projects
+// and the reader is not an administrator (docs/data-model.md, decision 15).
+//
+// bcn-lego-checked: esa-dropdown-menu with an esa-button trigger, beside an
+// esa-button; spans carry the toggle because a hidden attribute on
+// esa-button's own root does not hold.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+
+const hrefs = {
+  projects: withBase('/prototypes/projects/import'),
+  'work-areas': withBase('/prototypes/projects/import-work-areas'),
+};
+---
+<span class="firma2-projects-actions cluster" data-gap="xs" data-hrefs={JSON.stringify(hrefs)}>
+  <span data-app-only>
+    <esa-dropdown-menu position="below-end" data-import-menu>
+      <EsaButton variant="secondary" appearance="outline" icon="upload">Import</EsaButton>
+    </esa-dropdown-menu>
+  </span>
+  <span data-app-only data-create><EsaButton variant="primary" tag="a" href={withBase('/prototypes/projects/new')} data-aliasable>New project</EsaButton></span>
+</span>
+
+<style>
+  .firma2-projects-actions [hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-dropdown-menu';
+  import { onGeoChange, readProjectSource } from '../../lib/work-areas';
+  import { can, currentActor } from '../../lib/workspace-permissions';
+  import { ACCEPTING_EVENT, isAcceptingProjects } from '../../lib/intake-form';
+  import { label } from '../../lib/vocabulary';
+
+  type Menu = HTMLElement & { items: { label: string; action: string }[] };
+
+  document.querySelectorAll<HTMLElement>('.firma2-projects-actions').forEach((root) => {
+    const hrefs: Record<string, string> = JSON.parse(root.dataset.hrefs ?? '{}');
+    const menu = root.querySelector<Menu>('[data-import-menu]')!;
+
+    // New project needs the Create projects permission; an import of projects
+    // needs Import data. Absent for a reader who may not, like both for a synced workspace.
+    const paint = () => {
+      const app = readProjectSource() === 'app';
+      // A workspace that is not accepting new projects still lets an
+      // administrator add one (Workspace settings › Intake form).
+      const mayCreate = can('perm-projects') && (isAcceptingProjects() || currentActor().role === 'Administrator');
+      root.querySelectorAll<HTMLElement>('[data-app-only]').forEach((el) => {
+        el.hidden = !app || (el.hasAttribute('data-create') && !mayCreate);
+      });
+      customElements.whenDefined('esa-dropdown-menu').then(() => {
+        menu.items = [
+          ...(can('perm-import') ? [{ label: label('Projects'), action: 'projects' }] : []),
+          { label: label('Work areas'), action: 'work-areas' },
+        ];
+      });
+    };
+    menu.addEventListener('menu-action', (event) => {
+      const action = (event as CustomEvent<{ action?: string } | string>).detail;
+      const key = typeof action === 'string' ? action : action?.action;
+      if (key && hrefs[key]) window.location.href = hrefs[key];
+    });
+    onGeoChange(paint);
+    document.addEventListener(ACCEPTING_EVENT, paint);
+    paint();
+  });
+</script>

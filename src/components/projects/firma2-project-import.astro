@@ -1,0 +1,1833 @@
+---
+// firma2-project-import — many projects at once, from a program's own
+// spreadsheet. The engine is src/lib/project-import.ts; the sample workbook
+// and the fields a file can fill are src/data/firma2-project-import.ts.
+//
+// FOUR STEPS, ONE QUESTION EACH (after Attio's CSV import, 2026-11-16):
+//   1 Upload file    — is this the right file?
+//   2 Match columns  — where does each column go?
+//   3 Match values   — which of our values does each of theirs mean?
+//   4 Review import  — what gets created, what changes, what stays out?
+// The steps are a path, not a gate: every step stays open once reached, going
+// back loses nothing, and a decision made on an earlier step repaints the later
+// ones. Only a required field with no column stops Continue.
+//
+// ONE CONSTRUCTION FOR EVERY STEP (user, same day: "too many
+// inconsistencies"). The stepper names the step you are on — a filled number,
+// checks behind you — so a step repeats no heading of its own ("too many
+// titles", user). A step carries one line only where it says what the reader
+// could not see: Match values (a match covers every row) and Review (what the
+// import comes to).
+// Every table is the settings table at the same width and row height. There is
+// one companion, the page rail (firma2-side-panel, as the measure page's
+// reporter preview): it shows what is under the pointer or the focus — the
+// file's headings, a column's values, the rows a
+// value is used in, a row as it will be written. Match values alone splits its column, as
+// Attio's does: the columns on the left, one column's values on the right.
+// Before a file is read there is nothing to preview, so there is no rail (user).
+//
+// THE STEPPER SAYS WHERE YOU ARE: steps behind you carry a check, the step you
+// are on a filled number, the steps ahead a quiet one.
+//
+// THE REVIEW LEADS WITH WHAT GOES IN (user: "not sure what I'm reviewing").
+// Its header is the sentence the import comes to — creates N, updates N, N to
+// fix — and the tabs run in that order: New projects, Updated, To fix, Left
+// out, each opening on one line that says what its rows are.
+//
+// EACH DECISION IS ASKED ONCE. An unfamiliar value is matched once, on Match
+// values, for every row that uses it. A row blocked only by that value is
+// listed under To fix (so it can be skipped) but sends the reader back to the
+// match instead of asking again. A required field's value offers no "Leave
+// blank" — blank is never a valid answer there.
+//
+// A FIXED ROW STAYS PUT. To fix keeps a row in place after its fix and turns
+// it to Fixed, so focus and position survive the repaint. The list resets only
+// when the sheet, heading row or columns change.
+//
+// VALUES ARE MATCHED, NEVER ADDED. A file that says "In construction" where
+// the workspace says "Implementation" would otherwise split every stage
+// roll-up in two (product brief §0). The one list an import may add to is lead
+// organizations, and only an administrator sees that option.
+//
+// REVERSIBLE. Everything one import wrote comes back out with Undo, so the
+// commit is a button that states the split, not a confirmation dialog.
+// Imported projects are records, not public pages — they wait for a publish.
+//
+// The page header goes in the default slot: it sits in the main column, beside
+// the rail, as on the measure page.
+//
+// bcn-lego-checked: every control is a lego — esa-file-upload, esa-select,
+// esa-text-field, esa-checkbox, esa-button (the step buttons too), esa-badge,
+// esa-alert-box, esa-collapsible, esa-progress-bar, esa-empty-state,
+// esa-loading-spinner, esa-confirm-dialog. The rail is firma2-side-panel. No
+// esa- stepper exists (also walked for firma2-intake-setup), so the step list
+// is an <ol> of ghost esa-buttons with a drawn number chip; the sticky step
+// footer is layout, not a control. The tables are the shared
+// firma2-settings-table (no esa- table lego). Beacon is not cloned.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaLoadingSpinner from '@esa/ecology/esa-loading-spinner.astro';
+import EsaProgressBar from '@esa/ecology/esa-progress-bar.astro';
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import Firma2HelpLink from '../shared/firma2-help-link.astro';
+import Firma2SidePanel from '../shared/firma2-side-panel.astro';
+import { SAMPLE_WORKBOOK } from '../../data/firma2-project-import';
+import { withBase } from '../../lib/base';
+import '../settings/firma2-settings-table.css';
+import '../shared/firma2-data-grid-chrome.css';
+
+const config = {
+  sample: SAMPLE_WORKBOOK,
+  hrefs: {
+    projects: withBase('/prototypes/projects'),
+  },
+};
+const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
+---
+<div class="firma2-project-import" data-config={JSON.stringify(config)}>
+  <Firma2SidePanel id="import-preview" title="Preview" panelWidth="20rem" max="none" hidden>
+    <!-- THE RAIL: whatever is under the pointer or the focus, on every step. -->
+    <div slot="panel" class="firma2-project-import__preview stack" data-gap="md">
+      <div class="stack" data-gap="2xs">
+        <h3 class="typography-label-md-strong firma2-project-import__h" data-rail-heading></h3>
+        <p class="typography-body-sm firma2-project-import__muted" data-rail-meta></p>
+      </div>
+      <ul class="firma2-project-import__values" data-rail-list></ul>
+      <p class="typography-body-sm firma2-project-import__muted" data-rail-note></p>
+    </div>
+
+    <div class="stack" data-gap="2xl">
+      <slot />
+
+      <!-- ===== WITHHELD ===== -->
+      <div class="stack" data-gap="md" data-off="source" hidden>
+        <EsaEmptyState title="Projects come from your GIS" description="Change the project source to import from a file." />
+        <div class="firma2-project-import__center">
+          <EsaButton variant="secondary" size="md" tag="a" href={withBase('/prototypes/workspace-settings/project-source')}>Open Project source</EsaButton>
+        </div>
+      </div>
+      <div data-off="permission" hidden>
+        <EsaEmptyState title="You can’t import projects" description="Ask an administrator to import the file." />
+      </div>
+
+      <div data-on>
+        <!-- ===== THE STEPS ===== -->
+        <div class="firma2-project-import__flow" data-phase="steps">
+          <nav class="firma2-project-import__nav" aria-label="Import steps">
+            <ol class="firma2-project-import__steps">
+              {STEPS.map((title, i) => (
+                <li data-state="upcoming">
+                  <EsaButton variant="ghost" size="md" data-goto={String(i + 1)}>
+                    <span class="firma2-project-import__num" aria-hidden="true"><span>{i + 1}</span></span><span class="firma2-project-import__step-label">{title}</span><span class="firma2-project-import__sr" data-step-state></span>
+                  </EsaButton>
+                </li>
+              ))}
+            </ol>
+          </nav>
+
+          <!-- 1 · UPLOAD FILE -->
+          <section class="firma2-project-import__panel stack" data-gap="lg" data-step="1" aria-label={STEPS[0]}>
+            <div class="stack" data-gap="md" data-upload="empty">
+              {/* THE LIMITS, BEFORE THEM: the zone states the size; the label states
+                  the types, which the zone does not. */}
+              <esa-file-upload label="Spreadsheet (.xlsx, .xls or .csv)" accept=".xlsx,.xls,.csv" max-size-mb="20" data-file></esa-file-upload>
+              <div class="cluster" data-gap="xs" data-align="center">
+                <EsaButton variant="ghost" size="md" data-sample>Use a sample spreadsheet</EsaButton>
+                <EsaButton variant="ghost" size="md" data-template>Download template</EsaButton>
+                <Firma2HelpLink article="importing">Learn about importing</Firma2HelpLink>
+              </div>
+            </div>
+            <div class="firma2-project-import__reading cluster" data-gap="sm" role="status" data-upload="reading" hidden>
+              <EsaLoadingSpinner size="sm" decorative />
+              <p class="typography-body-md" data-reading-line></p>
+            </div>
+            <div class="stack" data-gap="lg" data-upload="file" hidden>
+              <div class="firma2-project-import__file-head">
+                <div class="stack" data-gap="2xs">
+                  <p class="typography-label-md-strong firma2-project-import__h" data-file-name></p>
+                  <p class="typography-body-md firma2-project-import__muted firma2-project-import__nums" data-file-meta></p>
+                </div>
+                <EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Remove file" data-remove>Remove file</EsaButton>
+              </div>
+              <div class="firma2-project-import__pair">
+                <span data-sheet-wrap><esa-select label="Sheet" size="md" data-sheet></esa-select></span>
+                <esa-select label="Headings are in" size="md" data-header-row></esa-select>
+              </div>
+            </div>
+          </section>
+
+          <!-- 2 · MATCH COLUMNS -->
+          <section class="firma2-project-import__panel stack" data-gap="lg" data-step="2" aria-label={STEPS[1]} hidden>
+            <div data-required-warning hidden>
+              <EsaAlertBox variant="warning" title="Required fields need a column">
+                <p class="typography-body-md" data-required-text></p>
+              </EsaAlertBox>
+            </div>
+            <div class="firma2-settings-table-scroll firma2-project-import__open">
+              <table class="firma2-settings-table firma2-project-import__table firma2-project-import__map">
+                <thead><tr><th scope="col">In the file</th><th scope="col" class="firma2-project-import__arrow"><span class="firma2-project-import__sr">Goes to</span></th><th scope="col" class="firma2-project-import__control-col">Import as</th></tr></thead>
+                <tbody data-columns></tbody>
+              </table>
+            </div>
+            <p class="typography-body-md">
+              Missing a field? <a href={withBase('/prototypes/workspace-settings/custom-fields')}>Add it in Custom fields</a>, then read the file again.
+            </p>
+          </section>
+
+          <!-- 3 · MATCH VALUES -->
+          <section class="firma2-project-import__panel stack" data-gap="lg" data-step="3" aria-label={STEPS[2]} hidden>
+            <div data-values-none hidden>
+              <EsaEmptyState title="Nothing to match" description="No imported column uses one of the workspace’s lists." />
+            </div>
+            <div class="firma2-project-import__values-wrap" data-values-some>
+              <div class="firma2-project-import__values-split">
+                <div>
+                  <p class="typography-body-md firma2-project-import__muted firma2-project-import__columns-label" id="import-columns-label">Fields</p>
+                  <ul class="firma2-project-import__fields" aria-labelledby="import-columns-label" data-value-fields></ul>
+                </div>
+                <div class="firma2-settings-table-scroll firma2-project-import__open" data-values-pane>
+                  <table class="firma2-settings-table firma2-project-import__table firma2-project-import__map firma2-project-import__grouped">
+                    <caption class="firma2-project-import__sr" data-values-caption></caption>
+                    <thead><tr><th scope="col">In the file</th><th scope="col" class="firma2-project-import__arrow"><span class="firma2-project-import__sr">Means</span></th><th scope="col" class="firma2-project-import__control-col">In the workspace</th></tr></thead>
+                    {[
+                      { group: 'needing', title: 'Needs a match' },
+                      { group: 'suggested', title: 'Suggested' },
+                      { group: 'exact', title: 'Matched' },
+                    ].map(({ group, title }) => (
+                      <Fragment>
+                        <tbody class="firma2-project-import__group" data-group-head={group}>
+                          <tr><th colspan="3" scope="colgroup" class="typography-label-md-strong">
+                            {/* Only what already matches folds: the groups that ask
+                                something of you are never hidden. */}
+                            {group === 'exact'
+                              ? <EsaButton variant="ghost" size="md" icon="chevron-right" data-group-toggle={group} aria-expanded="false" aria-controls={`import-values-${group}`}>{title}<span class="firma2-project-import__group-count" data-group-count></span></EsaButton>
+                              : <span class="firma2-project-import__group-label">{title}<span class="firma2-project-import__group-count" data-group-count></span></span>}
+                          </th></tr>
+                        </tbody>
+                        <tbody id={`import-values-${group}`} data-values={group}></tbody>
+                      </Fragment>
+                    ))}
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 4 · REVIEW IMPORT -->
+          <section class="firma2-project-import__panel stack" data-gap="lg" data-step="4" aria-label={STEPS[3]} hidden>
+            <!-- REVIEW AS AN OUTLINE (user, 2026-11-17, picked over Sections, Ledger
+                 and Queue in a prototype round): one collapsible line per outcome,
+                 its count in the title. Only the rows that need you start open; the
+                 rest is a click away, so the screen reads as four numbers. -->
+            <div data-fix-block hidden>
+              <EsaCollapsible title="Needs a fix" open>
+                <div>
+                  <div class="firma2-settings-table-scroll firma2-project-import__open">
+                    <table class="firma2-settings-table firma2-project-import__table firma2-project-import__controls">
+                      <thead><tr><th scope="col" class="firma2-settings-table__num">Row</th><th scope="col">Problem</th><th scope="col" class="firma2-project-import__control-col">Fix</th><th scope="col"><span class="firma2-project-import__sr">Skip</span></th></tr></thead>
+                      <tbody data-fix></tbody>
+                    </table>
+                  </div>
+                </div>
+              </EsaCollapsible>
+            </div>
+            <div data-results-home>
+              <div class="stack" data-gap="sm" data-results>
+                <!-- NEW: the Projects index's grid, since an import can be hundreds of rows. -->
+                <div data-section="new">
+                  <EsaCollapsible title="New projects">
+                    <div class="firma2-data-grid__grid" data-new-grid></div>
+                  </EsaCollapsible>
+                </div>
+                <!-- UPDATED: only what changes. Row and Project span the project's
+                     change lines (Spanned rows, picked over headings, blocks and
+                     expanding lines). -->
+                <div data-section="updated">
+                  <EsaCollapsible title="Updated projects">
+                    <div class="stack" data-gap="md">
+                      <div class="firma2-project-import__pair" data-review-only>
+                        <esa-select label="Rows that name an existing project" size="md" data-existing-policy></esa-select>
+                      </div>
+                      <div class="firma2-settings-table-scroll" data-updated-table>
+                        <table class="firma2-settings-table firma2-project-import__table firma2-project-import__diff" data-updated>
+                          <thead><tr>
+                            <th scope="col" class="firma2-settings-table__num">Row</th>
+                            <th scope="col" data-aliasable>Project</th>
+                            <th scope="col">Field</th>
+                            <th scope="col">Now</th>
+                            <th scope="col">After import</th>
+                          </tr></thead>
+                        </table>
+                      </div>
+                      <p class="typography-body-md firma2-project-import__muted" data-unchanged></p>
+                    </div>
+                  </EsaCollapsible>
+                </div>
+                <div data-section="out">
+                  <EsaCollapsible title="Left out">
+                    <div class="stack" data-gap="md">
+                      <div class="firma2-settings-table-scroll">
+                        <table class="firma2-settings-table firma2-project-import__table firma2-project-import__out">
+                          <thead><tr><th scope="col" class="firma2-settings-table__num">Row</th><th scope="col" data-aliasable>Project</th><th scope="col">Why</th></tr></thead>
+                          <tbody data-left-out></tbody>
+                        </table>
+                      </div>
+                      <span data-review-only><EsaButton variant="secondary" size="md" data-download-out>Download these rows</EsaButton></span>
+                    </div>
+                  </EsaCollapsible>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- THE STEP FOOTER: Back on the left of Continue, both at the reading edge. -->
+          <div class="firma2-project-import__foot">
+            <p class="typography-body-md firma2-project-import__muted firma2-project-import__foot-note" data-foot-note aria-live="polite"></p>
+            <div class="cluster" data-gap="xs">
+              <span data-back-wrap><EsaButton variant="secondary" size="md" data-back>Back</EsaButton></span>
+              <EsaButton variant="primary" size="md" data-next>Continue</EsaButton>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== IMPORTING ===== -->
+        <div class="stack" data-gap="sm" role="status" data-phase="importing" hidden>
+          <h2 class="typography-title-strong firma2-project-import__h" data-importing-line></h2>
+          <EsaProgressBar mode="indeterminate" label="Importing" showValue={false} />
+        </div>
+
+        <!-- ===== DONE ===== -->
+        <div class="stack" data-gap="xl" data-phase="done" hidden>
+          <header class="stack" data-gap="sm">
+            <div class="firma2-project-import__progress-head">
+              <h2 class="typography-title-strong firma2-project-import__h">Import finished</h2>
+              <span class="typography-body-md firma2-project-import__nums" data-done-count></span>
+            </div>
+            <EsaProgressBar value={100} variant="success" showValue={false} />
+            <p class="typography-body-md firma2-project-import__muted" data-done-text></p>
+          </header>
+          <div class="cluster" data-gap="xs">
+            <EsaButton variant="primary" size="md" tag="a" href={config.hrefs.projects} data-aliasable>View projects</EsaButton>
+            <EsaButton variant="secondary" size="md" data-undo>Undo import</EsaButton>
+            <span data-download-wrap><EsaButton variant="ghost" size="md" data-download-left-out>Download rows left out</EsaButton></span>
+          </div>
+          <div data-results-done></div>
+        </div>
+
+        <!-- ===== UNDONE ===== -->
+        <div class="stack" data-gap="md" data-phase="undone" hidden>
+          <EsaAlertBox variant="info" title="Import undone">
+            <p class="typography-body-md" data-undone-text></p>
+          </EsaAlertBox>
+          <div class="cluster" data-gap="xs">
+            <EsaButton variant="secondary" size="md" data-again>Import another file</EsaButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Firma2SidePanel>
+
+  <esa-confirm-dialog class="firma2-project-import__confirm" heading="Undo this import?" confirm-label="Undo import" cancel-label="Keep it" variant="warning"></esa-confirm-dialog>
+
+  <template data-badge-fixed><EsaBadge variant="success" size="sm" value="Fixed" /></template>
+  <template data-badge-todo><EsaBadge variant="warning" size="sm" value="0" /></template>
+  <template data-field-button><EsaButton variant="ghost" size="md">Column</EsaButton></template>
+</div>
+
+<style>
+  /* Layout primitives and legos set `display`, which beats the UA's [hidden].
+     :global so it reaches the rows and controls the script builds, which carry
+     no scope attribute. */
+  .firma2-project-import :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-project-import :global(.firma2-project-import__h) {
+    margin: 0;
+    text-wrap: balance;
+  }
+  .firma2-project-import :global(header p),
+  .firma2-project-import__panel > p,
+  .firma2-project-import :global([data-section] > p),
+  .firma2-project-import [data-results] > p {
+    margin: 0;
+  }
+
+  .firma2-project-import__center {
+    display: flex;
+    justify-content: center;
+  }
+
+  .firma2-project-import :global(.firma2-project-import__muted) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-project-import :global(.firma2-project-import__nums) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- the flow: steps on top, the step, a footer that stays in reach ---- */
+  .firma2-project-import__flow {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-600);
+  }
+
+  /* The steps stay in view under the top bar; the footer under the step. */
+  .firma2-project-import__flow {
+    scroll-margin-top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px));
+  }
+  .firma2-project-import__nav {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px));
+    z-index: 2;
+    background: var(--firma2-sheet-background, var(--color-background-default));
+  }
+  .firma2-project-import__steps {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-100);
+    margin: 0;
+    padding: var(--spacing-200) 0;
+    list-style: none;
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-project-import__steps > li {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-100);
+  }
+  /* The rule between steps is drawn, not read. */
+  .firma2-project-import__steps > li + li::before {
+    content: '';
+    width: var(--spacing-300);
+    height: 1px;
+    margin-inline-end: var(--spacing-100);
+    background: var(--color-border-default);
+    pointer-events: none;
+  }
+  /* Ahead of you: quiet. Behind you: a check. Here: a filled number and the
+     full text colour. Colour only — weight never changes, so nothing reflows. */
+  .firma2-project-import__steps :global(.esa-button__native) {
+    color: var(--color-text-secondary);
+    transition-property: color, background-color;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+  .firma2-project-import__steps > li:is([data-state='current'], [data-state='done']) :global(.esa-button__native) {
+    color: var(--color-text-default, inherit);
+  }
+  .firma2-project-import__num {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-inline-end: var(--spacing-200);
+    border-radius: 999px;
+    border: 1px solid var(--color-border-default);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+    line-height: 1;
+    transition-property: background-color, border-color, color;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+  li[data-state='current'] .firma2-project-import__num {
+    background: var(--color-background-brand, #46a758);
+    border-color: var(--color-background-brand, #46a758);
+    color: var(--color-content-default-knockout, #fff);
+  }
+  li[data-state='done'] .firma2-project-import__num {
+    border-color: var(--color-background-brand, #46a758);
+  }
+  li[data-state='done'] .firma2-project-import__num > span {
+    visibility: hidden;
+  }
+  /* The check: two strokes of a rotated box, centred by eye (a touch high). */
+  li[data-state='done'] .firma2-project-import__num::after {
+    content: '';
+    position: absolute;
+    inset-block-start: 0.3rem;
+    inset-inline-start: 0.5rem;
+    width: 0.3rem;
+    height: 0.55rem;
+    border-inline-end: 1.5px solid var(--color-background-brand, #46a758);
+    border-block-end: 1.5px solid var(--color-background-brand, #46a758);
+    transform: rotate(45deg);
+  }
+
+  .firma2-project-import__panel {
+    min-height: 22rem;
+  }
+
+  /* A phone keeps the stepper to one line: the numbers, and the name of the
+     step you are on. The other names stay for a screen reader. */
+  @media (max-width: 45rem) {
+    .firma2-project-import__steps > li:not([data-state='current']) .firma2-project-import__step-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .firma2-project-import__steps > li:not([data-state='current']) .firma2-project-import__num {
+      margin-inline-end: 0;
+    }
+    .firma2-project-import__steps {
+      flex-wrap: nowrap;
+    }
+    .firma2-project-import__steps > li + li::before {
+      width: var(--spacing-200);
+      margin-inline-end: 0;
+    }
+  }
+
+  /* The footer stays at the sheet's bottom edge while the step scrolls. */
+  .firma2-project-import__foot {
+    position: sticky;
+    /* Down over the sheet's own bottom padding, so nothing scrolls past under it. */
+    inset-block-end: calc(-1 * var(--spacing-500, 1.5rem));
+    margin-block-end: calc(-1 * var(--spacing-500, 1.5rem));
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-400);
+    padding-block: var(--spacing-400) calc(var(--spacing-400) + var(--spacing-500, 1.5rem));
+    background: var(--firma2-sheet-background, var(--color-background-default));
+    border-block-start: 1px solid var(--color-border-default);
+  }
+  .firma2-project-import__foot-note {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .firma2-project-import__foot :global(.esa-button__label) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- step 1 ---- */
+  .firma2-project-import__reading {
+    min-height: 12rem;
+    justify-content: center;
+  }
+  .firma2-project-import__reading p {
+    margin: 0;
+  }
+  /* The file and its remove button read as one line, not two ends of the page. */
+  .firma2-project-import__file-head {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-400);
+  }
+  .firma2-project-import__file-head p {
+    margin: 0;
+  }
+
+  /* Selects side by side, each at a readable width; they stack when narrow. */
+  .firma2-project-import__pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 22rem));
+    gap: var(--spacing-400);
+  }
+
+  /* ---- the rail ---- */
+  .firma2-project-import__preview p {
+    margin: 0;
+  }
+  .firma2-project-import__values {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-project-import__values :global(li) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-50, 2px);
+    padding-block: var(--spacing-200);
+    border-block-start: 1px solid var(--color-border-default);
+    min-width: 0;
+  }
+  .firma2-project-import__values :global(li > span) {
+    overflow-wrap: anywhere;
+  }
+
+  /* ---- tables: one width, one row height for every table with a control ---- */
+  /* ONE WIDTH (user, 2026-11-16: "use the full width of the page", then "why
+     do the steps keep changing where they are?"). No cap at all (max="none"):
+     a capped column is centred, so it jumped right whenever the Preview rail
+     came or went. Uncapped, its leading edge never moves and it fills to the
+     rail or the window, as Attio's import does; nothing
+     inside it carries a cap of its own, so the steps, headings, tables and
+     footer share both edges. */
+  /* Spans and amounts never break across lines. */
+  .firma2-project-import :global(.firma2-project-import__table .firma2-project-import__nums),
+  .firma2-project-import :global(.firma2-project-import__table .firma2-settings-table__num) {
+    white-space: nowrap;
+  }
+  .firma2-project-import :global(.firma2-project-import__table td),
+  .firma2-project-import :global(.firma2-project-import__table th) {
+    vertical-align: middle;
+  }
+  /* The scroll frame clips at its box, and the last column has no end
+     padding, so a focused control's ring was cut off on the right (user).
+     4px of room on both sides, given back by the margin: the ring shows and
+     the table's edges stay on the column's. */
+  .firma2-project-import :global(.firma2-settings-table-scroll) {
+    padding-inline: var(--spacing-100);
+    margin-inline: calc(-1 * var(--spacing-100));
+    /* The shared frame caps itself at 100%, which would eat the margin back. */
+    max-width: none;
+  }
+  /* NO CLIP WHERE THERE ARE CONTROLS (user: the menu was cut off). esa-select
+     draws its menu absolutely, inside the frame, and a frame that scrolls
+     sideways clips both ways — the open menu was cut short and scrolled. These
+     tables are three or four columns that fit the column, so they need no
+     scroll; on a phone the control column gives up its fixed width instead. */
+  .firma2-project-import :global(.firma2-project-import__open) {
+    overflow: visible;
+  }
+  @media (max-width: 45rem) {
+    /* To fix, on a phone: each row stacks — row and problem, then the fix at
+       full width, then Skip — since four columns cannot share 22rem. */
+    .firma2-project-import :global(.firma2-project-import__controls thead) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .firma2-project-import :global(.firma2-project-import__controls),
+    .firma2-project-import :global(.firma2-project-import__controls tbody) {
+      display: block;
+    }
+    .firma2-project-import :global(.firma2-project-import__controls tbody > tr) {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: var(--spacing-200) var(--spacing-300);
+      padding-block: var(--spacing-300);
+      border-block-end: 1px solid var(--color-border-default);
+    }
+    .firma2-project-import :global(.firma2-project-import__controls tbody > tr > *) {
+      padding: 0;
+      border: 0;
+    }
+    .firma2-project-import :global(.firma2-project-import__controls td.firma2-project-import__fixes),
+    .firma2-project-import :global(.firma2-project-import__controls td.firma2-project-import__skip) {
+      grid-column: 1 / -1;
+      width: auto;
+    }
+    .firma2-project-import__foot {
+      flex-wrap: wrap;
+    }
+    .firma2-project-import__foot-note {
+      flex-basis: 100%;
+    }
+    .firma2-project-import :global(.firma2-project-import__open .firma2-project-import__control-col),
+    .firma2-project-import :global(.firma2-project-import__open td.firma2-project-import__fixes) {
+      width: auto;
+      min-width: 0;
+    }
+  }
+  /* A 40px control sets the row's height (controls are md, pinned to 40px);
+     the cell adds 4px either side, a 49px row — the tightest that keeps the
+     focus ring clear of the divider. */
+  .firma2-project-import :global(.firma2-project-import__map tbody > tr > *),
+  .firma2-project-import :global(.firma2-project-import__controls tbody > tr > *) {
+    padding-block: var(--spacing-100);
+  }
+  .firma2-project-import :global(.firma2-project-import__control-col) {
+    width: 20rem;
+  }
+  /* MATCH COLUMNS, AFTER ATTIO (user, 2026-11-16): at full width a fixed
+     20rem select left each heading ~1,700px from its field. As Attio's Map
+     columns does, the select's column takes half the table, so the arrow sits
+     mid-table and the field starts right after it; the column's values are
+     the Preview rail's job, which step 2 opens. */
+  @media not (max-width: 45rem) {
+    .firma2-project-import :global(.firma2-project-import__map:not(.firma2-project-import__grouped) .firma2-project-import__control-col) {
+      width: 50%;
+      min-width: 15rem;
+    }
+  }
+  .firma2-project-import :global(.firma2-project-import__arrow) {
+    width: 2.5rem;
+    padding-inline: 0;
+    color: var(--color-text-secondary);
+    text-align: center;
+  }
+  .firma2-project-import :global(.firma2-project-import__table .firma2-project-import__rows) {
+    margin-inline-start: var(--spacing-200);
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* NO ROW TINT for the row the rail shows (user, 2026-11-16): a grey row
+     reads as a hover on something clickable, and the row is not. The rail's
+     own heading names what it shows. */
+
+  /* ---- step 3: the columns on the left, one column's values on the right
+     (after Attio's Review values, user 2026-11-16) ---- */
+  .firma2-project-import__values-wrap {
+    container-type: inline-size;
+  }
+  .firma2-project-import__values-split {
+    display: grid;
+    grid-template-columns: 12rem minmax(0, 1fr);
+    gap: var(--spacing-500);
+    align-items: start;
+  }
+  @container (max-width: 36rem) {
+    .firma2-project-import__values-split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .firma2-project-import__values-split p {
+    margin: 0;
+  }
+  .firma2-project-import__fields {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px) + 4.5rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-200);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-project-import__fields :global(.esa-button),
+  .firma2-project-import__fields :global(.esa-button__native) {
+    width: 100%;
+  }
+  /* Each field is a card: its name, the file's column that fills it under it, and what is
+     left to match. An outline, not a border — the ghost button owns its
+     border. The selected one takes the brand colour, as the current step does. */
+  .firma2-project-import__fields :global(.esa-button__native) {
+    height: auto;
+    min-height: 3.5rem;
+    padding-block: var(--spacing-200);
+    justify-content: flex-start;
+    text-align: start;
+    color: var(--color-text-default, inherit);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
+    transition-property: box-shadow, background-color;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+  .firma2-project-import__fields :global(.esa-button__native[aria-current='true']) {
+    box-shadow: inset 0 0 0 2px var(--color-background-brand, #46a758);
+  }
+  .firma2-project-import__fields :global(.esa-button__label) {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-300);
+  }
+  .firma2-project-import__fields :global(.firma2-project-import__field-text) {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+  }
+  /* The column and what is left to match share the first line; the field it
+     fills gets the whole second line. */
+  .firma2-project-import__fields :global(.firma2-project-import__field-top) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-200);
+    min-width: 0;
+  }
+  .firma2-project-import__fields :global(.firma2-project-import__field-text > span:last-child),
+  .firma2-project-import__fields :global(.firma2-project-import__field-top > span:first-child) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Group rows: a label on the table's own surface, no band — the values
+     carry the weight. One height for all three, the fold button's 40px. The
+     button's own inset is given back, so its chevron and the plain labels
+     start on the same edge. */
+  .firma2-project-import__group th {
+    /* The shared table resets every cell to normal; a group heading is not a cell. */
+    font-weight: var(--typography-label-md-strong-font-weight);
+    height: 2.5rem;
+    padding: var(--spacing-300) 0 0 !important;
+    vertical-align: middle;
+  }
+  .firma2-project-import__group-label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
+  }
+  .firma2-project-import__group :global(.esa-button) {
+    margin-inline-start: calc(-1 * var(--_import-ghost-inset, var(--spacing-300)));
+  }
+  .firma2-project-import__group :global(.esa-button__native) {
+    color: var(--color-text-default, inherit);
+    /* The fold button is a group heading like the other two: same weight. */
+    font-weight: var(--typography-label-md-strong-font-weight);
+  }
+  /* HIERARCHY (user, 2026-11-16: "a distinct lack of visual hierarchy").
+     A group heading sat 12px above its first row, the same rhythm as the
+     rows themselves, so "Suggested" read as one more value. Strong labels,
+     and a whole step of air before each group after the first, so the three
+     groups read as three chunks. */
+  .firma2-project-import__group:not([hidden]) ~ .firma2-project-import__group th {
+    padding-block-start: var(--spacing-600, 2rem) !important;
+  }
+  .firma2-project-import__group :global(.esa-button__native svg) {
+    transition: transform 150ms ease-out;
+  }
+  .firma2-project-import__group :global(.esa-button__native[aria-expanded='true'] svg) {
+    transform: rotate(90deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-project-import__group :global(.esa-button__native svg) {
+      transition: none;
+    }
+  }
+  /* "Fields" is the list's header row: the table's header height, so the
+     first card and the table's first rule share a line. */
+  .firma2-project-import__columns-label {
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid transparent;
+  }
+  .firma2-project-import__group-count {
+    margin-inline-start: var(--spacing-200);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Half the table, not a fixed 15rem (user, 2026-11-16): at full width a
+     fixed control left each value ~600px from its match. Split evenly, the
+     arrow sits mid-table and the select starts right after it. */
+  .firma2-project-import__grouped :global(.firma2-project-import__control-col) {
+    width: 50%;
+    min-width: 15rem;
+  }
+
+  /* Every grid cell wraps (autoHeight) and keeps body leading: AG Grid's own
+     line-height is the row height, which spaced a two-line name a full row apart. */
+  /* ONE FRAME (review, 2026-11-17): the collapsible is the card, so the grid
+     inside it drops its own border and header fill and reads like the plain
+     tables in the other sections. */
+  .firma2-project-import :global(.esa-collapsible .firma2-data-grid__grid[data-new-grid]) {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    --ag-header-background-color: transparent;
+    --ag-background-color: transparent;
+  }
+  .firma2-project-import :global([data-new-grid] .firma2-project-import__clamp) {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* FIX NEXT TO THE PROBLEM: the problem column is capped, so the boxes start
+     right after it instead of at the table's far edge. */
+  .firma2-project-import :global(.firma2-project-import__out :is(th, td):first-child) {
+    width: 4rem;
+  }
+  .firma2-project-import :global(.firma2-project-import__out :is(th, td):nth-child(2)) {
+    width: 50%;
+  }
+  @media not (max-width: 45rem) {
+    .firma2-project-import :global(.firma2-project-import__controls :is(th, td):nth-child(2)) {
+      min-width: 22rem;
+    }
+    /* The spare width goes past the boxes, never between problem and box. */
+    .firma2-project-import :global(.firma2-project-import__controls .firma2-project-import__control-col) {
+      width: 100%;
+    }
+    .firma2-project-import :global(.firma2-project-import__controls td.firma2-project-import__skip) {
+      width: 1%;
+    }
+    .firma2-project-import :global(.firma2-project-import__controls :is(th, td):first-child) {
+      width: 4rem;
+    }
+    /* Read from the top: the problem's first line sits on its box's label,
+       and Skip on the first box. */
+    .firma2-project-import :global(.firma2-project-import__controls tbody td) {
+      vertical-align: top;
+      padding-block: var(--spacing-300);
+    }
+    .firma2-project-import :global(.firma2-project-import__controls tbody td.firma2-project-import__skip) {
+      padding-block-start: calc(var(--spacing-300) + 1.5rem + var(--spacing-100) + 0.5rem);
+    }
+  }
+  .firma2-project-import :global(.firma2-project-import__controls td.firma2-project-import__fixes > *) {
+    display: block;
+    max-width: 20rem;
+  }
+  .firma2-project-import :global(.firma2-project-import__controls td.firma2-project-import__fixes > * + *) {
+    margin-block-start: var(--spacing-300);
+  }
+  .firma2-project-import :global([data-new-grid] .ag-cell-wrap-text) {
+    line-height: 1.5;
+    padding-block: var(--spacing-300, 0.75rem);
+  }
+
+  /* DIFF — one tbody per project; the old value is muted, the new one carries
+     the weight of plain text. */
+  .firma2-project-import :global(.firma2-project-import__diff tbody td),
+  .firma2-project-import :global(.firma2-project-import__diff tbody th) {
+    vertical-align: top;
+    border-block-end: 0;
+  }
+  .firma2-project-import :global(.firma2-project-import__diff tbody + tbody tr:first-child > *) {
+    border-block-start: 1px solid var(--color-border-default);
+  }
+  .firma2-project-import :global(.firma2-project-import__diff tbody tr + tr > *) {
+    padding-block-start: 0;
+  }
+  /* Row and Project span the project's lines, so on every line after the
+     first the Field is the row's first cell — and the shared table trims a
+     first cell to the edge. Give it its column's padding back. */
+  .firma2-project-import :global(.firma2-project-import__diff tbody tr + tr > :first-child) {
+    padding-inline-start: var(--spacing-400);
+  }
+  .firma2-project-import :global(.firma2-project-import__diff .firma2-project-import__field) {
+    white-space: nowrap;
+  }
+  /* A description that changes is read whole before it is written. */
+  .firma2-project-import :global(.firma2-project-import__diff .firma2-project-import__long) {
+    display: block;
+    max-width: 32rem;
+  }
+
+  /* PROBLEMS — the message leads; the project name is the meta line under it. */
+  .firma2-project-import :global(.firma2-project-import__table .firma2-project-import__problem) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-200);
+  }
+  .firma2-project-import :global(.firma2-project-import__table .firma2-project-import__problem + .firma2-project-import__problem),
+  .firma2-project-import :global(.firma2-project-import__table .firma2-project-import__fixes > * + *) {
+    margin-block-start: var(--spacing-300);
+  }
+  .firma2-project-import :global(.firma2-project-import__table td.firma2-project-import__fixes) {
+    width: 20rem;
+    min-width: 20rem;
+  }
+
+  /* SKIP — the whole cell toggles, so the target is the row's height and the
+     cell's width, not the 20px box. */
+  .firma2-project-import :global(.firma2-project-import__table .firma2-project-import__skip) {
+    width: 1%;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+
+  /* ---- done ---- */
+  .firma2-project-import__progress-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--spacing-400);
+  }
+
+  .firma2-project-import :global(.firma2-project-import__sr) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-file-upload';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-checkbox';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { IMPORT_FIELDS } from '../../data/firma2-project-import';
+  import type { ImportField, ImportWorkbook } from '../../data/firma2-project-import';
+  import { projects as seedProjects } from '../../data/firma2-projects';
+  import { CURRENT_USER, organizationSlug } from '../../data/firma2-directory';
+  import type { Organization } from '../../data/firma2-directory';
+  import {
+    NEW_ORGANIZATION,
+    autoMap,
+    columnsOf,
+    commitImport,
+    dataRowsOf,
+    decisionKey,
+    distinctValues,
+    fieldOf,
+    headerRowOf,
+    importedProjects,
+    isTotalRow,
+    parseCsv,
+    proposeRows,
+    show as displayValue,
+    undoImport,
+    unmappedRequired,
+    vocabularyValues,
+  } from '../../lib/project-import';
+  import type { DistinctValue, ImportBatch, ImportDecisions, Problem, RowOutcome } from '../../lib/project-import';
+  import { addOrganizations, removeAddedOrganizations } from '../../lib/added-organizations';
+  import { label } from '../../lib/vocabulary';
+  import { createCardGrid } from '../shared/grid-chrome';
+  import type { GridApi } from 'ag-grid-community';
+  import { can, currentActor } from '../../lib/workspace-permissions';
+  import { readProjectSource } from '../../lib/work-areas';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean; open?: boolean; message?: string; tabs?: unknown; activeIndex?: number };
+
+  const READ_DELAY_MS = 800;
+  const WRITE_DELAY_MS = 900;
+  const PREVIEW_VALUES = 6;
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  const n = (x: number) => x.toLocaleString('en-US');
+  const plural = (x: number, one: string, many: string) => `${n(x)} ${x === 1 ? one : many}`;
+  const fieldLabel = (key: string): string => label(fieldOf(key)?.label ?? key);
+  const list = (items: string[]): string =>
+    items.length <= 2 ? items.join(' and ') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+
+  // RFC 4180, as the Export card writes it.
+  const csvOf = (rows: string[][]): string =>
+    rows.map((cells) => cells.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const download = (fileName: string, text: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    Object.assign(document.createElement('a'), { href: url, download: fileName }).click();
+    URL.revokeObjectURL(url);
+  };
+
+  /**
+   * Keyed rows: an existing <tr> is kept (and updated) rather than rebuilt, so
+   * a control the reader is working in keeps its focus and its upgrade.
+   */
+  const reconcile = <T,>(tbody: HTMLElement, items: T[], keyOf: (item: T) => string, create: (item: T) => HTMLElement, update?: (tr: HTMLElement, item: T) => void) => {
+    const existing = new Map([...tbody.children].map((tr) => [(tr as HTMLElement).dataset.key ?? '', tr as HTMLElement]));
+    const next = items.map((item) => {
+      const key = keyOf(item);
+      const tr = existing.get(key) ?? create(item);
+      tr.dataset.key = key;
+      update?.(tr, item);
+      return tr;
+    });
+    next.forEach((tr, i) => {
+      if (tbody.children[i] !== tr) tbody.insertBefore(tr, tbody.children[i] ?? null);
+    });
+    while (tbody.children.length > next.length) tbody.lastElementChild!.remove();
+  };
+
+  const makeSelect = (attrs: Record<string, string>, options: { value: string; label: string }[], value: string): Control => {
+    const select = document.createElement('esa-select') as Control;
+    select.setAttribute('size', 'md');
+    Object.entries(attrs).forEach(([k, v]) => select.setAttribute(k, v));
+    customElements.whenDefined('esa-select').then(() => {
+      select.options = options;
+      select.value = value;
+    });
+    return select;
+  };
+
+  /** An EsaButton clone: the label is on .esa-button__label, disabled on the native button and the wrapper. */
+  const setButton = (scope: HTMLElement, sel: string, text: string | null, enabled = true) => {
+    const native = scope.querySelector<HTMLButtonElement>(sel)!;
+    if (text !== null) (native.querySelector('.esa-button__label') ?? native).textContent = text;
+    native.disabled = !enabled;
+    native.closest('.esa-button')?.classList.toggle('esa-button--disabled', !enabled);
+  };
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-import').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: { sample: ImportWorkbook; hrefs: Record<string, string> } = JSON.parse(root.dataset.config ?? '{}');
+    const admin = currentActor().role === 'Administrator';
+    const confirm = $<Control>('.firma2-project-import__confirm');
+    const resultsEl = $('[data-results]');
+    const badgeOf = (tpl: string, text: string) => {
+      const t = document.createElement('template');
+      t.innerHTML = $<HTMLTemplateElement>(tpl).innerHTML;
+      const el = t.content.firstElementChild as HTMLElement;
+      const textEl = el.querySelector('.esa-badge__text');
+      if (textEl) textEl.textContent = text;
+      return el;
+    };
+
+    let workbook: ImportWorkbook | null = null;
+    let sheetIndex = 0;
+    let headerRow = 0;
+    let rows: RowOutcome[] = [];
+    let lastBatch: ImportBatch | null = null;
+    let leftOut: RowOutcome[] = [];
+    let committed = false;
+    let step = 1;
+    let previewCol = 0;
+    /** Rows that have needed a fix since the columns last changed, with every problem they showed. */
+    const flagged = new Map<number, Map<string, Problem>>();
+    const d: ImportDecisions = { mapping: [], values: new Map(), fixes: new Map(), skipped: new Set(), existing: 'update' };
+    const sheet = () => workbook!.sheets[sheetIndex];
+    const missing = () => (workbook ? unmappedRequired(d.mapping) : []);
+
+    // ---- phases and steps ----------------------------------------------------------------
+    type Phase = 'steps' | 'importing' | 'done' | 'undone';
+    let phase: Phase = 'steps';
+    const show = (next: Phase) => {
+      phase = next;
+      root.querySelectorAll<HTMLElement>('[data-phase]').forEach((el) => (el.hidden = el.dataset.phase !== next));
+    };
+
+    /** A step is open once the ones before it can be left. */
+    const reachable = (s: number) =>
+      s === 1 || (!!workbook && (s === 2 || (missing().length === 0 && (s === 3 || unanswered === 0))));
+
+    const goTo = (s: number, focus = true) => {
+      if (!reachable(s)) return;
+      const entering = s !== step;
+      step = s;
+      root.querySelectorAll<HTMLElement>('[data-step]').forEach((el) => (el.hidden = Number(el.dataset.step) !== s));
+      paint();
+      // Step 2's values live in the Preview rail (Attio's data preview), so
+      // entering it brings the rail back if the reader had collapsed it.
+      if (entering && s === 2) root.querySelector('#import-preview')?.dispatchEvent(new CustomEvent('firma2:rail-open'));
+      if (entering && focus) {
+        const panel = root.querySelector<HTMLElement>(`[data-step="${s}"]`)!;
+        // Back to the top of whatever scrolls the import. scrollIntoView on
+        // the root over-scrolled by the hidden title's height and tucked each
+        // step's first line under the sticky stepper.
+        for (let el = root.parentElement; el; el = el.parentElement) {
+          if (el.scrollTop > 0) el.scrollTop = 0;
+        }
+        panel.setAttribute('tabindex', '-1');
+        panel.focus({ preventScroll: true });
+      }
+    };
+
+    root.querySelectorAll<HTMLElement>('[data-goto]').forEach((b) => b.addEventListener('click', () => goTo(Number(b.dataset.goto))));
+    $('[data-back]').addEventListener('click', () => goTo(step - 1));
+    $('[data-next]').addEventListener('click', () => (step < 4 ? goTo(step + 1) : commit()));
+
+    /** What goes in: new rows and rows that change an existing project. */
+    const going = () => rows.filter((r) => r.status === 'new' || r.status === 'update');
+
+    const paintChrome = () => {
+      root.querySelectorAll<HTMLElement>('[data-goto]').forEach((b) => {
+        const s = Number(b.dataset.goto);
+        const li = b.closest('li')!;
+        const state = s === step ? 'current' : s < step ? 'done' : 'upcoming';
+        li.dataset.state = state;
+        b.toggleAttribute('aria-current', s === step);
+        if (s === step) b.setAttribute('aria-current', 'step');
+        // The check is drawn; a screen reader hears it.
+        li.querySelector('[data-step-state]')!.textContent = state === 'done' ? ', done' : '';
+        setButton(li, '[data-goto]', null, reachable(s));
+      });
+      $('[data-back-wrap]').hidden = step === 1;
+      // Before a file there is nothing to continue with: the drop zone is the step.
+      $('.firma2-project-import__foot').hidden = step === 1 && !workbook;
+      const created = rows.filter((r) => r.status === 'new').length;
+      const updated = going().length - created;
+      const note = $('[data-foot-note]');
+      if (step < 4) {
+        setButton(root, '[data-next]', 'Continue', reachable(step + 1));
+        note.textContent = step === 2 && missing().length ? `${plural(missing().length, 'required field needs', 'required fields need')} a column`
+          : step === 3 && unanswered ? `${plural(unanswered, 'value needs', 'values need')} a match`
+          : '';
+      } else {
+        // THE BUTTON STATES THE SPLIT: it is the whole confirmation, as Undo takes it all back.
+        const noun = (x: number) => (x === 1 ? 'project' : 'projects');
+        const text = created && updated ? `Create ${n(created)}, update ${n(updated)}`
+          : created ? `Create ${n(created)} ${noun(created)}`
+          : updated ? `Update ${n(updated)} ${noun(updated)}`
+          : 'Import projects';
+        setButton(root, '[data-next]', label(text), going().length > 0);
+        const toFix = rows.filter((r) => r.status === 'fix').length;
+        // Importing now leaves them out; say so before the click, not after.
+        note.textContent = toFix ? `${plural(toFix, 'row still needs', 'rows still need')} a fix and will be left out` : '';
+      }
+    };
+
+    // ---- withheld --------------------------------------------------------------------
+    const subscribed = readProjectSource() === 'subscribed';
+    const permitted = can('perm-import');
+    $('[data-off="source"]').hidden = !subscribed;
+    $('[data-off="permission"]').hidden = subscribed || permitted;
+    $('[data-on]').hidden = subscribed || !permitted;
+
+    // ---- 1 · upload -------------------------------------------------------------------
+    const uploadState = (s: 'empty' | 'reading' | 'file') =>
+      root.querySelectorAll<HTMLElement>('[data-upload]').forEach((el) => (el.hidden = el.dataset.upload !== s));
+
+    const rowsIn = (i: number) => {
+      const s = workbook!.sheets[i];
+      return dataRowsOf(s, headerRowOf(s.cells)).filter((r) => !isTotalRow(r.cells)).length;
+    };
+
+    const read = (fileName: string, load: Promise<ImportWorkbook>) => {
+      $('[data-reading-line]').textContent = `Reading ${fileName}…`;
+      uploadState('reading');
+      paintChrome();
+      Promise.all([load, new Promise((r) => window.setTimeout(r, READ_DELAY_MS))]).then(([wb]) => {
+        workbook = wb;
+        sheetIndex = Math.max(0, wb.sheets.reduce((best, _s, i) => (rowsIn(i) > rowsIn(best) ? i : best), 0));
+        customElements.whenDefined('esa-select').then(() => {
+          const sheetSelect = $<Control>('[data-sheet]');
+          sheetSelect.options = wb.sheets.map((s, i) => ({ value: String(i), label: `${s.name} · ${plural(rowsIn(i), 'row', 'rows')}` }));
+          sheetSelect.value = String(sheetIndex);
+          $('[data-sheet-wrap]').hidden = wb.sheets.length < 2;
+          $('[data-file-name]').textContent = wb.fileName;
+          uploadState('file');
+          loadSheet();
+        });
+      });
+    };
+
+    const csvWorkbook = (file: File): Promise<ImportWorkbook> =>
+      file.text().then((text) => ({ fileName: file.name, sheets: [{ name: file.name.replace(/\.csv$/i, ''), cells: parseCsv(text) }] }));
+
+    $('[data-file]').addEventListener('change', (event) => {
+      const file = (event as CustomEvent<{ files?: File[] }>).detail?.files?.[0];
+      if (!file) return;
+      // A CSV is read for real. Any workbook reads as the sample: no parser for
+      // .xlsx ships with this prototype.
+      read(file.name, /\.csv$/i.test(file.name) ? csvWorkbook(file) : Promise.resolve({ ...config.sample, fileName: file.name }));
+    });
+    $('[data-sample]').addEventListener('click', () => read(config.sample.fileName, Promise.resolve(config.sample)));
+    $('[data-template]').addEventListener('click', () => {
+      download('projectfirma-projects-template.csv', csvOf([IMPORT_FIELDS.map((f) => label(f.label))]));
+    });
+
+    /** A sheet (or a heading row) changes what every column is, so decisions start over. */
+    const loadSheet = (row?: number) => {
+      headerRow = row ?? headerRowOf(sheet().cells);
+      d.mapping = autoMap(columnsOf(sheet(), headerRow));
+      d.values.clear();
+      d.fixes.clear();
+      d.skipped.clear();
+      flagged.clear();
+      previewCol = 0;
+      valueField = '';
+      const headerSelect = $<Control>('[data-header-row]');
+      headerSelect.options = sheet().cells.slice(0, 10).map((_, i) => ({ value: String(i), label: `Row ${i + 1}` }));
+      headerSelect.value = String(headerRow);
+      ['[data-columns]', '[data-fix]', '[data-value-fields]', '[data-values="needing"]', '[data-values="suggested"]', '[data-values="exact"]'].forEach((s) => $(s).replaceChildren());
+      paint();
+    };
+
+    $('[data-sheet]').addEventListener('change', () => {
+      sheetIndex = Number($<Control>('[data-sheet]').value ?? 0);
+      loadSheet();
+    });
+    $('[data-header-row]').addEventListener('change', () => {
+      const next = Number($<Control>('[data-header-row]').value ?? 0);
+      if (next !== headerRow) loadSheet(next);
+    });
+
+    const paintFile = () => {
+      const columns = columnsOf(sheet(), headerRow);
+      const data = dataRowsOf(sheet(), headerRow).filter((r) => !isTotalRow(r.cells));
+      // The file name says what kind of file it is; the line says what is in it.
+      const sheets = workbook!.sheets.length > 1 ? [plural(workbook!.sheets.length, 'sheet', 'sheets')] : [];
+      $('[data-file-meta]').textContent = [...sheets, plural(columns.length, 'column', 'columns'), plural(data.length, 'row', 'rows')].join(' · ');
+    };
+
+    // ---- 2 · match columns -------------------------------------------------------------
+    const fieldOptions = () => [
+      { value: '', label: 'Don’t import' },
+      ...IMPORT_FIELDS.map((f) => ({ value: f.key, label: f.required ? `${label(f.label)} (required)` : label(f.label) })),
+    ];
+
+    // ---- the rail: what is under the pointer or the focus, on every step ------------------
+    /** A rail line: a value alone, or a quiet label over a value. */
+    const line = (value: string, over?: string) =>
+      `<li>${over ? `<span class="typography-body-sm firma2-project-import__muted" title="${esc(over)}">${esc(over)}</span>` : ''}<span class="typography-body-md" title="${esc(value)}">${esc(value) || '—'}</span></li>`;
+    const setRail = (heading: string, meta: string, items: string[], note = '') => {
+      $('[data-rail-heading]').textContent = heading;
+      const metaEl = $('[data-rail-meta]');
+      metaEl.textContent = meta;
+      metaEl.hidden = !meta;
+      $('[data-rail-list]').innerHTML = items.join('');
+      const noteEl = $('[data-rail-note]');
+      noteEl.textContent = note;
+      noteEl.hidden = !note;
+    };
+
+    let valueField = '';
+    /** Groups folded shut; what already matches starts folded, as Attio's does. */
+    const folded = new Set<string>(['exact']);
+
+    const paintRail = () => {
+      // No file, nothing to preview: the rail stays out until one is read.
+      // Past Match columns it has nothing to add (user, 2026-11-16): each value
+      // says how many rows use it, and the review's tables are the rows.
+      const rail = root.querySelector<HTMLElement>('#import-preview');
+      const none = !workbook || phase !== 'steps' || step > 2;
+      if (rail) rail.hidden = none;
+      if (none) return;
+      const columns = columnsOf(sheet(), headerRow);
+      if (phase === 'steps' && step === 1) {
+        setRail('Column headings', '', columns.map((c) => line(c)));
+        return;
+      }
+      if (phase === 'steps' && step === 2) {
+        const values = dataRowsOf(sheet(), headerRow).filter((r) => !isTotalRow(r.cells)).map((r) => (r.cells[previewCol] ?? '').trim()).filter(Boolean);
+        const key = d.mapping[previewCol];
+        setRail(
+          columns[previewCol] ?? '',
+          key ? `Imports as ${fieldLabel(key)}` : 'Not imported',
+          values.slice(0, PREVIEW_VALUES).map((v) => line(v)),
+          values.length === 0 ? 'Every cell in this column is empty.' : values.length > PREVIEW_VALUES ? `First ${PREVIEW_VALUES} of ${n(values.length)} values` : '',
+        );
+        return;
+      }
+    };
+
+    const preview = (col: number) => {
+      if (col === previewCol) return;
+      previewCol = col;
+      paintRail();
+    };
+
+    const paintColumns = () => {
+      const columns = columnsOf(sheet(), headerRow);
+      reconcile(
+        $('[data-columns]'),
+        columns.map((heading, col) => ({ heading, col })),
+        ({ col }) => String(col),
+        ({ heading, col }) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<th scope="row" class="typography-body-md">${esc(heading)}</th><td class="typography-body-md firma2-project-import__arrow" aria-hidden="true">→</td><td></td>`;
+          const select = makeSelect({ 'aria-label': `Import “${heading}” as` }, fieldOptions(), d.mapping[col] ?? '');
+          select.dataset.col = String(col);
+          select.addEventListener('change', () => {
+            const key = String(select.value ?? '');
+            // A field takes one column: picking it here frees it elsewhere.
+            d.mapping.forEach((k, i) => {
+              if (key && k === key && i !== col) {
+                d.mapping[i] = '';
+                const other = root.querySelector<Control>(`[data-columns] [data-col="${i}"]`);
+                if (other) other.value = '';
+              }
+            });
+            d.mapping[col] = key;
+            // New columns mean new problems; the fixed-row list starts over.
+            flagged.clear();
+            paint();
+          });
+          tr.lastElementChild!.append(select);
+          // The preview follows the pointer and the keyboard alike.
+          tr.addEventListener('mouseenter', () => preview(col));
+          tr.addEventListener('focusin', () => preview(col));
+          return tr;
+        },
+      );
+      const gone = missing();
+      $('[data-required-warning]').hidden = gone.length === 0;
+      $('[data-required-text]').textContent = gone.length
+        ? `Pick a column for ${list(gone.map((f) => label(f.label)))}. Nothing imports without ${gone.length === 1 ? 'it' : 'them'}.`
+        : '';
+    };
+
+    // ---- 3 · match values ------------------------------------------------------------------
+    /** 'Leave blank' as a picked answer, so an empty select can mean 'not answered'. */
+    const BLANK = '__blank__';
+    const valueOptions = (v: DistinctValue) => [
+      // Blank is never a valid answer for a required field.
+      // Its own value, not '': an empty select means "not answered yet".
+      ...(v.field.required ? [] : [{ value: BLANK, label: 'Leave blank' }]),
+      ...(v.vocabulary === 'leadOrganization' && admin ? [{ value: NEW_ORGANIZATION, label: `Add “${v.value}” as a new organization` }] : []),
+      // MATCHING HAPPENS HERE ONLY (user, 2026-11-17): a required value is
+      // answered on this step or its rows go — the review never asks again.
+      ...vocabularyValues(v.vocabulary).map((x) => ({ value: x, label: x })),
+    ];
+
+    const valueRow = (v: DistinctValue) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<th scope="row" class="typography-body-md">${esc(v.value)}<span class="typography-body-sm firma2-project-import__rows" data-count></span></th><td class="typography-body-md firma2-project-import__arrow" aria-hidden="true">→</td><td data-select></td>`;
+      // Exact matches: pre-picked and folded, but still a choice
+      // (user, 2026-11-16) — a same-named entry can be the wrong one. Until
+      // it is changed the import keeps reading the name match (matchOf).
+      const select = makeSelect(
+        { 'aria-label': `Match “${v.value}” to`, placeholder: 'Pick a match' },
+        v.exact ? valueOptions(v).filter((o) => o.value !== NEW_ORGANIZATION) : valueOptions(v),
+        d.values.get(v.key) === '' ? BLANK : (d.values.get(v.key) ?? v.exact ?? ''),
+      );
+      select.addEventListener('change', () => {
+        const picked = String(select.value ?? '');
+        d.values.set(v.key, picked === BLANK ? '' : picked);
+        paint();
+      });
+      tr.querySelector('[data-select]')!.append(select);
+      return tr;
+    };
+
+    /** Unanswered values; Continue waits until each has a match or a way out. */
+    let unanswered = 0;
+
+    const paintValues = () => {
+      const all = distinctValues(sheet(), headerRow, d.mapping, d.skipped);
+      // A suggestion is pre-picked; a value with no match starts unanswered.
+      all.forEach((v) => {
+        if (v.exact || d.values.has(v.key)) return;
+        if (v.suggested) d.values.set(v.key, v.suggested);
+      });
+      // Everything under "Needs a match" is asked, optional fields too (user,
+      // 2026-11-17: "why classification doesn't have a number 1?"). Leaving an
+      // optional value blank empties that field on every row that has it, so it
+      // is an answer the importer gives — "Leave blank" — never a default.
+      const open = (v: DistinctValue) => !v.exact && !v.suggested && !d.values.has(v.key);
+      unanswered = all.filter(open).length;
+
+      // The columns: one card per mapped column that names a list, in file order.
+      const fields = d.mapping
+        .map((key, col) => ({ key, col, field: fieldOf(key) }))
+        .filter((x) => x.field?.vocabulary && all.some((v) => v.field.key === x.key));
+      if (!fields.some((f) => f.key === valueField)) valueField = fields.find((f) => all.some((v) => v.field.key === f.key && open(v)))?.key ?? fields[0]?.key ?? '';
+      $('[data-values-none]').hidden = fields.length > 0;
+      $('[data-values-some]').hidden = fields.length === 0;
+      const columns = columnsOf(sheet(), headerRow);
+
+      reconcile(
+        $('[data-value-fields]'),
+        fields,
+        (f) => f.key,
+        (f) => {
+          const li = document.createElement('li');
+          const t = document.createElement('template');
+          t.innerHTML = $<HTMLTemplateElement>('[data-field-button]').innerHTML;
+          const wrap = t.content.firstElementChild as HTMLElement;
+          const native = wrap.querySelector<HTMLElement>('button')!;
+          (native.querySelector('.esa-button__label') ?? native).innerHTML =
+            `<span class="firma2-project-import__field-text"><span class="firma2-project-import__field-top"><span class="typography-label-md">${esc(fieldLabel(f.key))}</span><span data-field-badge></span></span><span class="typography-body-sm firma2-project-import__muted">${esc(columns[f.col] ?? '')}</span></span>`;
+          native.addEventListener('click', () => {
+            if (valueField === f.key) return;
+            valueField = f.key;
+            ['needing', 'suggested', 'exact'].forEach((g) => $(`[data-values="${g}"]`).replaceChildren());
+            paint();
+          });
+          li.append(wrap);
+          return li;
+        },
+        (li, f) => {
+          li.querySelector('button')!.setAttribute('aria-current', String(f.key === valueField));
+          const todo = all.filter((v) => v.field.key === f.key && open(v)).length;
+          // The count alone fits the card beside the field's name; the words are
+          // the footer's ("2 values need a match") and a screen reader's.
+          const badge = todo ? badgeOf('[data-badge-todo]', n(todo)) : null;
+          if (badge) {
+            const sr = document.createElement('span');
+            sr.className = 'firma2-project-import__sr';
+            sr.textContent = ' to match';
+            badge.append(sr);
+          }
+          li.querySelector('[data-field-badge]')!.replaceChildren(...(badge ? [badge] : []));
+        },
+      );
+
+      // The values of the selected column, grouped: what needs a match, what
+      // was suggested, what matched exactly (folded).
+      const mine = all.filter((v) => v.field.key === valueField).sort((a, b) => b.rows.length - a.rows.length || a.value.localeCompare(b.value));
+      const groups: Record<string, DistinctValue[]> = {
+        needing: mine.filter((v) => !v.exact && !v.suggested),
+        suggested: mine.filter((v) => !v.exact && v.suggested),
+        exact: mine.filter((v) => v.exact),
+      };
+      Object.entries(groups).forEach(([g, items]) => {
+        const body = $(`[data-values="${g}"]`);
+        reconcile(body, items, (v) => v.key, valueRow, (tr, v) => {
+          tr.querySelector('[data-count]')!.textContent = plural(v.rows.length, 'row', 'rows');
+        });
+        const head = $(`[data-group-head="${g}"]`);
+        head.hidden = items.length === 0;
+        head.querySelector('[data-group-count]')!.textContent = n(items.length);
+        head.querySelector<HTMLElement>('button')?.setAttribute('aria-expanded', String(!folded.has(g)));
+        body.hidden = items.length === 0 || folded.has(g);
+      });
+      const col = fields.find((f) => f.key === valueField)?.col;
+      $('[data-values-caption]').textContent = col === undefined ? '' : `Values in “${columns[col]}”, as ${fieldLabel(valueField)}`;
+    };
+
+    root.querySelectorAll<HTMLElement>('[data-group-head]').forEach((head) => {
+      head.querySelector('button')?.addEventListener('click', () => {
+        const g = head.dataset.groupHead!;
+        if (folded.has(g)) folded.delete(g);
+        else folded.add(g);
+        paint();
+      });
+    });
+
+    // ---- 4 · review: to fix --------------------------------------------------------------------
+    const toggleSkip = (row: number, on: boolean) => {
+      if (on) d.skipped.add(row);
+      else d.skipped.delete(row);
+      paint();
+    };
+
+    const paintFixes = () => {
+      // Remember every problem a row has shown, so a fixed row keeps its line.
+      // Not an unmatched value: those are answered once, on Match values, and
+      // this step is out of reach until they are.
+      rows.forEach((r) => {
+        if (r.status !== 'fix' && r.status !== 'skipped') return;
+        const own = r.problems.filter((p) => !p.unmatched);
+        if (!own.length) return;
+        const seen = flagged.get(r.row) ?? new Map<string, Problem>();
+        own.forEach((p) => seen.has(p.field.key) || seen.set(p.field.key, p));
+        flagged.set(r.row, seen);
+      });
+      const byRow = new Map(rows.map((r) => [r.row, r]));
+      const shown = [...flagged.keys()].filter((row) => byRow.has(row)).sort((a, b) => a - b).map((row) => byRow.get(row)!);
+      const fixedBadge = $<HTMLTemplateElement>('[data-badge-fixed]').innerHTML;
+      /** The fields a row's fix boxes edit: each problem's field, and the other side of a conflict first. */
+      const fieldsOf = (seen: Map<string, Problem>) => {
+        const out = new Map<string, ImportField>();
+        seen.forEach((p) => [p.also, p.field].forEach((f) => f && !out.has(f.key) && out.set(f.key, f)));
+        return [...out.values()];
+      };
+      const cellOf = (r: RowOutcome, key: string) => (r.cells[d.mapping.indexOf(key)] ?? '').trim();
+
+      reconcile(
+        $('[data-fix]'),
+        shown,
+        (r) => String(r.row),
+        (r) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td class="typography-body-md firma2-settings-table__num">${r.row}</td><td class="typography-body-md" data-problems></td><td class="firma2-project-import__fixes" data-fixes></td><td class="firma2-project-import__skip" data-skip-cell></td>`;
+          const skip = document.createElement('esa-checkbox') as Control;
+          skip.setAttribute('label', 'Skip');
+          skip.setAttribute('aria-label', `Skip row ${r.row}`);
+          customElements.whenDefined('esa-checkbox').then(() => (skip.checked = d.skipped.has(r.row)));
+          skip.addEventListener('change', () => toggleSkip(r.row, !!skip.checked));
+          const cell = tr.querySelector<HTMLElement>('[data-skip-cell]')!;
+          cell.append(skip);
+          // The cell is the hit area; a click on the box itself already toggles.
+          cell.addEventListener('click', (event) => {
+            if (event.composedPath().includes(skip)) return;
+            skip.checked = !skip.checked;
+            toggleSkip(r.row, !!skip.checked);
+          });
+          return tr as HTMLTableRowElement;
+        },
+        (tr, r) => {
+          const seen = flagged.get(r.row)!;
+          const skipped = d.skipped.has(r.row);
+          const fixed = r.status !== 'fix' && !skipped;
+          const nameLine = r.name !== `Row ${r.row}` ? `<span class="firma2-settings-table__meta">${esc(r.name)}</span>` : '';
+          // The problem as the file had it; whether a fix holds is said under its box.
+          tr.querySelector('[data-problems]')!.innerHTML =
+            [...seen.values()]
+              .map((p, i) => `<span class="firma2-project-import__problem"><span class="${fixed || skipped ? 'firma2-project-import__muted' : ''}">${esc(p.message)}</span>${i === 0 && fixed ? fixedBadge : ''}</span>`)
+              .join('') + nameLine;
+
+          const fixes = tr.querySelector<HTMLElement>('[data-fixes]')!;
+          const fields = fieldsOf(seen);
+          const keep = new Map([...fixes.children].map((el) => [(el as HTMLElement).dataset.fix ?? '', el as Control]));
+          // Same boxes as last paint: leave them in place, so the one in focus keeps it.
+          if (!(fields.length === keep.size && fields.every((f) => keep.has(f.key)))) {
+            fixes.replaceChildren(
+              ...fields.map((field) => {
+                const kept = keep.get(field.key);
+                if (kept) return kept;
+                const fixKey = `${r.row}|${field.key}`;
+                const name = label(field.label);
+                let control: Control;
+                if (field.vocabulary) {
+                  control = makeSelect({ label: name, placeholder: `Pick ${name.toLowerCase()}` }, vocabularyValues(field.vocabulary).map((x) => ({ value: x, label: x })), d.fixes.get(fixKey) ?? '');
+                } else {
+                  control = document.createElement('esa-text-field') as Control;
+                  control.setAttribute('size', 'md');
+                  control.setAttribute('label', name);
+                  if (field.kind === 'year' || field.kind === 'money' || field.kind === 'number') control.setAttribute('inputmode', field.kind === 'year' ? 'numeric' : 'decimal');
+                  customElements.whenDefined('esa-text-field').then(() => (control.value = d.fixes.get(fixKey) ?? cellOf(r, field.key)));
+                }
+                control.dataset.fix = field.key;
+                control.addEventListener('change', () => {
+                  d.fixes.set(fixKey, String(control.value ?? '').trim());
+                  paint();
+                });
+                return control;
+              }),
+            );
+          }
+          // A box you changed says at once whether the value holds; an untouched
+          // one leaves that to the problem beside it.
+          const open = new Map(r.problems.map((p) => [p.field.key, p]));
+          [...fixes.children].forEach((el) => {
+            const c = el as Control & { errorText?: string };
+            const key = c.dataset.fix ?? '';
+            c.hidden = skipped;
+            customElements.whenDefined(c.localName).then(() => {
+              c.errorText = !skipped && d.fixes.has(`${r.row}|${key}`) ? (open.get(key)?.message ?? '') : '';
+            });
+          });
+        },
+      );
+      const toFix = rows.filter((r) => r.status === 'fix').length;
+      $('[data-fix-block]').hidden = committed || shown.length === 0;
+      $('[data-fix-block] .esa-collapsible__title').textContent = `Needs a fix (${n(toFix)})`;
+      return shown.length;
+    };
+
+    // ---- 4 · review: new, updated, left out ------------------------------------------------------
+    // New projects are the Projects index's rows, so they get its grid
+    // (user, 2026-11-17: "why are we not using grids from AG grid?"), with a
+    // column for every field the file fills: this is the last look before they
+    // are written. Row and Project stay put while the rest scrolls.
+    type NewRow = { row: number; name: string; orgIsNew: boolean; values: Record<string, unknown> };
+    let newGrid: GridApi<NewRow> | null = null;
+    let newColumns = '';
+    const valueIn = (r: NewRow, key: string) => (key.startsWith('custom:') ? (r.values.custom as Record<string, string> | undefined)?.[key.slice(7)] : r.values[key]);
+    const newColumnDefs = () => {
+      const fields = d.mapping.map((key) => fieldOf(key)).filter((f): f is ImportField => !!f && f.key !== 'projectName');
+      return [
+        { headerName: 'Row', field: 'row', width: 80, pinned: 'left', sortable: true, type: 'numericColumn' },
+        { headerName: label('Project'), field: 'name', width: 260, pinned: 'left', sortable: true, wrapText: true, autoHeight: true, wrapHeaderText: true, autoHeaderHeight: true },
+        ...fields.map((f) => {
+          const numeric = f.kind === 'money' || f.kind === 'number' || f.kind === 'year';
+          const text = (p: { data?: NewRow }) => {
+            const v = p.data ? valueIn(p.data, f.key) : undefined;
+            return v === undefined || v === '' || (Array.isArray(v) && !v.length) ? '—' : displayValue(f, v);
+          };
+          return {
+            colId: f.key,
+            headerName: label(f.label),
+            width: f.kind === 'long-text' ? 320 : numeric ? 150 : 200,
+            sortable: true,
+            wrapText: true,
+            autoHeight: true,
+            wrapHeaderText: true,
+            autoHeaderHeight: true,
+            ...(numeric ? { type: 'numericColumn' } : {}),
+            valueGetter: (p: { data?: NewRow }) => (p.data ? valueIn(p.data, f.key) ?? null : null),
+            ...(f.key === 'leadOrganization'
+              ? { cellRenderer: (p: { data?: NewRow }) => `${esc(text(p))}${p.data?.orgIsNew ? ' <span class="firma2-project-import__muted">(new)</span>' : ''}` }
+              : f.kind === 'long-text'
+                ? { cellRenderer: (p: { data?: NewRow }) => `<span class="firma2-project-import__clamp">${esc(text(p))}</span>` }
+                : { valueFormatter: text }),
+          };
+        }),
+      ];
+    };
+    const paintNew = () => {
+      const fresh: NewRow[] = rows.filter((r) => r.status === 'new').map((r) => {
+        const org = r.values.leadOrganization ?? '';
+        return {
+          row: r.row,
+          name: r.name,
+          orgIsNew: !!org && d.values.get(decisionKey('leadOrganization', org)) === NEW_ORGANIZATION,
+          values: r.values as Record<string, unknown>,
+        };
+      });
+      const columns = d.mapping.join('|');
+      if (!newGrid) {
+        newGrid = createCardGrid<NewRow>($('[data-new-grid]'), { rowData: fresh, getRowId: (p) => String(p.data.row), columnDefs: newColumnDefs() });
+      } else {
+        if (columns !== newColumns) newGrid.setGridOption('columnDefs', newColumnDefs());
+        newGrid.setGridOption('rowData', fresh);
+      }
+      newColumns = columns;
+      return fresh.length;
+    };
+
+    const paintUpdated = () => {
+      const changed = rows.filter((r) => r.status === 'update');
+      const same = rows.filter((r) => r.status === 'same');
+      const cell = (text: string, long: boolean, muted: boolean) =>
+        `<td class="typography-body-md${muted ? ' firma2-project-import__muted' : ''}">${text ? (long ? `<span class="firma2-project-import__long">${esc(text)}</span>` : esc(text)) : '—'}</td>`;
+      // One tbody per project; Row and Project span its change lines (Spanned rows).
+      const table = $('[data-updated]');
+      table.querySelectorAll('tbody').forEach((tb) => tb.remove());
+      table.insertAdjacentHTML('beforeend', changed
+        .map((r) => `<tbody data-row="${r.row}">${r.changes
+          .map((c, i) => {
+            const long = !!c.note;
+            const from = long ? c.from : c.from === 'blank' ? '' : c.from;
+            const span = r.changes.length;
+            const lead = i === 0
+              ? `<td class="typography-body-md firma2-settings-table__num" rowspan="${span}">${r.row}</td><th scope="rowgroup" class="typography-body-md" rowspan="${span}">${esc(r.name)}</th>`
+              : '';
+            return `<tr>${lead}<td class="typography-body-md firma2-project-import__field">${esc(label(c.label))}</td>${cell(from, long, true)}${cell(c.to, long, false)}</tr>`;
+          })
+          .join('')}</tbody>`)
+        .join(''));
+      $('[data-updated-table]').hidden = changed.length === 0;
+      const unchanged = $('[data-unchanged]');
+      unchanged.hidden = same.length === 0;
+      unchanged.textContent = same.length ? `No changes: ${list(same.map((r) => `${r.name} (row ${r.row})`))}.` : '';
+      return changed.length;
+    };
+
+    /** Why a row stays out, for the Left out table and the download. */
+    const reasonOf = (r: RowOutcome): string =>
+      r.status === 'total' ? 'total row'
+        : r.status === 'existing' ? 'names an existing project'
+        : r.status === 'skipped' ? 'skipped'
+        : r.problems.map((p) => p.message).join('; ');
+
+    const capital = (x: string) => x.replace(/^./, (c) => c.toUpperCase());
+    let leftOutNow: RowOutcome[] = [];
+    const paintLeftOut = () => {
+      // Once committed, rows still to fix were left out too.
+      const out = rows.filter((r) => r.status === 'total' || r.status === 'skipped' || r.status === 'existing' || (committed && r.status === 'fix'));
+      $('[data-left-out]').innerHTML = out
+        .map((r) => `<tr><td class="typography-body-md firma2-settings-table__num">${r.row}</td><td class="typography-body-md">${r.status === 'total' || r.name === `Row ${r.row}` ? '—' : esc(r.name)}</td><td class="typography-body-md">${esc(capital(reasonOf(r)))}</td></tr>`)
+        .join('');
+      leftOutNow = out;
+      return out.length;
+    };
+
+    /** A line per outcome, its count in the title; an empty outcome has none. */
+    const paintSections = (c: { created: number; changed: number; same: number; out: number }) => {
+      const sections: Record<string, [string, number, number]> = {
+        new: [label('New projects'), c.created, c.created],
+        // Rows the policy left out still keep the section, so its select is
+        // there to change the answer back — but not once the import is done.
+        updated: [label('Updated projects'), c.changed, c.changed + c.same + (committed ? 0 : rows.filter((r) => r.status === 'existing').length)],
+        out: ['Left out', c.out, c.out],
+      };
+      root.querySelectorAll<HTMLElement>('[data-section]').forEach((el) => {
+        const [title, count, show] = sections[el.dataset.section!] ?? ['', 0, 0];
+        el.hidden = show === 0;
+        el.querySelector('.esa-collapsible__title')!.textContent = `${title} (${n(count)})`;
+      });
+    };
+
+    customElements.whenDefined('esa-select').then(() => {
+      const policy = $<Control>('[data-existing-policy]');
+      policy.options = [
+        { value: 'update', label: 'Update the project' },
+        { value: 'skip', label: 'Leave the row out' },
+      ];
+      policy.value = d.existing;
+      policy.addEventListener('change', () => {
+        d.existing = String(policy.value) === 'skip' ? 'skip' : 'update';
+        paint();
+      });
+    });
+
+    const paint = () => {
+      if (!workbook) {
+        paintChrome();
+        paintRail();
+        return;
+      }
+      paintFile();
+      paintColumns();
+      // Values first: unasked suggestions become decisions before rows read them.
+      paintValues();
+      rows = missing().length ? [] : proposeRows(sheet(), headerRow, d);
+      paintFixes();
+      const created = paintNew();
+      const changed = paintUpdated();
+      const same = rows.filter((r) => r.status === 'same').length;
+      const out = paintLeftOut();
+      paintSections({ created, changed, same, out });
+      root.querySelectorAll<HTMLElement>('[data-review-only]').forEach((el) => (el.hidden = committed));
+      paintChrome();
+      paintRail();
+    };
+
+    // ---- committing ---------------------------------------------------------------------
+    const commit = () => {
+      if (phase !== 'steps' || !going().length) return;
+      const writing = going();
+      // The same rows the Left out tab lists once this is done.
+      leftOut = rows.filter((r) => r.status === 'fix' || r.status === 'skipped' || r.status === 'existing' || r.status === 'total');
+      $('[data-importing-line]').textContent = `Importing ${plural(writing.length, 'project', 'projects')}…`;
+      show('importing');
+      window.setTimeout(() => {
+        // Lead organizations the importer chose to add, and only those a written row uses.
+        const used = new Set(writing.map((r) => r.values.leadOrganization));
+        const newOrgs = [...d.values.entries()]
+          .filter(([key, v]) => v === NEW_ORGANIZATION && key.startsWith('leadOrganization|'))
+          .map(([key]) => distinctValues(sheet(), headerRow, d.mapping, d.skipped).find((x) => x.key === key)?.value.trim() ?? '')
+          .filter((name) => name && used.has(name));
+        const today = new Date().toISOString().slice(0, 10);
+        addOrganizations(
+          newOrgs.map((name): Organization => ({
+            name, slug: organizationSlug(name), type: 'Nonprofit', website: '', description: '', primaryContact: '',
+            projectsLed: writing.filter((r) => r.values.leadOrganization === name).length, projectsFunded: 0, people: 0,
+            projects: writing.filter((r) => r.values.leadOrganization === name).length,
+            visibility: 'public', approvedDomains: [], created: today, programs: [], joining: 'approval', addedBy: CURRENT_USER.name,
+          })),
+        );
+        lastBatch = commitImport(workbook!.fileName, writing, newOrgs);
+        const created = writing.filter((r) => r.status === 'new').length;
+        const updated = writing.length - created;
+        const parts = [created && `${plural(created, 'project', 'projects')} created`, updated && `${plural(updated, 'project', 'projects')} updated`, newOrgs.length && `${plural(newOrgs.length, 'organization', 'organizations')} added`].filter(Boolean) as string[];
+        $('[data-done-text]').textContent = lastBatch ? `${list(parts)}.` : 'This browser is blocking storage, so nothing was kept.';
+        $('[data-done-count]').textContent = `${n(writing.length)} / ${n(writing.length)}`;
+        $('[data-download-wrap]').hidden = leftOut.length === 0;
+        const dl = $('[data-download-left-out]').querySelector('.esa-button__label');
+        if (dl) dl.textContent = `Download ${plural(leftOut.length, 'row', 'rows')} left out`;
+        // The result is the review it came from, read-only: same tabs, same tables.
+        committed = true;
+        $('[data-results-done]').append(resultsEl);
+        const out = paintLeftOut();
+        root.querySelectorAll<HTMLElement>('[data-review-only]').forEach((el) => (el.hidden = true));
+        paintSections({ created, changed: updated, same: rows.filter((r) => r.status === 'same').length, out });
+        show('done');
+        paintRail();
+      }, WRITE_DELAY_MS);
+    };
+
+    const downloadOut = (out: RowOutcome[]) => {
+      if (!workbook) return;
+      const headings = sheet().cells[headerRow] ?? [];
+      download(
+        `${workbook.fileName.replace(/\.[^.]+$/, '')}-left-out.csv`,
+        csvOf([['Row', 'Why it was left out', ...headings], ...out.map((r) => [String(r.row), capital(reasonOf(r)), ...r.cells])]),
+      );
+    };
+    $('[data-download-left-out]').addEventListener('click', () => downloadOut(leftOut));
+    $('[data-download-out]').addEventListener('click', () => downloadOut(leftOutNow));
+
+    // ---- undo and restart -------------------------------------------------------------------
+    $('[data-undo]').addEventListener('click', () => {
+      if (!lastBatch) return;
+      const created = lastBatch.created.length;
+      const updated = lastBatch.updated.length;
+      const orgs = lastBatch.organizations.length;
+      confirm.message = [
+        created && `Removes ${plural(created, 'project', 'projects')}`,
+        updated && `puts ${plural(updated, 'project', 'projects')} back as they were`,
+        orgs && `removes ${plural(orgs, 'organization', 'organizations')} it added`,
+      ].filter(Boolean).join(', ').replace(/^./, (c) => c.toUpperCase()) + '.';
+      confirm.open = true;
+    });
+    confirm.addEventListener('confirm', () => {
+      if (!lastBatch) return;
+      const batch = undoImport(lastBatch.id);
+      if (batch) removeAddedOrganizations(batch.organizations);
+      $('[data-undone-text]').textContent = batch
+        ? `${list([batch.created.length && `${plural(batch.created.length, 'project', 'projects')} removed`, batch.updated.length && `${plural(batch.updated.length, 'project', 'projects')} restored`].filter(Boolean) as string[])}.`
+        : 'Nothing to undo.';
+      lastBatch = null;
+      show('undone');
+    });
+
+    const restart = () => {
+      workbook = null;
+      rows = [];
+      committed = false;
+      flagged.clear();
+      $('[data-results-home]').append(resultsEl);
+      uploadState('empty');
+      show('steps');
+      step = 0;
+      goTo(1, false);
+    };
+    $('[data-remove]').addEventListener('click', restart);
+    $('[data-again]').addEventListener('click', restart);
+
+    uploadState('empty');
+    show('steps');
+    step = 0;
+    goTo(1, false);
+  });
+</script>

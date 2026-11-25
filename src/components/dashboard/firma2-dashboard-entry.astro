@@ -1,0 +1,47 @@
+---
+// firma2-dashboard-entry — ties a dashboard page to its stored entry: the
+// name in its title, the row marked in the rail, and a rename in place saved
+// back. The counterpart of firma2-custom-page's script for a page that has no
+// body of its own — the dashboard is firma2-dashboard, beside this.
+//
+// `data-custom-dashboard` is how Firma2PagesNav knows which row is being read.
+// A link to a dashboard that is not in this browser says so, and the
+// dashboard under it steps aside.
+//
+// bcn-lego-checked: no control of its own — one line of text shown only when
+// the entry is missing. Beacon is not cloned.
+---
+<div data-custom-dashboard>
+  <p class="typography-body-md" style="display: none" data-dashboard-missing>Check the link, or pick one from Dashboards.</p>
+</div>
+
+<script>
+  import { findItem, updatePage } from '../../lib/custom-pages';
+
+  document.querySelectorAll<HTMLElement>('[data-custom-dashboard]').forEach((root) => {
+    const id = new URLSearchParams(location.search).get('id') ?? '';
+    const setTitle = (raw: string) => document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: { field: 'pageTitle', raw } }));
+
+    // After every module has run, so the title field is listening — and the
+    // save listener goes on after the seeding, so it is not taken for an edit.
+    requestAnimationFrame(() => {
+      const entry = findItem(id);
+      if (!entry || entry.kind !== 'dashboard') {
+        setTitle('Dashboard not found');
+        document.querySelector('[data-editable-field][data-field="pageTitle"]')?.setAttribute('data-locked', '');
+        root.querySelector<HTMLElement>('[data-dashboard-missing]')!.style.display = '';
+        document.querySelectorAll<HTMLElement>('[data-dashboard], [data-record-mode-switch], [data-dashboard-add]').forEach((el) => (el.style.display = 'none'));
+        return;
+      }
+      setTitle(entry.title);
+      document.title = `${entry.title} — Dashboards — ProjectFirma 2.0`;
+      document.addEventListener('firma2:field-save', (event) => {
+        const detail = (event as CustomEvent<{ field?: string; raw?: string }>).detail;
+        if (detail?.field !== 'pageTitle' || !detail.raw?.trim()) return;
+        updatePage(id, { title: detail.raw.trim() });
+        document.title = `${detail.raw.trim()} — Dashboards — ProjectFirma 2.0`;
+        document.dispatchEvent(new CustomEvent('firma2:pages-changed'));
+      });
+    });
+  });
+</script>

@@ -1,0 +1,147 @@
+---
+// firma2-area-group-areas — what an area group holds: every area its layer
+// gives, and how many projects fall in each. The group page's answer to "is
+// this filing my projects the way I expect?"
+//
+// NOBODY TYPES THIS LIST. The areas are the layer's shapes and the counts are
+// worked out from where each project's work is (src/lib/geospatial-areas.ts),
+// so there is no add, no reorder and no remove here — the layer owns the rows.
+//
+// THE PROJECTS THE GROUP DOES NOT FILE ARE ROWS TOO, under the areas: those
+// whose work is outside every area, and those with no location to file by.
+// Left out, the column would add up to less than the workspace with no reason.
+//
+// A GROUP THAT CANNOT FILE says why in place of the table: its layer was
+// deleted on Map layers, or the layer's shapes could not be read.
+//
+// Hovering a row lights its area on the map beside it (firma2-area-group-map
+// listens for `firma2:area-hover`).
+//
+// bcn-lego-checked: firma2-rail-section (the titled section); the shared
+// firma2-settings-table rules with runtime rows (no esa- table lego exists);
+// esa-alert-box and esa-empty-state for the states. Beacon is not cloned.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { withBase } from '../../lib/base';
+import './firma2-settings-table.css';
+---
+<div class="firma2-area-group-areas" data-area-href={withBase('/prototypes/workspace-settings/geospatial-areas/area')}>
+  <div data-gone hidden>
+    <div class="stack" data-gap="md">
+      <EsaEmptyState title="This area group was removed" />
+      <div class="cluster" data-gap="xs" style="justify-content: center">
+        <EsaButton variant="secondary" size="md" tag="a" href={withBase('/prototypes/workspace-settings/geospatial-areas')}>Back to geospatial areas</EsaButton>
+      </div>
+    </div>
+  </div>
+  <div data-section>
+    <Firma2RailSection title="Areas">
+      <div class="stack" data-gap="md">
+        <div data-no-layer hidden>
+          <EsaAlertBox variant="warning" title="Layer deleted">
+            <p class="typography-body-md">Choose another layer above, or remove this group.</p>
+          </EsaAlertBox>
+        </div>
+        <div data-unread hidden>
+          <EsaAlertBox variant="warning" title="Shapes not read">
+            <p class="typography-body-md">This layer sent no shapes. Check its service on <a href={withBase('/prototypes/workspace-settings/map-layers')}>Map layers</a>.</p>
+          </EsaAlertBox>
+        </div>
+        <div class="firma2-settings-table-scroll" data-table>
+          <table class="firma2-settings-table" aria-label="Areas in this group">
+            <thead>
+              <tr>
+                <th scope="col">Area</th>
+                <th scope="col" class="firma2-settings-table__num" data-aliasable>Projects</th>
+                <th scope="col" class="firma2-settings-table__num">Performance measures</th>
+                <th scope="col" class="firma2-settings-table__num">Acres</th>
+              </tr>
+            </thead>
+            <tbody data-rows></tbody>
+          </table>
+        </div>
+      </div>
+    </Firma2RailSection>
+  </div>
+</div>
+
+<style>
+  .firma2-area-group-areas [hidden] {
+    display: none !important;
+  }
+
+  .firma2-area-group-areas :global(.firma2-settings-table__name) {
+    color: var(--color-content-link);
+  }
+
+  /* The area's colour beside its name, as a project type's is on its roster. */
+  .firma2-area-group-areas :global(.firma2-area-group-areas__swatch) {
+    flex: none;
+    inline-size: var(--spacing-300);
+    block-size: var(--spacing-300);
+    border-radius: var(--radius-sm);
+  }
+
+  .firma2-area-group-areas :global(tr[data-unfiled] > *) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-area-group-areas :global(tr[data-area]:hover > *) {
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+  }
+</style>
+
+<script>
+  import { areaColor, areaGroup, areaKey, filing } from '../../lib/geospatial-areas';
+  import { kpiSlugs } from '../../lib/taxonomy-edits';
+  import { onGeoChange } from '../../lib/work-areas';
+
+  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-area-group-areas').forEach((root) => {
+    const id = new URLSearchParams(window.location.search).get('id') ?? '';
+    const part = (name: string) => root.querySelector<HTMLElement>(`[data-${name}]`)!;
+    const rows = part('rows');
+    const paint = () => {
+      const group = areaGroup(id);
+      part('gone').hidden = Boolean(group);
+      part('section').hidden = !group;
+      if (!group) return;
+      const f = filing(group);
+      part('no-layer').hidden = f.status !== 'no-layer';
+      part('unread').hidden = f.status !== 'unread';
+      part('table').hidden = f.status !== 'ok';
+      const unfiled = (label: string, count: number) =>
+        count ? `<tr data-unfiled><th scope="row">${label}</th><td class="firma2-settings-table__num">${count}</td><td></td><td></td></tr>` : '';
+      rows.innerHTML =
+        f.areas
+          .map(
+            ({ area, projects }) => `<tr data-area="${esc(area.id)}">
+              <th scope="row">
+                <a class="firma2-settings-table__name cluster" data-gap="xs" href="${esc(`${root.dataset.areaHref}?slug=${encodeURIComponent(areaKey(group.id, area.id))}`)}">
+                  <span class="firma2-area-group-areas__swatch" style="background:${esc(areaColor(group, f.layer, area.id))}" aria-hidden="true"></span>
+                  <span>${esc(area.name)}</span>
+                </a>
+              </th>
+              <td class="firma2-settings-table__num">${projects.length}</td>
+              <td class="firma2-settings-table__num">${kpiSlugs(areaKey(group.id, area.id), []).length}</td>
+              <td class="firma2-settings-table__num">${area.acres.toLocaleString('en-US')}</td>
+            </tr>`,
+          )
+          .join('') +
+        unfiled('Outside every area', f.outside.length) +
+        unfiled('No location', f.unlocated.length);
+    };
+    paint();
+    onGeoChange(paint);
+
+    const hover = (event: Event, on: boolean) => {
+      const row = (event.target as HTMLElement).closest<HTMLElement>('tr[data-area]');
+      if (row) document.dispatchEvent(new CustomEvent('firma2:area-hover', { detail: { id: on ? row.dataset.area : null } }));
+    };
+    rows.addEventListener('mouseover', (event) => hover(event, true));
+    rows.addEventListener('mouseleave', () => document.dispatchEvent(new CustomEvent('firma2:area-hover', { detail: { id: null } })));
+  });
+</script>

@@ -1,0 +1,847 @@
+---
+// firma2-area-explorer — GEOSPATIAL AREAS, READ ON A MAP: every area of a
+// group drawn on a map that fills the sheet, the projects as dots on it, and
+// the areas listed in a column floating over its leading side. The Map page's
+// twin for places (the user, 2026-11-24: "it should look more like the map
+// page"); it replaces firma2-area-index, a table with no map.
+//
+// THE FRAME IS THE MAP PAGE'S (../shared/firma2-map-page.css): the edge-to-edge
+// canvas, the bare floating head, the list that scrolls on its own, Hide list.
+// What differs is what is listed — areas, not project cards — so the rows are
+// this component's: a colour swatch, the area's name (the door to its page),
+// how many projects are in it and its acres, most projects first.
+//
+// THE BINDING, BOTH WAYS, as on the Map page: a row hovered or focused lights
+// its area; an area hovered lights its row. Search narrows the list and the
+// map together and reframes on what is left.
+//
+// SELECT AN AREA AND THE COLUMN BECOMES THAT AREA (decision 6, 2026-11-24): a
+// click on its name or on its shape keeps the reader on the map. The map
+// zooms to the area, the others fade back, and the area's projects show as
+// their work areas. The column swaps the list for the area's short account —
+// group, name, description, the four totals, up to three performance
+// measures against their targets, its projects — with one door to the full
+// page. "All areas" (or Back, or Escape) returns to the list where it was
+// left; the address carries the selection, so it can be linked.
+//
+// A PROJECT OPENS IN THE SIDE SHEET (the user, 2026-11-24): a click on a
+// project — its row in the area's column, or its work or dot on the map —
+// opens the docked project panel (firma2-project-peek), never a card here.
+// Each row is a link to the project's page, so a modified click still opens
+// the page; a plain click is taken by the panel's own delegated seam
+// (data-open-project).
+//
+// THE SHEET TAKES THE COLUMN'S PLACE (2026-11-24). A window has no room for
+// the column, the map and the side sheet at once: with all three the map was
+// a sliver behind the column. So while the sheet is open the column folds to
+// its head and the map is refitted to the room left, on the picked area;
+// closing the sheet brings the column back as it was. The house rule for side
+// sheets on a page with a rail, applied to a floating one.
+//
+// ONE GROUP AT A TIME. A second group's areas overlap the first's (watersheds
+// and districts cover the same ground), so the select in the head switches
+// group; with one group it is not shown.
+//
+// AREAS ARE DRAWN FROM THE SAME SHAPES THE COUNTS USE (src/lib/geospatial-areas),
+// as on firma2-area-group-map, and the group's own layer is left out of the
+// layers control so it is not drawn twice.
+//
+// ROWS ARE BUILT FROM WHAT THE BUILD KNOWS (an area's page is a static route),
+// so a group added in this browser is not listed. Counts and colours are
+// redrawn from this browser's stores.
+//
+// bcn-lego-checked: esa-card (the list's glass surface), esa-text-field,
+// esa-select, esa-button, esa-empty-state. The rows are a plain list of links
+// with a swatch — no esa- lego is a list row, and a table (the settings pages'
+// firma2-settings-table) does not fit a 30rem floating column. The canvas is
+// Leaflet; no map lego exists. Beacon is not cloned on this machine.
+//
+// a11y-checked: the name link's own outline is moved, not removed — the row's
+// :has(link:focus-visible) rule rings the whole row, which is what the
+// stretched link makes clickable (firma2-my-projects-map's card does the same).
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2ClassificationSummary from '../classifications/firma2-classification-summary.astro';
+import { figuresOver, rollupOver } from '../../data/firma2-classification-rollup';
+import { projects as portfolio, projectHref, projectSlug } from '../../data/firma2-projects';
+import { seedWorkAreas } from '../../data/firma2-geography';
+import { areaColor, areaHref, areaKey, filing } from '../../lib/geospatial-areas';
+import { readAreaGroups } from '../../lib/work-areas';
+import { withBase } from '../../lib/base';
+import '../shared/firma2-map-page.css';
+
+const groups = readAreaGroups()
+  .map((group) => ({ group, f: filing(group) }))
+  .filter(({ f }) => f.status === 'ok')
+  .map(({ group, f }) => ({
+    group,
+    layer: f.layer,
+    rows: [...f.areas].sort((a, b) => b.projects.length - a.projects.length || a.area.name.localeCompare(b.area.name)),
+  }));
+const first = groups[0];
+const count = (n: number) => `${n} ${n === 1 ? 'area' : 'areas'}`;
+const groupOptions = groups.map(({ group }) => ({ value: group.id, label: group.name }));
+const bodyId = 'firma2-area-list';
+
+// Each area's short account, worked out at build as its own page's is: the
+// totals over its projects, and every measure's reported figure (which
+// measures show, and their targets, are the browser's — the settings page).
+const bySlug = new Map(portfolio.map((p) => [projectSlug(p), p]));
+const measureMeta: Record<string, [string, string, number]> = {};
+const accounts = groups.flatMap(({ group, layer, rows }) =>
+  rows.map(({ area, projects }) => {
+    const inArea = projects.map((p) => bySlug.get(p.slug)!).filter(Boolean);
+    const reported: Record<string, number> = {};
+    Object.entries(figuresOver(inArea, () => '').figures).forEach(([slug, f]) => {
+      measureMeta[slug] = [f.name, f.unit, f.decimals];
+      if (f.reported) reported[slug] = f.reported;
+    });
+    return { group, layer, area, key: areaKey(group.id, area.id), rollup: rollupOver(inArea), reported };
+  }),
+);
+---
+<div class="firma2-area-explorer firma2-map-page" data-list="shown" data-groups={JSON.stringify(groupOptions)} data-measures={JSON.stringify(measureMeta)}>
+  {/* The remembered list state, applied DURING PARSE: no flash open. */}
+  <script is:inline>
+    (() => {
+      const root = document.currentScript && document.currentScript.parentElement;
+      try {
+        if (root && localStorage.getItem('firma2:area-list') === 'hidden') root.dataset.list = 'hidden';
+      } catch { /* storage blocked: the list shows */ }
+    })();
+  </script>
+
+  <div class="firma2-map-page__surface" data-surface>
+    <div class="firma2-map-page__canvas" role="application" aria-label="Map of geospatial areas" data-canvas></div>
+  </div>
+
+  <div class="firma2-map-page__panel" data-panel>
+    <div class="firma2-map-page__head">
+      <div class="stack" data-gap="sm">
+        <slot name="title" />
+        {first && (
+          <esa-text-field data-search type="search" size="md" aria-label="Search areas" placeholder="Area name" autocomplete="off"></esa-text-field>
+          <div class="firma2-map-page__controls">
+            <esa-select data-group-select size="md" aria-label="Area group" hidden={groups.length < 2 ? true : undefined}></esa-select>
+            <p class="visually-hidden" aria-live="polite" data-count>{count(first.rows.length)}</p>
+            <EsaButton variant="secondary" appearance="outline" size="md" data-list-toggle aria-controls={bodyId} aria-expanded="true">Hide {count(first.rows.length)}</EsaButton>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div class="firma2-map-page__body" id={bodyId} data-body>
+      {!first && (
+        <EsaCard variant="elevated">
+          <EsaEmptyState title="No geospatial areas yet" description="An administrator adds them in Workspace settings." headingLevel={2} />
+        </EsaCard>
+      )}
+      {groups.map(({ group, layer, rows }) => (
+        <div data-group={group.id} hidden={group !== first?.group}>
+          <EsaCard variant="elevated" padding="none">
+            <ul class="firma2-area-explorer__rows" role="list" aria-label={group.name}>
+              {rows.map(({ area, projects }) => (
+                <li class="firma2-area-explorer__row" data-row data-area={area.id} data-search-text={area.name.toLowerCase()}>
+                  <span class="firma2-area-explorer__swatch" data-swatch style={`background:${areaColor(group, layer, area.id)}`} aria-hidden="true"></span>
+                  <a class="firma2-area-explorer__name typography-body-md-strong" href={withBase(areaHref(group.id, area.id))}>{area.name}</a>
+                  <span class="firma2-area-explorer__meta typography-body-sm">
+                    <span data-projects>{projects.length} {projects.length === 1 ? 'project' : 'projects'}</span>
+                    <span>{area.acres.toLocaleString('en-US')} acres</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p class="firma2-area-explorer__foot typography-body-sm" data-foot hidden></p>
+          </EsaCard>
+        </div>
+      ))}
+
+      {/* ONE AREA: the column's other state. Each area's account is rendered
+          here once; the script shows the picked one, and the projects in it. */}
+      <div class="stack" data-gap="xs" data-area-view hidden>
+        <EsaCard variant="elevated">
+          <div class="stack" data-gap="lg">
+            <div>
+              <EsaButton variant="secondary" appearance="outline" size="md" icon="arrow-left" data-back>All areas</EsaButton>
+            </div>
+            {accounts.map(({ group, layer, area, key, rollup, reported }) => (
+              <div class="stack" data-gap="lg" data-account={key} data-reported={JSON.stringify(reported)} hidden>
+                <div class="stack" data-gap="3xs">
+                  <p class="typography-label-md firma2-area-explorer__muted">{group.name}</p>
+                  <h2 class="typography-title-strong firma2-area-explorer__title" tabindex="-1">
+                    <span class="firma2-area-explorer__swatch" data-swatch style={`background:${areaColor(group, layer, area.id)}`} aria-hidden="true"></span>
+                    {area.name}
+                  </h2>
+                </div>
+                <Firma2ClassificationSummary classification={{ slug: key, description: '' }} rollup={rollup} kind="area" />
+                <div class="stack" data-gap="sm" data-measures hidden>
+                  <h3 class="typography-label-md-strong">Performance measures</h3>
+                  <ul class="firma2-area-explorer__measures" role="list" data-measure-list></ul>
+                </div>
+                <div>
+                  <EsaButton variant="secondary" appearance="outline" size="md" iconRight="arrow-right" tag="a" href={withBase(areaHref(group.id, area.id))}>Open area page</EsaButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </EsaCard>
+        <EsaCard variant="elevated" padding="none">
+          <h3 class="typography-label-md-strong firma2-area-explorer__projects-title" data-aliasable>Projects</h3>
+          <ul class="firma2-area-explorer__rows" role="list" data-project-list>
+            {portfolio.map((p) => (
+              <li class="firma2-area-explorer__row" data-project={projectSlug(p)} data-seed={JSON.stringify(seedWorkAreas(p))} hidden>
+                <span class="firma2-area-explorer__swatch firma2-area-explorer__swatch--dot" data-dot aria-hidden="true"></span>
+                <a class="firma2-area-explorer__name typography-body-md" href={withBase(projectHref(p))} data-open-project={projectSlug(p)}>{p.projectName}</a>
+                <span class="firma2-area-explorer__meta typography-body-sm">{p.stage}</span>
+              </li>
+            ))}
+          </ul>
+          <p class="firma2-area-explorer__foot typography-body-sm" data-no-projects hidden>No projects in this area yet.</p>
+        </EsaCard>
+      </div>
+
+      <div data-empty hidden>
+        <EsaCard variant="elevated">
+          <EsaEmptyState title="No areas match that" headingLevel={2} />
+          <div class="firma2-area-explorer__center">
+            <EsaButton variant="secondary" appearance="outline" size="md" data-clear>Clear search</EsaButton>
+          </div>
+        </EsaCard>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .firma2-area-explorer {
+    --_list-width: 30rem;
+  }
+
+  .firma2-area-explorer__rows {
+    margin: 0;
+    padding: var(--spacing-200) 0;
+    list-style: none;
+  }
+
+  /* A ROW: swatch, name, then the two numbers at the trailing edge. The whole
+     row is the link — the name's anchor stretches over it. */
+  .firma2-area-explorer__row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    min-block-size: 44px;
+    padding: var(--spacing-200) var(--spacing-400);
+  }
+
+  .firma2-area-explorer__swatch {
+    flex: none;
+    inline-size: var(--spacing-300);
+    block-size: var(--spacing-300);
+    border-radius: var(--radius-sm);
+  }
+
+  .firma2-area-explorer__name {
+    flex: 1;
+    min-inline-size: 0;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .firma2-area-explorer__name::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  /* The ring moves from the name to the whole row (the next rule). */
+  .firma2-area-explorer__name:focus-visible {
+    outline: none;
+  }
+
+  .firma2-area-explorer__row:has(.firma2-area-explorer__name:focus-visible) {
+    outline: 2px solid var(--color-border-focus, #0d74ce);
+    outline-offset: -2px;
+  }
+
+  .firma2-area-explorer__meta {
+    flex: none;
+    display: flex;
+    gap: var(--spacing-200);
+    color: var(--color-content-default-secondary, #646464);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-area-explorer__meta > span + span::before {
+    content: '·' / '';
+    margin-inline-end: var(--spacing-200);
+  }
+
+  .firma2-area-explorer__row[data-active],
+  .firma2-area-explorer__row[data-selected] {
+    background: var(--color-background-hover, rgb(0 0 0 / 0.05));
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-area-explorer__row:hover {
+      background: var(--color-background-hover, rgb(0 0 0 / 0.05));
+    }
+  }
+
+  /* What a map cannot show: the projects in no area, and those with no place. */
+  .firma2-area-explorer__foot {
+    margin: 0;
+    padding: var(--spacing-300) var(--spacing-400);
+    border-block-start: 1px solid var(--color-border-default-subtle, #d9d9d9);
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-area-explorer__foot[data-no-projects] {
+    border-block-start: 0;
+    padding-block-start: 0;
+  }
+
+  /* ONE AREA. */
+  .firma2-area-explorer__muted {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-area-explorer__title {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-200);
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .firma2-area-explorer__title:focus {
+    outline: none;
+  }
+
+  .firma2-area-explorer h3 {
+    margin: 0;
+  }
+
+  .firma2-area-explorer__projects-title {
+    padding: var(--spacing-400) var(--spacing-400) 0;
+  }
+
+  .firma2-area-explorer__swatch--dot {
+    border-radius: 50%;
+  }
+
+  .firma2-area-explorer__measures {
+    display: grid;
+    gap: var(--spacing-200);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Rows built at runtime: global, since they carry no scope attribute. */
+  .firma2-area-explorer__measures :global(li) {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-400);
+  }
+
+  .firma2-area-explorer__measures :global(span:last-child) {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* Two-up in the column: the summary's own minimum is the page's. */
+  :global(.firma2-area-explorer [data-account] .firma2-classification-summary__figures) {
+    --grid-min: 10rem;
+  }
+
+  .firma2-area-explorer__center {
+    display: flex;
+    justify-content: center;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import { HYDROLOGIC_REGIONS, SUBWATERSHEDS, dashOf, lineStyleOf } from '../../data/firma2-geography';
+  import type { MapWorkArea } from '../../data/firma2-geography';
+  import { areaColor, areaGroup, areaKey, filing } from '../../lib/geospatial-areas';
+  import { addBasemaps, addColorKey, addReferenceLayers, createMap, glyph, loadLeaflet, markerStyle, projectColor, projectShapeStyle } from '../../lib/leaflet';
+  import { kpiSlugs, targetsFor } from '../../lib/taxonomy-edits';
+  import type { Leaflet } from '../../lib/leaflet';
+  import { label } from '../../lib/vocabulary';
+  import { onGeoChange, readAreaGroups, readLayers, readWorkAreas } from '../../lib/work-areas';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown };
+
+  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const LIST_KEY = 'firma2:area-list';
+  const motion = () => (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth');
+  const projectsText = (n: number) => `${n} ${label(n === 1 ? 'project' : 'projects')}`;
+
+  document.querySelectorAll<HTMLElement>('.firma2-area-explorer').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const options: { value: string; label: string }[] = JSON.parse(root.dataset.groups ?? '[]');
+    if (!options.length) {
+      // No groups: the empty state stands alone, on a map of nothing.
+      void loadLeaflet().then((L) => {
+        const map = createMap(L, $('[data-canvas]'), { zoomSnap: 0.5 });
+        map.setView([39.05, -120.07], 9);
+        addBasemaps(L, map, addReferenceLayers(L, map, [], { regions: [], subwatersheds: [] }));
+      });
+      return;
+    }
+    const search = $<Control>('[data-search]');
+    const select = $<Control>('[data-group-select]');
+    const body = $('[data-body]');
+    const toggle = $('[data-list-toggle]');
+    const toggleNative = () => toggle.querySelector<HTMLElement>('button') ?? toggle;
+    const sections = [...root.querySelectorAll<HTMLElement>('[data-group]')];
+    // Folded: by the reader's own Hide, or while the project sheet is open.
+    const peek = document.querySelector<HTMLElement>('.firma2-project-peek');
+    const sheetOpen = () => Boolean(peek && !peek.hidden);
+    const listHidden = () => root.dataset.list === 'hidden' || sheetOpen();
+
+    const view = $('[data-area-view]');
+    const accounts = [...root.querySelectorAll<HTMLElement>('[data-account]')];
+    const projectRows = new Map([...root.querySelectorAll<HTMLElement>('[data-project]')].map((r) => [r.dataset.project ?? '', r]));
+    const measureMeta: Record<string, [string, string, number]> = JSON.parse(root.dataset.measures ?? '{}');
+
+    // The group in the address (an area page's crumb lands here), else the first.
+    const address = () => new URLSearchParams(window.location.search);
+    const asked = address().get('group') ?? '';
+    let groupId = options.some((o) => o.value === asked) ? asked : options[0].value;
+    const section = () => sections.find((s) => s.dataset.group === groupId)!;
+    const rows = () => [...section().querySelectorAll<HTMLElement>('[data-row]')];
+    const rowOf = (areaId: string) => rows().find((r) => r.dataset.area === areaId);
+
+    customElements.whenDefined('esa-select').then(() => {
+      select.options = options;
+      select.value = groupId;
+    });
+
+    let map: Leaflet | null = null;
+    let L: Leaflet | null = null;
+    let areas: Leaflet | null = null;
+    let dots: Leaflet | null = null;
+    let work: Leaflet | null = null;
+    // A project's work and dot on the map, while its area is the one picked.
+    const projectLayers = new Map<string, Leaflet[]>();
+    let listScroll = 0;
+    let refit = 0;
+    let drawKey: (slugs: string[]) => void = () => {};
+    const drawn = new Map<string, { shape: Leaflet; style: Record<string, unknown> }>();
+    let active = '';
+    let selected = '';
+
+    // One area lit (the hovered one, else the picked one), the rest set back.
+    const paint = () => {
+      const lit = active || selected;
+      drawn.forEach(({ shape, style }, id) => {
+        const on = id === lit;
+        // The picked area keeps a light fill, so its projects read on top of it.
+        const held = id === selected && !active;
+        shape.setStyle(
+          on
+            ? { ...style, weight: 3, fillOpacity: held ? 0.12 : 0.3, dashArray: undefined }
+            : { ...style, opacity: lit ? 0.45 : style.opacity, fillOpacity: selected ? 0.02 : style.fillOpacity },
+        );
+        if (on) shape.bringToFront();
+      });
+    };
+
+    const setActive = (id: string) => {
+      if (id === active) return;
+      rowOf(active)?.removeAttribute('data-active');
+      active = id;
+      rowOf(id)?.setAttribute('data-active', '');
+      paint();
+    };
+
+    let shownCount = 0;
+    const syncList = () => {
+      const hidden = listHidden();
+      const text = toggle.querySelector<HTMLElement>('.esa-button__label');
+      const what = selected ? 'area' : `${shownCount} ${shownCount === 1 ? 'area' : 'areas'}`;
+      if (text) text.textContent = `${hidden ? 'Show' : 'Hide'} ${what}`;
+      toggleNative().setAttribute('aria-expanded', String(!hidden));
+      body.hidden = hidden;
+    };
+
+    // The area's measures, as its settings page links them: those with a
+    // target first, three at most; the full table is on the area's page.
+    const fmt = (n: number, decimals: number) => n.toLocaleString('en-US', { maximumFractionDigits: decimals });
+    const drawAccount = (id: string) => {
+      const key = areaKey(groupId, id);
+      accounts.forEach((a) => (a.hidden = a.dataset.account !== key));
+      const account = accounts.find((a) => a.dataset.account === key);
+      if (!account) return;
+      const reported: Record<string, number> = JSON.parse(account.dataset.reported ?? '{}');
+      const targets = new Map(targetsFor(key, []).map((t) => [t.measure, t.value]));
+      const lines = kpiSlugs(key, [])
+        .filter((slug) => measureMeta[slug])
+        .sort((a, b) => Number(targets.has(b)) - Number(targets.has(a)))
+        .slice(0, 3)
+        .map((slug) => {
+          const [name, unit, decimals] = measureMeta[slug];
+          const done = fmt(reported[slug] ?? 0, decimals);
+          const goal = targets.get(slug);
+          const figure = goal === undefined ? `${done} ${unit}` : `${done} of ${fmt(goal, decimals)} ${unit}`;
+          return `<li class="typography-body-md"><span>${esc(name)}</span><span>${esc(figure.trim())}</span></li>`;
+        });
+      account.querySelector<HTMLElement>('[data-measure-list]')!.innerHTML = lines.join('');
+      account.querySelector<HTMLElement>('[data-measures]')!.hidden = lines.length === 0;
+    };
+
+    // The address carries the selection: a link to one area, and Back.
+    const writeAddress = (push: boolean) => {
+      const q = new URLSearchParams();
+      if (groupId !== options[0].value || selected) q.set('group', groupId);
+      if (selected) q.set('area', selected);
+      const next = `${window.location.pathname}${q.size ? `?${q}` : ''}`;
+      if (next === `${window.location.pathname}${window.location.search}`) return;
+      if (push) history.pushState(null, '', next);
+      else history.replaceState(null, '', next);
+    };
+
+    // SELECT AN AREA: the column becomes that area and the map goes to it.
+    // '' lets it go: the list again, where the reader left it.
+    const pick = (id: string, from: 'user' | 'address' = 'user') => {
+      if (id === selected) return;
+      if (!selected) listScroll = body.scrollTop;
+      rowOf(selected)?.removeAttribute('data-selected');
+      selected = rowOf(id) ? id : '';
+      rowOf(selected)?.setAttribute('data-selected', '');
+      view.hidden = !selected;
+      sections.forEach((s) => (s.hidden = Boolean(selected) || s.dataset.group !== groupId || shownCount === 0));
+      $('[data-empty]').hidden = Boolean(selected) || shownCount > 0;
+      // An area picked on the map while the column is folded opens it.
+      if (selected && root.dataset.list === 'hidden') root.dataset.list = 'shown';
+      if (selected) drawAccount(selected);
+      syncList();
+      draw();
+      frame();
+      body.scrollTop = selected ? 0 : listScroll;
+      if (from === 'user') {
+        writeAddress(true);
+        if (selected) accounts.find((a) => !a.hidden)?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+        else rowOf(id)?.querySelector<HTMLElement>('a')?.focus({ preventScroll: true });
+      }
+    };
+
+    // What the floating column covers of the map, as Leaflet padding.
+    const panelBox = () => {
+      const surface = $('[data-surface]').getBoundingClientRect();
+      const panel = $('[data-panel]');
+      if (getComputedStyle(panel).display === 'contents') return { x: 0, y: 0 };
+      const r = panel.getBoundingClientRect();
+      return listHidden() ? { x: 0, y: Math.max(0, r.bottom - surface.top) } : { x: Math.max(0, r.right - surface.left), y: 0 };
+    };
+
+    const frame = () => {
+      if (!map || !L || !drawn.size) return;
+      const covered = panelBox();
+      const one = drawn.get(selected);
+      map.fitBounds((one ? one.shape : L.featureGroup([...drawn.values()].map((d) => d.shape))).getBounds(), {
+        paddingTopLeft: [covered.x + 32, covered.y + 32],
+        paddingBottomRight: [32 + 56, 32],
+        maxZoom: 13,
+        animate: Date.now() > refit,
+      });
+    };
+
+    // The shown rows' areas are what the map draws; counts and colours come
+    // from this browser's stores, which the build could not read.
+    const draw = () => {
+      const group = areaGroup(groupId);
+      const f = group ? filing(group) : null;
+      const shown = new Set(rows().filter((r) => !r.hidden).map((r) => r.dataset.area));
+      const narrowed = shown.size < rows().length;
+      rows().forEach((row) => {
+        const hit = f?.areas.find((a) => a.area.id === row.dataset.area);
+        if (!group || !hit) return;
+        row.querySelector<HTMLElement>('[data-swatch]')!.style.background = areaColor(group, f!.layer, hit.area.id);
+        row.querySelector<HTMLElement>('[data-projects]')!.textContent = projectsText(hit.projects.length);
+      });
+      const foot = section().querySelector<HTMLElement>('[data-foot]')!;
+      const gaps = f
+        ? [
+            f.outside.length ? `${projectsText(f.outside.length)} outside every area` : '',
+            f.unlocated.length ? `${projectsText(f.unlocated.length)} with no location` : '',
+          ].filter(Boolean)
+        : [];
+      foot.textContent = gaps.join(' · ');
+      foot.hidden = gaps.length === 0 || narrowed;
+      // The picked area's projects, in the column: its own, lit dot by dot.
+      const inPicked = f?.areas.find((a) => a.area.id === selected)?.projects ?? [];
+      const pickedSlugs = new Set(inPicked.map((p) => p.slug));
+      projectRows.forEach((row, slug) => {
+        row.hidden = !pickedSlugs.has(slug);
+        row.querySelector<HTMLElement>('[data-dot]')!.style.background = projectColor(slug);
+      });
+      $('[data-no-projects]').hidden = pickedSlugs.size > 0;
+      $('[data-project-list]').hidden = pickedSlugs.size === 0;
+      if (!map || !L || !areas || !dots || !work) return;
+      areas.clearLayers();
+      dots.clearLayers();
+      work.clearLayers();
+      projectLayers.clear();
+      drawn.clear();
+      if (!group || !f) return;
+      const layer = f.layer;
+      const base = layer
+        ? {
+            weight: Math.max(1, layer.strokeWidth),
+            opacity: 0.9,
+            // A hairline of fill at least, so an area is a target for the pointer.
+            fillOpacity: Math.max(0.06, layer.fillOpacity),
+            dashArray: dashOf(lineStyleOf(layer), layer.strokeWidth),
+          }
+        : { weight: 1, opacity: 0.9, fillOpacity: 0.06 };
+      const inShown = f.areas.filter((a) => shown.has(a.area.id));
+      inShown.forEach(({ area, projects }) => {
+        const tint = areaColor(group, layer, area.id);
+        const style = { ...base, color: tint, fillColor: tint };
+        const shape = L.polygon(area.parts ? area.parts.map((part) => [part]) : area.ring, { ...style, pane: 'reference' })
+          .bindTooltip(`<strong>${esc(area.name)}</strong><br>${esc(projectsText(projects.length))}`, { className: 'firma2-map-tip', sticky: true })
+          .on('mouseover', () => setActive(area.id))
+          .on('mouseout', () => setActive(''))
+          .on('click', (e: Leaflet) => {
+            // The map's own click lets a pick go; this one makes it.
+            L.DomEvent.stopPropagation(e);
+            pick(area.id);
+          })
+          .addTo(areas);
+        drawn.set(area.id, { shape, style });
+      });
+      // Every located project as a dot; with an area picked, only its own,
+      // and their work areas with them. A click on either opens the project
+      // in the side sheet.
+      const located = selected
+        ? inPicked
+        : [...new Map([...inShown.flatMap((a) => a.projects), ...(narrowed ? [] : f.outside)].map((p) => [p.slug, p])).values()];
+      const tip = { className: 'firma2-map-tip', direction: 'top' as const };
+      located.forEach((p) => {
+        const row = projectRows.get(p.slug);
+        const mine: Leaflet[] = [];
+        if (selected && row) {
+          const shapes: MapWorkArea[] = readWorkAreas(p.slug, JSON.parse(row.dataset.seed ?? '[]'));
+          shapes.forEach((a) => {
+            const style = projectShapeStyle(p.slug, a.kind);
+            mine.push(a.kind === 'point' ? L.circleMarker(a.path[0], { ...style, radius: 6 }) : a.kind === 'reach' ? L.polyline(a.path, style) : L.polygon(a.path, style));
+          });
+        }
+        mine.push(L.circleMarker(p.at, markerStyle(projectColor(p.slug))));
+        mine.forEach((layer, i) =>
+          layer
+            .bindTooltip(esc(p.name), { ...tip, sticky: i < mine.length - 1 })
+            .on('mouseover', () => row?.setAttribute('data-active', ''))
+            .on('mouseout', () => row?.removeAttribute('data-active'))
+            .on('click', (e: Leaflet) => {
+              L.DomEvent.stopPropagation(e);
+              row?.querySelector<HTMLElement>('a')?.click();
+            })
+            .addTo(i < mine.length - 1 ? work : dots),
+        );
+        projectLayers.set(p.slug, mine);
+      });
+      drawKey(located.map((p) => p.slug));
+      paint();
+    };
+
+    const filter = () => {
+      const q = String(search.value ?? '').trim().toLowerCase();
+      sections.forEach((s) => (s.hidden = s.dataset.group !== groupId));
+      let shown = 0;
+      rows().forEach((row) => {
+        const ok = !q || (row.dataset.searchText ?? '').includes(q);
+        row.hidden = !ok;
+        if (ok) shown += 1;
+      });
+      shownCount = shown;
+      const all = rows().length;
+      $('[data-count]').textContent = shown === all ? `${all} ${all === 1 ? 'area' : 'areas'}` : `${shown} of ${all} areas`;
+      $('[data-empty]').hidden = Boolean(selected) || shown > 0;
+      section().hidden = Boolean(selected) || shown === 0;
+      syncList();
+      draw();
+    };
+    const refilter = () => {
+      filter();
+      frame();
+    };
+    // Searching is for the list: it lets a picked area go.
+    const searched = () => {
+      if (selected) pick('');
+      refilter();
+    };
+    search.addEventListener('change', searched);
+    search.addEventListener('input', searched);
+    select.addEventListener('change', () => {
+      const next = String(select.value ?? '');
+      if (!next || next === groupId) return;
+      pick('');
+      groupId = next;
+      refilter();
+      writeAddress(false);
+    });
+    $('[data-clear]').addEventListener('click', () => {
+      search.value = '';
+      refilter();
+    });
+
+    sections.forEach((s) =>
+      s.querySelectorAll<HTMLElement>('[data-row]').forEach((row) => {
+        const id = row.dataset.area ?? '';
+        row.addEventListener('mouseenter', () => setActive(id));
+        row.addEventListener('mouseleave', () => setActive(''));
+        row.addEventListener('focusin', () => setActive(id));
+        row.addEventListener('focusout', () => setActive(''));
+      }),
+    );
+
+    toggle.addEventListener('click', () => {
+      root.dataset.list = root.dataset.list === 'hidden' ? 'shown' : 'hidden';
+      try {
+        localStorage.setItem(LIST_KEY, root.dataset.list);
+      } catch { /* storage blocked: the choice lasts this visit */ }
+      syncList();
+    });
+    $('[data-back]').addEventListener('click', () => pick(''));
+    root.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && selected) pick('');
+    });
+
+    // A row's name is a link to the area's page; a plain click stays on the
+    // map and picks it. A modified click still opens the page.
+    const plain = (event: MouseEvent) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+    sections.forEach((s) =>
+      s.addEventListener('click', (event) => {
+        const row = (event.target as Element).closest<HTMLElement>('[data-row]');
+        if (!row || !plain(event)) return;
+        event.preventDefault();
+        pick(row.dataset.area ?? '');
+      }),
+    );
+    // A project's name is a link to its page; a plain click opens the side
+    // sheet instead (its own delegated listener takes the same click).
+    $('[data-project-list]').addEventListener('click', (event) => {
+      if ((event.target as Element).closest('a') && plain(event)) event.preventDefault();
+    });
+    // Hovering a project's row lights its work on the map.
+    projectRows.forEach((row, slug) => {
+      const light = (on: boolean) =>
+        projectLayers.get(slug)?.forEach((layer, i, all) => {
+          if (i === all.length - 1) layer.setStyle(markerStyle(projectColor(slug), on));
+          else layer.setStyle({ weight: (projectShapeStyle(slug, 'area').weight ?? 2) + (on ? 2 : 0) });
+          if (on) layer.bringToFront();
+        });
+      row.addEventListener('mouseenter', () => light(true));
+      row.addEventListener('mouseleave', () => light(false));
+      row.addEventListener('focusin', () => light(true));
+      row.addEventListener('focusout', () => light(false));
+    });
+
+    // Back and Forward walk the selection.
+    const fromAddress = () => {
+      const q = address();
+      const g = q.get('group') ?? options[0].value;
+      if (g !== groupId && options.some((o) => o.value === g)) {
+        pick('', 'address');
+        groupId = g;
+        select.value = g;
+        filter();
+      }
+      pick(q.get('area') ?? '', 'address');
+    };
+    window.addEventListener('popstate', fromAddress);
+
+    // The sheet opening or closing changes the map's room: fold or restore
+    // the column, then refit once the layout has settled.
+    if (peek) {
+      new MutationObserver(() => {
+        syncList();
+        toggle.hidden = sheetOpen();
+        refit = Date.now() + 800;
+      }).observe(peek, { attributes: true, attributeFilter: ['hidden'] });
+      // Refit as the canvas takes its new width — every step of it, since the
+      // sheet may slide in — and not on a later resize of the window.
+      new ResizeObserver(() => {
+        if (Date.now() > refit || !map) return;
+        map.invalidateSize({ animate: false });
+        frame();
+      }).observe($('[data-canvas]'));
+    }
+
+    onGeoChange(draw);
+    filter();
+    // esa-button may still be upgrading; its label lands on the next frame.
+    requestAnimationFrame(syncList);
+
+    void loadLeaflet()
+      .then((leaflet) => {
+        L = leaflet;
+        const canvas = $('[data-canvas]');
+        map = createMap(L, canvas, { zoomControl: false, zoomSnap: 0.5 }, () => draw());
+        drawKey = addColorKey(L, map);
+        canvas.style.removeProperty('position');
+        // Zoom, Zoom to fit, then layers: one group on the trailing side.
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        const Fit = L.Control.extend({
+          options: { position: 'topright' },
+          onAdd() {
+            const bar = L.DomUtil.create('div', 'leaflet-bar');
+            const a = L.DomUtil.create('a', '', bar);
+            a.href = '#';
+            a.setAttribute('role', 'button');
+            a.title = 'Zoom to fit';
+            a.setAttribute('aria-label', 'Zoom to fit');
+            a.innerHTML = glyph('maximize');
+            L.DomEvent.disableClickPropagation(bar);
+            L.DomEvent.on(a, 'click', (e: Event) => {
+              L.DomEvent.preventDefault(e);
+              frame();
+            });
+            return bar;
+          },
+        });
+        new Fit().addTo(map);
+        // Every reference layer but the ones the groups are read from: those
+        // are drawn here, from the filing, in each area's colour.
+        const read = new Set(readAreaGroups().map((g) => g.layerId));
+        const layers = addReferenceLayers(L, map, readLayers().filter((l) => !read.has(l.id)), { regions: HYDROLOGIC_REGIONS, subwatersheds: SUBWATERSHEDS });
+        addBasemaps(L, map, layers);
+        if (!layers._map) layers.addTo(map);
+        const narrow = window.matchMedia('(max-width: 64rem)');
+        const wheel = () => (narrow.matches ? map.scrollWheelZoom.disable() : map.scrollWheelZoom.enable());
+        narrow.addEventListener('change', wheel);
+        wheel();
+        map.setView([39.05, -120.07], 9);
+        areas = L.featureGroup().addTo(map);
+        work = L.featureGroup().addTo(map);
+        dots = L.featureGroup().addTo(map);
+        draw();
+        // An area in the address opens with the page.
+        const first = address().get('area') ?? '';
+        if (first) pick(first, 'address');
+        if (canvas.clientWidth) frame();
+        else {
+          const once = new ResizeObserver(() => {
+            if (!canvas.clientWidth) return;
+            once.disconnect();
+            map.invalidateSize();
+            frame();
+          });
+          once.observe(canvas);
+        }
+        narrow.addEventListener('change', () => requestAnimationFrame(frame));
+      })
+      .catch(() => {
+        $('[data-surface]').hidden = true;
+      });
+  });
+</script>

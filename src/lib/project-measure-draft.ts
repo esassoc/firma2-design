@@ -1,18 +1,22 @@
-// Browser-local "measures added to a project" — the project side of the
-// measure catalog, persisted the same way and on the same honesty terms as
-// measure drafts (src/lib/measure-draft.ts): localStorage, ONE browser, and
-// the UI never pretends a backend saved anything.
+// Browser-local TARGETS on catalog measures — the project side of the measure
+// catalog, persisted the same way and on the same honesty terms as measure
+// drafts (src/lib/measure-draft.ts): localStorage, ONE browser, and the UI
+// never pretends a backend saved anything.
+//
+// A TARGET IS WHAT ATTACHES A MEASURE (PM 2, reconciled 2026-10-09). Every
+// published measure is asked of every project; setting a target here is the
+// project committing to an amount, and removing the entry is clearing that
+// commitment — never refused, and the measure stays on the project because
+// it is still published. One number for the project's life, never per period.
 //
 // WHAT IS STORED: a reference and a commitment — the catalog measure's slug
-// and the target this project signed up to deliver. NOT the name or unit:
-// those belong to the measure and are resolved at read time through
-// withDraft(), so a measure renamed in the catalog is renamed on every
-// project that carries it. Same reference-not-copy rule as subcategory
-// schemas, same reason.
+// and the target. NOT the name or unit: those belong to the measure and are
+// resolved at read time through withDraft(), so a measure renamed in the
+// catalog is renamed on every project that carries it.
 //
 // ONE KEY PER PROJECT, versioned. The seed measures a project ships with are
 // built data (firma2-project-detail's buildMeasures) and are not stored here;
-// this list holds only what was added in this browser, appended after them.
+// their targets, edited, live in the override store below.
 
 export interface ProjectMeasureDraft {
   /** The catalog measure's slug — resolve with withDraft() at read time. */

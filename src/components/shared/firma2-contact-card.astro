@@ -53,6 +53,7 @@
 import Firma2HoverCard from './firma2-hover-card.astro';
 import { contactProjectCount, projectCount } from '../../data/firma2-project-detail';
 import type { ProjectContact } from '../../data/firma2-project-detail';
+import { memberForEmail } from '../../data/firma2-members';
 
 interface Props {
   contact: ProjectContact;
@@ -73,6 +74,7 @@ const { contact, nameClass = 'typography-body-md' } = Astro.props;
 // toward this goal". Rendered only above 1: "Contact on 1 of 24 projects" says
 // "this person is on the project you are looking at", which the reader can see.
 const onProjects = contactProjectCount(contact.email);
+const member = memberForEmail(contact.email);
 
 // The address is a LINE rather than a second link. The name above it is already
 // the mailto, and two targets for one destination inside a 300px card is a
@@ -89,10 +91,15 @@ const onProjects = contactProjectCount(contact.email);
 // The button's name says what lands on the clipboard rather than where the
 // button is ("Copy email address", not "Copy"), because it is also the hover
 // tooltip and an icon-only control has no other way to say it.
+// A note carried over from a real workspace (dev only) names its author and
+// nothing else: no organization, no address. Those lines drop out.
 const lines = [
-  contact.organization,
-  { text: contact.email, copy: 'Copy email address' },
+  ...(contact.organization ? [contact.organization] : []),
+  ...(contact.email ? [{ text: contact.email, copy: 'Copy email address' }] : []),
   ...(onProjects > 1 ? [`Contact on ${onProjects} of ${projectCount()} projects`] : []),
+  // A contact whose email is an account's is that member (docs/data-model.md,
+  // decision 9). Most contacts are not, and the line is absent for them.
+  ...(member ? [`${member.role} in this workspace`] : []),
 ];
 ---
 <Firma2HoverCard kind={contact.role} title={contact.name} lines={lines}>
@@ -101,9 +108,13 @@ const lines = [
        link grammar (copy address, open in a mail client) — none of which a span
        with a handler would. esa-popover writes aria-expanded onto it, and it is
        what makes the card keyboard-reachable. -->
-  <a class:list={['firma2-contact-card__name', nameClass]} href={`mailto:${contact.email}`}>
-    {contact.name}
-  </a>
+  {contact.email ? (
+    <a class:list={['firma2-contact-card__name', nameClass]} href={`mailto:${contact.email}`}>
+      {contact.name}
+    </a>
+  ) : (
+    <span class:list={['firma2-contact-card__name', nameClass]} tabindex="0">{contact.name}</span>
+  )}
   <!-- Passed straight through to the card's byline row — the Comments thread
        puts the date here. See firma2-hover-card for why it cannot simply sit
        beside this component instead. -->
@@ -119,9 +130,13 @@ const lines = [
     color: var(--color-content-brand, #2a7e3b);
     text-decoration: none;
   }
-  .firma2-contact-card__name:hover,
   .firma2-contact-card__name:focus-visible {
     text-decoration: underline;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-contact-card__name:hover {
+      text-decoration: underline;
+    }
   }
 
 </style>

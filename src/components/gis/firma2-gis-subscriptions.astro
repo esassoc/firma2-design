@@ -1,0 +1,326 @@
+---
+// firma2-gis-subscriptions — project footprints kept current from a GIS the
+// workspace already runs. Ported from ProjectFirma2 hackathon team 2's
+// /geospatial-subscriptions, the screen Marcus lives on.
+//
+// MARCUS'S BAR IS TWO-WAY, and this page is the inbound half: his layer stays
+// authoritative, a sync follows it, and nobody redigitizes. Three things the
+// team learned the hard way are built into the screen rather than a runbook:
+//
+//   A SYNC NEVER DELETES. A feature that stops appearing upstream leaves its
+//   shape kept and marked stale — and the result SAYS so, with the name.
+//   Refusals are not failures: a feature that matches no project is listed.
+//
+//   SUBSCRIBING IS NOT A TRAP. "Take over the shapes" keeps every footprint on
+//   its project, editable here, and retires the subscription — a deliberate
+//   exit, not a delete (decision 22).
+//
+//   JOIN ON WHAT MEANS "THIS PROJECT". GlobalID and OBJECTID identify SHAPES,
+//   and a republished layer regenerates them — every project then reads as
+//   abandoned at once. The join picker says so where the choice is made.
+//
+// EXTRA FIELDS ARE A PICK-LIST, NEVER "BRING EVERYTHING", and the ArcGIS
+// plumbing (OBJECTID, GlobalID, Shape__Area) is not offered at all. A field
+// already nominated that the current layer no longer carries stays listed,
+// marked, so a schema change upstream never silently drops a nomination.
+//
+// ADDING AND EDITING ARE DIFFERENT SURFACES over the same five steps
+// (firma2-gis-subscription-steps). Adding is a wizard on its own page —
+// /gis-subscriptions/new — because the analyst often has to leave halfway to
+// share a layer into the ArcGIS group, and a page keeps its place where a
+// sheet would not. Editing a saved subscription is this side sheet, all five
+// steps at once, saving as it happens. An unfinished add is shown here, so
+// leaving the wizard never hides the work.
+//
+// bcn-lego-checked: legos throughout — esa-card, esa-button, esa-badge,
+// esa-alert-box, esa-empty-state, bcn-side-sheet, esa-confirm-dialog; the
+// form's own legos are listed in firma2-gis-subscription-steps. Beacon is not
+// cloned here.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2GisSubscriptionSteps from './firma2-gis-subscription-steps.astro';
+import { ARCGIS_GROUP, SHARED_LAYERS, SUBSCRIPTION_STEPS, SYNC_RESULT } from '../../data/firma2-geography';
+import { withBase } from '../../lib/base';
+
+const config = {
+  layers: SHARED_LAYERS.map(({ id, name, geometry }) => ({ id, name, geometry })),
+  group: ARCGIS_GROUP,
+  steps: SUBSCRIPTION_STEPS,
+  sync: SYNC_RESULT,
+};
+const sourceHref = withBase('/prototypes/workspace-settings/project-source');
+const newHref = withBase('/prototypes/workspace-settings/gis-subscriptions/new');
+---
+<div class="firma2-gis-subs stack" data-gap="xl" data-config={JSON.stringify(config)}>
+  <div data-off hidden>
+    <EsaEmptyState
+      title="Subscriptions are off for this workspace"
+    />
+    <div class="firma2-gis-subs__center">
+      <EsaButton variant="secondary" size="md" tag="a" href={sourceHref}>Open Project source</EsaButton>
+    </div>
+  </div>
+
+  <!-- THE WIZARD'S DRAFT, where its author will look for it. -->
+  <div data-draft hidden>
+    <EsaAlertBox variant="info" title="Unfinished setup">
+      <div class="repel" data-gap="sm">
+        <p class="typography-body-md" data-draft-text></p>
+        <EsaButton variant="secondary" size="md" tag="a" href={newHref}>Continue setup</EsaButton>
+      </div>
+    </EsaAlertBox>
+  </div>
+
+  <div class="stack" data-gap="lg" data-list></div>
+
+  <div data-none hidden>
+    <EsaEmptyState title="No subscriptions yet" />
+  </div>
+
+  <!-- ---- clone sources ---------------------------------------------------- -->
+  <template data-tpl-card>
+    <EsaCard title="Subscription" subtitle="url">
+      <div class="stack" data-gap="lg">
+        <!-- A ROW OF ITS OWN, not the card header: four actions in a header
+             beside a long URL stacked into a column. The everyday two lead;
+             the exit and the delete keep the far side. -->
+        <div class="repel" data-card-actions>
+          <span class="cluster" data-gap="xs">
+            <span data-sync-wrap><EsaButton variant="primary" size="sm" icon="rotate-ccw" data-sync>Sync now</EsaButton></span>
+            <EsaButton variant="chrome" size="md" iconOnly icon="pencil" label="Edit subscription" data-edit />
+          </span>
+          <span class="cluster" data-gap="xs">
+            <EsaButton variant="ghost" size="sm" data-retire>Stop syncing</EsaButton>
+            <span data-delete-wrap><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Delete subscription" data-delete /></span>
+          </span>
+        </div>
+        <dl class="firma2-gis-subs__meta" data-meta></dl>
+        <dl class="firma2-gis-subs__meta firma2-gis-subs__meta--run" data-run></dl>
+        <div data-result-slot></div>
+      </div>
+    </EsaCard>
+  </template>
+  <template data-tpl-success>
+    <EsaAlertBox variant="success" title="Sync complete"><div class="stack" data-gap="2xs" data-lines></div></EsaAlertBox>
+  </template>
+
+  <!-- ---- the editor --------------------------------------------------------- -->
+  <bcn-side-sheet class="firma2-gis-subs__sheet" heading="Edit subscription" size="lg" position="right">
+    <Firma2GisSubscriptionSteps headingLevel={4} />
+    <div slot="footer" class="cluster" data-gap="xs">
+      <EsaButton variant="secondary" size="md" data-done>Done</EsaButton>
+    </div>
+  </bcn-side-sheet>
+
+  <esa-confirm-dialog
+    class="firma2-gis-subs__retire"
+    heading="Stop syncing this subscription?"
+    confirm-label="Stop syncing"
+    cancel-label="Keep syncing"
+  ></esa-confirm-dialog>
+</div>
+
+<style>
+  .firma2-gis-subs [hidden] {
+    display: none !important;
+  }
+
+  .firma2-gis-subs__center {
+    display: flex;
+    justify-content: center;
+  }
+
+  .firma2-gis-subs__muted {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-gis-subs__meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--spacing-400) var(--spacing-600);
+    margin: 0;
+  }
+
+  /* The last run's message is the most useful thing on the card, so it gets
+     its own row and WRAPS — team 2 lost an evening to it being truncated. */
+  .firma2-gis-subs__meta--run {
+    grid-template-columns: minmax(12rem, auto) 1fr;
+    padding-block-start: var(--spacing-400);
+    border-block-start: 1px solid var(--color-border-default);
+  }
+
+  .firma2-gis-subs :global(.firma2-gis-subs__meta dt) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-gis-subs :global(.firma2-gis-subs__meta dd) {
+    margin: var(--spacing-100) 0 0;
+  }
+
+  .firma2-gis-subs :global(code) {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 0.9em;
+  }
+</style>
+
+<script>
+  import '../shared/bcn-side-sheet';
+  import '@esa/ecology/esa-confirm-dialog';
+  import type { Subscription } from '../../data/firma2-geography';
+  import { mountSubscriptionEditor } from '../../lib/gis-subscription-editor';
+  import { nameButton } from '../../lib/name-button';
+  import { onGeoChange, readProjectSource, readSubscriptionDraft, readSubscriptions, writeSubscriptions } from '../../lib/work-areas';
+
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
+  type Confirm = HTMLElement & { show: () => void; message?: string };
+
+  interface Config {
+    layers: { id: string; name: string; geometry: string }[];
+    group: { id: string; title: string };
+    steps: { key: string; title: string }[];
+    sync: { added: number; updated: number; stale: string[]; projectsUpdated: number; unmatched: string[]; skippedWithoutJoin: number };
+  }
+
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const dateText = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never';
+
+  document.querySelectorAll<HTMLElement>('.firma2-gis-subs').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const clone = (name: string) => ($<HTMLTemplateElement>(`[data-tpl-${name}]`).content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+    const results = new Map<string, HTMLElement>();
+    let syncing: string | null = null;
+
+    const layerById = (id: string) => config.layers.find((l) => l.id === id);
+    const save = (next: Subscription[]) => writeSubscriptions(next);
+
+    // ---- the list --------------------------------------------------------------
+    const paint = () => {
+      const subscribed = readProjectSource() === 'subscribed';
+      const subs = readSubscriptions();
+      $('[data-off]').hidden = subscribed;
+      $('[data-none]').hidden = !subscribed || subs.length > 0;
+      document.querySelectorAll<HTMLElement>('[data-add-subscription]').forEach((el) => (el.hidden = !subscribed));
+      const unfinished = readSubscriptionDraft();
+      $('[data-draft]').hidden = !subscribed || !unfinished;
+      if (unfinished) {
+        const step = config.steps[unfinished.step] ?? config.steps[0];
+        const name = unfinished.subscription.name.trim() || 'A new subscription';
+        $('[data-draft-text]').textContent = `${name} stopped at step ${unfinished.step + 1} of ${config.steps.length}, ${step.title}.`;
+      }
+      const list = $('[data-list]');
+      if (!subscribed) return list.replaceChildren();
+
+      list.replaceChildren(
+        ...subs.map((sub) => {
+          const card = clone('card');
+          card.querySelector('.esa-card__title')!.textContent = sub.active ? sub.name : `${sub.name} (inactive)`;
+          card.querySelector('.esa-card__subtitle')!.textContent = sub.url;
+          const layer = layerById(sub.layerId);
+          const meta: [string, string][] = [
+            // WHOSE FIELD IS WHOSE: the left one is in their layer, the right one is ours.
+            ['Matched on', `<code>${esc(sub.joinField)}</code> → project external ID`],
+            ['Access', sub.access === 'arcgis' ? `Shared through ${esc(config.group.title)}` : 'A public service'],
+            ['Keeps current', `${sub.projectCount} projects, ${sub.workAreaCount} work areas`],
+            ['Synced fields', sub.extraFields.length ? sub.extraFields.map((f) => `<code>${esc(f)}</code>`).join(', ') : 'Shapes only'],
+            ['Layer', layer ? `${esc(layer.name)} (${layer.geometry.toLowerCase()}s)` : 'A public service'],
+          ];
+          card.querySelector('[data-meta]')!.innerHTML = meta.map(([dt, dd]) => `<div><dt class="typography-body-sm">${dt}</dt><dd class="typography-body-md">${dd}</dd></div>`).join('');
+          card.querySelector('[data-run]')!.innerHTML = `
+            <div><dt class="typography-body-sm">Last successful sync</dt><dd class="typography-body-md">${dateText(sub.lastSuccess)}</dd></div>
+            <div><dt class="typography-body-sm">Last run</dt><dd class="typography-body-md">${esc(sub.lastMessage ?? 'Not yet run')}</dd></div>`;
+
+          const syncWrap = card.querySelector<HTMLElement>('[data-sync-wrap]')!;
+          syncWrap.classList.toggle('esa-button--disabled', !sub.active || syncing === sub.id);
+                    const syncLabel = syncWrap.querySelector('.esa-button__label');
+          if (syncLabel) syncLabel.textContent = syncing === sub.id ? 'Syncing…' : 'Sync now';
+          card.querySelector('[data-sync]')!.addEventListener('click', () => sync(sub.id));
+          nameButton(card.querySelector<HTMLElement>('[data-edit]')!, `Edit ${sub.name}`);
+          nameButton(card.querySelector<HTMLElement>('[data-delete]')!, `Delete ${sub.name}`);
+          card.querySelector('[data-edit]')!.addEventListener('click', () => openEditor(sub.id));
+          card.querySelector('[data-retire]')!.addEventListener('click', () => askRetire(sub));
+          // Delete only when it keeps nothing current: deleting one that does
+          // would leave its shapes with no owner, and "Take over" is that act done right.
+          card.querySelector<HTMLElement>('[data-delete-wrap]')!.hidden = sub.workAreaCount > 0;
+          card.querySelector('[data-delete]')!.addEventListener('click', () => save(readSubscriptions().filter((s) => s.id !== sub.id)));
+          const result = results.get(sub.id);
+          if (result) card.querySelector('[data-result-slot]')!.append(result);
+          return card;
+        }),
+      );
+    };
+
+    // ---- sync: scripted, and what a real one would say -----------------------------
+    const sync = (id: string) => {
+      const sub = readSubscriptions().find((s) => s.id === id);
+      if (!sub?.active || syncing) return;
+      syncing = id;
+      results.delete(id);
+      paint();
+      window.setTimeout(() => {
+        const r = config.sync;
+        const alert = clone('success');
+        const lines = [
+          `${r.added} added, ${r.updated} updated.`,
+          ...r.stale.map((name) => `“${name}” left the layer; kept as stale.`),
+          r.skippedWithoutJoin ? `${r.skippedWithoutJoin} feature skipped: no ${sub.joinField}.` : '',
+          r.unmatched.length ? `Matched no project: ${r.unmatched.join(', ')}. Add the project, or correct ${sub.joinField} in your layer.` : '',
+        ].filter(Boolean);
+        alert.querySelector('[data-lines]')!.innerHTML = lines.map((l) => `<p class="typography-body-sm">${esc(l)}</p>`).join('');
+        results.set(id, alert);
+        syncing = null;
+        save(
+          readSubscriptions().map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  lastSuccess: new Date().toISOString(),
+                  lastMessage: `Matched ${s.projectCount} of ${s.projectCount + 1} features. ${r.stale.length} stale. 1 unmatched: ${r.unmatched.join(', ')}.`,
+                  staleLabels: r.stale,
+                  // Fields ever brought across keep their values when un-nominated.
+                  syncedFields: [...new Set([...(s.syncedFields ?? []), ...s.extraFields])],
+                }
+              : s,
+          ),
+        );
+      }, 1200);
+    };
+
+    // ---- the exit that keeps the shapes ------------------------------------------
+    const retire = $<Confirm>('.firma2-gis-subs__retire');
+    let retiring: Subscription | null = null;
+    const askRetire = (sub: Subscription) => {
+      retiring = sub;
+      retire.message = `Its ${sub.workAreaCount} work areas stay and become editable here.`;
+      retire.show();
+    };
+    retire.addEventListener('resolved', (e) => {
+      const { confirmed } = (e as CustomEvent<{ confirmed: boolean }>).detail;
+      if (confirmed && retiring) save(readSubscriptions().filter((s) => s.id !== retiring!.id));
+      retiring = null;
+    });
+
+    // ---- the editor: a saved subscription, saving as it changes ----------------------
+    // Adding is the wizard's job (the page header's Add links to it).
+    const sheet = $<Sheet>('.firma2-gis-subs__sheet');
+    let editingId: string | null = null;
+    const editor = mountSubscriptionEditor($('.firma2-gis-steps'), (draft) => {
+      if (editingId) save(readSubscriptions().map((s) => (s.id === editingId ? draft : s)));
+    });
+    const openEditor = (id: string) => {
+      const sub = readSubscriptions().find((s) => s.id === id);
+      if (!sub) return;
+      editingId = id;
+      void editor.load(sub).then(() => sheet.show());
+    };
+    sheet.addEventListener('close', () => (editingId = null));
+    $('[data-done]').addEventListener('click', () => sheet.close());
+
+    onGeoChange(paint);
+    paint();
+  });
+</script>

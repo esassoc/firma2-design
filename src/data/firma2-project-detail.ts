@@ -33,7 +33,7 @@
 //     remainder, so the sources always sum to the cost exactly rather than
 //     to a number a reader can catch us on;
 //   - milestone DATES come from the project's implementation start and
-//     completion years against a per-program template, so no project has a
+//     completion years against a per-work-type template, so no project has a
 //     construction milestone before its own start year;
 //   - CONTACTS are seeded off the project's own name against a pool of invented
 //     people, and each one's organization is read from the record — the lead
@@ -48,30 +48,26 @@
 
 import {
   projects,
+  projectSlug,
   type Project,
   type ProjectStage,
 } from './firma2-projects';
+import { applyPublishing, type Publishing } from './firma2-publish-history';
+import type { Change } from './firma2-changes';
+import type { WorkArea } from './firma2-work-area';
+import { customValuesOf, type CustomFieldValue } from './firma2-project-types';
+import { LOCAL_MATCH_NAME, fundingSourceSlug, fundingSources } from './firma2-funding-sources';
+import { workAreaShape } from './firma2-shapes';
+import { REAL, realCenter, realFund, realMeasureFor, realRecords, realUnit, slugOf, type RealProject } from './firma2-real-data';
+import { centroid, pathMiles, ringAcres } from '../lib/geo';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/**
- * A mapped work area. Restoration work is not one shape: a marsh enhancement
- * or a fuel-break unit is a polygon, while a revegetation or gravel
- * augmentation project is a linear treatment along a stream reach. Both render
- * on the same map, styled differently.
- */
-export interface WorkArea {
-  /** What the shape is on the ground. "Lower reach planting unit", "Tidal basin". */
-  label: string;
-  kind: 'area' | 'reach';
-  /** [lat, lng] vertices. Closed automatically by Leaflet for `area`. */
-  path: [number, number][];
-  /** Acres for an area, stream miles for a reach — the extent the shape covers. */
-  extent: number;
-  extentUnit: 'acres' | 'miles';
-}
+// A work area is defined once, in firma2-work-area.ts, and re-exported here
+// for the many readers that reach it through the project record.
+export type { WorkArea } from './firma2-work-area';
 
 /**
  * One reporting period of a measure — ProjectFirma reports a measure per
@@ -100,6 +96,15 @@ export interface MeasureYear {
    */
   value: number | null;
   status: 'complete' | 'current' | 'upcoming';
+  /**
+   * What the project planned for this period — its YEARLY TARGET (user,
+   * 2026-10-09: "when planning you can set yearly goals"). Set for every
+   * period in the window, open ones included, because a plan is made ahead.
+   * Seeded by spreading `expected` over the window on the accrual curve, so
+   * the yearly targets sum to the lifetime target. Optional only so a series
+   * built elsewhere need not invent one.
+   */
+  planned?: number;
 }
 
 /** A ProjectFirma performance measure: what was promised, and what has been reported. */
@@ -110,6 +115,14 @@ export interface PerformanceMeasure {
   unit: string;
   /** The target the project committed to. */
   expected: number;
+  /**
+   * The catalog measure (src/data/firma2-performance-measures.ts) this row
+   * reports toward — how a project's own figure reaches a classification's
+   * KPI. Absent for a measure the project tracks for itself alone. Two rows
+   * may name the same KPI (acres thinned and acres burned both count as fuels
+   * treatment acres), the way subcategories divide one measure.
+   */
+  kpi?: string;
   /** What the project has reported to date — equals the sum of the NON-NULL
    *  values in `series`, which is what `reportedTotal()` computes. */
   reported: number;
@@ -161,13 +174,20 @@ export const latestReport = (series: MeasureYear[]): MeasureYear | undefined =>
 export const isClosedPeriod = (period: Pick<MeasureYear, 'year' | 'status'>): boolean =>
   period.status !== 'upcoming' && period.year < PRESENT_YEAR;
 
-/** One funder's contribution to a project's estimated total cost. */
-export interface FundingSource {
-  /** The grant or program the money comes through. */
+/**
+ * One funding source's money on one project (docs/data-model.md, "Project
+ * funding"). The row LINKS to a funding source (src/data/firma2-funding-sources.ts)
+ * and carries the amount; `name` and `organization` are read from that source
+ * and repeated here only so the many readers of a row need no lookup.
+ */
+export interface ProjectFunding {
+  /** The funding source's slug. */
+  source: string;
+  /** The funding source's name: the grant or program the money comes through. */
   name: string;
-  /** The body administering it. */
+  /** The organization offering it. */
   organization: string;
-  /** Whole dollars. Always sums, across a project's sources, to its estimated total cost. */
+  /** Whole dollars. A project's rows may add up to less than its estimated total cost: the rest is its funding gap. */
   amount: number;
   /** Share of the estimated total cost, 0–1. */
   share: number;
@@ -196,7 +216,7 @@ export interface Milestone {
 
 /**
  * One reporting year of the project's spend — the accrual half of the funding
- * commitment `FundingSource` records the promise of.
+ * commitment `ProjectFunding` records the promise of.
  *
  * ONE FIGURE, NOT TWO, and dropping the second is the point of this shape. It
  * used to carry a `budgeted` sibling: this year's slice of
@@ -290,7 +310,73 @@ export interface ProjectPhoto {
    * same stand-in twice.
    */
   seed: number;
+  /** A real workspace's own photo (dev only). Absent: the gallery picks a stand-in. */
+  src?: string;
+  /** Who took it, when the record says. */
+  credit?: string;
+  /**
+   * Where in the work it was taken: the site as found, while the crew worked,
+   * or the finished result. Stored, never inferred from the date: a project
+   * can open on a "during" photo and the public page must not call it "before".
+   */
+  stage: PhotoStage;
+  /**
+   * The vantage point this photo was taken from, by name ("Culvert, looking
+   * upstream"). Two or more photos sharing a point are one view over time:
+   * a Before and an After at one point are a before-and-after pair, three or
+   * more are a timeline. Monitoring protocols revisit named photo points, so
+   * this is how a tenant already thinks.
+   */
+  point?: string;
+  /** The photo point's row id (ProjectDetail.photoPoints). `point` repeats its name so readers need no lookup. */
+  pointId?: string;
+  /**
+   * A named, ordered set the photo belongs to ("Planting day"). Optional;
+   * a photo is in at most one. The public page shows a collection as a strip.
+   */
+  collection?: string;
+  /** The collection's row id (ProjectDetail.photoCollections). `collection` repeats its name. */
+  collectionId?: string;
+  /** Whether the public page may show it. A photo of people, or of a sensitive site, is not. */
+  public: boolean;
+  /** The ISO day it was taken (a real tenant's EXIF date); `date` is its label. */
+  takenOn: string;
+  /** The work area in frame, by its label, when the photo is of one. */
+  workArea?: string;
+  /** What a screen reader says in place of the picture. The caption says what the work is; this says what is visible. */
+  alt: string;
 }
+
+/**
+ * A photo point or a collection: a named row owned by the project
+ * (docs/data-model.md, decision 8). A photo links to at most one of each by
+ * id, so renaming one touches this row and no photo.
+ */
+export interface PhotoGroupRow {
+  id: string;
+  name: string;
+}
+
+/** A row's id from its name. Stable for a name; a renamed row keeps its id. */
+const photoGroupId = (kind: 'point' | 'collection', name: string): string => `${kind}:${slugOf(name)}`;
+
+/** Give each photo its row ids, and return the rows they point at, in first-use order. */
+const linkPhotoGroups = (photos: ProjectPhoto[]): { photos: ProjectPhoto[]; photoPoints: PhotoGroupRow[]; photoCollections: PhotoGroupRow[] } => {
+  const rows = (kind: 'point' | 'collection'): PhotoGroupRow[] =>
+    [...new Set(photos.flatMap((photo) => (photo[kind] ? [photo[kind]!] : [])))].map((name) => ({ id: photoGroupId(kind, name), name }));
+  return {
+    photos: photos.map((photo) => ({
+      ...photo,
+      ...(photo.point ? { pointId: photoGroupId('point', photo.point) } : {}),
+      ...(photo.collection ? { collectionId: photoGroupId('collection', photo.collection) } : {}),
+    })),
+    photoPoints: rows('point'),
+    photoCollections: rows('collection'),
+  };
+};
+
+/** Where in the work a photo was taken. */
+export type PhotoStage = 'before' | 'during' | 'after';
 
 /**
  * One logged change to the project record — who touched it, when, and what
@@ -302,7 +388,7 @@ export interface ProjectPhoto {
 export interface AuditEntry {
   /** Rendered label — "12 August 2026". Stored formatted; see determinism above. */
   date: string;
-  /** Who made the change. Always one of the record's own contacts. */
+  /** Who made the change — one of the record's own contacts, or for a publish the manager or administrator who ran it. */
   user: string;
   /** What changed, named by the record's own field vocabulary. One sentence. */
   change: string;
@@ -322,57 +408,47 @@ export interface ProjectDetail {
   mapZoom: number;
   workAreas: WorkArea[];
   measures: PerformanceMeasure[];
-  funding: FundingSource[];
+  funding: ProjectFunding[];
   expenditures: ExpenditureYear[];
   milestones: Milestone[];
   /** Who to call about this project. Always three; see buildContacts. */
   contacts: ProjectContact[];
   /** Notes on the record, newest first. May be empty — that is a real state. */
+  /**
+   * Organizations named on the project that neither lead nor fund it
+   * (docs/data-model.md, decision 18). A plain list: it carries no role and no
+   * permissions. A legacy "implementer" or "other partner" arrives here.
+   */
+  relatedOrganizations: string[];
+  /** The project's answers to the workspace's custom fields: one row per answer (decision 4). */
+  customValues: CustomFieldValue[];
   comments: ProjectComment[];
   /** Photos of the work, oldest first. May be empty — a proposal has little to show. */
   photos: ProjectPhoto[];
+  /** The project's photo points: named places its photos are taken from. */
+  photoPoints: PhotoGroupRow[];
+  /** The project's collections: named, ordered sets of its photos. */
+  photoCollections: PhotoGroupRow[];
   /** The record's change log, newest first. Never empty — creation is a change. */
-  audit: AuditEntry[];
+  /** The record's history, newest first: one change per write (src/data/firma2-changes.ts). */
+  audit: Change[];
+  /** When the public page was last brought up to date, and what has changed since. */
+  publishing: Publishing;
 }
 
 // ---------------------------------------------------------------------------
 // Geometry
 // ---------------------------------------------------------------------------
 
-// Normalized shapes in degrees, applied as offsets from a project's map center.
-// Hand-drawn once and reused, rather than 24 hand-typed rings that would each
-// be equally fictional: the honest part of the geography is the CENTER, which
-// is authored per project against the real watershed. At the zoom these render
-// at, roughly 0.01 degrees is a kilometre.
-const AREA_SHAPES: [number, number][][] = [
-  // A broad basin, wider than it is tall.
-  [[0.016, -0.030], [0.021, 0.004], [0.011, 0.028], [-0.008, 0.031], [-0.019, 0.012], [-0.017, -0.017], [-0.002, -0.032]],
-  // A narrow unit following a valley bottom.
-  [[0.024, -0.011], [0.019, 0.008], [0.001, 0.016], [-0.016, 0.013], [-0.023, -0.004], [-0.011, -0.017], [0.007, -0.019]],
-  // A lobed parcel with a notch — reads as a real boundary rather than a blob.
-  [[0.018, -0.021], [0.022, 0.009], [0.006, 0.014], [0.004, 0.027], [-0.013, 0.022], [-0.020, 0.001], [-0.009, -0.024]],
-];
+// Each work area's outline is generated to its own extent and kind by
+// workAreaShape (src/data/firma2-shapes.ts) — no shared templates. The honest
+// part of the geography is still the CENTER, authored per project against the
+// real watershed; `nudge` moves a project's second work area off its first.
 
-const REACH_SHAPES: [number, number][][] = [
-  // A meandering reach running roughly north–south.
-  [[0.028, -0.014], [0.017, -0.004], [0.008, -0.012], [-0.003, -0.006], [-0.012, 0.007], [-0.024, 0.011]],
-  // A reach running east–west with a tight bend.
-  [[0.009, -0.031], [0.004, -0.014], [-0.006, -0.006], [-0.004, 0.010], [0.005, 0.021], [0.003, 0.034]],
-  // A shallower, straighter reach — a leveed or channelized segment.
-  [[-0.021, -0.026], [-0.011, -0.013], [-0.002, -0.002], [0.008, 0.010], [0.019, 0.019], [0.027, 0.030]],
-];
-
-/** Translate a normalized shape onto a center, with an optional nudge so a
- *  project's second work area does not sit on top of its first. */
-const placeShape = (
-  shape: [number, number][],
-  center: [number, number],
-  nudge: [number, number] = [0, 0],
-): [number, number][] =>
-  shape.map(([dLat, dLng]) => [
-    Number((center[0] + dLat + nudge[0]).toFixed(5)),
-    Number((center[1] + dLng + nudge[1]).toFixed(5)),
-  ]);
+/** Lake Tahoe, where every tributary in the basin drains. The same point as
+ *  LAKE in firma2-geography.ts, which imports this file and so cannot be
+ *  imported back. */
+const BASIN_OUTLET: [number, number] = [39.09, -120.04];
 
 // ---------------------------------------------------------------------------
 // Milestone templates
@@ -390,10 +466,10 @@ interface MilestoneTemplate {
   anchor: MilestoneAnchor;
 }
 
-// Restoration programs genuinely share a shape — scope, permit, build, monitor
+// Restoration work types genuinely share a shape — scope, permit, build, monitor
 // — so the templates differ in the WORK each names rather than in structure.
 const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
-  'Riparian Revegetation': [
+  'Riparian revegetation': [
     { title: 'Site assessment and planting plan complete', anchor: 'start-2' },
     { title: 'Landowner access agreements signed', anchor: 'start-1' },
     { title: 'First planting season', anchor: 'start' },
@@ -401,7 +477,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Final planting and site closeout', anchor: 'end' },
     { title: 'Year-one survivorship survey', anchor: 'end+1' },
   ],
-  'Fish Passage': [
+  'Fish passage': [
     { title: 'Barrier inventory and passage assessment complete', anchor: 'start-2' },
     { title: 'Streambed simulation design at 90%', anchor: 'start-1' },
     { title: 'Permits issued and contractor mobilized', anchor: 'start' },
@@ -409,7 +485,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Structure removed and channel reconnected', anchor: 'end' },
     { title: 'Post-project passage monitoring', anchor: 'end+1' },
   ],
-  'Meadow & Wetland Restoration': [
+  'Meadow & wetland restoration': [
     { title: 'Hydrologic and vegetation baseline survey', anchor: 'start-2' },
     { title: 'Grading and hydrology design complete', anchor: 'start-1' },
     { title: 'Earthwork begins', anchor: 'start' },
@@ -417,7 +493,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Revegetation and site closeout', anchor: 'end' },
     { title: 'Groundwater monitoring, year one', anchor: 'end+1' },
   ],
-  'Aquatic Habitat Restoration': [
+  'Aquatic habitat restoration': [
     { title: 'Geomorphic assessment complete', anchor: 'start-2' },
     { title: 'Habitat design and permitting package submitted', anchor: 'start-1' },
     { title: 'Construction access and staging established', anchor: 'start' },
@@ -425,7 +501,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Channel shaping complete and site revegetated', anchor: 'end' },
     { title: 'Juvenile salmonid response survey', anchor: 'end+1' },
   ],
-  'Forest Health & Fuels': [
+  'Forest health & fuels': [
     { title: 'Stand exams and treatment prescription complete', anchor: 'start-2' },
     { title: 'Environmental review and burn plan approved', anchor: 'start-1' },
     { title: 'Mechanical thinning begins', anchor: 'start' },
@@ -433,7 +509,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { title: 'Final unit treated', anchor: 'end' },
     { title: 'Post-treatment fuels monitoring', anchor: 'end+1' },
   ],
-  'Stormwater & Water Quality': [
+  'Stormwater & water quality': [
     { title: 'Source assessment and load reduction targets set', anchor: 'start-2' },
     { title: 'Treatment design at 90% and permits filed', anchor: 'start-1' },
     { title: 'Construction begins', anchor: 'start' },
@@ -476,9 +552,12 @@ const milestoneStatus = (year: number, stage: ProjectStage): 'complete' | 'curre
 };
 
 const buildMilestones = (project: Project): Milestone[] => {
-  const template = MILESTONE_TEMPLATES[project.program];
+  // Keyed by project type — the kind of work on the ground — not by plan-goal
+  // classifications. A Deer Creek planting carries "Salmon & steelhead recovery"
+  // as a goal; its milestones follow "Riparian revegetation".
+  const template = MILESTONE_TEMPLATES[project.projectType];
   if (!template) {
-    throw new Error(`No milestone template for program "${project.program}"`);
+    throw new Error(`No milestone template for project type "${project.projectType}" on "${project.projectName}"`);
   }
 
   // A DEFERRED PROJECT'S STATUSES ARE DECIDED HERE, NOT BY milestoneStatus().
@@ -691,7 +770,7 @@ const CONTINUOUS_UNITS = new Set(['acres', 'miles', 'acre-feet', 'cfs']);
 
 const buildMeasures = (
   project: Project,
-  authored: [name: string, unit: string, expected: number][],
+  authored: [name: string, unit: string, expected: number, kpi?: string][],
   progress: number,
 ): PerformanceMeasure[] => {
   const base = stageCompletion(project.stage, progress);
@@ -716,7 +795,7 @@ const buildMeasures = (
     .map((_, i) => i)
     .filter((i) => isClosedPeriod({ year: years[i], status: statuses[i] }));
 
-  return authored.map(([name, unit, expected], i) => {
+  return authored.map(([name, unit, expected, kpi], i) => {
     const fraction = Math.min(1, base * MEASURE_SKEW[i % MEASURE_SKEW.length]);
     // A decimal on a continuous unit, but only while the number is small enough
     // for the tenth to mean anything — "3,100 acre-feet" does not want ".4".
@@ -750,10 +829,18 @@ const buildMeasures = (
     // period's share of a count measure down to 0, that is a report that was
     // filed and said zero — exactly the state `value: number | null` exists to
     // express, and distinct from the null beside it.
+    // THE PLAN BY YEAR: the lifetime target over every year of the window, so
+    // the yearly targets add back up to `expected`. On the accrual curve
+    // pulled ONE YEAR EARLIER, because plans run ahead of delivery — on the
+    // reports' own curve every year read "On plan" and the comparison the
+    // measure page draws had nothing to show.
+    const planWeights = weights.map((_, wi) => weights[Math.min(wi + 1, weights.length - 1)]);
+    const plan = spreadAcrossIndices(expected, planWeights, years.map((_, yi) => yi), round);
     const series: MeasureYear[] = years.map((year, yi) => ({
       year,
       value: filed.has(yi) ? spread[yi] : null,
       status: statuses[yi],
+      planned: plan[yi],
     }));
 
     return {
@@ -762,6 +849,7 @@ const buildMeasures = (
       expected,
       reported,
       series,
+      ...(kpi ? { kpi } : {}),
     };
   });
 };
@@ -770,49 +858,45 @@ const buildMeasures = (
 // Funding
 // ---------------------------------------------------------------------------
 
-// Invented grant programs and administering bodies. Named to read like
-// California restoration funding without being any real program or agency.
-// `LOCAL_MATCH` resolves its organization to the project's own lead org, which
-// is how a local sponsor match actually appears on a funding table.
-const LOCAL_MATCH = '__local__';
+// The programs and the bodies offering them are the funding source catalogue
+// (firma2-funding-sources.ts). `LOCAL_MATCH_NAME` resolves its organization to
+// the project's own lead org, which is how a local sponsor match actually
+// appears on a funding table.
+const offeredBy = (name: string, project: Project): string | undefined =>
+  name === LOCAL_MATCH_NAME ? project.leadOrganization : fundingSources.find((source) => source.name === name)?.organization;
 
-const FUNDERS: Record<string, string> = {
-  'Watershed Resilience Grant Program': 'California Watershed Restoration Board',
-  'Anadromous Fisheries Recovery Fund': 'Pacific Fisheries Trust',
-  'Wildfire Resilience Block Grant': 'California Forest Health Authority',
-  'Coastal Wetlands Conservation Fund': 'Pacific Coast Wetlands Board',
-  'Regional Water Quality Improvement Fund': 'Central Valley Water Alliance',
-  'Sierra Meadows Restoration Initiative': 'Sierra Headwaters Conservancy',
-  'Federal Habitat Partnership Program': 'National Watershed Partnership',
-  'Delta Ecosystem Restoration Fund': 'Delta Conservancy Board',
-  'Urban Greening Program': 'Southern California Rivers Authority',
-  'Local Sponsor Match': LOCAL_MATCH,
-};
+/** Each outside funder and the funding sources it offers, for the
+ *  organization registry — read off the same catalogue the funding rows link
+ *  to, so a funder's page and a project's funding table can never disagree. */
+export const funderPrograms: Map<string, string[]> = fundingSources
+  .filter((source) => source.name !== LOCAL_MATCH_NAME)
+  .reduce((acc, { name, organization }) => acc.set(organization, [...(acc.get(organization) ?? []), name]), new Map<string, string[]>());
 
 const buildFunding = (
   project: Project,
   authored: [name: string, share: number][],
-): FundingSource[] => {
+): ProjectFunding[] => {
   const total = project.estimatedTotalCost;
+  // FUNDING NEED NOT ADD UP TO THE COST (docs/data-model.md, decision 19): what
+  // is left is the funding gap, derived wherever it is shown. Work that is
+  // still a proposal holds only its own match, so those projects are the
+  // sample with a gap; every other project is fully funded.
+  const held = project.stage === 'Proposal' ? authored.filter(([name]) => name === LOCAL_MATCH_NAME) : authored;
+  const funded = held.length === authored.length;
   let allocated = 0;
-  return authored.map(([name, share], i) => {
-    const organization = FUNDERS[name];
+  return held.map(([name, share], i) => {
+    const organization = offeredBy(name, project);
     if (organization === undefined) {
       throw new Error(`Unknown funder "${name}" on "${project.projectName}"`);
     }
-    // Every source but the last rounds to the nearest $500; the last takes the
-    // remainder, so the column sums to estimatedTotalCost to the dollar.
-    const last = i === authored.length - 1;
+    // Every source rounds to the nearest $500. On a fully funded project the
+    // last takes the remainder, so the column sums to the cost to the dollar.
+    const last = funded && i === held.length - 1;
     const amount = last
       ? total - allocated
       : Math.round((total * share) / 500) * 500;
     allocated += amount;
-    return {
-      name,
-      organization: organization === LOCAL_MATCH ? project.leadOrganization : organization,
-      amount,
-      share: amount / total,
-    };
+    return { source: fundingSourceSlug(name, organization), name, organization, amount, share: amount / total };
   });
 };
 
@@ -865,16 +949,18 @@ interface AuthoredDetail {
   /** [lat, lng] on the real watershed the project is named for. */
   center: [number, number];
   zoom?: number;
-  /** Work areas: label, kind, which shape template, extent, and an optional nudge. */
+  /** Work areas: label, kind, extent, and an optional nudge. The outline is
+      generated from these (src/data/firma2-shapes.ts). */
   areas: {
     label: string;
     kind: 'area' | 'reach';
-    shape: 0 | 1 | 2;
     extent: number;
     nudge?: [number, number];
   }[];
-  /** [measure name, unit, expected value]. */
-  measures: [string, string, number][];
+  /** [measure name, unit, expected value, catalog KPI slug it reports toward]. */
+  measures: [string, string, number, string?][];
+  /** Organizations named on the project that neither lead nor fund it. */
+  related?: string[];
   /** [funder name, share of estimated total cost]. Shares should sum to ~1. */
   funders: [string, number][];
   /** How far along the work is, 0–1. Only read for Implementation and Deferred. */
@@ -885,21 +971,22 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Deer Creek Riparian Corridor Enhancement': {
     description:
       'Replanting native cottonwood, willow and valley oak along six miles of the lower Deer Creek corridor, on parcels where grazing has kept the streambank bare for decades. The shaded corridor is intended to lower summer water temperatures for the creek’s spring-run Chinook.',
-    center: [40.0231, -122.0654],
+    center: [38.84, -120.02],
     zoom: 12,
     areas: [
-      { label: 'Lower corridor planting reach', kind: 'reach', shape: 0, extent: 4.1 },
-      { label: 'Upland buffer unit', kind: 'area', shape: 1, extent: 62, nudge: [0.014, 0.022] },
+      { label: 'Lower corridor planting reach', kind: 'reach', extent: 4.1 },
+      { label: 'Upland buffer unit', kind: 'area', extent: 62, nudge: [0.014, 0.022] },
     ],
     measures: [
-      ['Acres of riparian habitat restored', 'acres', 62],
+      ['Acres of riparian habitat restored', 'acres', 62, 'acres-riparian-habitat-restored'],
       ['Stream miles revegetated', 'miles', 4.1],
-      ['Native trees and shrubs planted', 'plants', 18400],
+      ['Native trees and shrubs planted', 'plants', 18400, 'native-plants-installed'],
       ['Acres of invasive vegetation removed', 'acres', 28],
       ['Miles of livestock exclusion fencing', 'miles', 5.8],
-      ['Volunteer hours contributed', 'hours', 2400],
+      ['Volunteer hours contributed', 'hours', 2400, 'volunteer-hours-contributed'],
       ['Native seed collected', 'pounds', 240],
     ],
+    related: ['Bear River Watershed Council', 'Feather Headwaters Trust'],
     funders: [
       ['Watershed Resilience Grant Program', 0.62],
       ['Local Sponsor Match', 0.38],
@@ -910,17 +997,18 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Scott River Fish Passage Barrier Removal': {
     description:
       'Removing a failing irrigation diversion and two undersized crossings that block coho access to eleven miles of Scott River tributary habitat. A roughened channel will replace the diversion while preserving the water right it serves.',
-    center: [41.5194, -122.9061],
+    center: [39.13, -120.21],
     zoom: 12,
     areas: [
-      { label: 'Diversion removal site', kind: 'area', shape: 2, extent: 9 },
-      { label: 'Reconnected tributary reach', kind: 'reach', shape: 1, extent: 11.3, nudge: [-0.018, 0.016] },
+      { label: 'Diversion removal site', kind: 'area', extent: 9 },
+      { label: 'Reconnected tributary reach', kind: 'reach', extent: 11.3, nudge: [-0.018, 0.016] },
     ],
     measures: [
-      ['Fish passage barriers removed', 'barriers', 3],
-      ['Stream miles reopened to anadromy', 'miles', 11.3],
+      ['Fish passage barriers removed', 'barriers', 3, 'fish-passage-barriers-removed'],
+      ['Stream miles reopened to anadromy', 'miles', 11.3, 'stream-miles-reopened'],
       ['Acres of channel habitat restored', 'acres', 14],
     ],
+    related: ['Cosumnes Valley Conservancy'],
     funders: [
       ['Anadromous Fisheries Recovery Fund', 0.48],
       ['Federal Habitat Partnership Program', 0.37],
@@ -932,20 +1020,21 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Suisun Slough Tidal Marsh Enhancement': {
     description:
       'Breaching an exterior levee to return tidal exchange to 240 acres of subsided managed wetland at the edge of Suisun Slough. Sediment placement raises the interior to marsh-plain elevation before the breach so vegetation establishes rather than the basin converting to open water.',
-    center: [38.1547, -122.0402],
+    center: [38.905, -120.0],
     zoom: 12,
     areas: [
-      { label: 'Tidal restoration basin', kind: 'area', shape: 0, extent: 240 },
-      { label: 'Levee breach and transition zone', kind: 'area', shape: 1, extent: 31, nudge: [-0.021, -0.014] },
+      { label: 'Tidal restoration basin', kind: 'area', extent: 240 },
+      { label: 'Levee breach and transition zone', kind: 'area', extent: 31, nudge: [-0.021, -0.014] },
     ],
     measures: [
-      ['Acres of tidal marsh restored', 'acres', 240],
+      ['Acres of tidal marsh restored', 'acres', 240, 'acres-wetland-meadow-restored'],
       ['Acres of upland transition zone graded', 'acres', 31],
       ['Cubic yards of sediment placed', 'cubic yards', 410000],
       ['Linear feet of levee breached', 'linear feet', 1850],
       ['Acres of invasive cordgrass treated', 'acres', 46],
       ['Water control structures installed', 'structures', 7],
     ],
+    related: ['Deer Creek Watershed Alliance'],
     funders: [
       ['Coastal Wetlands Conservation Fund', 0.44],
       ['Delta Ecosystem Restoration Fund', 0.4],
@@ -957,16 +1046,16 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Red Clover Valley Meadow Reconnection': {
     description:
       'Filling two miles of incised gully to reconnect Red Clover Creek with its meadow floodplain, raising the water table across 380 acres of degraded wet meadow. The rewetted meadow holds snowmelt into late summer and releases it to the Feather River below.',
-    center: [39.9548, -120.5342],
+    center: [38.76, -119.93],
     zoom: 12,
     areas: [
-      { label: 'Meadow restoration unit', kind: 'area', shape: 0, extent: 380 },
-      { label: 'Filled gully alignment', kind: 'reach', shape: 2, extent: 2.2, nudge: [0.008, 0.004] },
+      { label: 'Meadow restoration unit', kind: 'area', extent: 380 },
+      { label: 'Filled gully alignment', kind: 'reach', extent: 2.2, nudge: [0.008, 0.004] },
     ],
     measures: [
-      ['Acres of montane meadow restored', 'acres', 380],
-      ['Stream miles reconnected to floodplain', 'miles', 2.2],
-      ['Acre-feet of additional summer storage', 'acre-feet', 640],
+      ['Acres of montane meadow restored', 'acres', 380, 'acres-wetland-meadow-restored'],
+      ['Stream miles reconnected to floodplain', 'miles', 2.2, 'stream-miles-floodplain-reconnected'],
+      ['Acre-feet of additional summer storage', 'acre-feet', 640, 'water-supply-gained'],
     ],
     funders: [
       ['Sierra Meadows Restoration Initiative', 0.7],
@@ -978,16 +1067,16 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Cosumnes Floodplain Reconnection': {
     description:
       'Setting back three miles of agricultural levee on the lower Cosumnes to reopen 1,100 acres of seasonal floodplain, the rearing habitat that juvenile Chinook lose on a leveed river. Landowners retain farming on the terrace behind the new alignment.',
-    center: [38.2731, -121.4407],
+    center: [39.318, -120.265],
     zoom: 12,
     areas: [
-      { label: 'Reconnected floodplain', kind: 'area', shape: 0, extent: 1100 },
-      { label: 'Setback levee alignment', kind: 'reach', shape: 2, extent: 3.4, nudge: [0.012, -0.008] },
+      { label: 'Reconnected floodplain', kind: 'area', extent: 1100 },
+      { label: 'Setback levee alignment', kind: 'reach', extent: 3.4, nudge: [0.012, -0.008] },
     ],
     measures: [
-      ['Acres of seasonal floodplain reconnected', 'acres', 1100],
-      ['Miles of levee set back', 'miles', 3.4],
-      ['Acres of riparian forest planted', 'acres', 145],
+      ['Acres of seasonal floodplain reconnected', 'acres', 1100, 'acres-floodplain-habitat'],
+      ['Miles of levee set back', 'miles', 3.4, 'miles-levee-setback'],
+      ['Acres of riparian forest planted', 'acres', 145, 'acres-riparian-habitat-restored'],
     ],
     funders: [
       ['Delta Ecosystem Restoration Fund', 0.5],
@@ -1000,13 +1089,13 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Bear River Gravel Augmentation': {
     description:
       'Placing spawning-sized gravel into two miles of Bear River downstream of a dam that has cut off the river’s natural sediment supply. Placement is staged across three high-flow seasons so the river distributes the material rather than the project shaping it.',
-    center: [39.1204, -121.2078],
+    center: [39.03, -120.18],
     zoom: 13,
     areas: [
-      { label: 'Gravel injection reach', kind: 'reach', shape: 0, extent: 2.1 },
+      { label: 'Gravel injection reach', kind: 'reach', extent: 2.1 },
     ],
     measures: [
-      ['Stream miles of spawning habitat improved', 'miles', 2.1],
+      ['Stream miles of spawning habitat improved', 'miles', 2.1, 'stream-miles-instream-habitat'],
       ['Tons of spawning gravel placed', 'tons', 9500],
       ['Redd count, post-placement survey', 'redds', 120],
     ],
@@ -1020,18 +1109,18 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Yuba Headwaters Fuels Reduction': {
     description:
       'Thinning and prescribed burning across 4,200 acres of overstocked mixed-conifer forest in the North Yuba headwaters, above two communities and the reservoir that supplies them. Treatment is sequenced to build a connected fuel break rather than isolated units.',
-    center: [39.5748, -120.7161],
+    center: [39.33, -119.89],
     zoom: 11,
     areas: [
-      { label: 'Treatment unit — north ridge', kind: 'area', shape: 0, extent: 2400 },
-      { label: 'Treatment unit — reservoir slope', kind: 'area', shape: 2, extent: 1800, nudge: [-0.026, 0.024] },
+      { label: 'Treatment unit — north ridge', kind: 'area', extent: 2400 },
+      { label: 'Treatment unit — reservoir slope', kind: 'area', extent: 1800, nudge: [-0.026, 0.024] },
     ],
     measures: [
-      ['Acres mechanically thinned', 'acres', 2900],
-      ['Acres treated with prescribed fire', 'acres', 1300],
-      ['Miles of shaded fuel break completed', 'miles', 17],
+      ['Acres mechanically thinned', 'acres', 2900, 'acres-forest-fuels-reduction-treatment'],
+      ['Acres treated with prescribed fire', 'acres', 1300, 'acres-forest-fuels-reduction-treatment'],
+      ['Miles of shaded fuel break completed', 'miles', 17, 'miles-fuel-break'],
       ['Acres surveyed for cultural resources', 'acres', 4200],
-      ['Miles of road decommissioned', 'miles', 12],
+      ['Miles of road decommissioned', 'miles', 12, 'miles-road-decommissioned'],
       ['Landowner agreements signed', 'agreements', 34],
       ['Slash piles burned', 'piles', 1450],
       ['Defensible space assessments completed', 'assessments', 380],
@@ -1047,14 +1136,14 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Butte Creek Canyon Fuel Break': {
     description:
       'A nine-mile shaded fuel break along the Butte Creek canyon rim, tied into existing roads so it can be held during an incident. Post-treatment maintenance is contracted through the local fire safe council rather than left to the grant to renew.',
-    center: [39.7692, -121.7093],
+    center: [39.1, -119.89],
     zoom: 12,
     areas: [
-      { label: 'Fuel break alignment', kind: 'reach', shape: 2, extent: 9.2 },
-      { label: 'Canyon rim treatment unit', kind: 'area', shape: 1, extent: 640, nudge: [0.016, 0.018] },
+      { label: 'Fuel break alignment', kind: 'reach', extent: 9.2 },
+      { label: 'Canyon rim treatment unit', kind: 'area', extent: 640, nudge: [0.016, 0.018] },
     ],
     measures: [
-      ['Miles of shaded fuel break completed', 'miles', 9.2],
+      ['Miles of shaded fuel break completed', 'miles', 9.2, 'miles-fuel-break'],
     ],
     funders: [
       ['Wildfire Resilience Block Grant', 0.72],
@@ -1066,14 +1155,14 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Navarro River Large Wood Placement': {
     description:
       'Anchoring 140 engineered log structures across five miles of the Navarro mainstem and its tributaries, rebuilding the pool habitat lost to a century of stream cleaning. Wood was sourced from the adjacent conservation forest rather than trucked in.',
-    center: [39.1571, -123.5386],
+    center: [38.97, -120.19],
     zoom: 12,
     areas: [
-      { label: 'Mainstem wood placement reach', kind: 'reach', shape: 1, extent: 3.4 },
-      { label: 'Tributary placement reach', kind: 'reach', shape: 0, extent: 1.9, nudge: [0.019, 0.012] },
+      { label: 'Mainstem wood placement reach', kind: 'reach', extent: 3.4 },
+      { label: 'Tributary placement reach', kind: 'reach', extent: 1.9, nudge: [0.019, 0.012] },
     ],
     measures: [
-      ['Stream miles treated with large wood', 'miles', 5.3],
+      ['Stream miles treated with large wood', 'miles', 5.3, 'stream-miles-instream-habitat'],
       ['Log structures installed', 'structures', 140],
     ],
     funders: [
@@ -1087,17 +1176,17 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Salinas River Arundo Removal': {
     description:
       'Removing giant reed from 1,050 acres of the Salinas River channel and replanting with native willow and mulefat, working from the top of the watershed down so treated reaches are not reinfested from upstream. Follow-up treatment runs three years past initial removal.',
-    center: [35.9412, -120.9721],
+    center: [38.885, -119.955],
     zoom: 11,
     areas: [
-      { label: 'Upper reach treatment corridor', kind: 'reach', shape: 2, extent: 12.5 },
-      { label: 'Confluence revegetation unit', kind: 'area', shape: 0, extent: 210, nudge: [-0.022, 0.019] },
+      { label: 'Upper reach treatment corridor', kind: 'reach', extent: 12.5 },
+      { label: 'Confluence revegetation unit', kind: 'area', extent: 210, nudge: [-0.022, 0.019] },
     ],
     measures: [
       ['Acres of arundo removed', 'acres', 1050],
       ['Stream miles treated', 'miles', 12.5],
-      ['Acres revegetated with natives', 'acres', 210],
-      ['Acre-feet of water use avoided annually', 'acre-feet', 3100],
+      ['Acres revegetated with natives', 'acres', 210, 'acres-riparian-habitat-restored'],
+      ['Acre-feet of water use avoided annually', 'acre-feet', 3100, 'water-supply-gained'],
     ],
     funders: [
       ['Regional Water Quality Improvement Fund', 0.55],
@@ -1110,15 +1199,15 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Alameda Creek Culvert Retrofit': {
     description:
       'Replacing four undersized road crossings in the upper Alameda Creek watershed with bridges and open-bottom arches sized to pass a hundred-year flow. The retrofits reopen seven miles of habitat above the flood-control channel now being reconnected downstream.',
-    center: [37.5842, -121.8368],
+    center: [39.27, -119.945],
     zoom: 12,
     areas: [
-      { label: 'Crossing retrofit corridor', kind: 'reach', shape: 0, extent: 7.2 },
+      { label: 'Crossing retrofit corridor', kind: 'reach', extent: 7.2 },
     ],
     measures: [
       ['Crossings replaced', 'crossings', 4],
-      ['Stream miles reopened', 'miles', 7.2],
-      ['Fish passage barriers removed', 'barriers', 4],
+      ['Stream miles reopened', 'miles', 7.2, 'stream-miles-reopened'],
+      ['Fish passage barriers removed', 'barriers', 4, 'fish-passage-barriers-removed'],
     ],
     funders: [
       ['Anadromous Fisheries Recovery Fund', 0.41],
@@ -1134,12 +1223,12 @@ const AUTHORED: Record<string, AuthoredDetail> = {
     center: [39.3277, -120.1834],
     zoom: 13,
     areas: [
-      { label: 'Bank stabilization reach', kind: 'reach', shape: 1, extent: 1.6 },
+      { label: 'Bank stabilization reach', kind: 'reach', extent: 1.6 },
     ],
     measures: [
       ['Stream miles of bank stabilized', 'miles', 1.6],
-      ['Tons of fine sediment avoided annually', 'tons', 480],
-      ['Acres of riparian vegetation established', 'acres', 18],
+      ['Tons of fine sediment avoided annually', 'tons', 480, 'tons-sediment-prevented'],
+      ['Acres of riparian vegetation established', 'acres', 18, 'acres-riparian-habitat-restored'],
     ],
     funders: [
       ['Regional Water Quality Improvement Fund', 0.66],
@@ -1151,14 +1240,14 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Elk River Sediment Reduction': {
     description:
       'Decommissioning 22 miles of legacy logging road and upgrading stream crossings in the Elk River watershed, where road-derived sediment has aggraded the lower river and flooded downstream residents. Work is currently deferred pending a landowner access agreement.',
-    center: [40.7089, -124.0271],
+    center: [39.23, -120.15],
     zoom: 12,
     areas: [
-      { label: 'Road decommissioning unit', kind: 'area', shape: 1, extent: 2100 },
-      { label: 'Crossing upgrade corridor', kind: 'reach', shape: 2, extent: 6.4, nudge: [0.017, -0.019] },
+      { label: 'Road decommissioning unit', kind: 'area', extent: 2100 },
+      { label: 'Crossing upgrade corridor', kind: 'reach', extent: 6.4, nudge: [0.017, -0.019] },
     ],
     measures: [
-      ['Miles of road decommissioned', 'miles', 22],
+      ['Miles of road decommissioned', 'miles', 22, 'miles-road-decommissioned'],
       ['Stream crossings upgraded', 'crossings', 19],
       ['Cubic yards of sediment delivery avoided', 'cubic yards', 74000],
     ],
@@ -1173,16 +1262,16 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Carmel Valley Steelhead Habitat': {
     description:
       'Rebuilding pool and spawning habitat across four miles of the Carmel River in the reach exposed by a dam removal upstream. Structures were placed after two winters of channel adjustment rather than immediately, so the design responded to where the river actually settled.',
-    center: [36.4841, -121.7328],
+    center: [39.197, -120.235],
     zoom: 12,
     areas: [
-      { label: 'Post-dam adjustment reach', kind: 'reach', shape: 0, extent: 4.0 },
-      { label: 'Floodplain planting unit', kind: 'area', shape: 2, extent: 44, nudge: [-0.015, 0.017] },
+      { label: 'Post-dam adjustment reach', kind: 'reach', extent: 4.0 },
+      { label: 'Floodplain planting unit', kind: 'area', extent: 44, nudge: [-0.015, 0.017] },
     ],
     measures: [
-      ['Stream miles of habitat restored', 'miles', 4.0],
+      ['Stream miles of habitat restored', 'miles', 4.0, 'stream-miles-instream-habitat'],
       ['Pools created or deepened', 'pools', 52],
-      ['Acres of riparian floodplain planted', 'acres', 44],
+      ['Acres of riparian floodplain planted', 'acres', 44, 'acres-riparian-habitat-restored'],
     ],
     funders: [
       ['Anadromous Fisheries Recovery Fund', 0.57],
@@ -1195,15 +1284,15 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Owens Valley Spring Channel Restoration': {
     description:
       'Restoring flow and native vegetation to five spring-fed channels on the Owens Valley floor that were straightened for irrigation delivery. Design balances the restored channels against the delivery obligations the ditches still carry.',
-    center: [36.9612, -118.2094],
+    center: [39.3, -120.1],
     zoom: 12,
     areas: [
-      { label: 'Spring channel complex', kind: 'reach', shape: 1, extent: 5.8 },
-      { label: 'Wet meadow unit', kind: 'area', shape: 0, extent: 190, nudge: [0.013, 0.021] },
+      { label: 'Spring channel complex', kind: 'reach', extent: 5.8 },
+      { label: 'Wet meadow unit', kind: 'area', extent: 190, nudge: [0.013, 0.021] },
     ],
     measures: [
       ['Stream miles of spring channel restored', 'miles', 5.8],
-      ['Acres of wet meadow rewetted', 'acres', 190],
+      ['Acres of wet meadow rewetted', 'acres', 190, 'acres-wetland-meadow-restored'],
       ['Acres of saltcedar removed', 'acres', 76],
     ],
     funders: [
@@ -1217,14 +1306,14 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Putah Creek Riparian Planting': {
     description:
       'Planting 14 acres of valley oak and sycamore riparian forest on three parcels along lower Putah Creek, filling the gaps between reaches restored under earlier phases. Volunteer crews from the adjacent university handled planting and three years of follow-up watering.',
-    center: [38.5127, -121.8341],
+    center: [38.975, -119.905],
     zoom: 13,
     areas: [
-      { label: 'Planting parcels', kind: 'area', shape: 2, extent: 14 },
+      { label: 'Planting parcels', kind: 'area', extent: 14 },
     ],
     measures: [
-      ['Acres of riparian forest planted', 'acres', 14],
-      ['Native trees planted', 'trees', 2600],
+      ['Acres of riparian forest planted', 'acres', 14, 'acres-riparian-habitat-restored'],
+      ['Native trees planted', 'trees', 2600, 'native-plants-installed'],
     ],
     funders: [
       ['Watershed Resilience Grant Program', 0.6],
@@ -1236,14 +1325,14 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'San Luis Rey Arroyo Toad Habitat': {
     description:
       'Clearing invasive tamarisk and restoring the braided sandy channel the arroyo toad breeds in across three miles of the upper San Luis Rey. Timing avoids the breeding season, which constrains work to a narrow late-summer window each year.',
-    center: [33.3421, -116.9134],
+    center: [39.04, -119.905],
     zoom: 12,
     areas: [
-      { label: 'Braided channel treatment reach', kind: 'reach', shape: 2, extent: 3.1 },
-      { label: 'Terrace tamarisk removal unit', kind: 'area', shape: 1, extent: 88, nudge: [0.014, -0.017] },
+      { label: 'Braided channel treatment reach', kind: 'reach', extent: 3.1 },
+      { label: 'Terrace tamarisk removal unit', kind: 'area', extent: 88, nudge: [0.014, -0.017] },
     ],
     measures: [
-      ['Stream miles of breeding habitat restored', 'miles', 3.1],
+      ['Stream miles of breeding habitat restored', 'miles', 3.1, 'stream-miles-instream-habitat'],
       ['Acres of tamarisk removed', 'acres', 88],
       ['Breeding pools documented, post-project', 'pools', 24],
     ],
@@ -1258,16 +1347,16 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Klamath Tributary Thermal Refugia': {
     description:
       'Protecting and enlarging cold-water refugia at eight tributary confluences on the middle Klamath, where mainstem temperatures now exceed what salmon can hold in through late summer. Each site combines shade planting with channel work that keeps the cold plume intact.',
-    center: [41.7913, -123.0442],
+    center: [38.87, -120.08],
     zoom: 11,
     areas: [
-      { label: 'Confluence refugia complex', kind: 'area', shape: 0, extent: 130 },
-      { label: 'Tributary shading reach', kind: 'reach', shape: 1, extent: 8.6, nudge: [-0.024, 0.021] },
+      { label: 'Confluence refugia complex', kind: 'area', extent: 130 },
+      { label: 'Tributary shading reach', kind: 'reach', extent: 8.6, nudge: [-0.024, 0.021] },
     ],
     measures: [
       ['Cold-water refugia sites enhanced', 'sites', 8],
       ['Stream miles shaded', 'miles', 8.6],
-      ['Acres of riparian canopy established', 'acres', 130],
+      ['Acres of riparian canopy established', 'acres', 130, 'acres-riparian-habitat-restored'],
       ['Miles of stream fenced from grazing', 'miles', 6.4],
       ['Instream flow agreements signed', 'agreements', 4],
     ],
@@ -1282,15 +1371,15 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Mokelumne Meadow Rewetting': {
     description:
       'Plug-and-pond treatment across 210 acres of incised meadow in the upper Mokelumne, raising the water table to within a foot of the surface through the growing season. The site sits above a reservoir that supplies two foothill districts.',
-    center: [38.5124, -120.0187],
+    center: [38.79, -120.03],
     zoom: 12,
     areas: [
-      { label: 'Meadow rewetting unit', kind: 'area', shape: 1, extent: 210 },
+      { label: 'Meadow rewetting unit', kind: 'area', extent: 210 },
     ],
     measures: [
-      ['Acres of montane meadow rewetted', 'acres', 210],
-      ['Stream miles reconnected to floodplain', 'miles', 1.7],
-      ['Acre-feet of additional summer storage', 'acre-feet', 340],
+      ['Acres of montane meadow rewetted', 'acres', 210, 'acres-wetland-meadow-restored'],
+      ['Stream miles reconnected to floodplain', 'miles', 1.7, 'stream-miles-floodplain-reconnected'],
+      ['Acre-feet of additional summer storage', 'acre-feet', 340, 'water-supply-gained'],
     ],
     funders: [
       ['Sierra Meadows Restoration Initiative', 0.64],
@@ -1302,14 +1391,14 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Pescadero Marsh Tidal Exchange': {
     description:
       'Restoring tidal exchange to Pescadero Marsh by replacing an undersized culvert under the coast highway and regrading the interior channel network, addressing the low-oxygen events that have repeatedly killed steelhead here. Deferred while the highway crossing is redesigned.',
-    center: [37.2612, -122.4074],
+    center: [38.915, -120.075],
     zoom: 13,
     areas: [
-      { label: 'Marsh channel network', kind: 'area', shape: 0, extent: 265 },
-      { label: 'Highway crossing replacement', kind: 'reach', shape: 2, extent: 0.4, nudge: [-0.012, -0.011] },
+      { label: 'Marsh channel network', kind: 'area', extent: 265 },
+      { label: 'Highway crossing replacement', kind: 'reach', extent: 0.4, nudge: [-0.012, -0.011] },
     ],
     measures: [
-      ['Acres of tidal marsh reconnected', 'acres', 265],
+      ['Acres of tidal marsh reconnected', 'acres', 265, 'acres-wetland-meadow-restored'],
       ['Miles of tidal channel regraded', 'miles', 3.2],
       ['Crossings replaced', 'crossings', 1],
     ],
@@ -1324,10 +1413,10 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Battle Creek Diversion Screening': {
     description:
       'Screening eleven unscreened agricultural diversions on Battle Creek and its north fork to end juvenile salmonid entrainment, paired with measurement devices at each headgate. Screens are sized to the diverter’s existing right so no water delivery changes.',
-    center: [40.4127, -122.1483],
+    center: [39.075, -120.225],
     zoom: 12,
     areas: [
-      { label: 'Diversion screening corridor', kind: 'reach', shape: 0, extent: 14.8 },
+      { label: 'Diversion screening corridor', kind: 'reach', extent: 14.8 },
     ],
     measures: [
       ['Diversions screened', 'diversions', 11],
@@ -1345,15 +1434,16 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Cache Creek Floodplain Terracing': {
     description:
       'Grading inset floodplain terraces into 2.5 miles of over-widened Cache Creek channel left by a century of aggregate mining. The terraces are designed to inundate in a two-year flow, rebuilding riparian forest that the current channel is too incised to support.',
-    center: [38.7204, -122.1128],
+    center: [38.92, -119.9],
     zoom: 12,
     areas: [
-      { label: 'Terrace grading reach', kind: 'reach', shape: 1, extent: 2.5 },
-      { label: 'Riparian planting unit', kind: 'area', shape: 2, extent: 96, nudge: [0.016, 0.014] },
+      { label: 'Terrace grading reach', kind: 'reach', extent: 2.5 },
+      { label: 'Riparian planting unit', kind: 'area', extent: 96, nudge: [0.016, 0.014] },
     ],
-    measures: [
-      ['Acres of inset floodplain created', 'acres', 96],
-    ],
+    // NOTHING ASKED YET (hackathon team 6): a proposal is not yet answering any
+    // performance measure — the program chooses which apply once it is funded.
+    // This is the record that shows the "Nothing is being asked" state.
+    measures: [],
     funders: [
       ['Watershed Resilience Grant Program', 0.58],
       ['Delta Ecosystem Restoration Fund', 0.26],
@@ -1365,15 +1455,15 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Trinity River Side-Channel Construction': {
     description:
       'Excavating six perennial side channels totalling 3.8 miles along the Trinity between Lewiston and Douglas City, the rearing habitat a regulated flow regime no longer builds on its own. Each channel is fed at a stage that keeps it wetted through the summer base flow.',
-    center: [40.6748, -122.9331],
+    center: [39.18, -119.885],
     zoom: 12,
     areas: [
-      { label: 'Side-channel complex', kind: 'reach', shape: 2, extent: 3.8 },
-      { label: 'Floodplain lowering unit', kind: 'area', shape: 0, extent: 118, nudge: [-0.019, 0.018] },
+      { label: 'Side-channel complex', kind: 'reach', extent: 3.8 },
+      { label: 'Floodplain lowering unit', kind: 'area', extent: 118, nudge: [-0.019, 0.018] },
     ],
     measures: [
-      ['Stream miles of side channel constructed', 'miles', 3.8],
-      ['Acres of rearing habitat created', 'acres', 118],
+      ['Stream miles of side channel constructed', 'miles', 3.8, 'stream-miles-instream-habitat'],
+      ['Acres of rearing habitat created', 'acres', 118, 'acres-floodplain-habitat'],
       ['Cubic yards excavated', 'cubic yards', 265000],
     ],
     funders: [
@@ -1387,15 +1477,15 @@ const AUTHORED: Record<string, AuthoredDetail> = {
   'Arroyo Seco Urban Greenway': {
     description:
       'Converting 2.8 miles of concrete-lined Arroyo Seco channel margin into a vegetated greenway with infiltration basins that capture street runoff before it reaches the river. Flood capacity in the channel is preserved; the treatment sits entirely on the terrace above it.',
-    center: [34.1121, -118.1874],
+    center: [39.27, -120.03],
     zoom: 13,
     areas: [
-      { label: 'Greenway corridor', kind: 'reach', shape: 0, extent: 2.8 },
-      { label: 'Infiltration basin cluster', kind: 'area', shape: 1, extent: 22, nudge: [-0.013, 0.012] },
+      { label: 'Greenway corridor', kind: 'reach', extent: 2.8 },
+      { label: 'Infiltration basin cluster', kind: 'area', extent: 22, nudge: [-0.013, 0.012] },
     ],
     measures: [
-      ['Miles of urban greenway created', 'miles', 2.8],
-      ['Acre-feet of stormwater captured annually', 'acre-feet', 185],
+      ['Miles of urban greenway created', 'miles', 2.8, 'miles-trail-opened'],
+      ['Acre-feet of stormwater captured annually', 'acre-feet', 185, 'stormwater-captured'],
       ['Acres of native habitat established', 'acres', 22],
       ['Residents within a half-mile walk', 'residents', 41000],
     ],
@@ -1477,6 +1567,8 @@ const CONTACT_ROLES: { role: string; at: 'sponsor' | 'funder' }[] = [
  *  takes, on a domain built from an organization that is itself invented. */
 const emailFor = (name: string, organization: string): string => {
   const parts = name.toLowerCase().split(' ');
+  // Never a guessed address at a real organization (dev only).
+  if (REAL) return `${parts[0][0]}.${parts[parts.length - 1]}@example.org`;
   const domain = organization
     .split(/\s+/)
     .filter((word) => !/^(of|the|and|for|&)$/i.test(word))
@@ -1486,14 +1578,15 @@ const emailFor = (name: string, organization: string): string => {
   return `${parts[0][0]}.${parts[parts.length - 1]}@${domain}.org`;
 };
 
-const buildContacts = (project: Project, funding: FundingSource[]): ProjectContact[] => {
+const buildContacts = (project: Project, funding: ProjectFunding[]): ProjectContact[] => {
   // The first funder that is NOT the sponsor itself. Every project's last
   // funding source is its own local match, whose organization resolves to the
   // lead org — so taking funding[0] blindly would give a project whose only
   // outside funder sits second a "Grant manager" at the sponsor's own address.
   const funderOrg =
     funding.find((source) => source.organization !== project.leadOrganization)?.organization ??
-    funding[0].organization;
+    funding[0]?.organization ??
+    project.leadOrganization;
 
   const seed = hashOf(project.projectName);
   return CONTACT_ROLES.map((entry, i) => {
@@ -1554,7 +1647,7 @@ const buildComments = (project: Project, contacts: ProjectContact[]): ProjectCom
 // finished work) unrepresentable, the same way deriving reported values from
 // stage does.
 const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: string[] }> = {
-  'Riparian Revegetation': {
+  'Riparian revegetation': {
     scene: 'stream',
     captions: [
       'Bare streambank on the lower corridor, before planting',
@@ -1565,7 +1658,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'Second-season growth along the planted reach',
     ],
   },
-  'Fish Passage': {
+  'Fish passage': {
     scene: 'stream',
     captions: [
       'The barrier before removal',
@@ -1576,7 +1669,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'Adult salmon holding above the former barrier site',
     ],
   },
-  'Meadow & Wetland Restoration': {
+  'Meadow & wetland restoration': {
     scene: 'meadow',
     captions: [
       'Incised channel before treatment',
@@ -1587,7 +1680,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'Meadow surface holding water into early summer',
     ],
   },
-  'Aquatic Habitat Restoration': {
+  'Aquatic habitat restoration': {
     scene: 'stream',
     captions: [
       'The reach before treatment, at summer base flow',
@@ -1598,7 +1691,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'Survey crew at the post-project cross-section',
     ],
   },
-  'Forest Health & Fuels': {
+  'Forest health & fuels': {
     scene: 'forest',
     captions: [
       'Pre-treatment stand density',
@@ -1609,7 +1702,7 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
       'The completed fuel break, looking down the alignment',
     ],
   },
-  'Stormwater & Water Quality': {
+  'Stormwater & water quality': {
     scene: 'channel',
     captions: [
       'The channel margin before conversion',
@@ -1626,6 +1719,15 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
 // seasonal as its milestones, and six photos all dated January read as
 // placeholder data.
 const PHOTO_MONTHS = ['April', 'July', 'September', 'June', 'October', 'May'];
+const PHOTO_MONTHS_NUMBER = [4, 7, 9, 6, 10, 5];
+// What a stand-in photograph actually shows, for its alt text: the stock image
+// will never literally show the caption, so the description is of the ground.
+const SCENE_ALT: Record<ProjectPhoto['scene'], string> = {
+  stream: 'A stream corridor with open water and vegetated banks.',
+  meadow: 'A grassland meadow under open sky.',
+  forest: 'A conifer forest stand with a trail or clearing.',
+  channel: 'A constructed channel and basin, with water.',
+};
 
 // How many photos a record at each stage carries, and how far into the pool's
 // arc it may reach. `limit` is the honesty bound (see PHOTO_POOLS); `count` is
@@ -1649,9 +1751,10 @@ const photoCount = (stage: ProjectStage, seed: number): { count: number; limit: 
 };
 
 const buildPhotos = (project: Project): ProjectPhoto[] => {
-  const pool = PHOTO_POOLS[project.program];
+  // Keyed by project type, as the milestone templates are.
+  const pool = PHOTO_POOLS[project.projectType];
   if (!pool) {
-    throw new Error(`No photo pool for program "${project.program}"`);
+    throw new Error(`No photo pool for project type "${project.projectType}" on "${project.projectName}"`);
   }
 
   const seed = hashOf(project.projectName);
@@ -1668,14 +1771,34 @@ const buildPhotos = (project: Project): ProjectPhoto[] => {
   const firstYear = Math.min(PRESENT_YEAR, start - 2);
   const lastYear = Math.min(PRESENT_YEAR, end);
 
+  // The arc of a record's photography, by position: the first frame is the
+  // site as found; the last is the result only once the work is finished
+  // (an Implementation project's newest frame is still "during"); the rest
+  // are the work itself. A proposal's single photo is, honestly, a before.
+  const finished = project.stage === 'Completed' || project.stage === 'Post-Implementation';
   return Array.from({ length: taken }, (_, i) => {
     const t = taken === 1 ? 0 : i / (taken - 1);
     const year = Math.round(firstYear + t * (lastYear - firstYear));
+    const month = PHOTO_MONTHS[i % PHOTO_MONTHS.length];
+    const stage: PhotoStage = i === 0 ? 'before' : i === taken - 1 && finished ? 'after' : 'during';
+    const caption = pool.captions[i];
+    // A frame with people in it stays internal: consent for a public page is
+    // a different thing from permission to file the photo.
+    const people = /\b(crew|volunteer|relocating)\b/i.test(caption);
     return {
-      caption: pool.captions[i],
-      date: `${PHOTO_MONTHS[i % PHOTO_MONTHS.length]} ${year}`,
+      caption,
+      date: `${month} ${year}`,
       scene: pool.scene,
       seed: seed + i * 11,
+      stage,
+      // The first and last frames are one view over time where there is a
+      // pair; a mid-project record keeps its site view alone.
+      point: stage === 'before' || stage === 'after' ? 'Main site, looking upstream' : undefined,
+      // Three or more working frames read as a story: they form the carousel.
+      collection: stage === 'during' && taken >= 5 ? 'Construction' : undefined,
+      public: !people,
+      takenOn: `${year}-${String(PHOTO_MONTHS_NUMBER[i % PHOTO_MONTHS_NUMBER.length]).padStart(2, '0')}-${String(8 + ((seed + i) % 17)).padStart(2, '0')}`,
+      alt: `${caption}. ${SCENE_ALT[pool.scene]}`,
     };
   });
 };
@@ -1698,6 +1821,7 @@ const AUDIT_CURRENCY = new Intl.NumberFormat('en-US', {
 // year boundaries dated November before March inside the same year. A seeded
 // offset per year keeps every run from opening on February.
 const AUDIT_MONTHS = ['January', 'March', 'May', 'July', 'September', 'November'];
+const LONG_RUN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September'];
 
 // When the record's CURRENT stage was set, per stage — the newest entry in the
 // log has to agree with the pill in the page header, and its date has to agree
@@ -1731,7 +1855,7 @@ const stageSetYear = (project: Project): number => {
 const buildAudit = (
   project: Project,
   contacts: ProjectContact[],
-  funding: FundingSource[],
+  funding: ProjectFunding[],
   measures: PerformanceMeasure[],
   firstAreaLabel: string,
 ): AuditEntry[] => {
@@ -1753,21 +1877,18 @@ const buildAudit = (
   const entries: { year: number; user: string; change: string }[] = [
     { year: year(start - 2), user: lead.name, change: 'Project created' },
     { year: year(start - 2), user: lead.name, change: 'Description updated' },
-    {
-      year: year(start - 1),
-      user: grantManager.name,
-      change: `Funding source added: ${outsideFunder.name}`,
-    },
+    // A real record can have no funding source yet.
+    ...(outsideFunder
+      ? [{ year: year(start - 1), user: grantManager.name, change: `Funding source added: ${outsideFunder.name}` }]
+      : []),
     {
       year: year(start - 1),
       user: grantManager.name,
       change: `Estimated total cost changed from ${AUDIT_CURRENCY.format(previousCost)} to ${AUDIT_CURRENCY.format(total)}`,
     },
-    {
-      year: year(start),
-      user: fieldContact.name,
-      change: `Work area boundary revised: ${firstAreaLabel}`,
-    },
+    ...(firstAreaLabel
+      ? [{ year: year(start), user: fieldContact.name, change: `Work area boundary revised: ${firstAreaLabel}` }]
+      : []),
   ];
 
   // Only a project that has reported has a filing to log — same gate the
@@ -1797,13 +1918,20 @@ const buildAudit = (
 
   // Months ascend WITHIN each year-run, so the rendered dates agree with the
   // order the list presents them in — the one thing a change log cannot get
-  // wrong. The per-year seeded offset varies which month a year opens on;
-  // runs are at most three entries, so the index never leaves the list.
+  // wrong. The per-year seeded offset varies which month a year opens on, and
+  // a long run (one project logs six entries in a year) spreads across
+  // January–September instead, so it never leaves the calendar or runs past
+  // the prototype's present.
+  const runLength = (year: number) => entries.filter((e) => e.year === year).length;
   let runStart = 0;
   return entries
     .map((entry, i) => {
       if (i > 0 && entries[i - 1].year !== entry.year) runStart = i;
-      const month = AUDIT_MONTHS[((seed + entry.year) % 3) + (i - runStart)];
+      const run = runLength(entry.year);
+      const month =
+        run > 3
+          ? LONG_RUN_MONTHS[Math.floor(((i - runStart) * LONG_RUN_MONTHS.length) / run)]
+          : AUDIT_MONTHS[((seed + entry.year) % 3) + (i - runStart)];
       return {
         date: `${1 + ((seed + i * 7) % 27)} ${month} ${entry.year}`,
         user: entry.user,
@@ -1817,7 +1945,186 @@ const buildAudit = (
 // Assembly
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// A real workspace's record (dev only — see firma2-real-data.ts)
+// ---------------------------------------------------------------------------
+
+const REAL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** Shapes as the tenant drew them. A point is not a work area here: it is
+ *  where the map opens, and firma2-geography.ts offers it as a location. */
+const realWorkAreas = (project: Project, record: RealProject): WorkArea[] => {
+  const count = { area: 0, reach: 0 };
+  const slug = projectSlug(project);
+  return record.geometries.flatMap((g): WorkArea[] => {
+    const kind = g.type === 'Polygon' ? 'area' : g.type === 'LineString' ? 'reach' : null;
+    if (!kind) return [];
+    const ring: [number, number][] = (kind === 'area' ? g.coordinates[0] : g.coordinates).map(
+      ([lng, lat]: [number, number]) => [Number(lat.toFixed(6)), Number(lng.toFixed(6))],
+    );
+    const path = kind === 'area' && ring.length > 3 ? ring.slice(0, -1) : ring;
+    if (path.length < 2) return [];
+    count[kind] += 1;
+    const measured = kind === 'area' ? ringAcres(path) : pathMiles(path);
+    return [
+      {
+        id: `${slug}-${count.area + count.reach - 1}`,
+        // The tenant's shapes are unnamed.
+        label: `${kind === 'area' ? 'Area' : 'Reach'} ${count[kind]}`,
+        kind,
+        path,
+        extent: Math.max(0.01, Number(measured.toFixed(kind === 'area' ? 1 : 2))),
+        unit: kind === 'area' ? 'acres' : 'miles',
+        origin: 'record',
+      },
+    ];
+  });
+};
+
+/**
+ * One row per measure: the tenant's subcategory rows added together, and one
+ * period per year of the project's window with what was filed in it. No yearly
+ * plan — ProjectFirma holds one expected value for the whole project.
+ */
+const realProjectMeasures = (project: Project, record: RealProject): PerformanceMeasure[] => {
+  const names = Array.from(new Set([...record.expected, ...record.reported].map((row) => row.measure.trim())));
+  const filedYears = record.reported.flatMap((m) => m.rows.flatMap((row) => Object.keys(row.byYear).map(Number)));
+  const first = Math.min(project.implementationStartYear, ...filedYears);
+  const last = Math.max(project.completionYear, ...filedYears);
+  return names.map((name) => {
+    const expected = record.expected.filter((row) => row.measure.trim() === name);
+    const reported = record.reported.filter((row) => row.measure.trim() === name);
+    const definition = realMeasureFor(expected[0] ?? reported[0]);
+    const series: MeasureYear[] = [];
+    for (let year = first; year <= last; year += 1) {
+      const filed = reported.flatMap((m) => m.rows).filter((row) => String(year) in row.byYear);
+      series.push({
+        year,
+        value: filed.length ? Number(filed.reduce((sum, row) => sum + row.byYear[String(year)], 0).toFixed(4)) : null,
+        status: milestoneStatus(year, project.stage),
+      });
+    }
+    return {
+      name: definition?.name ?? name,
+      unit: realUnit(definition?.unit ?? expected[0]?.unit ?? reported[0]?.unit ?? ''),
+      expected: Number(expected.reduce((sum, row) => sum + (row.value ?? 0), 0).toFixed(4)),
+      reported: reportedTotal(series),
+      series,
+      ...(definition ? { kpi: slugOf(definition.name) } : {}),
+    };
+  });
+};
+
+const realFunding = (project: Project, record: RealProject): ProjectFunding[] => {
+  const rows = record.funding
+    .map((row) => {
+      const fund = realFund(row.fund);
+      return { ...fund, source: fundingSourceSlug(fund.name, fund.organization), amount: Math.round(row.secured + row.targeted) };
+    })
+    .filter((row) => row.amount > 0);
+  const total = project.estimatedTotalCost || rows.reduce((sum, row) => sum + row.amount, 0) || 1;
+  return rows.map((row) => ({ ...row, share: row.amount / total }));
+};
+
+const realExpenditures = (project: Project, record: RealProject): ExpenditureYear[] => {
+  const byYear = new Map<number, number>();
+  for (const row of record.expenditures) {
+    for (const [year, amount] of Object.entries(row.byYear)) byYear.set(Number(year), (byYear.get(Number(year)) ?? 0) + amount);
+  }
+  return [...byYear.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([year, spent]) => ({ year, spent: Math.round(spent), status: milestoneStatus(year, project.stage) }));
+};
+
+/** The three years the tenant records, as the timeline's events. */
+const realMilestones = (project: Project, record: RealProject): Milestone[] =>
+  (
+    [
+      [record.planningStartYear, 'Planning and design start'],
+      [record.implementationStartYear, 'Implementation start'],
+      [record.completionYear, 'Completion'],
+    ] as [number | null, string][]
+  )
+    .filter(([year]) => year !== null)
+    .map(([year, title]) => ({ date: String(year), title, status: milestoneStatus(year!, project.stage) }));
+
+/** "03/12/2018 2:41 PM" → "12 March 2018", the label every other date here uses. */
+const realNoteDate = (stamp: string): string => {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(stamp);
+  if (m) return `${Number(m[2])} ${REAL_MONTHS[Number(m[1]) - 1]} ${m[3]}`;
+  // The Excel export's form: "2018-03-09 11:48:56".
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(stamp);
+  return iso ? `${Number(iso[3])} ${REAL_MONTHS[Number(iso[2]) - 1]} ${iso[1]}` : stamp;
+};
+
+const buildRealDetail = (project: Project, record: RealProject): ProjectDetail => {
+  const workAreas = realWorkAreas(project, record);
+  const funding = realFunding(project, record);
+  const measures = realProjectMeasures(project, record);
+  // INVENTED, mostly: a tenant names one primary contact at most, and the
+  // change log and publishing state need three people to attribute to.
+  const contacts = buildContacts(project, funding);
+  // The project lead is real where the tenant's export names a primary contact.
+  if (record.primaryContact) contacts[0] = { ...contacts[0], name: record.primaryContact.name, email: record.primaryContact.email };
+  const vertices = workAreas.flatMap((area) => area.path);
+  const mapCenter: [number, number] =
+    record.latitude !== null && record.longitude !== null
+      ? [record.latitude, record.longitude]
+      : vertices.length
+        ? centroid(vertices)
+        : realCenter ?? BASIN_OUTLET;
+
+  return {
+    project,
+    projectDescription: record.description.trim(),
+    mapCenter,
+    mapZoom: 14,
+    workAreas,
+    measures,
+    funding,
+    // Every organization the tenant names on the project that neither leads nor funds it.
+    relatedOrganizations: [...new Set(record.organizations.map((o) => o.name))].filter(
+      (name) => name !== project.leadOrganization && !funding.some((row) => row.organization === name),
+    ),
+    customValues: customValuesOf(project),
+    expenditures: realExpenditures(project, record),
+    milestones: realMilestones(project, record),
+    contacts,
+    // The tenant's own notes, newest first, under the name each was filed by.
+    comments: [...record.notes].reverse().map((note) => ({
+      author: { name: note.author, role: '', organization: '', email: '' },
+      date: realNoteDate(note.date),
+      body: note.text,
+    })),
+    photos: record.photos.map((photo, i) => ({
+      caption: photo.caption,
+      // The tenant's timing is now the photo's stage; it has no date of its own.
+      date: '',
+      scene: 'stream' as const,
+      seed: i,
+      src: photo.url,
+      credit: photo.credit,
+      // The tenant's own Before / During / After; Unknown is read as During.
+      stage: (photo.timing === 'Before' ? 'before' : photo.timing === 'After' ? 'after' : 'during') as PhotoStage,
+      public: true,
+      takenOn: '',
+      alt: photo.caption,
+    })),
+    // The tenant's photos carry no photo point or collection.
+    photoPoints: [],
+    photoCollections: [],
+    ...applyPublishing(project, buildAudit(project, contacts, funding, measures, workAreas[0]?.label ?? ''), {
+      description: record.description.trim(),
+      measures,
+      funding,
+      people: { lead: contacts[0].name, grant: contacts[1].name, field: contacts[2].name },
+    }),
+  };
+};
+
 const buildDetail = (project: Project): ProjectDetail => {
+  const record = realRecords.get(project.projectName);
+  if (record) return buildRealDetail(project, record);
   const authored = AUTHORED[project.projectName];
   if (!authored) {
     throw new Error(`No authored detail for "${project.projectName}"`);
@@ -1836,25 +2143,37 @@ const buildDetail = (project: Project): ProjectDetail => {
     projectDescription: authored.description,
     mapCenter: authored.center,
     mapZoom: authored.zoom ?? 12,
-    workAreas: authored.areas.map((area) => ({
+    workAreas: authored.areas.map((area, i): WorkArea => ({
+      id: `${projectSlug(project)}-${i}`,
       label: area.label,
       kind: area.kind,
       extent: area.extent,
-      extentUnit: area.kind === 'area' ? 'acres' : 'miles',
-      path: placeShape(
-        (area.kind === 'area' ? AREA_SHAPES : REACH_SHAPES)[area.shape],
-        authored.center,
-        area.nudge,
+      unit: area.kind === 'area' ? 'acres' : 'miles',
+      origin: 'record',
+      path: workAreaShape(
+        area.kind,
+        area.label,
+        area.extent,
+        [authored.center[0] + (area.nudge?.[0] ?? 0), authored.center[1] + (area.nudge?.[1] ?? 0)],
+        project.projectName,
+        BASIN_OUTLET,
       ),
     })),
     measures,
     funding,
+    relatedOrganizations: authored.related ?? [],
+    customValues: customValuesOf(project),
     expenditures: buildExpenditures(project, authored.progress),
     milestones: buildMilestones(project),
     contacts,
     comments: buildComments(project, contacts),
-    photos: buildPhotos(project),
-    audit: buildAudit(project, contacts, funding, measures, authored.areas[0].label),
+    ...linkPhotoGroups(buildPhotos(project)),
+    ...applyPublishing(project, buildAudit(project, contacts, funding, measures, authored.areas[0].label), {
+      description: authored.description,
+      measures,
+      funding,
+      people: { lead: contacts[0].name, grant: contacts[1].name, field: contacts[2].name },
+    }),
   };
 };
 
@@ -1908,7 +2227,7 @@ export const getProjectDetail = (project: Project): ProjectDetail => {
 {
   const names = new Set(projects.map((p) => p.projectName));
   for (const key of Object.keys(AUTHORED)) {
-    if (!names.has(key)) {
+    if (!REAL && !names.has(key)) {
       throw new Error(`AUTHORED has no matching project: "${key}"`);
     }
   }

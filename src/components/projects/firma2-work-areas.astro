@@ -1,0 +1,1317 @@
+---
+// firma2-work-areas — where the project is, and every way of saying so.
+// Ported from ProjectFirma2 hackathon team 2 (geospatial), whose mission named
+// three readers this section has to serve at once:
+//
+//   Dana   — program manager, no GIS at all. Draws a boundary, or better,
+//            adopts one somebody else maintains, and is never asked to choose
+//            a projection, a unit or a coordinate system.
+//   Theo   — points only. Pastes "40.0231, -122.0654" off a spec sheet into
+//            Latitude and it splits itself. A point gets no acres, ever.
+//   Marcus — the enterprise GIS analyst. When the workspace is subscribed,
+//            his layer owns these shapes: the tools are absent (not disabled),
+//            and each row says the shape is maintained in his GIS.
+//
+// FIVE WAYS TO ADD ONE, IN ONE BAR, AS A MAP CONTROL. Draw an area, draw a
+// reach, drop a point, enter coordinates, use a reference area — five ways of
+// doing one thing, so they are one control, stacked under the zoom buttons the
+// way a map UI stacks its tools. Each glyph toggles, which is the only way an
+// icon-only bar has of backing out; the form it opens sits directly beneath it.
+// Upload is the sixth way and lives on the head plate, because it opens a
+// dialog rather than arming the map.
+//
+// NAMING COMES AFTER DRAWING, so the name is chosen while looking at what it
+// names. Creating a shape is an act, so it has a Save; reshaping and renaming
+// a saved one is an edit, so it saves as it happens (product brief §2).
+//
+// THE TABLE IS UNDER THE MAP, NOT ON IT. Team 2 floated the list on the canvas
+// first, and it covered the shape it described. Below the map there is a
+// column's width to use and no shape to hide, and the table is also this
+// section's text alternative: name, kind, extent and provenance in words.
+//
+// AN EXTENT IS NEVER A ZERO. A point has none, and "0 acres" is a figure a
+// reader has every reason to believe — so the cell is a dash.
+//
+// bcn-lego-checked: ecology has no map lego (see firma2-project-map's header
+// for the full lookup); this is the same Leaflet surface. The draw tool bar is
+// Leaflet's own control-bar pattern (`.leaflet-bar`), because it sits in
+// Leaflet's control stack beside the zoom buttons and has to read as one of
+// them — an esa-button-group there would be a second visual language on one
+// canvas, and the hub icon registry has no drawing glyphs, so the five glyphs
+// are inline SVG (Lucide's pentagon, spline, map-pin, crosshair, land-plot).
+// Everything else is a lego: esa-button, esa-text-field, esa-select,
+// esa-empty-state, esa-dialog (in firma2-work-area-upload). The plates reuse
+// the floating-surface tokens firma2-project-map documents. Beacon is not
+// cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2WorkAreaUpload from './firma2-work-area-upload.astro';
+import type { Project } from '../../data/firma2-projects';
+import { projectSlug } from '../../data/firma2-projects';
+import {
+  HYDROLOGIC_REGIONS,
+  PLACES,
+  SUBWATERSHEDS,
+  projectCenter,
+  seedWorkAreas,
+  subwatershedsNear,
+} from '../../data/firma2-geography';
+import { withBase } from '../../lib/base';
+import { ICON_PATHS } from '@esa/ecology/icon-registry';
+import '../settings/firma2-settings-table.css';
+
+interface Props {
+  project: Project;
+  /**
+   * `section` (default) is the full-column surface: full-bleed, a screenful
+   * tall, its title and tools floating on the map. `rail` is the same
+   * component at the record rail's width (user, 2026-10-22, after Linear's
+   * sidebar progress graph): a map about 18rem tall with the heading and
+   * Upload above it as a plain row, the search plate across its top, the add
+   * tools still stacked under the zoom buttons, and the forms and the area
+   * list BELOW the map rather than on it — at 22rem a form plate over the
+   * canvas would cover the shape it names. Scroll-wheel zoom is off in both
+   * (src/lib/leaflet.ts), which matters more inside a sticky column: a map
+   * that takes the wheel stops the page dead over itself.
+   */
+  variant?: 'section' | 'rail';
+}
+
+const { project, variant = 'section' } = Astro.props;
+const rail = variant === 'rail';
+const center = projectCenter(project);
+const config = {
+  slug: projectSlug(project),
+  seed: seedWorkAreas(project),
+  center,
+  adoptable: subwatershedsNear(project).map(({ id, name, ring, acres }) => ({ id, name, ring, acres })),
+  regions: HYDROLOGIC_REGIONS,
+  subwatersheds: SUBWATERSHEDS,
+  places: PLACES,
+};
+const subscriptionsHref = withBase('/prototypes/workspace-settings/gis-subscriptions');
+
+// Each tool's glyph by its Lucide name, through the icon registry — so the
+// spoke's icon set (Hugeicons) draws them — with the Lucide body as the
+// fallback for a registry without the name (ICONS=lucide).
+const GLYPHS = {
+  area: ICON_PATHS.pentagon ?? '<path d="M3.5 8.7c-.7.5-1 1.4-.7 2.2l2.8 8.7c.3.8 1 1.4 1.9 1.4h9.2c.9 0 1.6-.6 1.9-1.4l2.8-8.7c.3-.8 0-1.7-.7-2.2l-7.4-5.3a2.1 2.1 0 0 0-2.4 0Z"/>',
+  reach: ICON_PATHS.spline ?? '<circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M5 17A12 12 0 0 1 17 5"/>',
+  point: ICON_PATHS['map-pin'] ?? '<path d="M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  coords: ICON_PATHS.locate ?? '<circle cx="12" cy="12" r="9"/><path d="M22 12h-4M6 12H2M12 6V2M12 22v-4"/>',
+  reference: ICON_PATHS['land-plot'] ?? '<path d="m12 8 6-3-6-3v10"/><path d="m8 11.99-5.5 3.14a1 1 0 0 0 0 1.74l8.5 4.86a2 2 0 0 0 2 0l8.5-4.86a1 1 0 0 0 0-1.74L16 12"/><path d="m6.49 12.85 11.02 6.3M17.51 12.85 6.5 19.15"/>',
+};
+
+const TOOLS = [
+  { key: 'area', label: 'Draw an area' },
+  { key: 'reach', label: 'Draw a reach' },
+  { key: 'point', label: 'Drop a point' },
+  { key: 'coords', label: 'Enter coordinates' },
+  { key: 'reference', label: 'Use a reference area' },
+] as const;
+---
+<section
+  class:list={['firma2-work-areas', rail && 'stack']}
+  data-gap={rail ? 'md' : undefined}
+  data-config={JSON.stringify(config)}
+  data-variant={variant}
+>
+  {rail && (
+    <!-- IN THE RAIL THE HEAD IS A ROW, NOT A PLATE: the rail's other sections
+         carry a heading at this role above their content (firma2-rail-section),
+         and this one matches them rather than floating its title over a map
+         too small to spare the corner. Same heading, same Upload affordance,
+         same hooks for the script. -->
+    <div class="firma2-work-areas__head repel">
+      <h3 class="firma2-work-areas__title typography-title-sm-strong" data-aliasable>Work areas</h3>
+      <span data-editor-only><EsaButton variant="chrome" size="sm" icon="upload" data-upload>Upload shapes</EsaButton></span>
+    </div>
+  )}
+  <div class="firma2-work-areas__surface">
+    <div class="firma2-work-areas__canvas" role="application" aria-label="Work areas map" data-canvas></div>
+
+    {!rail && (
+      <div class="firma2-work-areas__plate firma2-work-areas__plate--head cluster" data-gap="md">
+        <h3 class="firma2-work-areas__title typography-title-sm-strong" data-aliasable>Work areas</h3>
+        <span data-editor-only><EsaButton variant="chrome" size="sm" icon="upload" data-upload>Upload shapes</EsaButton></span>
+      </div>
+    )}
+
+    <!-- FINDING THE PLACE (team 2's story J). The tools make sure nobody has to
+         draw a polygon; none of them get the map THERE. This searches the
+         workspace's own areas first, then towns, and moves the map only. -->
+    <div class="firma2-work-areas__plate firma2-work-areas__plate--search">
+      <esa-text-field data-search type="search" size="md" label="Find a place" placeholder="A town or a subwatershed" autocomplete="off"></esa-text-field>
+      <ul class="firma2-work-areas__results" data-results hidden></ul>
+    </div>
+
+    <!-- Moved into Leaflet's top-left control stack by the script, under zoom. -->
+    <div class="firma2-work-areas__tools leaflet-bar" role="group" aria-label="Add a work area" data-tools data-editor-only>
+      {TOOLS.map((tool) => (
+        <button type="button" class="firma2-work-areas__tool" data-tool={tool.key} aria-pressed="false" aria-label={tool.label} title={tool.label}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={GLYPHS[tool.key]} />
+        </button>
+      ))}
+    </div>
+
+    <!-- THE FORM PLATE, directly under the bar. Also a Leaflet control, so it
+         stacks without an offset anyone has to maintain. One form at a time,
+         because one tool is armed at a time. -->
+    <div class="firma2-work-areas__plate firma2-work-areas__form stack" data-gap="md" data-form hidden>
+      <div class="stack" data-gap="md" data-form-name hidden>
+        <esa-text-field data-name label="Name this area" size="md" maxlength="200" autocomplete="off" placeholder="East fence line"></esa-text-field>
+        <p class="typography-body-sm" data-measure></p>
+        <p class="typography-body-sm" data-edit-help hidden>Drag a point to move it, a midpoint to add one. Right-click a point to remove it.</p>
+        <div class="cluster" data-gap="xs" data-pending-actions>
+          <EsaButton variant="primary" size="sm" data-save-pending>Save</EsaButton>
+          <EsaButton variant="ghost" size="sm" data-discard>Discard</EsaButton>
+        </div>
+        <div class="cluster" data-gap="xs" data-edit-actions hidden>
+          <EsaButton variant="secondary" size="sm" data-done>Done</EsaButton>
+        </div>
+      </div>
+
+      <div class="stack" data-gap="md" data-form-coords hidden>
+        <esa-text-field data-coord-name label="Name this location" size="md" maxlength="200" autocomplete="off" placeholder="Gauge at the confluence"></esa-text-field>
+        <div class="firma2-work-areas__pair">
+          <esa-text-field data-lat label="Latitude" size="md" inputmode="decimal" autocomplete="off" placeholder="40.0231"></esa-text-field>
+          <esa-text-field data-lng label="Longitude" size="md" inputmode="decimal" autocomplete="off" placeholder="-122.0654"></esa-text-field>
+        </div>
+        <div class="cluster" data-gap="xs">
+          <span data-coord-save-wrap><EsaButton variant="primary" size="sm" data-save-coords>Save</EsaButton></span>
+          <EsaButton variant="ghost" size="sm" data-cancel-form>Cancel</EsaButton>
+        </div>
+      </div>
+
+      <div class="stack" data-gap="md" data-form-adopt hidden>
+        <esa-select data-adopt label="Use a reference area" placeholder="Choose a subwatershed" size="md"></esa-select>
+        <div class="cluster" data-gap="xs">
+          <span data-adopt-save-wrap><EsaButton variant="primary" size="sm" data-save-adopt>Use this area</EsaButton></span>
+          <EsaButton variant="ghost" size="sm" data-cancel-form>Cancel</EsaButton>
+        </div>
+      </div>
+    </div>
+
+    <!-- How to FINISH, which nothing on the canvas says: the first point again
+         closes an area, a double-click ends a line. Shown only while drawing. -->
+    <p class="firma2-work-areas__plate firma2-work-areas__plate--hint typography-body-sm" data-hint hidden></p>
+  </div>
+
+  <div class="firma2-work-areas__below stack" data-gap="md">
+    <p class="typography-body-md" data-subscribed-note hidden>
+      Synced from the <a data-subscription-link href={subscriptionsHref}></a> subscription. Edit them in your GIS.
+    </p>
+    <div class="firma2-settings-table-scroll">
+      <table class="firma2-work-areas__table" data-table hidden>
+      <caption class="visually-hidden">Work areas on this project</caption>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Kind</th>
+          <th scope="col" class="firma2-work-areas__num">Extent</th>
+          <th scope="col" data-col-source>Source</th>
+          <th scope="col" data-col-actions><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody data-rows></tbody>
+    </table>
+    </div>
+    <div data-empty hidden>
+      <EsaEmptyState size="sm" headingLevel={4} title="No work areas mapped" />
+    </div>
+    <!-- FALLS WITHIN (2026-11-12, rail size): the regions and subwatersheds
+         the shapes touch, worked out from the reference geography rather than
+         asked of anyone — each name with its firma2-provenance line saying
+         which layer it comes from and which shapes touch it. Repainted with
+         the table, so it follows every shape drawn or reshaped. -->
+    {rail && (
+      <section class="firma2-work-areas__within stack" data-gap="xs" data-falls-within hidden>
+        <h4 class="typography-label-lg">Falls within</h4>
+        <ul class="firma2-work-areas__within-list stack" data-gap="sm" data-falls-list></ul>
+      </section>
+    )}
+    <p class="typography-body-md" data-undo-line hidden>
+      <span data-undo-text></span>
+      <EsaButton variant="ghost" size="sm" data-undo>Undo</EsaButton>
+    </p>
+  </div>
+
+  <template data-tpl-edit><EsaButton variant="chrome" size="md" iconOnly icon="pencil" label="Edit work area" /></template>
+  <template data-tpl-delete><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Delete work area" /></template>
+
+  <Firma2WorkAreaUpload center={center} slug={projectSlug(project)} />
+</section>
+
+<style>
+  .firma2-work-areas [hidden] {
+    display: none !important;
+  }
+
+  /* Falls within: a plain list on the rail's glyph line, no bullets — each
+     item a place name over its provenance line. */
+  /* Flush with the table above it: the list continues the table's column. */
+  .firma2-work-areas__within h4 {
+    margin: 0;
+  }
+  .firma2-work-areas__within-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* The root is a `.stack` only in the rail, where the head row sits above
+     the surface; the full surface keeps its own geometry untouched. */
+  .firma2-work-areas__head {
+    /* The rail's other headings stand on the field box's inset (see
+       firma2-project-facts__stage); this one shares that x. */
+    padding-inline-start: calc(var(--spacing-300, 0.75rem) + var(--form-border-width, 1px));
+  }
+
+  /* THE SURFACE keeps firma2-project-map's sizing exactly: full-bleed to the
+     pane's edges and a screenful tall, measured off the live header band. */
+  .firma2-work-areas__surface {
+    position: relative;
+    margin-inline: calc(var(--firma2-pane-padding, var(--spacing-500, 1.5rem)) * -1);
+    block-size: calc(var(--firma2-fold, 100dvh) - calc(var(--firma2-band-height, 48px) + var(--spacing-600, 2rem)));
+    min-block-size: 32rem;
+    isolation: isolate;
+  }
+
+  /* ---- the rail size ------------------------------------------------------
+     A box the rail's width, 28rem tall, no bleed. The map is the rail's whole
+     Map mode now (firma2-project-rail; user, 2026-10-22), so it is sized to
+     read the ground rather than to leave room for Contacts; the list of areas
+     still lands under it inside the fold. The corners
+     take the card radius because an edge-to-edge map has no edge to reach in
+     here. */
+  .firma2-work-areas[data-variant='rail'] .firma2-work-areas__surface {
+    margin-inline: 0;
+    block-size: 28rem;
+    min-block-size: 28rem;
+    border-radius: var(--radius-md, 0.5rem);
+    overflow: hidden;
+  }
+
+  /* Nothing floats over the small map but Leaflet's own controls, so they
+     keep Leaflet's own offset: the section-size margins cleared a head plate
+     this size does not have. */
+  .firma2-work-areas[data-variant='rail'] :global(.leaflet-top.leaflet-left),
+  .firma2-work-areas[data-variant='rail'] :global(.leaflet-top.leaflet-right) {
+    margin-block-start: 0;
+  }
+
+  /* Below the map, search and the form are fields, not plates: the rail
+     already bounds the column, and a bordered, shadowed box inside it would
+     be the boxes-inside-boxes read firma2-rail-section argues against. The
+     script moves both under the canvas in this size. */
+  .firma2-work-areas[data-variant='rail'] .firma2-work-areas__plate--search {
+    position: static;
+    inline-size: auto;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+  }
+  .firma2-work-areas[data-variant='rail'] .firma2-work-areas__form {
+    inline-size: auto;
+    max-inline-size: none;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .firma2-work-areas[data-variant='rail'] .firma2-work-areas__below {
+    padding-block-start: var(--spacing-300);
+  }
+
+  /* The area list keeps Name, Extent and the row actions at 22rem and drops
+     the rest: the swatch beside each name already draws the Kind (polygon,
+     line, point), and the note above the list already says when the shapes
+     come from a GIS subscription, which is all Source said. Five columns
+     overflowed the rail the same way the funding table once did. Kind is
+     positional — the cells are built in a fixed order by the script (name,
+     kind, extent, source, actions) — and Source has its own class because the
+     script omits that cell when nothing is subscribed. */
+  .firma2-work-areas[data-variant='rail'] .firma2-work-areas__table th:nth-child(2),
+  .firma2-work-areas[data-variant='rail'] .firma2-work-areas__table :global(td:nth-child(2)),
+  .firma2-work-areas[data-variant='rail'] .firma2-work-areas__table th[data-col-source],
+  .firma2-work-areas[data-variant='rail'] .firma2-work-areas__table :global(td.firma2-work-areas__source) {
+    display: none;
+  }
+
+  .firma2-work-areas__canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+    font-family: var(--typography-body-sm-font-family);
+    font-size: var(--typography-body-sm-font-size);
+    line-height: var(--typography-body-sm-line-height);
+  }
+
+  .firma2-work-areas__canvas.is-drawing {
+    cursor: crosshair;
+  }
+
+  .firma2-work-areas__plate {
+    padding: var(--spacing-300) var(--spacing-400);
+    background: var(--color-background-elevation-floating, #fcfcfc);
+    border: 1px solid var(--color-border-default-subtle, #d9d9d9);
+    border-radius: var(--radius-md, 0.5rem);
+    box-shadow: var(--elevation-2, 0 2px 12px 0 rgba(0, 0, 0, 0.04));
+  }
+
+  .firma2-work-areas__plate--head,
+  .firma2-work-areas__plate--search,
+  .firma2-work-areas__plate--hint {
+    position: absolute;
+    z-index: 1;
+  }
+
+  .firma2-work-areas__plate--head {
+    inset-block-start: var(--spacing-400);
+    inset-inline-start: var(--spacing-400);
+  }
+
+  .firma2-work-areas__title {
+    margin: 0;
+  }
+
+  /* Trailing top corner. Leaflet's layer control is pushed below it. */
+  .firma2-work-areas__plate--search {
+    inset-block-start: var(--spacing-400);
+    inset-inline-end: var(--spacing-400);
+    inline-size: min(20rem, calc(100% - 2 * var(--spacing-400)));
+    padding: var(--spacing-200) var(--spacing-300);
+  }
+
+  .firma2-work-areas__results {
+    margin: var(--spacing-200) 0 0;
+    padding: 0;
+    list-style: none;
+    max-block-size: 16rem;
+    overflow-y: auto;
+  }
+
+  .firma2-work-areas__result {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--spacing-300);
+    inline-size: 100%;
+    padding: var(--spacing-200);
+    border: 0;
+    border-radius: var(--radius-sm, 0.25rem);
+    background: none;
+    color: var(--color-content-default, #202020);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .firma2-work-areas__result:focus-visible {
+    background: var(--color-background-default-hover, #f0f0f0);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-work-areas__result:hover {
+      background: var(--color-background-default-hover, #f0f0f0);
+    }
+  }
+  .firma2-work-areas__result:active {
+    background: var(--color-background-default-hover, #f0f0f0);
+  }
+
+  .firma2-work-areas__result-kind {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-work-areas__plate--hint {
+    inset-block-end: var(--spacing-400);
+    inset-inline-start: var(--spacing-400);
+    max-inline-size: 26rem;
+    margin: 0;
+  }
+
+  /* ---- the tool bar and its form, inside Leaflet's control stack ---------- */
+  .firma2-work-areas__tools {
+    display: flex;
+    flex-direction: column;
+    background: var(--color-background-elevation-raised, #fcfcfc);
+  }
+
+  .firma2-work-areas__tool {
+    display: grid;
+    place-items: center;
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+    padding: 0;
+    border: 0;
+    border-block-end: 1px solid var(--color-border-default-subtle, #d9d9d9);
+    background: var(--color-background-elevation-raised, #fcfcfc);
+    color: var(--color-content-default, #202020);
+    cursor: pointer;
+  }
+
+  .firma2-work-areas__tool:last-child {
+    border-block-end: 0;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-work-areas__tool:hover {
+      background: var(--color-background-default-hover, #f0f0f0);
+    }
+  }
+
+  .firma2-work-areas__tool:active {
+    background: var(--color-background-default-hover, #f0f0f0);
+  }
+
+  /* The armed tool is the brand's soft fill — the same "this one is on" the
+     workspace settings nav uses — so it reads without relying on a tooltip. */
+  .firma2-work-areas__tool[aria-pressed='true'] {
+    background: var(--color-background-brand-subtle, #e9f6e9);
+    color: var(--color-content-brand, #2a7e3b);
+  }
+
+  .firma2-work-areas__form {
+    inline-size: 20rem;
+    max-inline-size: calc(100vw - 6rem);
+  }
+
+  .firma2-work-areas__pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-300);
+  }
+
+  /* ---- below the map ------------------------------------------------------ */
+  .firma2-work-areas__below {
+    padding-block-start: var(--spacing-500);
+  }
+
+  .firma2-work-areas__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-work-areas__table th,
+  .firma2-work-areas__table :global(td) {
+    padding: var(--spacing-300) var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    vertical-align: middle;
+    font-weight: normal;
+  }
+
+  .firma2-work-areas__table :global(tr > :first-child) {
+    padding-inline-start: 0;
+  }
+
+  .firma2-work-areas__table :global(tr > :last-child) {
+    padding-inline-end: 0;
+  }
+
+  .firma2-work-areas__table thead th {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-work-areas__table th.firma2-work-areas__num,
+  .firma2-work-areas__table :global(td.firma2-work-areas__num) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .firma2-work-areas__table :global(tr.is-editing) > td {
+    background: var(--color-background-brand-subtle, #e9f6e9);
+  }
+
+  :global(.firma2-work-areas__name-cell) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-200);
+  }
+
+  /* The swatch mirrors the shape — a washed square, a bar, a dot — so the
+     row and the map read as the same thing without relying on hue alone. */
+  :global(.firma2-work-areas__swatch) {
+    flex: none;
+    inline-size: 0.875em;
+    block-size: 0.875em;
+    border-radius: var(--radius-xs, 0.125rem);
+    background: color-mix(in srgb, var(--color-background-dataviz-categorical-1, #3e9b4f) 22%, transparent);
+    border: 1px solid var(--color-background-dataviz-categorical-1, #3e9b4f);
+  }
+
+  :global(.firma2-work-areas__swatch[data-kind='reach']) {
+    inline-size: 1.125em;
+    block-size: 0.25em;
+    border: 0;
+    background: var(--color-background-dataviz-categorical-2, #3e63dd);
+  }
+
+  :global(.firma2-work-areas__swatch[data-kind='point']) {
+    inline-size: 0.625em;
+    block-size: 0.625em;
+    border-radius: 50%;
+    background: var(--color-background-dataviz-categorical-1, #3e9b4f);
+  }
+
+  :global(.firma2-work-areas__source) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  :global(.firma2-work-areas__row-actions) {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-100);
+  }
+
+  /* ---- Leaflet's own chrome, on the tokens ---------------------------------- */
+  .firma2-work-areas :global(.leaflet-top.leaflet-left) {
+    margin-block-start: 4.5rem;
+  }
+
+  .firma2-work-areas :global(.leaflet-top.leaflet-right) {
+    margin-block-start: 5.5rem;
+  }
+
+  /* Reshape handles: a white vertex ringed in the brand, a smaller midpoint. */
+  .firma2-work-areas :global(.firma2-work-areas__handle) {
+    border: 2px solid var(--color-content-brand, #2a7e3b);
+    border-radius: 50%;
+    background: var(--color-background-elevation-floating, #fff);
+    box-sizing: border-box;
+    cursor: grab;
+  }
+
+  .firma2-work-areas :global(.firma2-work-areas__handle--mid) {
+    opacity: 0.7;
+  }
+</style>
+
+<script>
+  import { isViewMode, onRecordMode } from '../../lib/record-mode';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-select';
+  import type { MapWorkArea, Place, Region, Subwatershed, WorkAreaKind } from '../../data/firma2-geography';
+  import { nameButton } from '../../lib/name-button';
+  import { fallsWithin } from '../../lib/falls-within';
+  import { provenance } from '../../lib/provenance';
+  import { coordinateProblem, coordinateWarning, formatExtent, parsePair, pathMiles, ringAcres } from '../../lib/geo';
+  import type { LatLng } from '../../lib/geo';
+  import { addReferenceLayers, createMap, loadLeaflet, projectShapeStyle, token } from '../../lib/leaflet';
+  import type { Leaflet } from '../../lib/leaflet';
+  import {
+    newWorkAreaId,
+    onGeoChange,
+    readLayers,
+    readProjectSource,
+    readSubscriptions,
+    readWorkAreas,
+    writeWorkAreas,
+  } from '../../lib/work-areas';
+
+  type Control = HTMLElement & { value?: unknown; options?: unknown; errorText?: string; helpText?: string; label?: string };
+  type Tool = 'area' | 'reach' | 'point' | 'coords' | 'reference';
+  type Mode = 'idle' | 'draw' | 'pending' | 'coords' | 'adopt' | 'edit';
+
+  interface Config {
+    slug: string;
+    seed: MapWorkArea[];
+    center: LatLng;
+    adoptable: Pick<Subwatershed, 'id' | 'name' | 'ring' | 'acres'>[];
+    regions: Region[];
+    subwatersheds: Subwatershed[];
+    places: Place[];
+  }
+
+  const KIND_NAMES: Record<WorkAreaKind, string> = { area: 'Area', reach: 'Reach', point: 'Point' };
+  const NOUNS: Record<WorkAreaKind, string> = { area: 'area', reach: 'reach', point: 'point' };
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  /** Measure a path as its kind measures, carrying a seeded shape's scale. */
+  const measure = (kind: WorkAreaKind, path: LatLng[], scale = 1): number | null => {
+    if (kind === 'point') return null;
+    if (kind === 'area') {
+      const acres = ringAcres(path) * scale;
+      return acres < 10 ? Number(acres.toFixed(1)) : Math.round(acres);
+    }
+    return Number((pathMiles(path) * scale).toFixed(1));
+  };
+  const unitOf = (kind: WorkAreaKind) => (kind === 'area' ? 'acres' : kind === 'reach' ? 'miles' : null);
+
+  async function initWorkAreas(root: HTMLElement) {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const { slug } = config;
+
+    let areas = readWorkAreas(slug, config.seed);
+    let source = readProjectSource();
+    let mode: Mode = 'idle';
+    let tool: Tool | null = null;
+    let vertices: LatLng[] = [];
+    let pending: { kind: WorkAreaKind; path: LatLng[] } | null = null;
+    let editingId: string | null = null;
+    let removed: { area: MapWorkArea; index: number } | null = null;
+
+    // Editable when the app owns the areas (not a GIS subscription) AND the
+    // record is in edit mode (firma2-record-mode). Reading, the map pans and
+    // zooms and the table reads; nothing draws.
+    const editable = () => source === 'app' && !isViewMode();
+    const save = () => writeWorkAreas(slug, areas);
+
+    // ---- the map ------------------------------------------------------------------
+    const L: Leaflet | null = await loadLeaflet().catch(() => null);
+    const canvas = $('[data-canvas]');
+    if (!L) {
+      canvas.hidden = true;
+      return;
+    }
+    const map = createMap(L, canvas, {}, () => paintShapes());
+    map.setView(config.center, 12);
+    addReferenceLayers(L, map, readLayers(), { regions: config.regions, subwatersheds: config.subwatersheds });
+
+    const shapes = L.featureGroup().addTo(map);
+    const draft = L.featureGroup().addTo(map);
+    const handles = L.featureGroup().addTo(map);
+
+    // The tool bar and the form plate join Leaflet's own control stack, under
+    // the zoom buttons. Leaflet stacks them; nothing here guesses an offset.
+    const asControl = (el: HTMLElement) => {
+      const Ctl = L.Control.extend({ onAdd: () => el });
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+      new Ctl({ position: 'topleft' }).addTo(map);
+    };
+    asControl($('[data-tools]'));
+    // The form plate joins the control stack on the full surface. In the rail
+    // it goes UNDER the map instead — first thing below the canvas, above the
+    // area list — because at 22rem a plate on the canvas covers the shape it
+    // is naming. Same element, same hooks; only where it lands differs.
+    if (root.dataset.variant === 'rail') {
+      // Search goes under the map too: across the top of an 18rem canvas its
+      // plate covered a third of the shapes and the zoom buttons with them.
+      // Search first, then the form, then the list — a reader looks for the
+      // place before they draw on it.
+      $('.firma2-work-areas__below').prepend($('.firma2-work-areas__plate--search'), $('[data-form]'));
+    } else {
+      asControl($('[data-form]'));
+    }
+    L.DomEvent.disableClickPropagation($('.firma2-work-areas__plate--search'));
+
+    const pendingStyle = () => ({
+      color: token('--color-content-brand', '#2a7e3b'),
+      weight: 2,
+      dashArray: '6 4',
+      fillOpacity: 0.12,
+      fillColor: token('--color-content-brand', '#2a7e3b'),
+    });
+
+    const layerFor = (area: MapWorkArea, style = projectShapeStyle(slug, area.kind)) =>
+      area.kind === 'point'
+        ? L.circleMarker(area.path[0], { ...style, radius: 7 })
+        : area.kind === 'reach'
+          ? L.polyline(area.path, style)
+          : L.polygon(area.path, style);
+
+    const tipFor = (area: MapWorkArea) => {
+      const extent = formatExtent(area.extent, area.unit);
+      return extent ? `${area.label} — ${extent}` : area.label;
+    };
+
+    const shapeById = new Map<string, Leaflet>();
+    const paintShapes = () => {
+      shapes.clearLayers();
+      shapeById.clear();
+      areas.forEach((area) => {
+        if (area.id === editingId) return; // the edit draws its own live copy
+        const shape = layerFor(area).bindTooltip(tipFor(area), { sticky: true, direction: 'top', className: 'firma2-map-tip' });
+        shape.on('click', () => {
+          if (editable() && (mode === 'idle' || mode === 'edit')) startEdit(area.id);
+        });
+        shape.addTo(shapes);
+        shapeById.set(area.id, shape);
+      });
+    };
+
+    // The section's padding clears its floating head plate; the rail's map
+    // has nothing floating over it but Leaflet's own controls.
+    const inRail = root.dataset.variant === 'rail';
+    const fitToAreas = () => {
+      if (!areas.length) return map.setView(config.center, 12);
+      map.fitBounds(L.latLngBounds(areas.flatMap((a) => a.path)), inRail
+        ? { paddingTopLeft: [56, 32], paddingBottomRight: [32, 32], maxZoom: 15 }
+        : { paddingTopLeft: [340, 80], paddingBottomRight: [60, 80], maxZoom: 15 });
+    };
+
+    // ---- the table ------------------------------------------------------------------
+    const tpl = (name: string) => ($<HTMLTemplateElement>(`[data-tpl-${name}]`).content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+    const subscription = () => readSubscriptions()[0];
+
+    const sourceText = (area: MapWorkArea): string => {
+      if (!editable() && area.origin === 'record' && subscription()) {
+        const stale = subscription()?.staleLabels?.includes(area.label);
+        return stale ? 'From your GIS · removed upstream' : 'From your GIS';
+      }
+      return {
+        record: '',
+        drawn: 'Drawn here',
+        coordinates: 'Entered coordinates',
+        reference: `Adopted from ${area.adoptedFrom ?? 'a reference area'}`,
+        upload: 'Uploaded',
+      }[area.origin];
+    };
+
+    // ---- falls within (rail size) ----------------------------------------------------
+    const paintWithin = () => {
+      const box = root.querySelector<HTMLElement>('[data-falls-within]');
+      const list = root.querySelector<HTMLElement>('[data-falls-list]');
+      if (!box || !list) return;
+      const hits = fallsWithin(areas, [
+        { layer: 'Hydrologic region', places: config.regions },
+        { layer: 'Subwatershed', places: config.subwatersheds },
+      ]);
+      box.hidden = hits.length === 0;
+      list.replaceChildren(
+        ...hits.map((hit) => {
+          const li = document.createElement('li');
+          const name = document.createElement('span');
+          name.className = 'typography-body-md';
+          name.textContent = hit.name;
+          const every = areas.length > 1 && hit.shapes.length === areas.length;
+          li.append(name, provenance({ source: hit.layer, detail: every ? 'every work area' : hit.shapes.join(', ') }));
+          return li;
+        }),
+      );
+    };
+
+    const paintTable = () => {
+      const showSource = areas.some((a) => sourceText(a));
+      const showActions = editable();
+      $('[data-col-source]').hidden = !showSource;
+      $('[data-col-actions]').hidden = !showActions;
+      $('[data-table]').hidden = areas.length === 0;
+      $('[data-empty]').hidden = areas.length > 0;
+      $('[data-rows]').replaceChildren(
+        ...areas.map((area) => {
+          const tr = document.createElement('tr');
+          tr.classList.toggle('is-editing', area.id === editingId);
+          tr.innerHTML = `
+            <td><span class="firma2-work-areas__name-cell typography-body-md"><span class="firma2-work-areas__swatch" data-kind="${area.kind}" aria-hidden="true"></span>${esc(area.label)}</span></td>
+            <td class="typography-body-md">${KIND_NAMES[area.kind]}</td>
+            <td class="typography-body-md firma2-work-areas__num">${formatExtent(area.extent, area.unit) || '—'}</td>
+            ${showSource ? `<td class="typography-body-sm firma2-work-areas__source">${esc(sourceText(area))}</td>` : ''}`;
+          if (showActions) {
+            const td = document.createElement('td');
+            const wrap = document.createElement('div');
+            wrap.className = 'firma2-work-areas__row-actions';
+            // The name goes on the inner <button>: the clone's root is EsaButton's
+            // wrapper <span>, where an aria-label names nothing.
+            const edit = tpl('edit');
+            nameButton(edit, `Edit ${area.label}`);
+            edit.addEventListener('click', () => {
+              startEdit(area.id);
+              canvas.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+            });
+            const del = tpl('delete');
+            nameButton(del, `Delete ${area.label}`);
+            del.addEventListener('click', () => remove(area.id));
+            wrap.append(edit, del);
+            td.append(wrap);
+            tr.append(td);
+          }
+          return tr;
+        }),
+      );
+      paintWithin();
+      const note = $('[data-subscribed-note]');
+      note.hidden = editable() || areas.length === 0 || !subscription();
+      $('[data-subscription-link]').textContent = subscription()?.name ?? 'GIS';
+      $('[data-undo-line]').hidden = !removed || !editable();
+      if (removed) $('[data-undo-text]').textContent = `Removed “${removed.area.label}”.`;
+    };
+
+    // ---- the plates -----------------------------------------------------------------
+    const HINTS: Partial<Record<Tool, string>> = {
+      area: 'Click to place points. Click the first point to finish. Esc cancels.',
+      reach: 'Click to place points. Double-click to finish. Esc cancels.',
+      point: 'Click where it is.',
+    };
+
+    const paintMeasure = (text: string) => {
+      const el = $('[data-measure]');
+      el.textContent = text;
+      el.hidden = !text;
+    };
+
+    const paintPlates = () => {
+      root.querySelectorAll<HTMLElement>('[data-editor-only]').forEach((el) => (el.hidden = !editable()));
+      root.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === tool)));
+      canvas.classList.toggle('is-drawing', mode === 'draw');
+
+      const hint = $('[data-hint]');
+      hint.hidden = !editable() || mode !== 'draw' || !tool || !HINTS[tool];
+      hint.textContent = mode === 'draw' && tool ? HINTS[tool] ?? '' : '';
+
+      const form = $('[data-form]');
+      form.hidden = !(mode === 'pending' || mode === 'edit' || mode === 'coords' || mode === 'adopt');
+      $('[data-form-name]').hidden = !(mode === 'pending' || mode === 'edit');
+      $('[data-form-coords]').hidden = mode !== 'coords';
+      $('[data-form-adopt]').hidden = mode !== 'adopt';
+      $('[data-pending-actions]').hidden = mode !== 'pending';
+      $('[data-edit-actions]').hidden = mode !== 'edit';
+      $('[data-edit-help]').hidden = !(mode === 'edit' && editingArea()?.kind !== 'point');
+    };
+
+    const paintAll = () => {
+      paintShapes();
+      paintTable();
+      paintPlates();
+    };
+
+    // ---- leaving whatever is going on ---------------------------------------------
+    const reset = () => {
+      mode = 'idle';
+      tool = null;
+      vertices = [];
+      pending = null;
+      editingId = null;
+      draft.clearLayers();
+      handles.clearLayers();
+      map.doubleClickZoom.enable();
+    };
+
+    // ---- drawing --------------------------------------------------------------------
+    const nameField = $<Control>('[data-name]');
+
+    const paintDraft = (cursor?: LatLng) => {
+      draft.clearLayers();
+      if (mode === 'pending' && pending) {
+        layerFor({ id: '', label: '', kind: pending.kind, path: pending.path, extent: null, unit: null, origin: 'drawn' }, pendingStyle()).addTo(draft);
+        return;
+      }
+      if (mode !== 'draw' || !tool || !vertices.length) return;
+      const line = cursor ? [...vertices, cursor] : vertices;
+      L.polyline(line, { ...pendingStyle(), fill: false, interactive: false }).addTo(draft);
+      vertices.forEach((v, i) =>
+        L.circleMarker(v, {
+          radius: i === 0 && tool === 'area' && vertices.length >= 3 ? 7 : 5,
+          color: token('--color-content-brand', '#2a7e3b'),
+          weight: 2,
+          fillColor: '#fff',
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(draft),
+      );
+    };
+
+    const startDraw = (kind: 'area' | 'reach' | 'point') => {
+      reset();
+      mode = 'draw';
+      tool = kind;
+      map.doubleClickZoom.disable();
+      paintAll();
+    };
+
+    const finishDraw = (path: LatLng[]) => {
+      if (!tool || tool === 'coords' || tool === 'reference') return;
+      pending = { kind: tool, path };
+      mode = 'pending';
+      // Re-enabled after this event finishes, so the double-click that ended
+      // a line does not also zoom the map.
+      window.setTimeout(() => map.doubleClickZoom.enable(), 350);
+      paintDraft();
+      nameField.label = `Name this ${NOUNS[tool]}`;
+      nameField.value = '';
+      nameField.errorText = '';
+      const m = measure(pending.kind, path);
+      paintMeasure(m == null ? '' : `About ${formatExtent(m, unitOf(pending.kind))}.`);
+      paintPlates();
+      window.setTimeout(() => nameField.focus(), 50);
+    };
+
+    map.on('click', (e: Leaflet) => {
+      if (mode !== 'draw') return;
+      const ll: LatLng = [e.latlng.lat, e.latlng.lng];
+      if (tool === 'point') return finishDraw([ll]);
+      const last = vertices[vertices.length - 1];
+      // The two clicks of a double-click land on one pixel; keep one vertex.
+      if (last && map.latLngToContainerPoint(last).distanceTo(e.containerPoint) < 6) return;
+      if (tool === 'area' && vertices.length >= 3 && map.latLngToContainerPoint(vertices[0]).distanceTo(e.containerPoint) < 12) {
+        return finishDraw(vertices);
+      }
+      vertices.push(ll);
+      paintDraft();
+    });
+
+    map.on('dblclick', () => {
+      if (mode !== 'draw') return;
+      if (tool === 'reach' && vertices.length >= 2) finishDraw(vertices);
+      else if (tool === 'area' && vertices.length >= 3) finishDraw(vertices);
+    });
+
+    map.on('mousemove', (e: Leaflet) => {
+      if (mode === 'draw' && vertices.length) paintDraft([e.latlng.lat, e.latlng.lng]);
+    });
+
+    const savePending = () => {
+      if (!pending) return;
+      const label = String(nameField.value ?? '').trim();
+      if (!label) {
+        nameField.errorText = 'Enter a name.';
+        return;
+      }
+      const area: MapWorkArea = {
+        id: newWorkAreaId(slug),
+        label,
+        kind: pending.kind,
+        path: pending.path,
+        extent: measure(pending.kind, pending.path),
+        unit: unitOf(pending.kind),
+        origin: 'drawn',
+      };
+      areas = [...areas, area];
+      removed = null;
+      save();
+      reset();
+      paintAll();
+    };
+
+    $('[data-save-pending]').addEventListener('click', savePending);
+    $('[data-discard]').addEventListener('click', () => {
+      reset();
+      paintAll();
+    });
+
+    // ---- editing a saved shape: rename and reshape, saved as it happens ----------
+    const editingArea = () => areas.find((a) => a.id === editingId);
+    let liveShape: Leaflet = null;
+
+    const updateEditing = (path: LatLng[], persist: boolean) => {
+      const area = editingArea();
+      if (!area) return;
+      const extent = measure(area.kind, path, area.extentScale ?? 1);
+      areas = areas.map((a) => (a.id === area.id ? { ...a, path, extent } : a));
+      if (area.kind === 'point') liveShape?.setLatLng(path[0]);
+      else liveShape?.setLatLngs(path);
+      paintMeasure(extent == null ? '' : formatExtent(extent, area.unit));
+      if (persist) {
+        save();
+        paintTable();
+      }
+    };
+
+    const paintHandles = () => {
+      handles.clearLayers();
+      const area = editingArea();
+      if (!area) return;
+      const icon = (mid = false) =>
+        L.divIcon({ className: `firma2-work-areas__handle${mid ? ' firma2-work-areas__handle--mid' : ''}`, iconSize: mid ? [10, 10] : [14, 14] });
+      const path = [...area.path];
+      path.forEach((vertex, i) => {
+        const handle = L.marker(vertex, { draggable: true, icon: icon(), keyboard: false, title: 'Drag to move this point' });
+        handle.on('drag', (e: Leaflet) => {
+          const next = [...editingArea()!.path];
+          next[i] = [e.latlng.lat, e.latlng.lng];
+          updateEditing(next, false);
+        });
+        handle.on('dragend', () => {
+          updateEditing(editingArea()!.path, true);
+          paintHandles();
+        });
+        handle.on('contextmenu', () => {
+          const min = area.kind === 'area' ? 3 : 2;
+          const current = editingArea()!.path;
+          if (area.kind === 'point' || current.length <= min) return;
+          updateEditing(current.filter((_, j) => j !== i), true);
+          paintHandles();
+        });
+        handle.addTo(handles);
+      });
+      if (area.kind === 'point') return;
+      const segments = area.kind === 'area' ? path.length : path.length - 1;
+      for (let i = 0; i < segments; i += 1) {
+        const a = path[i];
+        const b = path[(i + 1) % path.length];
+        const mid = L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], { draggable: true, icon: icon(true), keyboard: false, title: 'Drag to add a point' });
+        mid.on('dragstart', () => {
+          const next = [...editingArea()!.path];
+          next.splice(i + 1, 0, [mid.getLatLng().lat, mid.getLatLng().lng]);
+          updateEditing(next, false);
+        });
+        mid.on('drag', (e: Leaflet) => {
+          const next = [...editingArea()!.path];
+          next[i + 1] = [e.latlng.lat, e.latlng.lng];
+          updateEditing(next, false);
+        });
+        mid.on('dragend', () => {
+          updateEditing(editingArea()!.path, true);
+          paintHandles();
+        });
+        mid.addTo(handles);
+      }
+    };
+
+    const startEdit = (id: string) => {
+      if (!editable()) return;
+      reset();
+      editingId = id;
+      mode = 'edit';
+      const area = editingArea()!;
+      paintShapes();
+      liveShape = layerFor(area, pendingStyle()).addTo(draft);
+      nameField.label = 'Name';
+      nameField.value = area.label;
+      nameField.errorText = '';
+      paintMeasure(area.extent == null ? '' : formatExtent(area.extent, area.unit));
+      paintHandles();
+      paintTable();
+      paintPlates();
+      map.fitBounds(L.latLngBounds(area.path), { paddingTopLeft: [360, 90], paddingBottomRight: [60, 90], maxZoom: 15 });
+    };
+
+    nameField.addEventListener('change', () => {
+      if (mode !== 'edit') return;
+      const label = String(nameField.value ?? '').trim();
+      nameField.errorText = label ? '' : 'Enter a name.';
+      if (!label) return;
+      areas = areas.map((a) => (a.id === editingId ? { ...a, label } : a));
+      save();
+      paintTable();
+    });
+
+    nameField.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter' && mode === 'pending') savePending();
+    });
+
+    $('[data-done]').addEventListener('click', () => {
+      reset();
+      paintAll();
+    });
+
+    // ---- coordinates (Theo) ---------------------------------------------------------
+    const coordName = $<Control>('[data-coord-name]');
+    const lat = $<Control>('[data-lat]');
+    const lng = $<Control>('[data-lng]');
+    const coordSave = $('[data-coord-save-wrap]');
+
+    const typedPoint = (): LatLng | null => {
+      const problem = coordinateProblem(String(lat.value ?? ''), String(lng.value ?? ''));
+      if (problem || !String(lat.value ?? '').trim() || !String(lng.value ?? '').trim()) return null;
+      return [Number(lat.value), Number(lng.value)];
+    };
+
+    const checkCoords = () => {
+      const problem = coordinateProblem(String(lat.value ?? ''), String(lng.value ?? ''));
+      lat.errorText = problem && problem.startsWith('Latitude') ? problem : '';
+      lng.errorText = problem && !problem.startsWith('Latitude') ? problem : coordinateWarning(String(lng.value ?? '')) ?? '';
+      const point = typedPoint();
+      draft.clearLayers();
+      if (point) {
+        L.circleMarker(point, { ...pendingStyle(), radius: 8, fillOpacity: 0.4 }).addTo(draft);
+        map.setView(point, Math.max(map.getZoom(), 13));
+      }
+      coordSave.classList.toggle('esa-button--disabled', !point || !String(coordName.value ?? '').trim());
+    };
+
+    // A spec sheet carries "40.0231, -122.0654" on one line. Pasted whole
+    // into Latitude, it splits itself — re-typing half a coordinate into a
+    // second box is exactly the friction that makes someone stop mapping.
+    lat.addEventListener('paste', (event) => {
+      const pair = parsePair((event as ClipboardEvent).clipboardData?.getData('text') ?? '');
+      if (!pair) return;
+      event.preventDefault();
+      lat.value = String(pair[0]);
+      lng.value = String(pair[1]);
+      checkCoords();
+    });
+    [lat, lng, coordName].forEach((el) => el.addEventListener('change', checkCoords));
+
+    $('[data-save-coords]').addEventListener('click', () => {
+      const point = typedPoint();
+      const label = String(coordName.value ?? '').trim();
+      coordName.errorText = label ? '' : 'Enter a name.';
+      if (!point || !label) return checkCoords();
+      areas = [...areas, { id: newWorkAreaId(slug), label, kind: 'point', path: [point], extent: null, unit: null, origin: 'coordinates' }];
+      removed = null;
+      save();
+      reset();
+      paintAll();
+    });
+
+    // ---- a reference area (Dana's easiest boundary) --------------------------------
+    const adopt = $<Control>('[data-adopt]');
+    const adoptSave = $('[data-adopt-save-wrap]');
+    customElements.whenDefined('esa-select').then(() => {
+      adopt.options = config.adoptable.map((s) => ({ value: s.id, label: `${s.name} — ${s.acres.toLocaleString('en-US')} acres` }));
+    });
+    adopt.addEventListener('change', () => {
+      const chosen = config.adoptable.find((s) => s.id === adopt.value);
+      draft.clearLayers();
+      adoptSave.classList.toggle('esa-button--disabled', !chosen);
+      if (!chosen) return;
+      const preview = L.polygon(chosen.ring, pendingStyle()).addTo(draft);
+      map.fitBounds(preview.getBounds(), { paddingTopLeft: [360, 60], paddingBottomRight: [40, 60] });
+    });
+    $('[data-save-adopt]').addEventListener('click', () => {
+      const chosen = config.adoptable.find((s) => s.id === adopt.value);
+      if (!chosen) return;
+      areas = [
+        ...areas,
+        { id: newWorkAreaId(slug), label: chosen.name, kind: 'area', path: chosen.ring, extent: chosen.acres, unit: 'acres', origin: 'reference', adoptedFrom: chosen.name },
+      ];
+      removed = null;
+      save();
+      reset();
+      paintAll();
+    });
+
+    root.querySelectorAll('[data-cancel-form]').forEach((b) =>
+      b.addEventListener('click', () => {
+        reset();
+        paintAll();
+      }),
+    );
+
+    // ---- the tool bar ---------------------------------------------------------------
+    root.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((button) =>
+      button.addEventListener('click', () => {
+        const key = button.dataset.tool as Tool;
+        if (tool === key) {
+          reset();
+          return paintAll();
+        }
+        if (key === 'coords' || key === 'reference') {
+          reset();
+          tool = key;
+          mode = key === 'coords' ? 'coords' : 'adopt';
+          if (key === 'coords') {
+            [coordName, lat, lng].forEach((el) => {
+              el.value = '';
+              el.errorText = '';
+            });
+            coordSave.classList.add('esa-button--disabled');
+          } else {
+            adopt.value = '';
+            adoptSave.classList.add('esa-button--disabled');
+          }
+          paintAll();
+          window.setTimeout(() => (key === 'coords' ? coordName : adopt).focus(), 50);
+          return;
+        }
+        startDraw(key);
+      }),
+    );
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || mode === 'idle') return;
+      if (root.querySelector('.firma2-work-area-upload[open]')) return;
+      reset();
+      paintAll();
+    });
+
+    // ---- delete, with a way back -----------------------------------------------------
+    const remove = (id: string) => {
+      const index = areas.findIndex((a) => a.id === id);
+      if (index < 0) return;
+      if (editingId === id) reset();
+      removed = { area: areas[index], index };
+      areas = areas.filter((a) => a.id !== id);
+      save();
+      paintAll();
+    };
+    $('[data-undo]').addEventListener('click', () => {
+      if (!removed) return;
+      const next = [...areas];
+      next.splice(removed.index, 0, removed.area);
+      areas = next;
+      removed = null;
+      save();
+      paintAll();
+    });
+
+    // ---- upload ---------------------------------------------------------------------
+    $('[data-upload]').addEventListener('click', () => {
+      reset();
+      paintAll();
+      root.querySelector('.firma2-work-area-upload')?.dispatchEvent(new CustomEvent('firma2:upload-open'));
+    });
+    root.addEventListener('firma2:upload-commit', (event) => {
+      const incoming = (event as CustomEvent<{ areas: Omit<MapWorkArea, 'id'>[] }>).detail.areas;
+      areas = [...areas, ...incoming.map((a) => ({ ...a, id: newWorkAreaId(slug) }))];
+      removed = null;
+      save();
+      paintAll();
+      fitToAreas();
+    });
+
+    // ---- place search ---------------------------------------------------------------
+    const search = $<Control>('[data-search]');
+    const results = $('[data-results]');
+    const goTo = (place: Place) => {
+      map.setView(place.center, place.zoom);
+      results.hidden = true;
+    };
+    search.addEventListener('change', () => {
+      const q = String(search.value ?? '').trim().toLowerCase();
+      const matches = q.length < 2 ? [] : config.places.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6);
+      results.hidden = q.length < 2;
+      results.replaceChildren(
+        ...(matches.length
+          ? matches.map((place) => {
+              const li = document.createElement('li');
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'firma2-work-areas__result typography-body-sm';
+              button.innerHTML = `<span>${esc(place.name)}</span><span class="firma2-work-areas__result-kind">${place.kind}</span>`;
+              button.addEventListener('click', () => goTo(place));
+              li.append(button);
+              return li;
+            })
+          : [Object.assign(document.createElement('li'), { className: 'typography-body-sm', textContent: 'No place by that name.' })]),
+      );
+    });
+    search.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') results.querySelector<HTMLButtonElement>('button')?.click();
+    });
+
+    // ---- Edit / Update ---------------------------------------------------------------
+    // Update while an area is open finishes it first: an edit in progress is
+    // kept, a half-drawn shape or an open form is let go.
+    onRecordMode((next) => {
+      if (next === 'view' && mode !== 'idle') {
+        if (mode === 'edit') $('[data-done]').click();
+        else reset();
+      }
+      paintAll();
+    });
+
+    // ---- another window changed something ---------------------------------------
+    onGeoChange(() => {
+      if (mode !== 'idle') return;
+      areas = readWorkAreas(slug, config.seed);
+      source = readProjectSource();
+      paintAll();
+    });
+
+    paintAll();
+    fitToAreas();
+
+    // REVEALED LATER. In the rail's Map mode the map can start hidden (another
+    // mode on screen, or the rail closed), and a fit made at 0×0 frames
+    // nothing. The first time the canvas gains a size, size the map and frame
+    // the areas again.
+    let shown = canvas.getBoundingClientRect().width > 0;
+    new ResizeObserver(() => {
+      const now = canvas.getBoundingClientRect().width > 0;
+      if (now && !shown) {
+        map.invalidateSize();
+        if (mode === 'idle') fitToAreas();
+      }
+      shown = now;
+    }).observe(canvas);
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-work-areas').forEach((root) => void initWorkAreas(root));
+</script>

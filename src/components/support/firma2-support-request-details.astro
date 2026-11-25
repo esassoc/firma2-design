@@ -1,0 +1,156 @@
+---
+// firma2-support-request-details — one support request's properties: who is
+// answering it, what kind it is, who sent it and from where. The rail beside
+// the request, not part of it.
+//
+// PROPERTIES GO IN THE RAIL, THE CONVERSATION IN THE MAIN COLUMN (user,
+// 2026-11-24; the record page's read-versus-set rule). These rows are short,
+// narrow and glanced at; stacked under the replies they pushed the one thing
+// an administrator sets here — who has it — below the fold.
+//
+// ASSIGNED TO LEADS AND IS THE ONE FACT SET HERE. Everything else is the
+// sender's or the system's and reads locked (firma2-read-facts); who is
+// answering is the administrator's to change, so that row alone opens — a
+// select of the workspace's administrators and "Unassigned" — and saves as it
+// commits, like every other record field.
+//
+// SEVERAL REQUESTS SHARE THE INBOX'S PAGE, and a field is addressed by name
+// (firma2:field-set), so each request's rows carry its id.
+//
+// A REQUEST SENT IN THIS BROWSER has no build-time values: rendered blank
+// (`request` omitted), this fills itself when firma2-support-request-record
+// announces which request it loaded (`firma2:support-load`).
+//
+// A SENDER WITH NO ACCOUNT has no member page and no organization: their name
+// is plain text and the Organization row is left out, not a row saying "None".
+//
+// WHAT IS FAKED: the assignee is kept in this browser
+// (src/lib/support-request-edits.ts).
+//
+// bcn-lego-checked: firma2-editable-field rows — one live, the rest inside
+// firma2-read-facts — on the `.stack` primitive. No <style> block.
+import Firma2ReadFacts from '../shared/firma2-read-facts.astro';
+import Firma2EditableField from '../shared/firma2-editable-field.astro';
+import { CURRENT_USER_ORGANIZATIONS, administrators, getOrganization, organizationSlug } from '../../data/firma2-directory';
+import { organizationPageHref } from '../../data/firma2-organization-pages';
+import { isMember, memberHref } from '../../data/firma2-members';
+import type { SupportRequest } from '../../data/firma2-support-requests';
+import { dateFormatter } from '../../lib/format';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** Omitted for the blank panel a request sent in this browser fills. */
+  request?: SupportRequest;
+}
+
+const r = Astro.props.request;
+const draft = !r;
+const UNASSIGNED = 'Unassigned';
+const assignees = [UNASSIGNED, ...administrators().map((a) => a.name)];
+const key = r?.id || 'draft';
+const f = (name: string) => `${name}:${key}`;
+// Parsed as a local date: a bare ISO date reads as UTC midnight.
+const day = (iso?: string) => (iso ? dateFormatter.format(new Date(`${iso}T00:00:00`)) : '');
+const orgName = r?.requester.organization ?? '';
+const org = orgName ? getOrganization(organizationSlug(orgName)) : undefined;
+const orgHref = org && (org.visibility !== 'private' || CURRENT_USER_ORGANIZATIONS.includes(org.name)) ? withBase(organizationPageHref(org.slug)) : undefined;
+const fromHref = r?.requester.member && isMember(r.requester.name) ? withBase(memberHref(r.requester.name)) : undefined;
+---
+<div
+  class="firma2-support-request-details stack"
+  data-gap="md"
+  data-request-id={r?.id}
+  data-field-key={key}
+  data-status={r?.status ?? 'open'}
+  data-assigned-to={r?.assignedTo}
+  data-resolved={r?.resolved}
+  data-unassigned={UNASSIGNED}
+  data-draft={draft ? '' : undefined}
+>
+  <dl class="stack" data-gap="md">
+    <Firma2EditableField field={f('assignedTo')} label="Assigned to" value={r?.assignedTo || UNASSIGNED} control="select" options={assignees} />
+  </dl>
+  {/* Optional rows sit in a <div> (valid inside a <dl>) that carries `hidden`:
+      a request sent in this browser fills or hides them after load. */}
+  <Firma2ReadFacts label="Request details">
+    <Firma2EditableField field={f('kind')} label="Type" value={r?.kind ?? ''} />
+    <Firma2EditableField field={f('from')} label="From" value={r?.requester.name ?? ''} href={fromHref} />
+    <div data-row="organization" hidden={!draft && !orgName}>
+      <Firma2EditableField field={f('organization')} label="Organization" value={orgName} href={orgHref} />
+    </div>
+    <Firma2EditableField field={f('email')} label="Email" value={r?.requester.email ?? ''} href={r ? `mailto:${r.requester.email}` : undefined} />
+    {r?.page && <Firma2EditableField field={f('page')} label="Sent from" value={r.page.label} href={withBase(r.page.href)} />}
+    <Firma2EditableField field={f('received')} label="Received" value={day(r?.received)} />
+    <div data-row="resolved" hidden={!r?.resolved}>
+      <Firma2EditableField field={f('resolved')} label="Resolved" value={day(r?.resolved)} />
+    </div>
+    <Firma2EditableField field={f('id')} label="Request" value={r?.id ?? ''} />
+  </Firma2ReadFacts>
+</div>
+
+<script>
+  import { assigneeOf, setSupportAssignee, statusOf, supportEdit } from '../../lib/support-request-edits';
+  import { dateFormatter } from '../../lib/format';
+  import type { SupportRequest, SupportRequestStatus } from '../../data/firma2-support-requests';
+
+  const day = (iso: string) => dateFormatter.format(new Date(`${iso}T00:00:00`));
+
+  document.querySelectorAll<HTMLElement>('.firma2-support-request-details').forEach((root) => {
+    const fieldKey = root.dataset.fieldKey ?? '';
+    const unassigned = root.dataset.unassigned ?? 'Unassigned';
+    const row = (name: string) => root.querySelector<HTMLElement>(`[data-row="${name}"]`);
+    const setField = (name: string, raw: string) =>
+      document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: { field: `${name}:${fieldKey}`, raw } }));
+
+    // Which request this is. Fixed for a seeded one; set on firma2:support-load for one sent here.
+    const state = {
+      id: root.dataset.requestId ?? '',
+      status: (root.dataset.status ?? 'open') as SupportRequestStatus,
+      assignee: root.dataset.assignedTo ?? '',
+      resolved: root.dataset.resolved ?? '',
+    };
+
+    /** This browser's assignee and resolved date over what the build drew. */
+    const paint = () => {
+      if (!state.id) return;
+      setField('assignedTo', assigneeOf(state.id, state.assignee) || unassigned);
+      const when = statusOf(state.id, state.status) === 'resolved' ? supportEdit(state.id).resolved ?? state.resolved : '';
+      if (when) setField('resolved', day(when));
+      const resolved = row('resolved');
+      if (resolved) resolved.hidden = !when;
+    };
+    paint();
+
+    if ('draft' in root.dataset) {
+      document.addEventListener('firma2:support-load', (event) => {
+        const { key, request: sent } = (event as CustomEvent<{ key: string; request: SupportRequest }>).detail;
+        if (key !== fieldKey) return;
+        Object.assign(state, { id: sent.id, status: sent.status, assignee: sent.assignedTo, resolved: sent.resolved ?? '' });
+        setField('id', sent.id);
+        setField('kind', sent.kind);
+        setField('from', sent.requester.name);
+        setField('email', sent.requester.email);
+        setField('organization', sent.requester.organization);
+        setField('received', day(sent.received));
+        const organization = row('organization');
+        if (organization) organization.hidden = !sent.requester.organization;
+        paint();
+      });
+    }
+
+    // Resolved or reopened beside this: the Resolved row follows.
+    document.addEventListener('firma2:support-status', (event) => {
+      if ((event as CustomEvent<{ id: string }>).detail.id === state.id) paint();
+    });
+
+    // Assigned to: saved as the row commits.
+    root.addEventListener('firma2:field-save', (event) => {
+      const { field: name, raw } = (event as CustomEvent<{ field: string; raw: string }>).detail;
+      if (name !== `assignedTo:${fieldKey}` || !state.id) return;
+      const next = raw === unassigned ? '' : raw;
+      if (next === assigneeOf(state.id, state.assignee)) return;
+      if (!setSupportAssignee(state.id, next)) return;
+      document.dispatchEvent(new CustomEvent('firma2:support-assignee', { detail: { id: state.id, assignee: next } }));
+    });
+  });
+</script>

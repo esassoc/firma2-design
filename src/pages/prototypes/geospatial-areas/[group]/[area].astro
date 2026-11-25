@@ -1,0 +1,103 @@
+---
+// Geospatial area detail — one page per area, the roll-up an area exists to
+// answer: what is happening in this watershed, habitat area or district. The
+// classification detail page's twin, built from the same sections
+// (.scratch/geospatial-areas/spec.md, decisions 1 and 4); only how the
+// projects are chosen differs — where their work is, not what they are filed
+// under — and it adds the one thing a place has that a goal does not: a map.
+//
+// The brief's five (docs/product-brief.md §5):
+//
+// 1. ONE QUESTION: "What is being done in this place, and how far along is it?"
+// 2. READERS: program staff reading the totals; the executive or a funder
+//    asking about one watershed; a partner who works there. WHO IS NOT HERE:
+//    the administrator — the area's description, colour, measures and targets
+//    are set on its page in Workspace settings.
+// 3. SERIES/SCALAR: the description and four totals are scalars, stated once
+//    at the top; the map is one picture; the measures are the series; the
+//    projects are a homogeneous list — the portfolio grid, filtered.
+// 4. IRREVERSIBLE: nothing. The page reads.
+// 5. CUT: the area's neighbours and its place in a larger area, share of a
+//    project that lies inside (a project counts whole), and editing in place.
+//
+// THE WAY TO EDIT IS A DOOR, as on a classification: "Edit area" opens its
+// page in Workspace settings.
+//
+// WHICH MEASURES SHOW IS SET IN THE BROWSER (the settings page links them), so
+// the build computes every catalog measure's figures over the area's projects
+// and the measures section joins the linked ones to them there. An area with
+// none linked says so.
+//
+// A STATIC ROUTE PER SEEDED AREA. Membership is worked out at build from each
+// project's recorded work areas; a group added in this browser has no pages.
+import AppLayout from '../../../../layouts/AppLayout.astro';
+import Firma2PageHeader from '../../../../components/shared/firma2-page-header.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2ProjectPeekLayout from '../../../../components/projects/firma2-project-peek-layout.astro';
+import Firma2ClassificationSummary from '../../../../components/classifications/firma2-classification-summary.astro';
+import Firma2ClassificationMeasures from '../../../../components/classifications/firma2-classification-measures.astro';
+import Firma2ClassificationProjects from '../../../../components/classifications/firma2-classification-projects.astro';
+import Firma2ClassificationFunding from '../../../../components/classifications/firma2-classification-funding.astro';
+import Firma2AreaGroupMap from '../../../../components/settings/firma2-area-group-map.astro';
+import { figuresOver, rollupOver } from '../../../../data/firma2-classification-rollup';
+import { projects as portfolio, projectHref, projectSlug } from '../../../../data/firma2-projects';
+import { areaKey, filing } from '../../../../lib/geospatial-areas';
+import { readAreaGroups } from '../../../../lib/work-areas';
+import { withBase } from '../../../../lib/base';
+
+export function getStaticPaths() {
+  return readAreaGroups().flatMap((group) =>
+    filing(group).areas.map(({ area, projects }) => ({
+      params: { group: group.id, area: area.id },
+      props: { groupId: group.id, groupName: group.name, areaId: area.id, areaName: area.name, slugs: projects.map((p) => p.slug) },
+    })),
+  );
+}
+
+interface Props {
+  groupId: string;
+  groupName: string;
+  areaId: string;
+  areaName: string;
+  slugs: string[];
+}
+
+const { groupId, groupName, areaId, areaName, slugs } = Astro.props;
+const key = areaKey(groupId, areaId);
+const inArea = portfolio.filter((p) => slugs.includes(projectSlug(p)));
+const rollup = rollupOver(inArea);
+const figures = figuresOver(inArea, (p) => withBase(projectHref(p)));
+const index = withBase('/prototypes/geospatial-areas');
+---
+<!-- manifest:
+  layout: firma2-project-peek-layout > stack(xl)
+  sections:
+    - project peek  -> firma2-project-peek-layout     (docked rail, opened from a grid row)
+    - page header   -> firma2-page-header
+    - summary       -> firma2-classification-summary  (kind=area: description + four totals)
+    - map           -> firma2-area-group-map          (this area and its projects)
+    - measures      -> firma2-classification-measures (those linked in settings, over the area's projects)
+    - projects      -> firma2-classification-projects (the portfolio grid, filtered)
+    - funders       -> firma2-classification-funding  (funding by funder, with the grants as data)
+-->
+<AppLayout title={`${areaName} — Geospatial areas — ProjectFirma 2.0`} active="geospatial-areas" width="full">
+  <Firma2ProjectPeekLayout>
+    <div class="stack" data-gap="xl">
+      <Firma2PageHeader
+        title={areaName}
+        crumbs={[
+          { label: 'Geospatial areas', href: index },
+          { label: groupName, href: `${index}?group=${encodeURIComponent(groupId)}` },
+          { label: areaName },
+        ]}
+      >
+        <EsaButton slot="actions" variant="secondary" size="md" icon="settings" tag="a" href={`${withBase('/prototypes/workspace-settings/geospatial-areas/area')}?slug=${encodeURIComponent(key)}`}>Edit area</EsaButton>
+      </Firma2PageHeader>
+      <Firma2ClassificationSummary classification={{ slug: key, description: '' }} rollup={rollup} kind="area" />
+      <Firma2AreaGroupMap group={groupId} area={areaId} sticky={false} />
+      <Firma2ClassificationMeasures slug={key} kpis={[]} figures={figures} />
+      <Firma2ClassificationProjects projects={inArea} />
+      <Firma2ClassificationFunding funding={rollup.funding} projects={inArea} />
+    </div>
+  </Firma2ProjectPeekLayout>
+</AppLayout>

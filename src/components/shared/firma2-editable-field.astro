@@ -41,6 +41,10 @@
 //                                      this and it is rewritten on commit
 //         [data-editing]               present while THIS row is open; the
 //                                      display↔edit swap is pure CSS off it
+//         [data-locked]                set by a caller (firma2-project-gis-status)
+//                                      when something else keeps the value — a
+//                                      GIS layer. The row never opens and loses
+//                                      its hover ring; the caller says why.
 //   read  [data-field-display]         the display BUTTON — the click/keyboard
 //                                      target that opens the editor
 //         [data-field-value]           the formatted value inside it — the node
@@ -98,12 +102,16 @@ interface Props {
   /**
    * Where each MEMBER of a set leads. The chip ITSELF is the link — clicking
    * a member navigates, unlike the scalar rows where clicking edits — so this
-   * is the `href` of every member's <a>. One URL for all members because this
-   * is a prototype: the mock points every chip at the page where that
-   * member's projects are visible; a real app resolves each member's own
-   * detail route here.
+   * is the `href` of every member's <a>: the fallback for a member with no
+   * entry in `memberHrefs`.
    */
   memberHref?: string;
+  /**
+   * Each member's own page, keyed by member name — the whole vocabulary, for
+   * the same reason as `memberCards`: a member added in the editor needs its
+   * door the moment it lands. Falls back to `memberHref`.
+   */
+  memberHrefs?: Record<string, string>;
   /**
    * Hover-card context per member, keyed by member name — shown in an
    * esa-popover raised on hover/focus of the member's chip. Key the WHOLE
@@ -162,6 +170,15 @@ interface Props {
    * blank should simply read blank (the project rows all omit it).
    */
   placeholder?: string;
+  /**
+   * control="select" only: one line per option on when to pick it, keyed by
+   * option — the list's own guidance (src/lib/vocabulary-guidance.ts). While
+   * the row is open, the line for the value it holds shows as the select's
+   * helper text, and follows the value. A caller may rewrite `data-guidance`
+   * at runtime (an administrator's edits live in the browser). Additive: a row
+   * without it behaves exactly as before.
+   */
+  guidance?: Record<string, string>;
 }
 
 const {
@@ -172,6 +189,7 @@ const {
   options = [],
   values = [],
   memberHref,
+  memberHrefs = {},
   memberCards = {},
   editValue,
   format = 'text',
@@ -180,6 +198,7 @@ const {
   required = false,
   href,
   placeholder,
+  guidance,
 } = Astro.props;
 
 // The display's unset state, decided the same way the script re-decides it on
@@ -251,7 +270,9 @@ const hintId = `f2-edit-hint-${field}`;
   data-required={required ? '' : undefined}
   data-link={href ? '' : undefined}
   data-member-cards={Object.keys(memberCards).length ? JSON.stringify(memberCards) : undefined}
+  data-member-hrefs={Object.keys(memberHrefs).length ? JSON.stringify(memberHrefs) : undefined}
   data-placeholder={placeholder || undefined}
+  data-guidance={guidance && Object.keys(guidance).length ? JSON.stringify(guidance) : undefined}
   data-label-hidden={labelHidden ? '' : undefined}
   data-adopt-display={adopts ? '' : undefined}
   hidden={adopts || undefined}
@@ -321,12 +342,12 @@ const hintId = `f2-edit-hint-${field}`;
                   lines={memberCards[member].lines}
                   span="20rem"
                 >
-                  <a class="firma2-editable-field__member-link" href={memberHref}>
+                  <a class="firma2-editable-field__member-link" href={memberHrefs[member] ?? memberHref}>
                     <EsaPill label={member} size="md" removable={false} />
                   </a>
                 </Firma2HoverCard>
-              ) : memberHref ? (
-                <a class="firma2-editable-field__member-link" href={memberHref}>
+              ) : (memberHrefs[member] ?? memberHref) ? (
+                <a class="firma2-editable-field__member-link" href={memberHrefs[member] ?? memberHref}>
                   <EsaPill label={member} size="md" removable={false} />
                 </a>
               ) : (
@@ -393,7 +414,7 @@ const hintId = `f2-edit-hint-${field}`;
                 <EsaPill label="" size="md" removable={false} />
               </a>
             </Firma2HoverCard>
-          ) : memberHref ? (
+          ) : (memberHref || Object.keys(memberHrefs).length) ? (
             <a class="firma2-editable-field__member-link" href={memberHref}>
               <EsaPill label="" size="md" removable={false} />
             </a>
@@ -647,6 +668,12 @@ const hintId = `f2-edit-hint-${field}`;
      the same specificity — without it, it re-displays the hidden button and
      the open editor renders BELOW the paragraph it replaces (measured: the
      description row doubled). */
+  /* A typed line break is part of the text. Without this a textarea row
+     collapses two paragraphs into one run on commit, though the editor showed
+     them apart — a custom page's body is the first row to hold several. */
+  .firma2-editable-field[data-control='textarea'] [data-field-value] {
+    white-space: pre-line;
+  }
   .firma2-editable-field[data-control='textarea'] .firma2-editable-field__display:not([hidden]) {
     display: block;
     /* The border supplies its own 1px of the inset now, same as inline. */
@@ -663,9 +690,31 @@ const hintId = `f2-edit-hint-${field}`;
      ↗ open-link (a sibling floating inside the same box) does not blink the
      ring off mid-gesture. The bare :hover fallback covers the page-title
      shape, whose body is display:contents and generates no hoverable box. */
-  .firma2-editable-field__display:hover,
-  .firma2-editable-field__body:hover .firma2-editable-field__display {
-    border-color: var(--form-border-color, #cecece);
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field__display:hover,
+    .firma2-editable-field__body:hover .firma2-editable-field__display {
+      border-color: var(--form-border-color, #cecece);
+    }
+  }
+  /* LOCKED: the value is kept elsewhere, so the row is read, not edited — no
+     ring on hover and no text cursor inviting a click. Focus still shows: the
+     button stays in the tab order, announcing the value and why it is fixed. */
+  .firma2-editable-field[data-locked] .firma2-editable-field__display,
+  :global(html[data-record-mode='view']) .firma2-editable-field .firma2-editable-field__display {
+    border-color: transparent;
+    cursor: default;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field[data-locked] .firma2-editable-field__body:hover .firma2-editable-field__display,
+    :global(html[data-record-mode='view']) .firma2-editable-field .firma2-editable-field__body:hover .firma2-editable-field__display {
+      border-color: transparent;
+      cursor: default;
+    }
+  }
+  :global(.firma2-editable-field__locked-note) {
+    margin: var(--spacing-100) 0 0;
+    padding-inline: var(--spacing-300, 0.75rem);
+    color: var(--color-content-default-secondary, #646464);
   }
   .firma2-editable-field__display:focus-visible {
     border-color: var(--form-border-color, #cecece);
@@ -699,15 +748,18 @@ const hintId = `f2-edit-hint-${field}`;
     translate: 0 -50%;
     display: inline-flex;
     opacity: 0;
-    transition: opacity 120ms ease;
     color: var(--color-content-default-tertiary, #757575);
   }
   .firma2-editable-field__open[hidden] {
     display: none;
   }
-  .firma2-editable-field__body:hover .firma2-editable-field__open,
   .firma2-editable-field__body:focus-within .firma2-editable-field__open {
     opacity: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field__body:hover .firma2-editable-field__open {
+      opacity: 1;
+    }
   }
   .firma2-editable-field[data-editing] .firma2-editable-field__open {
     display: none;
@@ -720,11 +772,6 @@ const hintId = `f2-edit-hint-${field}`;
   @media (hover: none) {
     .firma2-editable-field__open {
       opacity: 1;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .firma2-editable-field__open {
-      transition: none;
     }
   }
 
@@ -753,6 +800,14 @@ const hintId = `f2-edit-hint-${field}`;
     display: flex;
     flex-direction: column;
     align-items: stretch;
+    /* THE COLUMN IS THE LIMIT (2026-11-24: on the Projects peek a long
+       classification ran a chip 415px wide in a ~270px column — the rail grew
+       a sideways scrollbar and the chip's hover card spilled off its edge).
+       A size container, so a chip and its card can measure the column (cqi)
+       instead of their own text; min-inline-size 0 lets this flex item shrink
+       below its widest chip. */
+    container-type: inline-size;
+    min-inline-size: 0;
     gap: var(--spacing-100, 0.25rem);
     padding-block: var(--spacing-100, 0.25rem);
   }
@@ -760,6 +815,26 @@ const hintId = `f2-edit-hint-${field}`;
   .firma2-editable-field__member {
     display: flex;
     align-items: center;
+    min-inline-size: 0;
+  }
+  /* A long name wraps inside its chip instead of widening the column. The
+     pill is the hub's and sets nowrap for single-word chips; this undoes it
+     only for record members, whose names are sentences. */
+  .firma2-editable-field__member-link,
+  .firma2-editable-field__member-btn {
+    max-inline-size: 100%;
+    min-inline-size: 0;
+  }
+  .firma2-editable-field__member :global(.esa-pill) {
+    max-inline-size: 100%;
+    white-space: normal;
+    text-align: start;
+    overflow-wrap: anywhere;
+  }
+  /* The pill's composite leading is set for one line; a wrapped name needs
+     air between its lines to read as one label, not two. */
+  .firma2-editable-field__member :global(.esa-pill__label) {
+    line-height: 1.35;
   }
 
   /* THE CHIP IS THE LINK — the pill is the anchor's whole face, so the reset
@@ -777,17 +852,24 @@ const hintId = `f2-edit-hint-${field}`;
     outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #3e9b4f);
     outline-offset: var(--focus-ring-offset, 2px);
   }
-  .firma2-editable-field__member-link:hover :global(.esa-pill) {
-    border-color: var(--color-border-default, #cecece);
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field__member-link:hover :global(.esa-pill) {
+      border-color: var(--color-border-default, #cecece);
+    }
   }
   /* The label underlines on hover — the one cue every reader already knows
      means "this text goes somewhere", worth customizing into the pill because
      nothing else on a chip says LINK rather than badge. On focus too, so the
      keyboard sees the same promise the pointer does. */
-  .firma2-editable-field__member-link:hover :global(.esa-pill__label),
   .firma2-editable-field__member-link:focus-visible :global(.esa-pill__label) {
     text-decoration: underline;
     text-underline-offset: 2px;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-editable-field__member-link:hover :global(.esa-pill__label) {
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
   }
 
   /* The fallback shape for a set with no pages behind it: the member is a
@@ -1028,7 +1110,7 @@ const hintId = `f2-edit-hint-${field}`;
    * click-away, and a page full of no-op events would make every listener carry
    * its own dedupe.
    */
-  const announceSave = (row: HTMLElement, value: string): void => {
+  const announceSave = (row: HTMLElement, value: string, fromSet = false): void => {
     // The ↗ open-link pointed at the page for the value that just changed. A
     // prototype cannot resolve the NEW value's page, and a link that lies is
     // worse than none — the affordance retires with the value it belonged to.
@@ -1041,7 +1123,10 @@ const hintId = `f2-edit-hint-${field}`;
     row.dispatchEvent(
       new CustomEvent('firma2:field-save', {
         bubbles: true,
-        detail: { field: row.dataset.field ?? '', value, raw: row.dataset.raw ?? '' },
+        // `fromSet`: the value arrived through firma2:field-set (a restore, an
+        // import), not from a person editing this row. A listener that logs
+        // hand edits skips those.
+        detail: { field: row.dataset.field ?? '', value, raw: row.dataset.raw ?? '', fromSet },
       })
     );
   };
@@ -1107,10 +1192,18 @@ const hintId = `f2-edit-hint-${field}`;
     } catch {
       cards = null;
     }
+    let hrefs: Record<string, string> = {};
+    try {
+      hrefs = JSON.parse(row.dataset.memberHrefs ?? '{}');
+    } catch {
+      hrefs = {};
+    }
     const units = members.map((member) => {
       const unit = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
       const label = unit.querySelector('.esa-pill__label');
       if (label) label.textContent = member;
+      const link = unit.querySelector<HTMLAnchorElement>('.firma2-editable-field__member-link');
+      if (link && hrefs[member]) link.href = hrefs[member];
       const card = cards?.[member];
       const kind = unit.querySelector('[data-card-kind]');
       const title = unit.querySelector('[data-card-title]');
@@ -1134,6 +1227,11 @@ const hintId = `f2-edit-hint-${field}`;
 
   const openEdit = (row: HTMLElement): void => {
     if (isEditing(row)) return;
+    if (row.dataset.locked !== undefined) return;
+    // A record page reading, not editing (src/lib/record-mode.ts): every row
+    // is read-only until Edit. Not data-locked — the GIS script owns that
+    // attribute and clears it from every row it does not keep.
+    if (document.documentElement.dataset.recordMode === 'view') return;
     // At most one row open: commit-on-blur means opening B IS leaving A, so
     // leaving A commits it. Usually the capture-phase click commit has already
     // done this by the time a click reaches here; this covers every other way
@@ -1328,20 +1426,36 @@ const hintId = `f2-edit-hint-${field}`;
    * here too. An OPEN row is left alone: a restore must never re-seed a field
    * out from under whatever is being typed into it.
    */
-  const setField = (field: string, raw: string): void => {
-    const row = document.querySelector<HTMLElement>(
-      `[data-editable-field][data-field="${CSS.escape(field)}"]`,
+  const rowsFor = (field: string): HTMLElement[] =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        `[data-editable-field][data-field="${CSS.escape(field)}"]`,
+      ),
     );
-    if (!row || isEditing(row)) return;
+
+  /**
+   * Paint one row from a raw value, through the same format branches a commit
+   * uses. `announce` is false for a MIRROR paint — see mirrorSave — so a value
+   * that was already announced once by the row that committed it is not
+   * announced a second time by every row that merely repeats it.
+   */
+  const paintRow = (row: HTMLElement, raw: string, announce = true): void => {
+    if (isEditing(row)) return;
     const display = valueOf(row);
     if (!display) return;
     const changed = raw !== row.dataset.raw;
     row.dataset.raw = raw;
+    // A quiet mirror still retires its ↗ door when the value changed, for the
+    // reason announceSave retires the origin's: the link pointed at the OLD
+    // value's page.
+    if (changed && !announce) {
+      row.querySelectorAll('[data-field-open]').forEach((door) => door.setAttribute('hidden', ''));
+    }
     const control = row.dataset.control ?? 'text';
     if (control === 'year-range') {
       const [start = '', end = ''] = raw.split(',').map((s) => s.trim());
       paintYearRange(display, start, end);
-      if (changed) announceSave(row, `${start}–${end}`);
+      if (changed && announce) announceSave(row, `${start}–${end}`, true);
     } else if (control === 'multi-select') {
       let members: string[] = [];
       try {
@@ -1353,15 +1467,23 @@ const hintId = `f2-edit-hint-${field}`;
       paintMembers(row, display, members);
       if (members.length === 0) paintText(row, display, '');
       else display.classList.remove('firma2-editable-field__value--unset');
-      if (changed) announceSave(row, members.join(', '));
+      if (changed && announce) announceSave(row, members.join(', '), true);
     } else if (row.dataset.format === 'currency') {
       const amount = Number(raw);
       display.textContent = Number.isFinite(amount) ? currencyFormatter.format(amount) : raw;
-      if (changed) announceSave(row, display.textContent ?? '');
+      if (changed && announce) announceSave(row, display.textContent ?? '', true);
     } else {
       paintText(row, display, raw);
-      if (changed) announceSave(row, raw);
+      if (changed && announce) announceSave(row, raw, true);
     }
+  };
+
+  // EVERY row of the field, not the first: a field may be rendered twice on one
+  // page (the project record repeats four Key facts in a strip under its title,
+  // Linear-style, and keeps them in the rail). The first row announces; the rest
+  // are mirrors of it and stay quiet, or one restore would announce N times.
+  const setField = (field: string, raw: string): void => {
+    rowsFor(field).forEach((row, i) => paintRow(row, raw, i === 0));
   };
 
   const onFieldSet = (event: Event): void => {
@@ -1369,6 +1491,22 @@ const hintId = `f2-edit-hint-${field}`;
     if (typeof detail.field === 'string' && typeof detail.raw === 'string') {
       setField(detail.field, detail.raw);
     }
+  };
+
+  /**
+   * A ROW THAT COMMITTED REPAINTS ITS TWINS. Same field, other rows, same raw
+   * value, no second announcement — the committing row has already said it once
+   * and every listener (breadcrumb, tab title, the publish state) heard it. The
+   * twin is skipped while it is open: a restore must never re-seed a field out
+   * from under whatever is being typed into it, and neither must a sibling.
+   */
+  const mirrorSave = (event: Event): void => {
+    const origin = event.target as HTMLElement | null;
+    const detail = (event as CustomEvent<{ field?: unknown; raw?: unknown }>).detail ?? {};
+    if (!origin || typeof detail.field !== 'string' || typeof detail.raw !== 'string') return;
+    rowsFor(detail.field)
+      .filter((row) => row !== origin)
+      .forEach((row) => paintRow(row, detail.raw as string, false));
   };
 
   /**
@@ -1660,6 +1798,7 @@ const hintId = `f2-edit-hint-${field}`;
     document.addEventListener('click', onClick);
     document.addEventListener('keydown', onKeydown, true);
     document.addEventListener('firma2:field-set', onFieldSet);
+    document.addEventListener('firma2:field-save', mirrorSave);
     document.addEventListener('astro:page-load', () => hydrate());
     // Rows that arrive AFTER load — the project peek sheet clones a record's
     // rows out of a <template>, whose content the load-time hydrate() can
@@ -1672,4 +1811,37 @@ const hintId = `f2-edit-hint-${field}`;
     });
   }
   hydrate();
+</script>
+
+<script>
+  // GUIDANCE UNDER AN OPEN SELECT (the `guidance` prop). Kept apart from the
+  // choreography above so a row without guidance runs none of it: while a row
+  // carrying [data-guidance] is open, its select's helper text is the line for
+  // the value it holds; closing clears it. Watched, not called, because rows
+  // open from several paths (click, Enter, a commit opening the next row).
+  type GuidedSelect = HTMLElement & { value?: unknown; helpText?: string };
+  const guidanceOf = (row: HTMLElement): Record<string, string> => {
+    try {
+      return JSON.parse(row.dataset.guidance ?? '{}');
+    } catch {
+      return {};
+    }
+  };
+  const paintGuidance = (row: HTMLElement) => {
+    const input = row.querySelector<GuidedSelect>('[data-field-input]');
+    if (!input || row.dataset.control !== 'select') return;
+    const open = row.hasAttribute('data-editing');
+    const value = String(input.value ?? row.dataset.raw ?? '');
+    input.helpText = open ? (guidanceOf(row)[value] ?? '') : '';
+  };
+  new MutationObserver((records) => {
+    records.forEach((r) => {
+      const row = r.target as HTMLElement;
+      if (row.hasAttribute('data-guidance')) paintGuidance(row);
+    });
+  }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-editing'] });
+  document.addEventListener('change', (event) => {
+    const row = (event.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-editable-field][data-guidance]');
+    if (row) paintGuidance(row);
+  });
 </script>

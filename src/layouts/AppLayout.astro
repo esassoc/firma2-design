@@ -1,7 +1,8 @@
 ---
 // AppLayout — the application chrome every ProjectFirma 2.0 prototype renders
-// inside: top bar with the omnibox and account menu, collapsible sidenav, and a
-// scrolling content region. A thin wrapper over esa-app-shell, the hub's
+// inside: a collapsible sidenav that owns the omnibox and account menu, a thin
+// pinned top bar over the content column (firma2-top-bar: crumbs and the page's
+// actions), and the content region. A thin wrapper over esa-app-shell, the hub's
 // CANONICAL house chrome — this layout contributes the nav model, the search
 // index, and the fixed-height frame the shell needs, and no visual primitives
 // of its own.
@@ -11,17 +12,46 @@
 // design-system browser, which carry DocsLayout's own chrome instead.
 import BaseLayout from './BaseLayout.astro';
 import EsaAppShell from '@esa/ecology/esa-app-shell.astro';
-import { navItems, searchIndex } from '../data/firma2-nav';
+import EsaContainer from '@esa/ecology/esa-container.astro';
+import { navItemsFor, organizationNavItems, workspaceSettingsNavItems, searchIndex } from '../data/firma2-nav';
+import type { Firma2NavItem } from '../data/firma2-nav';
 import { withBase } from '../lib/base';
+import { CONTENT_MAX, CONTENT_READING } from '../lib/content-width';
+import Firma2PagesNav from '../components/shared/firma2-pages-nav.astro';
+import Firma2NavArrange from '../components/shared/firma2-nav-arrange.astro';
+import Firma2TopBar from '../components/shared/firma2-top-bar.astro';
+import Firma2UtilityBar from '../components/shared/firma2-utility-bar.astro';
+import Firma2HelpSheet from '../components/shared/firma2-help-sheet.astro';
+import Firma2RequestNotice from '../components/welcome/firma2-request-notice.astro';
+import { seedEntries } from '../data/firma2-pages';
+import { pagesNavItems, dashboardNavItems } from '../lib/custom-pages';
 
 interface Props {
   /** Document title. The shell's wordmark is the product name and does not change. */
   title?: string;
   /** `key` of the nav item to mark current. */
   active?: string;
+  /** Which rail to show: the app's navigation, or Workspace settings' sections. */
+  nav?: 'app' | 'workspace-settings';
+  /**
+   * How wide the page's content may grow. `default` caps it at CONTENT_MAX and
+   * centres it in the pane. `full` hands the whole pane to the page: the project
+   * map, where the canvas IS the page, and any page with a trailing rail, which
+   * wraps its own main column in an EsaContainer at CONTENT_MAX so the rail
+   * stays on the window's edge. `reading` caps at CONTENT_READING for pages
+   * that are read rather than surveyed: settings sections, forms, short lists.
+   */
+  width?: 'default' | 'reading' | 'full';
 }
 
-const { title = 'ProjectFirma 2.0', active } = Astro.props;
+const { title = 'ProjectFirma 2.0', active, nav = 'app', width = 'default' } = Astro.props;
+
+// THE CONTENT COLUMN HAS A CEILING. On a wide monitor an uncapped pane stretches
+// tables, forms and cards into lines too long to read and rows too wide to scan;
+// past CONTENT_MAX the column stops growing and centres instead (the settings-page
+// pattern Linear uses). The pane's own padding still supplies the gutter below it,
+// so nothing changes until the pane outgrows it. The number and its reasoning
+// live in lib/content-width, shared with the pages that cap only a main column.
 
 // The nav model and search index are stored base-less; the base prefix is a
 // render-time concern (dev serves at /, the GitHub Pages build at /firma2-design/).
@@ -39,12 +69,44 @@ const { title = 'ProjectFirma 2.0', active } = Astro.props;
 // Most of the rail is dimmed today because most of the product is unbuilt. That
 // is an accurate picture of a spoke with one working screen, not a styling
 // problem — the dimming recedes on its own as pages land.
-const items = navItems.map((item) => ({
-  ...item,
-  href: item.href ? withBase(item.href) : undefined,
-  disabled: !item.href,
-}));
+//
+// A PARENT ROW is the exception: it has no href by construction (it opens, it
+// does not go), so it is never disabled — even when every child is unbuilt,
+// opening it is how a reader sees what that organization will offer.
+const toRailItem = (item: Firma2NavItem): Firma2NavItem & { disabled: boolean } => {
+  const children = item.children?.map(toRailItem);
+  return {
+    ...item,
+    href: item.href ? withBase(item.href) : undefined,
+    children,
+    disabled: children ? false : !item.href,
+  };
+};
+const items = (nav === 'workspace-settings' ? workspaceSettingsNavItems : [...navItemsFor(active), ...organizationNavItems]).map(toRailItem);
+// PAGES CLOSE THE APP RAIL: the workspace's own pages and folders, after the
+// product's fixed groups. The seeds render here so the group is on the page
+// before any script runs; Firma2PagesNav swaps in this browser's adds and puts
+// the + on the heading. Built already based and enabled — a folder has no href
+// and must not be dimmed by the rule above.
+// DASHBOARDS COME JUST BEFORE THEM, in a group of their own: the workspace's
+// Progress Dashboard and the ones added beside it.
+const railItems = nav === 'app' ? [...items, ...dashboardNavItems(seedEntries, undefined, active === 'progress-dashboard'), ...pagesNavItems(seedEntries)] : items;
+// THE WORKSPACE MENU NAMES THE PLAN AND THE HEADCOUNT (firma2 batch D): a
+// returning administrator's first two questions about the workspace. Members
+// are people who can sign in now; invitations and suspended accounts don't count.
 const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry.id) }));
+
+// THE ACCOUNT MENU: JOIN AN ORGANIZATION, THEN SIGN OUT. The shell's default
+// adds Profile and Settings, both cut (user call): the settings rail already
+// opens on the Personal pages, so the account menu was a second door to the
+// same room. Join an organization is the one addition (user, 2026-11-02):
+// which organizations you belong to is about WHO YOU ARE, which is what this
+// menu is, and its only other home — a link under Settings › Security — was
+// somewhere nobody waiting on a request would look.
+const userMenu = [
+  { label: 'Join an organization', action: 'join' },
+  { label: 'Sign out', action: 'sign-out', variant: 'danger' as const },
+];
 
 // No `mark` is passed: this spoke has no ProjectFirma wordmark or glyph yet, and
 // the brand ramp still points at the hub's default. Inventing a logo for a real
@@ -52,19 +114,53 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
 // design-principles wants the identity RESEARCHED, not fabricated.
 ---
 <BaseLayout title={title}>
-  <div class="firma2-app-frame">
+  {/* THE RAIL'S WIDTH, KNOWN BEFORE FIRST PAINT. Every menu click is a full
+      page load, and the browser paints the new page before the deferred
+      module scripts define esa-sidebar-nav. Until then the rail is a bare
+      element: it collapsed to its brand, the sheet jumped left, then snapped
+      back — the "glitch" on every navigation. The CSS below holds the rail's
+      track while it is :not(:defined); this blocking script hands that rule the
+      width bcn-edge-handle restored last time (storage-key "app-nav"), so a
+      collapsed or resized rail holds its own width, not the default.
+      A DELIBERATE DUPLICATE of storedCollapsed() below and of the handle's
+      200–320 bounds in mountRailEdgeHandle(); change one, change the other. */}
+  <script is:inline>
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem('bcn-edge-handle:app-nav') || '{}');
+        var w = s.c ? 'var(--sidenav-width-collapsed, 72px)'
+          : typeof s.w === 'number' ? Math.min(Math.max(s.w, 200), 320) + 'px' : '';
+        if (w) document.documentElement.style.setProperty('--firma2-rail-boot', w);
+      } catch (e) { /* blocked or corrupt — the default width stands */ }
+    })();
+  </script>
+  <div class="firma2-app-frame" data-nav={nav}>
     <EsaAppShell
       title="ProjectFirma 2.0"
       active={active}
-      items={items}
+      items={railItems}
       searchIndex={searchEntries}
       searchPlaceholder="Search projects, organizations, and pages"
       userName="Dana Whitfield"
+      userMenu={userMenu}
       brandHref={withBase('/')}
     >
-      <slot />
+      {/* The root-only bar. A page's firma2-page-header swaps its own (crumbs,
+          status, actions) in for this one during parse — see firma2-top-bar. */}
+      <Firma2TopBar />
+      {/* The signed-in person's access requests — waiting, or answered —
+          above every page's own content (firma2-request-notice). */}
+      {width === 'full'
+        ? <><Firma2RequestNotice /><slot /></>
+        : <EsaContainer maxWidth={width === 'reading' ? CONTENT_READING : CONTENT_MAX}><Firma2RequestNotice /><slot /></EsaContainer>}
     </EsaAppShell>
+    <Firma2UtilityBar />
+    {/* Help, docked like every sheet (firma2-help-sheet). Inside the frame,
+        where bcn-side-sheet reserves its room. */}
+    <Firma2HelpSheet />
   </div>
+  {nav === 'app' && <Firma2PagesNav />}
+  {nav === 'app' && <Firma2NavArrange />}
 </BaseLayout>
 
 <script>
@@ -76,28 +172,101 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   // routing is the spoke's, and it belongs in the layout rather than on a page —
   // the menu is on every screen, so its behaviour has to be too.
   //
-  // Settings is the only action wired, because it is the only one this spoke has
-  // built. Profile and Sign out stay inert for now, which is the same honesty the
-  // sidenav applies to unbuilt routes (see the `disabled` note in the frontmatter
-  // above) — except that esa-app-shell's AppShellMenuItem has no `disabled` field
-  // to pass through, so they cannot yet be DIMMED the way a nav row is. That gap
-  // is upstream. Wire each one here as its screen lands.
+  // The account menu is Sign out alone (see the frontmatter). It lands on the
+  // sign-in screen (/prototypes/sign-in, built with the access-request flow on
+  // 2026-11-02); nothing is really signed out.
   import { withBase } from '../lib/base';
+  import { SETTINGS_HOME } from '../data/firma2-nav';
+  import { setSignedIn } from '../lib/session';
+  import { readRecentVisits, recordRecentVisit } from '../lib/recent-pages';
 
   const ROUTES: Record<string, string> = {
-    settings: '/prototypes/settings',
+    // The workspace menu on the rail's wordmark emits the same event. Settings
+    // opens on the first row of its rail, Personal › Preferences.
+    settings: SETTINGS_HOME,
+    // Root-relative: the listener below adds the base once. (Sign out was
+    // based here too, which doubled it on the deployed site.)
+    join: '/prototypes/join',
+    'sign-out': '/prototypes/sign-in',
   };
 
   // On `document`, not on the menu: the event is composed and bubbling, and the
   // menu element is created by the shell's own island script, so there is no
   // reliable moment at which this layout could query for it.
+  // A workspace page means a signed-in reader; Sign out ends that. The public
+  // pages read the flag (src/lib/session.ts) to show what only they should see.
+  setSignedIn(true);
+
   document.addEventListener('menu-action', (event) => {
-    const route = ROUTES[(event as CustomEvent<string>).detail];
+    const action = (event as CustomEvent<string>).detail;
+    if (action === 'sign-out') setSignedIn(false);
+    const route = ROUTES[action];
     if (route) window.location.href = withBase(route);
+  });
+
+  // RECENT, IN THE GLOBAL SEARCH (user, 2026-11-24). Every app page is
+  // recorded in this browser's history (src/lib/recent-pages.ts), and the
+  // omnibox — esa-entity-search, which shows its `recent` list when the query
+  // is empty — opens on the last pages you had, the current one left out.
+  // Each visit borrows its subtitle and scope from the search index when the
+  // page is in it, so a recent project reads exactly as it does in results.
+  // Assigned after define: a property set before the upgrade would shadow the
+  // lego's accessor for good.
+  recordRecentVisit();
+  customElements.whenDefined('esa-entity-search').then(() => {
+    type Entity = { id: string; title: string; subtitle?: string; scope?: string; url?: string };
+    const here = location.pathname + location.search;
+    document.querySelectorAll<HTMLElement & { entities: Entity[]; recent: Entity[] }>('esa-entity-search').forEach((panel) => {
+      const fill = () => {
+        const byUrl = new Map((panel.entities ?? []).map((e) => [e.url, e]));
+        panel.recent = readRecentVisits()
+          .filter((v) => v.href !== here)
+          .slice(0, 6)
+          .map((v, i) => {
+            const known = byUrl.get(v.href);
+            return known ? { ...known, id: `recent-${i}` } : { id: `recent-${i}`, title: v.title, url: v.href };
+          });
+      };
+      // The shell sets `entities` in its own island script; fill now and again
+      // on open, so the subtitles land whichever script ran first.
+      fill();
+      panel.addEventListener('focusin', fill, { once: true });
+    });
+  });
+
+  // G THEN S OPENS SETTINGS — the two-key "go to" convention Linear and GitHub
+  // use. Not ⌘, (the desktop-app habit): in a browser that is the browser's own
+  // settings, and a page that steals it surprises more people than it helps.
+  // The second key has to follow within a second, and neither counts while the
+  // reader is typing — in a field, in the omnibox, or inside a lego's shadow
+  // root, which is why the target is read through composedPath().
+  const isTyping = (event: KeyboardEvent): boolean =>
+    event.composedPath().some(
+      (node) =>
+        node instanceof HTMLElement &&
+        (node.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)),
+    );
+
+  let goPressedAt = 0;
+  document.addEventListener('keydown', (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.repeat || isTyping(event)) return;
+    const key = event.key.toLowerCase();
+    if (key === 'g') {
+      goPressedAt = event.timeStamp;
+    } else if (key === 's' && goPressedAt && event.timeStamp - goPressedAt < 1000) {
+      goPressedAt = 0;
+      event.preventDefault();
+      window.location.href = withBase(SETTINGS_HOME);
+    } else {
+      goPressedAt = 0;
+    }
   });
 </script>
 
 <script>
+  // Staggers bcn-progress-ring's draw-in across every ring on the page.
+  import '../lib/ring-stagger';
+  import { ICON_PATHS } from '@esa/ecology/icon-registry';
   // Registers <bcn-edge-handle>, the grip mountRailEdgeHandle appends to the
   // rail's edge below. A side-effect import: the module defines a custom element
   // and exports nothing.
@@ -164,6 +333,18 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     'esa-combobox': `
       .input { height: 40px; padding-block: 0; }
     `,
+    // Not a height: the group's <fieldset> keeps the UA's grooved border,
+    // padding and margin — esa-radio-group resets all four, this lego none
+    // (hub bug, 2026-10-20; drop this once the hub resets it).
+    // The md toggle sizes to its text plus padding (45px); pin its track to the
+    // 40px rung so it lines up beside md buttons and fields.
+    'esa-button-toggle': `
+      .group { height: 40px; box-sizing: border-box; }
+      .option { padding-block: 0; }
+    `,
+    'esa-checkbox-group': `
+      .items { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
+    `,
   };
 
   function pinControl(tag: string, css: string): void {
@@ -189,13 +370,49 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   //
   // Per-tag registration is also what makes CONTROL_PINS safe to grow: adding a
   // lego here can never affect a page that does not use it.
+  const defined = new Set<string>();
   for (const [tag, css] of Object.entries(CONTROL_PINS)) {
     customElements.whenDefined(tag).then(() => {
+      defined.add(tag);
       requestAnimationFrame(() => pinControl(tag, css));
     });
   }
 
-  // THE RAIL OWNS THE APP'S CHROME. THERE IS NO TOP BAR.
+  // CONTROLS BUILT AFTER LOAD GET THE PIN TOO. A canvas that repaints (the
+  // intake builder, its inline field and condition rows) creates fresh md
+  // fields long after the pass above, and each came back at the lego's own
+  // 46px beside its 40px neighbours. One frame after any insertion, every
+  // defined tag is pinned again; pinControl skips roots it has already done.
+  let repin = 0;
+  new MutationObserver(() => {
+    if (repin) return;
+    repin = requestAnimationFrame(() => {
+      repin = 0;
+      defined.forEach((tag) => pinControl(tag, CONTROL_PINS[tag]));
+    });
+  }).observe(document.body, { childList: true, subtree: true });
+
+  // "/" TYPED INTO A FIELD STAYS IN THE FIELD. esa-entity-search's "/ to
+  // search" hotkey listens on document and asks whether event.target is an
+  // input — but a lego's input sits in a shadow root, so the target it sees is
+  // the esa-text-field host, and a web address typed into a link dialog lost
+  // its first "/" to the search box (focus jumped there). Hub bug, due
+  // upstream; until then the keystroke is stopped on <html>, one step before
+  // document, whenever the element really receiving it is editable.
+  document.documentElement.addEventListener('keydown', (event) => {
+    if (event.key !== '/') return;
+    const origin = event.composedPath()[0] as HTMLElement | undefined;
+    if (origin && (['INPUT', 'TEXTAREA', 'SELECT'].includes(origin.tagName) || origin.isContentEditable)) event.stopPropagation();
+  });
+
+  // THE RAIL OWNS THE APP'S CHROME; THE TOP BAR OWNS THE PAGE'S.
+  //
+  // Since 2026-10-19 there IS a top bar again — firma2-top-bar, thin (48px) and
+  // pinned over the content column, holding the breadcrumb trail and the page's
+  // status and actions, Tally-style. It is not the shell's bar: that one stays
+  // hidden (below), because everything it held is app chrome and still lives in
+  // the rail, for the reason that follows. The split is: rail = who you are and
+  // where you can go; top bar = where you are and what you can do here.
   //
   // esa-app-shell's house arrangement is a bar across the top holding the
   // collapse toggle, the omnibox and the profile menu, above a rail that holds
@@ -241,6 +458,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
         search.setAttribute('slot', 'header');
         brand.insertAdjacentElement('afterend', search);
       }
+      if (brand) mountWorkspaceMenu(brand);
 
       // ---- foot: the account menu and the collapse toggle ----
       const menu = shell.querySelector<HTMLElement>('.esa-app-shell__bar esa-dropdown-menu');
@@ -267,6 +485,75 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
       // slots — worth a /request-lego for `header` room and a `footer` on the
       // rail, and then most of this function goes away.
       shell.appendChild(foot);
+    });
+  }
+
+  // ---- THE WORDMARK IS THE WORKSPACE MENU ----
+  //
+  // The top of the rail names where you are, so it is also where you go to
+  // change it or configure it — the workspace switcher convention (Slack, Linear,
+  // Notion). The menu is esa-dropdown-menu, the same lego as the account menu at
+  // the foot; nothing about the panel is re-implemented.
+  //
+  // The shell renders its brand as an <a> to brandHref, and a link cannot also be
+  // a menu trigger — a click would both navigate and open. So the anchor is
+  // swapped for a <button> carrying the SAME attributes (the class and Astro's
+  // scope attribute, so every shell rule for `.esa-app-shell__brand` still
+  // matches) and the same children. Home stays one click away on the nav.
+  const WORKSPACE_MENU = [
+    { label: 'Settings', action: 'settings' },
+    { label: 'Switch workspace', action: 'change-workspace' },
+  ];
+
+  // Drawn from the icon registry, so it is the spoke's icon set like every
+  // other chevron in the frame.
+  const CHEVRON = `<svg class="firma2-app-frame__workspace-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS['chevron-down'] ?? '<path d="m6 9 6 6 6-6"/>'}</svg>`;
+
+  function mountWorkspaceMenu(brand: HTMLElement): void {
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    for (const { name, value } of Array.from(brand.attributes)) {
+      if (name !== 'href' && name !== 'slot') trigger.setAttribute(name, value);
+    }
+    trigger.append(...Array.from(brand.childNodes));
+    trigger.insertAdjacentHTML('beforeend', CHEVRON);
+
+    const menu = document.createElement('esa-dropdown-menu');
+    menu.className = 'firma2-app-frame__workspace';
+    menu.setAttribute('slot', 'header');
+    menu.setAttribute('width', 'trigger');
+    menu.appendChild(trigger);
+    brand.replaceWith(menu);
+
+    // `items` is a property, not an attribute, and it is assigned only once the
+    // element is defined: set before upgrade it would land as an own property and
+    // shadow the reactive accessor the constructor initialises.
+    // The lego wraps its trigger in two inline-block boxes, so a slotted
+    // `width: 100%` resolves against the trigger's own content. The rail row
+    // needs it full-width; there is no hook, so the same adopted-sheet move as
+    // stackRailHead below.
+    customElements.whenDefined('esa-dropdown-menu').then(() => {
+      (menu as HTMLElement & { items: unknown }).items = WORKSPACE_MENU;
+      requestAnimationFrame(() => {
+        const root = menu.shadowRoot;
+        if (!root) return;
+        const sheet = new CSSStyleSheet();
+        // The shortcut beside Settings. EsaMenuItem has no shortcut field, so it
+        // is generated content on the first item, silent to assistive tech (the
+        // `/ ''` alt text) since a screen reader user meets it in the omnibox
+        // instead. Lego gap: a `shortcut` on EsaMenuItem would retire this.
+        sheet.replaceSync(`
+          .esa-dropdown, .esa-dropdown__trigger { display: block; }
+          .esa-dropdown-menu__item:first-child::after {
+            content: 'G S' / '';
+            margin-inline-start: auto;
+            padding-inline-start: var(--spacing-400, 1rem);
+            color: var(--color-content-default-secondary, #646464);
+            font-size: var(--typography-body-sm-font-size, 0.875rem);
+          }
+        `);
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      });
     });
   }
 
@@ -358,9 +645,75 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   // `align-items: stretch` is the load-bearing half. The row centres its items,
   // which in a column means both the wordmark and the search shrink-wrap to
   // their content instead of spanning the rail.
+  //
+  // THE LIST SCROLLS, which the lego only arranges for its drawer mode. At full
+  // width `.nav-content` is a `flex: 1; min-height: 0` column with no overflow
+  // rule, so a list taller than the rail spills past it and the host's
+  // `overflow: hidden` clips the last rows — under the account strip, where they
+  // cannot be reached at all. Workspace settings was the first rail long enough
+  // to hit it (Your organization, at 950px tall). `overflow-y: auto` on the
+  // region the lego already sizes is the whole fix. A hub gap: /request-lego.
+  //
+  // A LONG LABEL ELLIPSIZES. `.label` is `flex: 1` with text-overflow set, but
+  // no `min-width: 0`, so a flex item's automatic minimum holds it at its full
+  // text width: "California Watershed Restoration Board" ran past the rail and
+  // pushed its parent row's chevron out of sight. Same hub gap.
+  //
+  // DRAWER MODE (phone, see mountResponsiveShell) needs three more things the
+  // lego has no hook for. The toggle is the top bar's 32px icon button, so its
+  // text label is kept for the name and hidden from sight. The panel's Close
+  // button goes to the panel's top corner as a 40px icon button, which leaves
+  // the first row to the workspace menu. And the panel pads for the notch and
+  // the home indicator (safe-area insets), which a fixed full-height panel
+  // otherwise slides under. It lifts off the page on the peek's shadow: this
+  // theme's scrim is transparent (theme-firma2's overlay backdrop), so the
+  // scrim still takes the tap that closes it but draws nothing.
+  const VISUALLY_HIDDEN = 'position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;';
   const RAIL_HEAD_CSS = `
     .rail-head { flex-direction: column; align-items: stretch; }
+    .nav-content { overflow-y: auto; }
+    .label { min-width: 0; }
+    :host([drawer]) .rail-head { flex-direction: row; }
+    :host([drawer]) .toggle { margin: 0; }
+    :host([drawer]) .toggle-label { ${VISUALLY_HIDDEN} }
+    :host([drawer]) .nav-content {
+      padding-block: calc(var(--spacing-200, 8px) + env(safe-area-inset-top, 0px)) calc(var(--spacing-200, 8px) + env(safe-area-inset-bottom, 0px));
+      padding-inline-start: calc(var(--spacing-200, 8px) + env(safe-area-inset-left, 0px));
+      box-shadow: var(--elevation-3);
+    }
+    :host([drawer]) .drawer-close {
+      position: absolute;
+      inset-block-start: calc(var(--spacing-200, 8px) + env(safe-area-inset-top, 0px));
+      inset-inline-end: var(--spacing-200, 8px);
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    :host([drawer]) .drawer-close > span:last-child { ${VISUALLY_HIDDEN} }
+    slot[name='drawer-foot'] { display: block; margin-block-start: auto; padding-block-start: var(--spacing-200, 8px); }
   `;
+
+  // THE PANEL'S TWO SLOTS. In drawer mode the rail's head (workspace menu,
+  // search) and the account menu belong INSIDE the sliding panel, but the
+  // lego's only slot (`header`) sits in the row beside the toggle, outside it.
+  // So two named slots are placed in the panel itself, the move
+  // firma2-pages-nav already makes for its folder rows: one before everything
+  // Lit renders there, one after the list. Both sit outside Lit's parts, so a
+  // re-render (the `drawer` flip swaps the Close button in and out) leaves
+  // them alone. They hold nothing until the script re-slots items into them.
+  function placeDrawerSlots(root: ShadowRoot): void {
+    const panel = root.querySelector('.nav-content');
+    if (!panel || panel.querySelector(':scope > slot[name="drawer-head"]')) return;
+    const head = document.createElement('slot');
+    head.name = 'drawer-head';
+    const foot = document.createElement('slot');
+    foot.name = 'drawer-foot';
+    panel.prepend(head);
+    panel.append(foot);
+  }
 
   function stackRailHead(): void {
     document.querySelectorAll('esa-sidebar-nav').forEach((nav) => {
@@ -369,12 +722,271 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
       const sheet = new CSSStyleSheet();
       sheet.replaceSync(RAIL_HEAD_CSS);
       root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      placeDrawerSlots(root);
       root._firma2Head = true;
     });
   }
 
+  // A PARENT ROW OPENS ON ITS OWN when the page being read is one of its
+  // children — an organization's Home, Updates, … — or the reader lands on a
+  // page and cannot see where it is. `_expanded` is the rail's private open-set,
+  // keyed by label; there is no public way to open a parent row (the same lego
+  // gap firma2-pages-nav works around for folders).
+  type RailItem = { label: string; active?: boolean; children?: RailItem[] };
+  function openActiveParents(): void {
+    document.querySelectorAll('esa-sidebar-nav').forEach((nav) => {
+      const rail = nav as HTMLElement & { items?: RailItem[]; _expanded?: Set<string> };
+      const open = (rail.items ?? []).filter((i) => i.children?.some((c) => c.active)).map((i) => i.label);
+      if (open.length && rail._expanded) rail._expanded = new Set([...rail._expanded, ...open]);
+    });
+  }
+
   customElements.whenDefined('esa-sidebar-nav').then(() => {
-    requestAnimationFrame(stackRailHead);
+    requestAnimationFrame(() => {
+      stackRailHead();
+      openActiveParents();
+    });
+  });
+
+  // ---- A SHUT RAIL PEEKS FROM ITS TOGGLE ----
+  //
+  // Hovering the expand toggle of a collapsed rail slides the full navigation out
+  // OVER the page, and it stays while the pointer is anywhere on it — links,
+  // workspace menu, account menu, all live. Leaving shuts it again; clicking the
+  // toggle while it is out pins it open instead of shutting it. Linear and
+  // Notion's convention for a collapsed sidebar: reach a destination without
+  // giving the content its width back.
+  //
+  // THE PEEK REUSES THE RAIL'S OWN OPEN STATE. `collapsed` is lifted for the
+  // length of the peek, so every label, badge and group the lego renders comes
+  // back exactly as it does when opened for real, and the lego's own width
+  // transition is the slide. `data-nav-peek` on the frame is what makes it an
+  // overlay: it holds the grid track at the collapsed width, so the rail
+  // overflows across the content instead of pushing it (see the stylesheet).
+  // Nothing is persisted — bcn-edge-handle stores state only on its own drags.
+  //
+  // MOUSE ONLY. A touch "hover" arrives a beat before the tap's click, which
+  // would open a peek and then pin it; on a finger the toggle stays a toggle.
+  // Keyboard users get the toggle as it was — a peek they cannot point at would
+  // only shut under them.
+  const PEEK_OPEN_DELAY = 100; // intent: a pointer crossing the toggle on its way elsewhere does not open it
+  const PEEK_CLOSE_DELAY = 250; // grace: an overshoot past the panel edge does not shut it
+
+  function mountRailPeek(): void {
+    document.querySelectorAll<HTMLElement>('.firma2-app-frame').forEach((frame) => {
+      const nav = frame.querySelector<HTMLElement & { collapsed: boolean }>('esa-sidebar-nav');
+      const foot = frame.querySelector<HTMLElement>('.firma2-app-frame__account');
+      const toggle = foot?.querySelector<HTMLElement>('.esa-app-shell__toggle');
+      if (!nav || !foot || !toggle) return;
+
+      let openTimer = 0;
+      let closeTimer = 0;
+      let settleTimer = 0;
+      const peeking = () => frame.getAttribute('data-nav-peek') === 'open';
+      const inside = () => nav.matches(':hover') || foot.matches(':hover');
+      // HELD OPEN by an open menu (its light-DOM trigger reports aria-expanded) or
+      // by keyboard focus inside. Not by any focus: the toggle keeps focus after
+      // the click that shut the rail, and that would hold every later peek open.
+      const focusInside = () => {
+        const el = document.activeElement;
+        const menuOpen = !!(nav.querySelector('[aria-expanded="true"]') || foot.querySelector('[aria-expanded="true"]'));
+        const keyboard = !!el && (nav.contains(el) || foot.contains(el)) && el.matches(':focus-visible');
+        return menuOpen || keyboard;
+      };
+
+      const open = () => {
+        if (!nav.collapsed || peeking()) return;
+        window.clearTimeout(settleTimer);
+        const width = getComputedStyle(nav).getPropertyValue('--sidenav-width').trim() || '280px';
+        frame.style.setProperty('--firma2-peek-width', width);
+        // Two steps, so the foot strip has a computed 72px to slide FROM: its
+        // resting width is the track's stretch (`auto`), which does not transition.
+        frame.setAttribute('data-nav-peek', 'enter');
+        void foot.offsetWidth;
+        frame.setAttribute('data-nav-peek', 'open');
+        nav.collapsed = false;
+      };
+
+      // The track stays held at the collapsed width until the rail has finished
+      // sliding back; releasing it sooner would let the content ride the shrink.
+      const close = () => {
+        if (!peeking()) return;
+        frame.setAttribute('data-nav-peek', 'closing');
+        nav.collapsed = true;
+        const ms = parseFloat(getComputedStyle(nav).transitionDuration) * 1000 || 0;
+        settleTimer = window.setTimeout(() => frame.removeAttribute('data-nav-peek'), ms + 20);
+      };
+
+      const closeSoon = () => {
+        window.clearTimeout(closeTimer);
+        closeTimer = window.setTimeout(() => {
+          if (!inside() && !focusInside()) close();
+        }, PEEK_CLOSE_DELAY);
+      };
+
+      toggle.addEventListener('pointerenter', (e) => {
+        if (e.pointerType !== 'mouse' || !nav.collapsed) return;
+        window.clearTimeout(openTimer);
+        openTimer = window.setTimeout(open, PEEK_OPEN_DELAY);
+      });
+      toggle.addEventListener('pointerleave', () => window.clearTimeout(openTimer));
+
+      for (const region of [nav, foot]) {
+        region.addEventListener('pointerenter', () => window.clearTimeout(closeTimer));
+        region.addEventListener('pointerleave', () => { if (peeking()) closeSoon(); });
+        // A menu opened from the peek holds focus inside it; when focus leaves
+        // to the page, the peek follows unless the pointer is still on it.
+        region.addEventListener('focusout', () => { if (peeking()) closeSoon(); });
+      }
+
+      // PIN. A capture listener on the target runs before the shell's own click
+      // handler, which would otherwise read the peek's lifted `collapsed` as
+      // "open" and shut the rail. Stopping it here leaves the rail open; dropping
+      // the overlay hands the column its width.
+      toggle.addEventListener('click', (e) => {
+        window.clearTimeout(openTimer);
+        if (!peeking()) return;
+        e.stopImmediatePropagation();
+        window.clearTimeout(closeTimer);
+        frame.removeAttribute('data-nav-peek');
+        toggle.classList.remove('is-collapsed');
+      }, { capture: true });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && peeking()) close();
+      });
+      // A peek held open by a menu has no pointerleave left to shut it once the
+      // menu goes; a press out on the page does.
+      document.addEventListener('pointerdown', (e) => {
+        const path = e.composedPath();
+        if (peeking() && !path.includes(nav) && !path.includes(foot)) close();
+      });
+    });
+  }
+
+  customElements.whenDefined('esa-sidebar-nav').then(mountRailPeek);
+
+  // ---- THE RAIL FOLLOWS THE SCREEN ----
+  //
+  // Two lines, both the spec's (mobile-foundation, 2026-10-21):
+  //
+  //   ≤ 64rem   tablet. The rail starts as its 72px strip — the content gets the
+  //             width, the peek still shows the whole nav on hover, and the foot
+  //             toggle still opens it for real. The screen wins over a stored
+  //             "open": a 768px window with a 280px rail left a 480px page.
+  //             Nothing new is stored; widening back past 64rem restores what
+  //             bcn-edge-handle remembers.
+  //   ≤ 45rem   phone. The rail is esa-sidebar-nav's own DRAWER: its host
+  //             shrinks to a menu toggle on the top bar's leading edge, and the
+  //             nav slides in over the page with a scrim, Escape, and focus
+  //             moved in and back. The lego asks its host to drive `drawer`
+  //             from a media query because the layout and the behaviour have to
+  //             agree; esa-app-shell does not, so this layout does (hub gap).
+  //
+  // In drawer mode the rail's head (workspace menu, search) and the account
+  // menu are re-slotted into the panel (placeDrawerSlots) — moved, not rebuilt,
+  // like everything moveChromeIntoRail moves — and put back on the way out.
+  const PHONE = window.matchMedia('(max-width: 45rem)');
+  const TABLET = window.matchMedia('(max-width: 64rem)');
+  type ShellNav = HTMLElement & { collapsed: boolean; drawer: boolean; drawerOpen: boolean; label: string };
+
+  // What bcn-edge-handle stored for the app rail (storage-key "app-nav").
+  function storedCollapsed(): boolean {
+    try {
+      return !!(JSON.parse(localStorage.getItem('bcn-edge-handle:app-nav') ?? '{}') as { c?: boolean }).c;
+    } catch {
+      return false;
+    }
+  }
+
+  function mountResponsiveShell(): void {
+    document.querySelectorAll<HTMLElement>('.firma2-app-frame').forEach((frame) => {
+      const nav = frame.querySelector<ShellNav>('esa-sidebar-nav');
+      if (!nav) return;
+      const foot = frame.querySelector<HTMLElement>('.firma2-app-frame__account');
+      const toggle = foot?.querySelector<HTMLElement>('.esa-app-shell__toggle') ?? null;
+      const account = foot?.querySelector<HTMLElement>('esa-dropdown-menu') ?? null;
+      const head = Array.from(nav.querySelectorAll<HTMLElement>(':scope > [slot="header"]'));
+      const page = [frame.querySelector<HTMLElement>('.esa-app-shell__content'), frame.querySelector<HTMLElement>('.firma2-utility-bar')];
+      const sidebarLabel = nav.label;
+
+      // A flip the screen made, not the reader: no width ease (the rule on
+      // esa-sidebar-nav[data-resizing] zeroes it for the frame).
+      const setCollapsed = (shut: boolean): void => {
+        if (nav.collapsed === shut) return;
+        nav.setAttribute('data-resizing', '');
+        nav.collapsed = shut;
+        toggle?.classList.toggle('is-collapsed', shut);
+        requestAnimationFrame(() => requestAnimationFrame(() => nav.removeAttribute('data-resizing')));
+      };
+
+      // The lego leaves inerting the page to its host. Behind an open drawer
+      // the pane and the utility strip are out of reach; the top bar is in the
+      // pane, so it goes with it.
+      const setPageInert = (inert: boolean): void => {
+        page.forEach((el) => el && (el.inert = inert));
+      };
+      nav.addEventListener('drawerchange', (event) => {
+        setPageInert((event as CustomEvent<{ open: boolean }>).detail.open);
+      });
+
+      // FOCUS ON A RE-SLOTTED ITEM IS STILL INSIDE THE DRAWER. The lego closes
+      // the drawer when focus leaves its shadow root, and the workspace menu,
+      // search and account menu are light-DOM children slotted into it, so a
+      // tap on any of them would shut the panel under the finger. Stopped at
+      // the host, in capture, before the lego's own listener on its <nav> —
+      // only when focus is moving between the host's own parts.
+      nav.addEventListener(
+        'focusout',
+        (event) => {
+          if (!nav.drawer || !nav.drawerOpen) return;
+          const next = event.relatedTarget as Node | null;
+          if (next && (next === nav || nav.contains(next))) event.stopPropagation();
+        },
+        { capture: true },
+      );
+
+      const setDrawer = (on: boolean): void => {
+        if (nav.drawer === on) return;
+        if (!on && nav.drawerOpen) {
+          nav.drawerOpen = false;
+          setPageInert(false);
+        }
+        frame.removeAttribute('data-nav-peek');
+        nav.drawer = on;
+        // The toggle's name is the landmark's label in drawer mode (the lego
+        // labels both from `label`): "Menu", the word on every phone's
+        // hamburger. Back to the rail's own name on the way out.
+        nav.label = on ? 'Menu' : sidebarLabel;
+        head.forEach((el) => el.setAttribute('slot', on ? 'drawer-head' : 'header'));
+        if (account && foot) {
+          if (on) {
+            account.setAttribute('slot', 'drawer-foot');
+            nav.appendChild(account);
+          } else {
+            account.removeAttribute('slot');
+            foot.prepend(account);
+          }
+        }
+      };
+
+      const apply = (first: boolean): void => {
+        setDrawer(PHONE.matches);
+        // A drawer is never the 72px strip — collapsed zeroes every label.
+        if (PHONE.matches) setCollapsed(false);
+        else if (TABLET.matches) setCollapsed(true);
+        else if (!first) setCollapsed(storedCollapsed());
+      };
+
+      apply(true);
+      PHONE.addEventListener('change', () => apply(false));
+      TABLET.addEventListener('change', () => apply(false));
+    });
+  }
+
+  // After the rail head is stacked: the drawer slots are placed there.
+  customElements.whenDefined('esa-sidebar-nav').then(() => {
+    requestAnimationFrame(() => requestAnimationFrame(mountResponsiveShell));
   });
 
   // THE CONTENT PANE IS NOT A SCROLL REGION HERE, so it must not be a tab stop.
@@ -384,10 +996,10 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   // holding no focusable element cannot be scrolled by keyboard unless it is
   // itself focusable — WCAG 2.1.1, and axe's `scrollable-region-focusable`.
   //
-  // This layout scrolls the DOCUMENT and sets the pane to `overflow: visible`, so
-  // none of that applies: the pane does not scroll, arrow keys already move the
-  // page, and the tabindex is left over as a focus stop that does nothing. It is
-  // not free either — @esa/tokens/focus.css matches `[tabindex]:focus-visible`,
+  // The pane scrolls again here (the inset sheet), but Chrome 130+ and Firefox
+  // make a scroller with no focusable child keyboard-focusable on their own, so
+  // the attribute is still not what keeps it reachable — and it is not free
+  // either — @esa/tokens/focus.css matches `[tabindex]:focus-visible`,
   // so landing on it draws a 2px ring around the ENTIRE content region, which
   // reads as a rendering fault rather than as a focus indicator. Every keyboard
   // user hit it on the way out of the rail.
@@ -402,6 +1014,42 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
 </script>
 
 <style>
+  /* THE RAIL HOLDS ITS TRACK BEFORE IT BOOTS (see the inline script at the top
+     of the markup). Undefined, esa-sidebar-nav has no shadow root, so it would
+     size to its light-DOM header and the sheet would start ~130px left of
+     where it lands a frame later. Reserved at the width it will have, hidden
+     so the half-built light DOM is never painted. Tablet takes the 72px strip
+     whatever was stored, as mountResponsiveShell() does; the phone rule
+     (`:not([drawer])` → none) is more specific and still wins below 45rem. */
+  .firma2-app-frame :global(esa-sidebar-nav:not(:defined)) {
+    display: block;
+    inline-size: var(--firma2-rail-boot, var(--sidenav-width, 280px));
+    visibility: hidden;
+  }
+  @media (max-width: 64rem) {
+    .firma2-app-frame :global(esa-sidebar-nav:not(:defined)) {
+      inline-size: var(--sidenav-width-collapsed, 72px);
+    }
+  }
+
+  /* md BUTTONS TAKE THE CONTROL LINE TOO. esa-button has no height: an md
+     button is 2 × 12px padding + its content + border, so a text-only one
+     lands at 41px and one carrying a 20px icon at 46px — "Add option", every
+     grip and "…". Beside 40px fields that put a 6px step into every row that
+     held one (the schema board's options measured 46px apart instead of 40).
+     The pin is the CONTROL_PINS rule, carried in light DOM because
+     esa-button is an .astro lego: same 40px, content centred by the button's
+     own inline-flex. Icon-only buttons are squares, so they take the width
+     too — their padding would otherwise leave a 46 × 40 rectangle. */
+  .firma2-app-frame :global(.esa-button--md > .esa-button__native) {
+    block-size: 40px;
+    padding-block: 0;
+  }
+  .firma2-app-frame :global(.esa-button--md.esa-button--icon-only > .esa-button__native) {
+    inline-size: 40px;
+    padding-inline: 0;
+  }
+
   /* THE PAGE SCROLLS, NOT A PANE — so the top bar scrolls AWAY with the content
      instead of hanging over it.
 
@@ -423,7 +1071,45 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
      because a nav you have to scroll back up to reach is not a nav. */
   .firma2-app-frame {
     display: grid;
-    min-height: 100dvh;
+    height: 100dvh;
+    /* THE INSET SHEET — a deliberate departure from esa-app-shell, which has no
+       inset variant. The content pane is a rounded sheet laid on the rail's
+       sunken surface, a gutter clear of the viewport on every side; the gap and
+       the change in value, not a border, are what separate it from the rail.
+       Rounded corners only hold if the sheet never scrolls out from under them,
+       so the PANE is the scroller here, not the document (see the content rule
+       below), and --firma2-fold is the height of that scrollport: every sticky
+       panel that used to size itself to 100dvh sizes itself to this instead. */
+    --firma2-gutter: var(--spacing-200, 8px);
+    /* The sheet stops a strip short of the window's foot: firma2-utility-bar
+       (Recent, Help, Shortcuts) sits on the frame below it, Linear's frame foot
+       (user, 2026-10-21). The strip replaces the bottom gutter, so the fold is
+       one gutter and one strip shorter than the viewport. */
+    --firma2-utility-height: 40px;
+    --firma2-fold: calc(100dvh - var(--firma2-gutter) - var(--firma2-utility-height));
+    /* The sheet's surface: RAISED, not default. The sheet is a panel above the
+       frame, and Radix lifts a panel one step in dark (its --color-panel-solid
+       is gray-2) rather than sinking what is behind it. Light resolves raised
+       and default to the same step, so only dark moves — olive-dark 1 → 2,
+       which puts the sheet clear of the frame instead of four RGB values off
+       it. Published rather than inlined because every band that paints "the
+       page" so content can pass under it (top bar, record rail, peek, side
+       panel, sticky table columns, graph halos) has to paint this same step;
+       outside the shell they fall back to default. */
+    --firma2-sheet-background: var(--color-background-elevation-raised, #fcfcfc);
+    /* A sticky box inside a scroll container sticks to its CONTENT edge — the
+       scrollport deflated by the container's padding — so in this pane `top: 0`
+       lands 1.5rem below the sheet's top and a fold-tall rail overruns its
+       bottom by the same. Every block-axis sticky in the spoke adds this to its
+       `top`, which puts its zero back on the sheet's edge. The literal is the
+       pane padding the bleeding bands already restate as --_bleed. */
+    --firma2-sticky-origin: calc(var(--firma2-pane-padding) * -1);
+    /* The pane's own padding, published so every band that bleeds through it
+       (top bar, rails, maps) reads one number instead of restating
+       esa-app-shell's literal — it steps down on a phone (see the drawer block
+       at the end of this stylesheet), and a restated literal would not. */
+    --firma2-pane-padding: var(--spacing-500, 1.5rem);
+    background: var(--color-background-elevation-sunken, #f0f0f0);
     /* The height of the account strip at the foot of the rail — see the ACCOUNT
        MENU block below. Declared here because the rail reads it too, to reserve
        the space, and one number cannot be kept in sync in two places. */
@@ -442,9 +1128,9 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   .firma2-app-frame :global(.esa-app-shell) {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    /* ONE row. The bar used to hold the top one; with the bar gone the rail and
-       the content are the whole grid, side by side. */
-    grid-template-rows: minmax(0, 1fr);
+    /* The sheet's row, then the utility strip's under it. The rail, its foot
+       and its grip span both, so only the content column gives up the strip. */
+    grid-template-rows: minmax(0, 1fr) auto;
     /* `overflow: visible` undoes the shell's own `overflow: hidden`, and it is
        load-bearing rather than tidying: an `overflow: hidden` ancestor becomes
        the scrollport for every sticky descendant, so the rail below would have
@@ -452,6 +1138,9 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
        The shell's companion `height: 100%` needs no override — it resolves
        against a parent with no fixed height, so it is already `auto`. */
     overflow: visible;
+    /* The gutter around the sheet reads as the rail's surface carried round the
+       page, so the shell paints it rather than its stock page background. */
+    background: transparent;
   }
   .firma2-app-frame :global(.esa-app-shell__body) {
     display: contents;
@@ -466,7 +1155,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
      resolve against that 100dvh, so a long nav still scrolls within the rail. */
   .firma2-app-frame :global(.esa-app-shell__nav) {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / -1;
     position: sticky;
     top: 0;
     align-self: start;
@@ -477,6 +1166,10 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
        it), so this comes out of the 100dvh rather than adding to it, and
        esa-sidebar-nav's own `height: 100%` inner nav shortens to match. */
     padding-block-end: var(--firma2-account-height);
+    /* The gutter is the rail's edge now; a hairline beside it would draw a
+       second edge a gutter's width from the sheet's own. The border sits on the
+       host, so this outer rule beats the lego's :host declaration. */
+    border-inline-end: 0;
   }
   /* THE BAR IS GONE. Its three controls now live in the rail (see
      moveChromeIntoRail above), which left an empty 66px band that scrolled away
@@ -527,10 +1220,103 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     grid-row: 1;
     min-height: 0;
     position: relative;
-    /* The document is the scroller now, so the pane must not open a second one
-       inside it — `overflow: visible` replaces the shell's `overflow-y: auto`.
-       Without it the bar would scroll away and the content would not follow. */
-    overflow: visible;
+    /* THE SHEET. The pane is the scroller again (the shell's own `overflow-y:
+       auto`, restated so it is not read as an accident), sized to the fold and
+       held a gutter clear of every edge. `overflow` is also what clips the
+       sticky top bar and record rail to the rounded corners — without it their
+       square backgrounds would paint over the curve. `overscroll-behavior` keeps
+       a fling at the end of a page from bouncing the frame around it. */
+    margin: var(--firma2-gutter);
+    margin-inline-start: 0;
+    margin-block-end: 0;
+    padding: var(--firma2-pane-padding);
+    block-size: var(--firma2-fold);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: var(--radius-lg, 12px);
+    background: var(--firma2-sheet-background);
+    box-shadow: 0 0 0 var(--border-width-default, 1px) var(--color-border-default-subtle, #d9d9d9);
+  }
+  /* ROOM FOR A DOCKED SIDE SHEET (bcn-side-sheet). While one is open the pane's
+     end padding grows by the sheet's width, so the sheet sits ON the page
+     beside what it edits rather than over it — under the top bar, whose end
+     bleed grows by the same amount so it still spans the whole pane. The sheet
+     writes its width here as --firma2-side-sheet-size when it opens; a dragged
+     width (--firma2-side-sheet-width, from its edge handle) beats it. Below
+     64rem the sheet lies over the pane instead, so nothing is reserved. Whole
+     selector in :global — Astro mangles a :global nested inside :has. */
+  .firma2-app-frame {
+    --firma2-side-sheet-size: 400px;
+  }
+  @media (min-width: 64.0625rem) {
+    :global(.firma2-app-frame:has(bcn-side-sheet[open]) .esa-app-shell__content) {
+      --_sheet-room: calc(var(--spacing-500, 1.5rem) + var(--firma2-side-sheet-width, var(--firma2-side-sheet-size)));
+      padding-inline-end: var(--_sheet-room);
+    }
+    /* Opening from and closing to the strip: the room follows the sheet. */
+    :global(.firma2-app-frame:has(bcn-side-sheet[open][collapsed]) .esa-app-shell__content) {
+      --_sheet-room: calc(var(--spacing-500, 1.5rem) + 2.5rem + 2 * var(--spacing-200, 0.5rem) + var(--border-width-default, 1px));
+    }
+    /* …or from and to the width of the rail it takes the place of. */
+    :global(.firma2-app-frame:has(bcn-side-sheet[open][collapsed][data-from-rail]) .esa-app-shell__content) {
+      --_sheet-room: calc(var(--spacing-500, 1.5rem) + var(--firma2-side-sheet-from));
+    }
+    :global(.firma2-app-frame:has(bcn-side-sheet[open]) .esa-app-shell__content > .firma2-top-bar) {
+      margin-inline-end: calc(var(--_sheet-room) * -1);
+    }
+    /* Same ease as the sheet's own width, so the two edges move as one. */
+    :global(.firma2-app-frame .esa-app-shell__content) {
+      transition: padding-inline-end var(--transition-base, 200ms ease);
+    }
+    :global(.firma2-app-frame .esa-app-shell__content > .firma2-top-bar) {
+      transition: margin-inline-end var(--transition-base, 200ms ease);
+    }
+    /* …and while a sheet and the page's rail trade places, which is instant. */
+    :global(.firma2-app-frame[data-sheet-swapping] .esa-app-shell__content),
+    :global(.firma2-app-frame[data-sheet-swapping] .esa-app-shell__content > .firma2-top-bar),
+    :global(.firma2-app-frame:has(bcn-side-sheet[data-resizing]) .esa-app-shell__content),
+    :global(.firma2-app-frame:has(bcn-side-sheet[data-resizing]) .esa-app-shell__content > .firma2-top-bar) {
+      transition: none;
+    }
+  }
+  /* The utility strip's place: under the content column, in the frame's
+     gutter rather than on the sheet. */
+  .firma2-app-frame :global(.esa-app-shell > .firma2-utility-bar) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  /* A phone has no gutter to spare: the sheet goes back to the full pane, and
+     the strip goes with the gutter. */
+  @media (max-width: 40rem) {
+    .firma2-app-frame {
+      --firma2-gutter: 0px;
+      --firma2-utility-height: 0px;
+    }
+    .firma2-app-frame :global(.esa-app-shell > .firma2-utility-bar) {
+      display: none;
+    }
+    .firma2-app-frame :global(.esa-app-shell__content) {
+      border-radius: 0;
+      box-shadow: none;
+    }
+  }
+
+  /* THE CAP, WITHOUT A SECOND GUTTER. esa-container brings its own 2rem
+     padding-inline, written for a page with no other gutter. Here the shell's
+     pane already pads its content, so keeping both would inset every page by an
+     extra 2rem at all widths — the container is only here for its max-width and
+     centring.
+
+     A DESCENDANT, not a child: a page with a trailing rail places its container
+     inside its `.sidebar` main track rather than at the top of the pane, and
+     that column is already guttered by the sidebar's own gap.
+
+     NO `min-width` HERE, deliberately. In a `.sidebar` the container IS the
+     main track, and layouts.css floors that track with `min-inline-size:
+     var(--sidebar-content-min)` — the same property. Zeroing it stopped the
+     record's rail from wrapping below the content on narrow windows. */
+  .firma2-app-frame :global(.esa-app-shell__content .esa-container) {
+    padding-inline: 0;
   }
 
   /* ---- THE RAIL'S FOOT: ACCOUNT + COLLAPSE ----
@@ -550,7 +1336,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
        follows it down to 72px when it collapses — no width of its own, and no
        second place to keep that number in sync. */
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / -1;
     align-self: end;
     /* The rail holds the fold with `top: 0`; this holds the other edge. Both are
        sticky because the document is what scrolls (see the frame rule at the top
@@ -559,6 +1345,11 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
     position: sticky;
     bottom: 0;
     z-index: var(--z-sidebar, 100);
+    /* One hairline short of the rail's edge. The sheet's outline is a 1px ring
+       painted OUTSIDE the sheet — on the rail's last pixel column — and a
+       full-width strip at this z-index covered it, so the sheet's edge stopped
+       at the strip's top line and its bottom corner came out unoutlined. */
+    margin-inline-end: var(--border-width-default, 1px);
 
     /* Account leading, collapse trailing. `space-between` rather than a gap so
        the toggle keeps the rail's trailing edge whatever the name's length —
@@ -573,16 +1364,12 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
        lands on the same left edge as every nav item's icon above it. */
     padding: var(--spacing-200, 8px);
 
-    /* The rail's surface and the rail's edge, both read from the same tokens
-       esa-sidebar-nav uses (--color-background-elevation-sunken /
-       --color-border-default-subtle). The strip is laid OVER the rail rather
-       than inside it, so it has to paint the same surface or it would read as a
-       panel floating on the nav. The top hairline is the only thing that says
-       it is a separate region — the same weight the rail's own group headings
-       use. */
+    /* The rail's surface, read from the same token esa-sidebar-nav uses
+       (--color-background-elevation-sunken). The strip is laid OVER the rail
+       rather than inside it, so it has to paint the same surface or it would
+       read as a panel floating on the nav. No top hairline (user, 2026-10-21):
+       the strip is the rail's foot, not a separate region. */
     background: var(--color-background-elevation-sunken, #f0f0f0);
-    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
-    border-inline-end: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
   }
 
   /* ---- THE RAIL'S EDGE HANDLE ----
@@ -617,7 +1404,7 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
      what makes it sit ON the line instead of inside it. */
   .firma2-app-frame :global(.esa-app-shell > bcn-edge-handle) {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / -1;
     justify-self: end;
     align-self: start;
     position: sticky;
@@ -668,16 +1455,20 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
      a second copy of it could only disagree. Every target here is LIGHT DOM —
      esa-button and the shell's own search/toggle buttons — so none of it needs
      shadow-root injection. */
-  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) {
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]),
+  .firma2-app-frame[data-nav-peek] {
     --firma2-account-height: 96px;
   }
-  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account) {
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account),
+  .firma2-app-frame[data-nav-peek] :global(.firma2-app-frame__account) {
     flex-direction: column;
     align-items: center;
     justify-content: center;
   }
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account .esa-button__label),
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__account .esa-button__native > .esa-icon:last-child),
+  .firma2-app-frame[data-nav-peek] :global(.firma2-app-frame__account .esa-button__label),
+  .firma2-app-frame[data-nav-peek] :global(.firma2-app-frame__account .esa-button__native > .esa-icon:last-child),
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search-label),
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search-kbd) {
     display: none;
@@ -685,6 +1476,43 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
   .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.esa-app-shell__search) {
     justify-content: center;
     padding-inline: 0;
+  }
+
+  /* ---- THE PEEK: A SHUT RAIL SHOWN OVER THE PAGE ----
+     bcn-lego-checked: no esa- overlay fits — this is esa-sidebar-nav's own open
+     state laid over the content, not a new surface (esa-side-dialog is modal and
+     a second nav); Beacon has no hover-peek. The script (mountRailPeek) lifts
+     `collapsed` and sets `data-nav-peek`; these rules make that an overlay.
+
+     The track holds at the collapsed width, so the rail's 280px overflows across
+     the content rather than pushing it, and lifts above the page's sticky
+     header band (the record rail sits at --z-header + 1). The foot keeps its
+     collapsed stack — the toggle under the pointer must not move — inside a
+     strip that widens with the panel: the inline-end padding holds the stack in
+     the leftmost 72px exactly where it was. The width rides the same token as the
+     lego's own slide, so strip and rail travel as one. */
+  .firma2-app-frame[data-nav-peek] :global(.esa-app-shell) {
+    grid-template-columns: var(--sidenav-width-collapsed, 72px) minmax(0, 1fr);
+  }
+  .firma2-app-frame[data-nav-peek] :global(.esa-app-shell__nav) {
+    z-index: calc(var(--z-header, 200) + 2);
+    box-shadow: var(--elevation-3);
+  }
+  .firma2-app-frame[data-nav-peek] :global(.firma2-app-frame__account) {
+    z-index: calc(var(--z-header, 200) + 3);
+    justify-self: start;
+    width: var(--sidenav-width-collapsed, 72px);
+    transition:
+      width var(--transition-base, 200ms ease),
+      padding-inline-end var(--transition-base, 200ms ease);
+  }
+  .firma2-app-frame[data-nav-peek='open'] :global(.firma2-app-frame__account) {
+    width: var(--firma2-peek-width, 280px);
+    padding-inline-end: calc(var(--firma2-peek-width, 280px) - var(--sidenav-width-collapsed, 72px) + var(--spacing-200, 8px));
+  }
+  /* The width grip belongs to a rail that is open for real. */
+  .firma2-app-frame[data-nav-peek] :global(.esa-app-shell > bcn-edge-handle) {
+    display: none;
   }
 
   /* Omnibox icon: stop the placeholder from eating it.
@@ -736,5 +1564,169 @@ const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry
      intact, in both rail states. */
   .firma2-app-frame :global(.esa-app-shell__search) {
     width: 100%;
+  }
+
+  /* ---- SETTINGS PAGES START LOWER ----
+     A record page's title sits one gutter under the top bar because the record
+     is dense. A settings page is short and read top-down, and the title hugging
+     the bar read as cramped, so it takes one more step of air: 48px bar + 24px
+     gutter + this 16px = the title at 88px from the window top. */
+  .firma2-app-frame[data-nav='workspace-settings'] :global(.firma2-page-header) {
+    margin-block-start: var(--spacing-400, 1rem);
+  }
+
+  /* ---- THE WORKSPACE MENU ----
+     The companion script swaps the shell's brand <a> for a <button> inside an
+     esa-dropdown-menu (see mountWorkspaceMenu). The shell's own brand rules
+     still apply — the button carries the same class and scope attribute — so
+     these lines only undo the UA button chrome and stretch it to the rail. */
+  /* The rail's `::slotted([slot='header'])` gives header content its own
+     padding and `overflow: hidden`. The anchor escaped both by carrying the
+     shell's brand rules; the menu host is now the slotted element, so it has to
+     undo them itself — the padding would double the brand's, and the clip would
+     cut the panel off at the rail head. Outer-tree declarations beat ::slotted.
+     The z-index lifts the open panel over the search and nav rows below it. */
+  .firma2-app-frame :global(.firma2-app-frame__workspace) {
+    display: block;
+    padding: 0;
+    overflow: visible;
+    position: relative;
+    z-index: var(--z-dropdown, 50);
+  }
+  .firma2-app-frame :global(button.esa-app-shell__brand) {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .firma2-app-frame :global(button.esa-app-shell__brand[aria-expanded='true']) {
+    background: var(--app-shell-brand-bg-hover, color-mix(in srgb, currentColor 8%, transparent));
+  }
+  .firma2-app-frame :global(.firma2-app-frame__workspace-chevron) {
+    flex: none;
+    margin-inline-start: auto;
+    color: var(--color-content-subtle, #646464);
+  }
+  .firma2-app-frame:has(esa-sidebar-nav[collapsed]) :global(.firma2-app-frame__workspace-chevron) {
+    display: none;
+  }
+
+  /* ---- PHONE: THE RAIL IS A DRAWER ----
+     bcn-lego-checked: esa-sidebar-nav's own drawer mode is the drawer (panel,
+     scrim, Escape, focus move, inert content) — mountResponsiveShell turns it on
+     from a matchMedia, which the lego asks its host to do and esa-app-shell does
+     not. These rules are placement only: where the rail's host (now just its
+     menu toggle) sits, what the frame stops reserving for it, and how the rail
+     head's items read inside the panel. No esa- lego or layout primitive places
+     a control over another lego's bar; Beacon is not cloned here.
+
+     Below 45rem the shell's breakpoint, and the spec's phone line. The pane
+     steps down to a 16px gutter (and --firma2-sticky-origin with it, so every
+     sticky band still lands on the sheet's edge). */
+  @media (max-width: 45rem) {
+    .firma2-app-frame {
+      --firma2-pane-padding: var(--spacing-400, 1rem);
+    }
+    /* Until the script has made it a drawer, a phone shows no 280px column —
+       that is the flash this rule exists to prevent, at the price of no rail at
+       all if scripting fails, which takes the rest of the app with it anyway. */
+    .firma2-app-frame :global(.esa-app-shell__nav:not([drawer])) {
+      display: none;
+    }
+  }
+  /* The rail's host leaves the grid: it rides the leading edge of the top bar's
+     row, laid over the sheet, and is only as big as its toggle. Absolute on the
+     shell (which the pane fills) rather than fixed, so the toggle moves with the
+     frame if anything ever pads it. Over the top bar's own layer, and at the
+     modal rung so the lego's fixed panel and scrim — painted inside this host's
+     stacking context — clear every sticky band on the page. */
+  .firma2-app-frame:has(esa-sidebar-nav[drawer]) :global(.esa-app-shell) {
+    position: relative;
+  }
+  .firma2-app-frame :global(.esa-app-shell__nav[drawer]) {
+    position: absolute;
+    inset-block-start: var(--firma2-gutter);
+    inset-inline-start: var(--firma2-gutter);
+    z-index: var(--z-modal, 400);
+    display: flex;
+    align-items: center;
+    block-size: 48px;
+    padding: 0;
+    padding-inline-start: var(--firma2-pane-padding);
+  }
+  /* The sheet takes the whole width the rail gave up. */
+  .firma2-app-frame:has(esa-sidebar-nav[drawer]) :global(.esa-app-shell__content) {
+    margin-inline-start: var(--firma2-gutter);
+  }
+  /* The foot's account menu moves into the drawer (the script re-slots it) and
+     its collapse toggle means nothing on a drawer, so the strip goes. */
+  .firma2-app-frame:has(esa-sidebar-nav[drawer]) :global(.firma2-app-frame__account) {
+    display: none;
+  }
+  /* Room at the top bar's leading edge for the 32px toggle and one gap, so the
+     home glyph starts after it. */
+  :global(.firma2-app-frame:has(esa-sidebar-nav[drawer]) .esa-app-shell__content > .firma2-top-bar .firma2-top-bar__bar.esa-app-bar) {
+    /* The pane's own padding already offsets the bar; only the toggle and one
+       gap are added, so the home glyph lands at 56px (measured, not 72). */
+    padding-inline-start: calc(32px + var(--spacing-200, 0.5rem));
+  }
+  /* Inside the panel: the workspace row clears the panel's close button in the
+     corner beside it, the search gets its label back (the shell drops it to an
+     icon under 720px, written for a bar with no room), and the account menu
+     opens upward from the panel's foot as it did from the rail's. */
+  .firma2-app-frame :global(esa-sidebar-nav[drawer] > .firma2-app-frame__workspace) {
+    margin-inline-end: calc(40px + var(--spacing-200, 0.5rem));
+    margin-block-end: var(--spacing-200, 0.5rem);
+  }
+  .firma2-app-frame :global(esa-sidebar-nav[drawer] > .esa-app-shell__search) {
+    justify-content: flex-start;
+    padding-inline: var(--spacing-300, 0.75rem);
+    margin-block-end: var(--spacing-200, 0.5rem);
+  }
+  .firma2-app-frame :global(esa-sidebar-nav[drawer] .esa-app-shell__search-label) {
+    display: block;
+  }
+  .firma2-app-frame :global(esa-sidebar-nav[drawer] > [slot='drawer-foot']) {
+    display: block;
+  }
+
+  /* SCROLLBARS: JUST THE BAR (user, 2026-10-22: "it's less about how they
+     look and more about how they work, they have a container for some reason
+     with borders… just the scroll bar without the rest of that stuff" — and
+     "I didn't want them thinner"). Where the OS shows scrollbars all the time
+     (Windows; macOS set to "Always"), the classic scrollbar draws a grey
+     track with ruled edges behind the thumb: a box inside every pane. Setting
+     scrollbar-color with a TRANSPARENT track removes that box and keeps the
+     platform's own width; only the thumb is drawn, mid-grey from the border
+     ramp so it holds in dark as in light. The colour is inherited, so it is
+     set once on the root and reaches shadow roots too. High contrast gets the
+     content ink. Safari before 26.2 knows neither property and gets the same
+     look through the legacy pseudo-elements, behind @supports so no browser
+     applies both. */
+  :global(:root) {
+    --firma2-scrollbar-thumb: var(--color-border-default-strong, #b9b9b9);
+    --firma2-scrollbar-track: transparent;
+    scrollbar-color: var(--firma2-scrollbar-thumb) var(--firma2-scrollbar-track);
+  }
+  @media (prefers-contrast: more) {
+    :global(:root) {
+      --firma2-scrollbar-thumb: var(--color-content-default, #202020);
+    }
+  }
+  @supports not (scrollbar-color: auto) {
+    :global(::-webkit-scrollbar) {
+      width: 12px;
+      height: 12px;
+    }
+    :global(::-webkit-scrollbar-thumb) {
+      background: var(--firma2-scrollbar-thumb);
+      border-radius: 999px;
+    }
+    :global(::-webkit-scrollbar-track),
+    :global(::-webkit-scrollbar-corner) {
+      background: var(--firma2-scrollbar-track);
+    }
   }
 </style>

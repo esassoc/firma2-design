@@ -1,0 +1,75 @@
+---
+// firma2-public-review-notice — on a project's public page, the line a
+// SIGNED-IN reader gets and the public does not: this page is behind the
+// record, and here is the review that brings it up to date (user, 2026-11-23).
+//
+// WHY IT IS HERE. The public page shows the last published state, so someone
+// who just edited the record and opened the public page sees their change
+// missing. The strip says why and is the door to that project's review.
+//
+// SAME WORDS AS THE RECORD. "3 unpublished changes" and "Not public yet" are
+// the project page's badge (firma2-project-publish-state), counted by the same
+// rows (review-rows.ts), so the two pages cannot disagree. Nothing waiting,
+// nothing shown.
+//
+// SIGNED OUT, IT IS NOT THERE. A real tenant would not send it; the prototype
+// renders it hidden and the script shows it for a signed-in browser
+// (src/lib/session.ts).
+//
+// bcn-lego-checked: composes firma2-public-announcement, the public frame's
+// one-sentence strip, with its own sentence — no new construction, no styles
+// beyond restating [hidden]. esa-alert-box was considered: it is a boxed alert
+// inside a page's column, and this spans the frame above a full-bleed hero.
+// Beacon is not cloned on this machine.
+import Firma2PublicAnnouncement from './firma2-public-announcement.astro';
+
+interface Props {
+  slug: string;
+  /** The seeded change keys still unpublished at build. */
+  keys: string[];
+  /** The project's review page, base-less. */
+  reviewHref: string;
+  /** Whether the seed has published the project. */
+  published: boolean;
+}
+
+const { slug, keys, reviewHref, published } = Astro.props;
+const count = keys.length;
+const text = published ? `${count} unpublished change${count === 1 ? '' : 's'}.` : 'Not public yet.';
+---
+<div
+  class="firma2-public-review-notice"
+  data-slug={slug}
+  data-keys={JSON.stringify(keys)}
+  data-first={published ? undefined : ''}
+  hidden
+>
+  <Firma2PublicAnnouncement label="Unpublished changes" notice={{ text, linkLabel: 'Review changes', href: reviewHref }} />
+</div>
+
+<style>
+  .firma2-public-review-notice[hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import { isSignedIn } from '../../lib/session';
+  import { readPublishing } from '../../lib/publish-store';
+  import { reviewRows } from '../review/review-rows';
+
+  document.querySelectorAll<HTMLElement>('.firma2-public-review-notice').forEach((root) => {
+    if (!isSignedIn()) return;
+    const slug = root.dataset.slug!;
+    const count = reviewRows(slug, JSON.parse(root.dataset.keys ?? '[]')).count;
+    if (count === 0) return;
+    // A first publish made in this browser: the page is public now, so what is
+    // left is counted like any other project's.
+    const first = root.dataset.first !== undefined && !readPublishing().published[slug];
+    const text = root.querySelector('[data-notice-text]');
+    if (text) text.textContent = first ? 'Not public yet.' : `${count} unpublished change${count === 1 ? '' : 's'}.`;
+    // The header's account menu reads this for its own Review changes row.
+    if (!first) root.dataset.count = String(count);
+    root.hidden = false;
+  });
+</script>

@@ -1,0 +1,91 @@
+---
+// firma2-review-project-rail — the selected project's Key facts beside the
+// Review inbox (user, 2026-11-18: review is a pre-publish accuracy check, so
+// "a right rail with project information of the project you're about to
+// update would be helpful").
+//
+// THE RECORD AS IT STANDS. The facts are the record's, so a changing field
+// already shows its new value: this is the page the public gets after Publish.
+// A field in this review carries "Changing" beside it, so the rail and the
+// diff agree on what moves.
+//
+// READ, NOT SET. Review never edits (spec decision 35: the record is the
+// project page's), so every field is data-locked — the editable field's own
+// read-only state, no hover ring, no click to edit. Open project is the way to
+// change one.
+//
+// ONE PANEL PER PROJECT, one shown. The inbox says which on
+// firma2:review-select ({ slug, keys, view }); in the Proposals view there is
+// no record yet, so the rail steps out of the page and the proposal takes the
+// width.
+//
+// It sits in firma2-side-panel's slot (firma2-rail): the corner toggle
+// collapses it and the reader's choice is remembered there. The work areas map
+// is left out: nine maps in hidden panels would each initialise for nothing.
+//
+// bcn-lego-checked: the facts are firma2-project-facts (firma2-editable-field
+// rows, locked), the mark esa-badge, the rail firma2-rail via
+// firma2-side-panel. This file only chooses which panel shows. Beacon is not
+// cloned on this machine.
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import Firma2ProjectFacts from '../projects/firma2-project-facts.astro';
+import type { ReviewItem } from '../../data/firma2-publishing';
+import { getProjectDetail } from '../../data/firma2-project-detail';
+
+interface Props {
+  items: ReviewItem[];
+}
+const { items } = Astro.props;
+---
+<div class="firma2-review-project-rail" data-review-rail>
+  {items.map((item, i) => (
+    <div class="firma2-review-project-rail__panel" data-rail-project={item.slug} hidden={i !== 0}>
+      <Firma2ProjectFacts detail={getProjectDetail(item.project)} showDescription={false} titleHidden />
+    </div>
+  ))}
+  <template data-changing-template>
+    <span class="firma2-review-project-rail__changing"><EsaBadge value="Changing" variant="info" size="sm" /></span>
+  </template>
+</div>
+
+<style>
+  .firma2-review-project-rail [hidden] {
+    display: none !important;
+  }
+  .firma2-review-project-rail__changing {
+    display: inline-flex;
+  }
+  /* The mark sits on the label's line, not under it. */
+  .firma2-review-project-rail :global(dt:has(.firma2-review-project-rail__changing)) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200);
+  }
+  /* No record to show (Proposals): the rail leaves and the inbox takes its width. */
+  :global(.firma2-side-panel-layout[data-review-rail-off] > .firma2-side-panel) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-review-rail]').forEach((root) => {
+    // Read, not set: the editable field's own locked state.
+    root.querySelectorAll<HTMLElement>('.firma2-editable-field').forEach((f) => f.setAttribute('data-locked', ''));
+    const layout = root.closest<HTMLElement>('.firma2-side-panel-layout');
+    const template = root.querySelector<HTMLTemplateElement>('[data-changing-template]')!;
+
+    document.addEventListener('firma2:review-select', (event) => {
+      const { slug, keys = [], view } = (event as CustomEvent<{ slug: string | null; keys?: string[]; view: string }>).detail;
+      layout?.toggleAttribute('data-review-rail-off', view === 'proposals' || !slug);
+      root.querySelectorAll<HTMLElement>('[data-rail-project]').forEach((p) => (p.hidden = p.dataset.railProject !== slug));
+      const panel = slug ? root.querySelector<HTMLElement>(`[data-rail-project="${CSS.escape(slug)}"]`) : null;
+      if (!panel) return;
+      panel.querySelectorAll('.firma2-review-project-rail__changing').forEach((m) => m.remove());
+      // A change key that is a record field names that field's row.
+      keys.forEach((key) => {
+        const label = panel.querySelector(`[data-field="${CSS.escape(key)}"] .firma2-editable-field__label, [data-field="${CSS.escape(key)}"] dt`);
+        if (label) label.append(template.content.firstElementChild!.cloneNode(true));
+      });
+    });
+  });
+</script>

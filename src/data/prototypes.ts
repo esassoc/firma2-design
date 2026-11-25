@@ -6,6 +6,8 @@
 // empty until this spoke builds its first working screen. Add entries here as
 // prototypes land (each route lives under src/pages/prototypes/<slug>.astro).
 
+import { demoProjectSlug } from './firma2-projects';
+
 export type PrototypeStatus = 'live' | 'in-progress' | 'planned' | 'archived';
 
 export interface Prototype {
@@ -23,14 +25,175 @@ export interface Prototype {
 }
 
 export const prototypes: Prototype[] = [
+  // ProjectFirma2's hackathon team 5 (project updates), rebuilt on this
+  // spoke's components and kept apart from the rest so each feature can be
+  // kept or dropped. Browser-local; the assistant is scripted.
+  {
+    slug: 'team-5-sandbox',
+    title: 'Team 5 sandbox',
+    description: 'Project updates as the hackathon team built them',
+    route: '/prototypes/team-5',
+    createdAt: '2026-11-12',
+    status: 'in-progress',
+  },
+  // A guided, clickable walk through the access-request screens — sign in,
+  // ask, get approved, request a new organization, catch a look-alike —
+  // switching between the newcomer and an administrator as the journey does.
+  // Spec: .scratch/access-requests/spec.md.
+  {
+    slug: 'access-requests-flow',
+    title: 'Getting access',
+    description: 'Ask to join, approve, add an organization',
+    route: '/prototypes/sign-in?flow=access-requests',
+    createdAt: '2026-11-02',
+    status: 'in-progress',
+  },
+  // Ported from ProjectFirma2's hackathon team 3 (customizations): a tenant's
+  // difference expressed as data — classifications build pages, one colour
+  // brands everything. Project types and classifications merged 2026-10-02.
+  // Edits are browser-local.
+  {
+    slug: 'classifications',
+    title: 'Classifications',
+    description: 'Work types and plan goals, grouped',
+    route: '/prototypes/workspace-settings/classifications',
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  {
+    slug: 'public-project-page',
+    title: 'Public project page',
+    description: 'A project as the public sees it',
+    route: `/prototypes/public/${demoProjectSlug('scott-river-fish-passage-barrier-removal')}`,
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  {
+    slug: 'branding',
+    title: 'Branding',
+    description: 'One brand colour for every screen',
+    route: '/prototypes/workspace-settings/branding',
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  {
+    slug: 'public-site-settings',
+    title: 'Public site settings',
+    description: 'Arrange the public home, its bar, fonts and footer',
+    route: '/prototypes/workspace-settings/public-site/home',
+    createdAt: '2026-11-24',
+    status: 'in-progress',
+  },
+  // Ported from ProjectFirma2's hackathon team 5 (project updates).
+  // Renamed Map on 2026-11-02: the map-based view became the whole page.
+  {
+    slug: 'my-projects',
+    title: 'Map',
+    description: 'Your projects on a full-screen map',
+    route: '/prototypes/map',
+    createdAt: '2026-10-03',
+    status: 'in-progress',
+  },
+  // Ported from ProjectFirma2's hackathon team 2 (geospatial). The ArcGIS
+  // service, the upload reader and the sync are scripted stand-ins.
+  {
+    slug: 'work-areas',
+    title: 'Place a project',
+    description: 'Draw, drop, paste or upload a project’s footprint',
+    route: `/prototypes/projects/${demoProjectSlug('cosumnes-floodplain-reconnection')}`,
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'gis-subscriptions',
+    title: 'GIS subscriptions',
+    description: 'Sync footprints from your ArcGIS layer',
+    route: '/prototypes/workspace-settings/gis-subscriptions',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'gis-sync',
+    title: 'GIS sync (two-way)',
+    description: 'Two-way ArcGIS sync, chosen per field',
+    route: '/prototypes/workspace-settings/gis-sync',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'map-layers',
+    title: 'Map layers',
+    description: 'Reference boundaries for every map',
+    route: '/prototypes/workspace-settings/map-layers',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'geospatial-areas',
+    title: 'Geospatial areas',
+    description: 'Groups of areas that file projects by location',
+    route: '/prototypes/workspace-settings/geospatial-areas',
+    createdAt: '2026-11-24',
+    status: 'in-progress',
+  },
+  {
+    slug: 'organization-settings',
+    title: 'Organization settings',
+    description: 'Your organization’s settings pages',
+    route: '/prototypes/workspace-settings/organization-settings',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'import-projects',
+    title: 'Import projects',
+    description: 'Bring in projects from a spreadsheet',
+    route: '/prototypes/projects/import',
+    createdAt: '2026-11-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'import-a-report',
+    title: 'Import a report',
+    description: 'Update a project from a report you already filed',
+    route: `/prototypes/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}/import-report`,
+    createdAt: '2026-11-13',
+    status: 'in-progress',
+  },
+  {
+    slug: 'project-source',
+    title: 'Project source',
+    description: 'Create projects here or sync them from GIS',
+    route: '/prototypes/workspace-settings/project-source',
+    createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  // Ported from ProjectFirma2's hackathon team 6 (performance measures),
+  // reworked against this spoke's measure model. Both flows are scripted
+  // stand-ins for live Claude calls.
+  {
+    slug: 'measure-drafting',
+    title: 'Draft a measure from a claim',
+    description: 'Draft a measure from a funder claim',
+    route: '/prototypes/workspace-settings/performance-measures/new',
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
+  {
+    slug: 'report-import',
+    title: 'Report from a document',
+    description: 'Report from a crew log, pasted text or funder report',
+    route: `/prototypes/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}`,
+    createdAt: '2026-10-01',
+    status: 'in-progress',
+  },
   // The one screen here that is not a record. Listed because the colour-scheme
   // control on it is app-wide and live — it is the fastest way to see every
   // other prototype in this list rendered in the dark scheme.
   {
     slug: 'settings',
     title: 'Settings',
-    description:
-      'One account’s own preferences: name and email, the light / dark / system theme, and which events send mail.',
+    description: 'Your account settings',
     route: '/prototypes/settings',
     createdAt: '2026-08-24',
     status: 'in-progress',
@@ -38,17 +201,15 @@ export const prototypes: Prototype[] = [
   {
     slug: 'performance-measures',
     title: 'Performance measure setup',
-    description:
-      'Every performance measure in one searchable table, with the draft-first setup page each one is defined on.',
-    route: '/prototypes/performance-measures',
+    description: 'Every performance measure in one table',
+    route: '/prototypes/workspace-settings/performance-measures',
     createdAt: '2026-08-20',
     status: 'in-progress',
   },
   {
     slug: 'projects',
     title: 'Projects index',
-    description:
-      'Every project in one searchable table, with stage and program filters and CSV export.',
+    description: 'Every project in one table',
     route: '/prototypes/projects',
     createdAt: '2026-08-19',
     status: 'in-progress',
@@ -64,9 +225,8 @@ export const prototypes: Prototype[] = [
   {
     slug: 'project-detail',
     title: 'Project detail',
-    description:
-      'One project in full: work areas on a map, performance measures, funding sources and milestones.',
-    route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement',
+    description: 'One project in full',
+    route: `/prototypes/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}`,
     createdAt: '2026-08-20',
     status: 'in-progress',
   },
@@ -78,9 +238,8 @@ export const prototypes: Prototype[] = [
   {
     slug: 'project-detail-map',
     title: 'Project detail — map view',
-    description:
-      'One project read as a place: the work-areas map fills the screen, and the record and its sections float over it until you hide them.',
-    route: '/prototypes/projects/deer-creek-riparian-corridor-enhancement/map',
+    description: 'One project, map first',
+    route: `/prototypes/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}/map`,
     createdAt: '2026-08-24',
     status: 'in-progress',
   },

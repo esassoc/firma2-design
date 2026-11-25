@@ -1,0 +1,156 @@
+---
+// firma2-public-site-theme — Public site › Theme: the fonts and the few
+// colour choices that are the public site's own.
+//
+// CLOSED LISTS, SO EVERY CHOICE CAN BE CHECKED (decisions 4 and 5). Fonts are
+// tested pairings (FONT_PAIRS), each loaded only once it is chosen. Colours
+// are three named roles — the bar, the introduction's background, the accent —
+// and the contrast table grades every pairing they produce, warning rather
+// than blocking, as Branding does for the brand colour.
+//
+// THE BRAND COLOUR IS NOT SET HERE. It re-skins the whole product
+// (Workspace settings › Branding), applies as it is picked, and is one click
+// away; a second, public-only brand colour would be a second way for the site
+// and the application to disagree. The accent is the one free colour, and it
+// colours only the introduction's results.
+//
+// bcn-lego-checked: esa-select (fonts), esa-button-toggle (the two grounds),
+// esa-color-picker, esa-button, esa-alert-box, esa-badge, and the settings
+// table's own stylesheet, in firma2-rail-section. No CSS of its own beyond
+// hiding. firma2-tenant-branding's contrast table is the same construction for
+// the brand colour's three uses. Beacon is not cloned on this machine.
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import '../settings/firma2-settings-table.css';
+import { BAR_TONES, FONT_PAIRS, HERO_TONES } from '../../lib/public-site-config';
+import { withBase } from '../../lib/base';
+
+const json = (v: unknown) => JSON.stringify(v);
+const fonts = FONT_PAIRS.map(({ value, label }) => ({ value, label }));
+---
+<div class="firma2-public-site-theme stack" data-gap="2xl" data-site-part="theme">
+  <Firma2RailSection title="Fonts">
+    <esa-select label="Font pairing" size="md" options={json(fonts)} data-bind="theme.fonts"></esa-select>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Colors">
+    <div class="stack" data-gap="lg">
+      <esa-button-toggle label="Navigation bar" size="md" options={json(BAR_TONES)} data-bind="theme.bar"></esa-button-toggle>
+      <esa-button-toggle label="Introduction background" size="md" options={json(HERO_TONES)} data-bind="theme.hero"></esa-button-toggle>
+      <div class="stack" data-gap="sm">
+        <h4 class="typography-label-md-strong">Accent for results</h4>
+        <esa-color-picker show-input data-accent></esa-color-picker>
+        <div hidden data-accent-reset><EsaButton variant="ghost" size="md" icon="rotate-ccw">Use the standard accent</EsaButton></div>
+      </div>
+      <div><EsaButton variant="ghost" size="md" tag="a" href={withBase('/prototypes/workspace-settings/branding')} iconRight="arrow-right">Change the brand color</EsaButton></div>
+    </div>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Contrast">
+    <div class="stack" data-gap="md">
+      <div class="firma2-settings-table-scroll">
+        <table class="firma2-settings-table">
+          <thead><tr><th scope="col">Used for</th><th scope="col">Ratio</th><th scope="col">Readable</th></tr></thead>
+          <tbody data-contrast-rows></tbody>
+        </table>
+      </div>
+      <div data-contrast-warning hidden>
+        <EsaAlertBox variant="warning" title="Some text is below WCAG AA contrast" />
+      </div>
+    </div>
+  </Firma2RailSection>
+
+  <template data-badge-pass><EsaBadge variant="success" size="sm" value="Yes" /></template>
+  <template data-badge-fail><EsaBadge variant="warning" size="sm" value="Below AA" /></template>
+</div>
+
+<style>
+  .firma2-public-site-theme [hidden] {
+    display: none !important;
+  }
+  .firma2-public-site-theme h4 {
+    margin: 0;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-color-picker';
+  import { bind, config, defaults, write } from '../../lib/public-site-form';
+  import { PUBLIC_SITE_EVENT } from '../../lib/public-site-store';
+  import { BRAND_SWATCHES, brandTextColor, contrast, HOUSE_PRIMARY, isHex, onBrand, readBrand } from '../../lib/tenant-brand';
+
+  type Picker = HTMLElement & { value?: string; swatches?: unknown };
+
+  // The neutral grounds, as the theme draws them in the light scheme.
+  const DARK = '#202020';
+  const LIGHT = '#ffffff';
+  const BAR = '#fcfcfc';
+
+  const root = document.querySelector<HTMLElement>('[data-site-part="theme"]');
+  if (root && defaults) {
+    const picker = root.querySelector<Picker>('[data-accent]')!;
+    const reset = root.querySelector<HTMLElement>('[data-accent-reset]')!;
+    const pass = root.querySelector<HTMLTemplateElement>('[data-badge-pass]')!.innerHTML.trim();
+    const fail = root.querySelector<HTMLTemplateElement>('[data-badge-fail]')!.innerHTML.trim();
+    const brand = (): string => readBrand()?.primary ?? HOUSE_PRIMARY;
+
+    /** The introduction's ground, text and standard accent for each background. */
+    const hero = (): { ground: string; ink: string; accent: string } => {
+      const b = brand();
+      if (config.theme.hero === 'brand') return { ground: b, ink: onBrand(b), accent: onBrand(b) };
+      if (config.theme.hero === 'light') return { ground: LIGHT, ink: DARK, accent: brandTextColor(b) };
+      return { ground: DARK, ink: BAR, accent: b };
+    };
+    const bar = (): { ground: string; ink: string } => {
+      const b = brand();
+      if (config.theme.bar === 'brand') return { ground: b, ink: onBrand(b) };
+      return config.theme.bar === 'dark' ? { ground: DARK, ink: BAR } : { ground: BAR, ink: DARK };
+    };
+
+    const paint = (): void => {
+      const h = hero();
+      const n = bar();
+      const rows: [string, string, string, number][] = [
+        ['Results on the introduction', config.theme.accent || h.accent, h.ground, 3],
+        ['Text on the introduction', h.ink, h.ground, 4.5],
+        ['Navigation bar text', n.ink, n.ground, 4.5],
+      ];
+      const graded = rows.map(([label, fg, bg, min]) => ({ label, ratio: contrast(fg, bg), passes: contrast(fg, bg) >= min }));
+      root.querySelector('[data-contrast-rows]')!.innerHTML = graded
+        .map((r) => `<tr><td>${r.label}</td><td>${r.ratio.toFixed(1)} : 1</td><td>${r.passes ? pass : fail}</td></tr>`)
+        .join('');
+      root.querySelector<HTMLElement>('[data-contrast-warning]')!.hidden = graded.every((r) => r.passes);
+      reset.hidden = !config.theme.accent;
+    };
+
+    // The picker shows the accent in use: the workspace's own, or the standard
+    // one for the chosen background. Only a pick is stored.
+    const showAccent = (): void => {
+      void customElements.whenDefined('esa-color-picker').then(() => {
+        picker.swatches = BRAND_SWATCHES.map((value) => ({ value, label: value }));
+        picker.value = config.theme.accent || hero().accent;
+      });
+    };
+    picker.addEventListener('change', () => {
+      const hex = String(picker.value ?? '');
+      if (isHex(hex)) write('theme.accent', hex);
+    });
+    reset.addEventListener('click', () => {
+      write('theme.accent', '');
+      showAccent();
+      picker.focus();
+    });
+
+    document.addEventListener(PUBLIC_SITE_EVENT, () => {
+      paint();
+      if (!config.theme.accent) showAccent();
+    });
+    bind(root);
+    showAccent();
+    paint();
+  }
+</script>

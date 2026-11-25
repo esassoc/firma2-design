@@ -1,0 +1,137 @@
+---
+// firma2-organization-record — one organization's record in Workspace
+// settings: who it is, who signs in for it, and what it does here.
+//
+// Rendered for every row of Organizations, the signed-in reader's own
+// included — one route per organization, so there is no second copy to drift.
+//
+// FOUR SECTIONS, IN THE ORDER THE RECORD IS QUESTIONED. Profile first: the facts
+// other people meet when they pick this organization from a dropdown or read
+// its name on a public project page. Then People, the members whose access
+// this organization answers for. Then what it does — the grant programs it
+// administers and the projects it leads or funds — which is derived, not
+// typed, and so reads rather than edits.
+//
+// THE PROFILE IS SCALARS and gets the spoke's click-to-edit rows; the three
+// lists are COLLECTIONS and get tables. Only People carries a header action,
+// because only People is added to here — programs come from Funding sources
+// and projects from their own records.
+//
+// NO CARDS. Settings sections are unboxed (the spoke's settings-surface rule):
+// each is a heading and its content, spaced by the stack — the same shape as
+// Organization settings › General, so the two pages of one organization agree.
+//
+// VERIFIED FIRST IN THE PROFILE (decision 6): the mark spells out the domain
+// that proves who this is, so it leads the facts other people meet; an
+// unverified organization shows nothing there, not a warning.
+//
+// bcn-lego-checked: firma2-rail-section is each section and firma2-editable-field each
+// profile row — both existing, composed unchanged. The lists are
+// firma2-settings-table, the spoke's home for small settings lists (too few
+// rows for AG Grid's search/count chrome). Invite is an esa-button. The <dl>
+// is the grouping the rows are built for and `.stack` spaces everything; no
+// bespoke flex and no <style> block.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2EditableField from '../shared/firma2-editable-field.astro';
+import Firma2SettingsTable from './firma2-settings-table.astro';
+import Firma2VerifiedMark from '../shared/firma2-verified-mark.astro';
+import { membersOf, organizationTypes, projectsOf } from '../../data/firma2-directory';
+import type { Organization } from '../../data/firma2-directory';
+import { projects, projectHref, projectSlug } from '../../data/firma2-projects';
+import { getProjectDetail } from '../../data/firma2-project-detail';
+import { currencyFormatter as money } from '../../lib/format';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  organization: Organization;
+}
+
+const { organization: org } = Astro.props;
+const members = membersOf(org.name);
+
+const peopleRows = members.map((u) => ({
+  name: u.name,
+  // A manager reads as Manager: it ranks above the Contributor role it sits on.
+  cells: {
+    role: u.role === 'Contributor' && u.managerOf.includes(org.name) ? 'Manager' : u.role,
+    email: u.email,
+    lastActive: u.status === 'Invited' ? 'Invited' : u.lastActive,
+  },
+}));
+
+const programRows = org.programs.map((program) => ({
+  name: program,
+  cells: {
+    projects: projects.filter((p) => getProjectDetail(p).funding.some((s) => s.name === program)).length,
+  },
+}));
+
+const projectRows = projectsOf(org.name).map(({ project, leads, amount }) => ({
+  name: project.projectName,
+  href: withBase(projectHref(project)),
+  peek: projectSlug(project),
+  cells: {
+    part: leads ? 'Leads' : 'Funds',
+    stage: project.stage,
+    amount: leads ? '' : money.format(amount),
+  },
+}));
+---
+<div class="stack" data-gap="2xl">
+  <Firma2RailSection title="Profile">
+    <div class="stack" data-gap="md">
+    <Firma2VerifiedMark organization={org} />
+    <dl class="stack" data-gap="md">
+      <Firma2EditableField field="type" label="Type" value={org.type} control="select" options={organizationTypes} />
+      <Firma2EditableField field="website" label="Website" value={org.website} />
+      <Firma2EditableField
+        field="primaryContact"
+        label="Primary contact"
+        value={org.primaryContact}
+        control="select"
+        options={members.filter((u) => u.status === 'Active').map((u) => u.name)}
+      />
+      <Firma2EditableField
+        field="description"
+        label="Description"
+        value={org.description}
+        control="textarea"
+        placeholder="Add a description"
+      />
+    </dl>
+    </div>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Members">
+    <EsaButton slot="actions" variant="chrome" size="sm" icon="plus">Add members</EsaButton>
+    <Firma2SettingsTable
+      label={`Members of ${org.name}`}
+      nameLabel="Name"
+      columns={[{ key: 'role', label: 'Role' }, { key: 'email', label: 'Email' }, { key: 'lastActive', label: 'Last active' }]}
+      rows={peopleRows}
+    />
+  </Firma2RailSection>
+
+  {programRows.length > 0 && (
+    <Firma2RailSection title="Grant programs">
+      <Firma2SettingsTable
+        label={`Grant programs ${org.name} administers`}
+        nameLabel="Program"
+        columns={[{ key: 'projects', label: 'Projects', numeric: true }]}
+        rows={programRows}
+      />
+    </Firma2RailSection>
+  )}
+
+  {projectRows.length > 0 && (
+    <Firma2RailSection title="Projects">
+      <Firma2SettingsTable
+        label={`Projects ${org.name} leads or funds`}
+        nameLabel="Project"
+        columns={[{ key: 'part', label: 'Involvement' }, { key: 'stage', label: 'Stage' }, { key: 'amount', label: 'Funding', numeric: true }]}
+        rows={projectRows}
+      />
+    </Firma2RailSection>
+  )}
+</div>

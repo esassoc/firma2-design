@@ -1,0 +1,412 @@
+---
+// firma2-classification-browse — the Browse view of the Classifications
+// index: the groups as a list down the leading edge, and ONE group shown at a
+// time — its description and counts, then every classification beneath it
+// with every performance measure drawn in full (ring, name, figure).
+//
+// THE LIST IS THE WHOLE TREE, EVERY LEVEL (user, 2026-11-23: the first list
+// held groups only, so a workspace with two levels of group showed two levels
+// and its classifications — the third — were missing). Groups and
+// classifications both sit in it, indented by depth. To keep a tree of dozens
+// of rows short, groups start folded: the top level always shows, and each
+// group has a chevron that opens what is directly inside it, so several
+// branches can be open at once (user, 2026-11-23). The chevron only folds;
+// the name chooses. Whatever is chosen has its own branch opened, so a link
+// lands on a visible row. Choosing a classification shows that
+// classification alone.
+//
+// A GROUP SHOWS ITS WHOLE BRANCH: its own classifications first, then each
+// group inside it under that group's name.
+//
+// THE CHOSEN GROUP IS IN THE URL'S HASH, so a reload — and a link someone is
+// sent — lands on the same branch.
+//
+// Chosen 2026-11-23 from four directions (.scratch/classifications/spec.md,
+// decision 6), with firma2-classification-outline as its other view.
+//
+// FAKED: drawn from the build's data. Groups and classifications edited in
+// Workspace settings in this browser do not show here.
+//
+// bcn-lego-checked: esa-button each group in the list and the door,
+// firma2-kpi-progress each measure (the classification peek's own row),
+// firma2-project-peek-button the side-panel door; layout is a two-track grid
+// with the list held in view. No esa- lego is a tree of selectable branches
+// (esa-sidebar-nav is page navigation, with hrefs). Beacon is not cloned on
+// this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2ClassMark from './firma2-class-mark.astro';
+import Firma2KpiProgress from './firma2-kpi-progress.astro';
+import Firma2ProjectPeekButton from '../projects/firma2-project-peek-button.astro';
+import { flatGroups, plural } from '../../data/firma2-classification-tree';
+import type { ClassificationNode, GroupNode } from '../../data/firma2-classification-tree';
+
+const groups = flatGroups();
+
+// The list, in tree order: a group, its own classifications, then the groups
+// inside it. `parents` are the keys of the groups an entry sits inside.
+type Entry = { key: string; depth: number; parents: string[]; name: string; color: string; iconPaths?: string; count?: number };
+const entriesOf = (g: GroupNode, parents: string[]): Entry[] => {
+  const key = `g:${g.slug}`;
+  return [
+    { key, depth: g.depth, parents, name: g.name, color: g.color, iconPaths: g.iconPaths, count: g.total },
+    ...g.classifications.map((c) => ({ key: `c:${c.slug}`, depth: g.depth + 1, parents: [...parents, key], name: c.name, color: c.color, iconPaths: c.iconPaths })),
+    ...g.groups.flatMap((child) => entriesOf(child, [...parents, key])),
+  ];
+};
+const entries = groups.filter((g) => g.depth === 0).flatMap((g) => entriesOf(g, []));
+const leaves = groups.flatMap((g) => g.classifications);
+
+// A group's classifications, its own first, then each group inside it under
+// that group's name.
+type Block = { heading?: GroupNode; items: ClassificationNode[] };
+const blocksOf = (g: GroupNode, top = true): Block[] => [
+  ...(g.classifications.length ? [{ heading: top ? undefined : g, items: g.classifications }] : []),
+  ...g.groups.flatMap((child) => blocksOf(child, false)),
+];
+---
+<div class="firma2-classification-browse" data-firma2-classification-browse>
+  <nav class="firma2-classification-browse__nav" aria-label="Classifications">
+    <ul class="firma2-classification-browse__list">
+      {entries.map((e) => (
+        <li style={`--depth:${e.depth}`} data-browse-nav={e.key} data-parents={e.parents.join(' ')}>
+          <span class="firma2-classification-browse__toggle" data-toggle>
+            {e.count != null && e.count > 0 && (
+              <EsaButton variant="chrome" iconOnly icon="chevron-down" size="sm" aria-label={`Show ${e.name}`} aria-expanded="false">Show</EsaButton>
+            )}
+          </span>
+          <EsaButton variant="ghost" size="md" data-pick>
+            <span class="firma2-classification-browse__pick">
+              <Firma2ClassMark color={e.color} paths={e.iconPaths} />
+              <span class="firma2-classification-browse__pick-name">{e.name}</span>
+              {e.count != null && <span class="firma2-classification-browse__pick-count" aria-label={plural(e.count, 'classification')}>{e.count}</span>}
+            </span>
+          </EsaButton>
+        </li>
+      ))}
+    </ul>
+  </nav>
+
+  <div class="firma2-classification-browse__detail">
+    {groups.map((g) => (
+      <section class="stack" data-gap="xl" aria-labelledby={`browse-${g.slug}`} data-detail={`g:${g.slug}`} hidden>
+        <header class="stack" data-gap="sm">
+          <div class="repel" data-gap="sm">
+            <h2 class="typography-title-strong" id={`browse-${g.slug}`}>{g.name}</h2>
+            <EsaButton variant="secondary" size="md" tag="a" href={g.href}>Open group</EsaButton>
+          </div>
+          <p class="firma2-classification-browse__description typography-body-md">{g.description}</p>
+          <p class="firma2-classification-browse__meta typography-body-md">
+            {`${plural(g.total, 'classification')} · ${plural(g.projects, 'project')} · ${plural(g.funders, 'funder')}`}
+          </p>
+        </header>
+        {blocksOf(g).map((block) => {
+          // Under a group's name the classifications are one level further down.
+          const Name = block.heading ? 'h4' : 'h3';
+          return (
+          <div class="stack" data-gap="md">
+            {block.heading && <h3 class="firma2-classification-browse__sub typography-title-sm-strong">{block.heading.path.slice(g.path.length).join(' › ')}</h3>}
+            <ul class="firma2-classification-browse__items">
+              {block.items.map((c) => (
+                <li class="firma2-classification-browse__item stack" data-gap="md" data-peek-row>
+                  <div class="stack" data-gap="3xs">
+                    <div class="firma2-peek-pair">
+                      <Name class="firma2-classification-browse__name typography-label-md-strong">
+                        <a class="firma2-classification-browse__link" href={c.href}>
+                          <Firma2ClassMark color={c.color} paths={c.iconPaths} />
+                          <span>{c.name}</span>
+                        </a>
+                      </Name>
+                      <Firma2ProjectPeekButton slug={c.slug} name={c.name} kind="classification" />
+                    </div>
+                    <p class="firma2-classification-browse__description typography-body-md">{c.description}</p>
+                    <p class="firma2-classification-browse__meta typography-body-sm">{`${plural(c.projects, 'project')} · ${plural(c.funders, 'funder')}`}</p>
+                  </div>
+                  {c.measures.length === 0 ? (
+                    <p class="firma2-classification-browse__meta typography-body-md">No performance measures yet</p>
+                  ) : (
+                    <ul class="firma2-classification-browse__measures grid" data-gap="lg">
+                      {c.measures.map((m) => (
+                        <li><Firma2KpiProgress name={m.name} {...m.input} from={[]} /></li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+          );
+        })}
+      </section>
+    ))}
+    {leaves.map((c) => (
+      <section class="stack" data-gap="xl" aria-labelledby={`browse-c-${c.slug}`} data-detail={`c:${c.slug}`} hidden>
+        <header class="stack" data-gap="sm">
+          <p class="firma2-classification-browse__meta typography-body-md">{c.path.join(' › ')}</p>
+          <div class="repel" data-gap="sm">
+            <h2 class="typography-title-strong" id={`browse-c-${c.slug}`}>{c.name}</h2>
+            <EsaButton variant="secondary" size="md" tag="a" href={c.href}>Open classification</EsaButton>
+          </div>
+          <p class="firma2-classification-browse__description typography-body-md">{c.description}</p>
+          <p class="firma2-classification-browse__meta typography-body-md">{`${plural(c.projects, 'project')} · ${plural(c.funders, 'funder')}`}</p>
+        </header>
+        {c.measures.length === 0 ? (
+          <p class="firma2-classification-browse__meta typography-body-md">No performance measures yet</p>
+        ) : (
+          <ul class="firma2-classification-browse__measures grid" data-gap="lg">
+            {c.measures.map((m) => (
+              <li><Firma2KpiProgress name={m.name} {...m.input} from={[]} /></li>
+            ))}
+          </ul>
+        )}
+      </section>
+    ))}
+  </div>
+</div>
+
+<style>
+  .firma2-classification-browse {
+    display: grid;
+    grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+    gap: var(--spacing-800, 4rem);
+    align-items: start;
+  }
+
+  .firma2-classification-browse [hidden] {
+    display: none !important;
+  }
+
+  /* The list stays in view while a long branch scrolls. */
+  /* Pinned, and never taller than the pane: with many branches open the list
+     scrolls on its own, so its last rows are reachable while it is stuck. */
+  .firma2-classification-browse__nav {
+    position: sticky;
+    inset-block-start: calc(var(--firma2-sticky-origin, 0px) + var(--spacing-400, 1rem));
+    max-block-size: calc(100dvh - 18rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+
+  @media (max-width: 45rem) {
+    .firma2-classification-browse {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .firma2-classification-browse__nav {
+      position: static;
+      max-block-size: none;
+      overflow-y: visible;
+    }
+  }
+
+  .firma2-classification-browse__list,
+  .firma2-classification-browse__items,
+  .firma2-classification-browse__measures {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-classification-browse__list :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-100, 0.25rem);
+    padding-inline-start: calc(var(--depth, 0) * var(--spacing-400, 1rem));
+  }
+
+  /* The chevron's place holds its width on a classification's row, so names
+     at one depth start on one line. */
+  .firma2-classification-browse__toggle {
+    flex: none;
+    inline-size: 28px;
+    block-size: 28px;
+    line-height: 0;
+  }
+
+  .firma2-classification-browse__toggle :global(.esa-button__native) {
+    block-size: 28px;
+    inline-size: 28px;
+    padding: 0;
+  }
+
+  @media (pointer: coarse) {
+    .firma2-classification-browse__toggle :global(.esa-button__native) {
+      position: relative;
+    }
+    .firma2-classification-browse__toggle :global(.esa-button__native)::before {
+      content: '';
+      position: absolute;
+      /* 40 x 40: the largest area that does not reach the row above or below
+         (rows are 40px apart) or the name beside it. */
+      inset: -6px -4px -6px -8px;
+    }
+  }
+
+  .firma2-classification-browse__toggle :global([aria-expanded='true'] svg) {
+    transform: rotate(180deg);
+  }
+
+  /* Each group fills its row, its name at the leading edge. */
+  .firma2-classification-browse__list :global(li) > :global(.esa-button) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-browse__list :global(li) > :global(.esa-button),
+  .firma2-classification-browse__list :global(li) > :global(.esa-button) :global(.esa-button__native) {
+    display: flex;
+    inline-size: 100%;
+    justify-content: flex-start;
+  }
+
+  .firma2-classification-browse__list :global(.esa-button__label) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-browse__list :global(li[data-selected]) > :global(.esa-button) :global(.esa-button__native) {
+    background: var(--color-background-elevation-sunken, #f0f0f0);
+    color: var(--color-content-default, #202020);
+  }
+
+  .firma2-classification-browse__pick {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200, 0.5rem);
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-browse__pick-name {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: start;
+  }
+
+  .firma2-classification-browse__pick-count {
+    flex: none;
+    color: var(--color-content-default-secondary, #646464);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .firma2-classification-browse__swatch {
+    flex: none;
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  .firma2-classification-browse__description,
+  .firma2-classification-browse__meta,
+  .firma2-classification-browse__name,
+  .firma2-classification-browse__sub {
+    margin: 0;
+  }
+
+  .firma2-classification-browse__description {
+    max-inline-size: 60ch;
+  }
+
+  .firma2-classification-browse__description,
+  .firma2-classification-browse__meta {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-classification-browse__item {
+    padding-block: var(--spacing-500, 1.5rem);
+    border-block-start: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  .firma2-classification-browse__measures {
+    --grid-min: 18rem;
+  }
+
+  /* Swatch beside the first line, however far the name wraps. */
+  .firma2-classification-browse__link {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-200, 0.5rem);
+    color: inherit;
+    text-decoration: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-classification-browse__link:hover {
+      text-decoration: underline;
+    }
+  }
+</style>
+
+<script>
+  import { announce } from '@esa/ecology/announcer';
+
+  document.querySelectorAll<HTMLElement>('[data-firma2-classification-browse]').forEach((root) => {
+    const details = [...root.querySelectorAll<HTMLElement>('[data-detail]')];
+    const keys = details.map((d) => d.dataset.detail ?? '');
+    const rows = [...root.querySelectorAll<HTMLElement>('[data-browse-nav]')];
+
+    const parentsOf = (li: HTMLElement): string[] => (li.dataset.parents ?? '').split(' ').filter(Boolean);
+    // The groups whose contents show. Several can be open at once.
+    const open = new Set<string>();
+
+    const paint = (): void => {
+      for (const li of rows) {
+        li.hidden = !parentsOf(li).every((p) => open.has(p));
+        const toggle = li.querySelector<HTMLElement>('[data-toggle] [aria-expanded]');
+        if (!toggle) continue;
+        const expanded = open.has(li.dataset.browseNav ?? '');
+        const name = li.querySelector('.firma2-classification-browse__pick-name')?.textContent ?? '';
+        toggle.setAttribute('aria-expanded', String(expanded));
+        toggle.setAttribute('aria-label', `${expanded ? 'Hide' : 'Show'} ${name}`);
+      }
+    };
+
+    const select = (asked: string, remember = true): void => {
+      // A bare slug in an older link is a group's.
+      const key = keys.includes(asked) ? asked : keys.includes(`g:${asked}`) ? `g:${asked}` : keys[0];
+      for (const d of details) d.hidden = d.dataset.detail !== key;
+      const chosen = rows.find((li) => li.dataset.browseNav === key);
+      // The chosen row is never left inside a folded branch.
+      if (chosen) for (const p of parentsOf(chosen)) open.add(p);
+      for (const li of rows) {
+        const on = li === chosen;
+        li.toggleAttribute('data-selected', on);
+        const button = li.querySelector('[data-pick] button, button[data-pick]');
+        if (on) button?.setAttribute('aria-current', 'true');
+        else button?.removeAttribute('aria-current');
+      }
+      paint();
+      if (remember) {
+        history.replaceState(null, '', `#${key}`);
+        // The pane beside the list changed without focus moving: say so.
+        const name = chosen?.querySelector('.firma2-classification-browse__pick-name')?.textContent ?? '';
+        if (name) announce(`Showing ${name}.`);
+      }
+    };
+
+    // A hash typed, pasted or reached by Back and Forward chooses too.
+    window.addEventListener('hashchange', () => select(decodeURIComponent(location.hash.slice(1)), false));
+
+    root.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      const li = target.closest<HTMLElement>('[data-browse-nav]');
+      if (!li || !target.closest('button')) return;
+      const key = li.dataset.browseNav ?? '';
+      if (target.closest('[data-toggle]')) {
+        if (open.has(key)) open.delete(key);
+        else open.add(key);
+        paint();
+        return;
+      }
+      select(key);
+    });
+
+    select(decodeURIComponent(location.hash.slice(1)), false);
+    // First paint: the chosen group shows what is in it.
+    const first = rows.find((li) => li.hasAttribute('data-selected'))?.dataset.browseNav ?? '';
+    if (first.startsWith('g:')) open.add(first);
+    paint();
+  });
+</script>

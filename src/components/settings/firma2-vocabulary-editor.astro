@@ -1,0 +1,178 @@
+---
+// firma2-vocabulary-editor — the tenant's own words for the application's
+// nouns. Ported from ProjectFirma2 hackathon team 3's Vocabulary tab.
+//
+// ONE TABLE, NOT A CARD PER NOUN. The hackathon gave each noun its own card
+// with its own Save; ten cards of two fields is a long page that hides the
+// fact it is one list. Here it is one table — the application's word and
+// yours — and a field saves when you leave it, like every
+// other record in this spoke. The menu beside you renames as you do: the
+// whole application is the preview.
+//
+// NO PLURAL FIELD. Typing "Grant" is enough: the plural is derived
+// (suggestPlural), so the table asks for one word per noun, not two.
+//
+// THE LIMIT IS STATED: renamings reach labels — menus, titles, headings,
+// field labels, columns — never data. A funding source named "…Program"
+// keeps its name. That is the team's "aim the pipe" rule, said where the
+// administrator can see it.
+//
+// ONE SWITCH IN FRONT OF ALL OF IT. Aliasing is off or on for the whole
+// workspace, and the switch comes first because it decides whether the rest
+// of the screen means anything. Off: every reader sees the application's
+// words and the fields are locked. The renamings are kept rather than cleared,
+// so switching back on restores them exactly.
+//
+// NO CARD: a settings section, unboxed like its siblings — the table's rules
+// already bound its rows.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { NOUNS } from '../../data/firma2-vocabulary';
+import './firma2-settings-table.css';
+---
+<!-- bcn-lego-checked: esa-switch-toggle, esa-text-field and esa-button
+     legos; the classes lay out a two-column table of fields, which no esa-
+     component does. Beacon is not cloned on this machine. -->
+<div class="firma2-vocabulary-editor">
+    <div class="stack" data-gap="lg">
+      <div class="stack" data-gap="xs">
+        <esa-switch-toggle data-aliasing label="Use custom terms" label-position="before" size="md"></esa-switch-toggle>
+        <p class="firma2-vocabulary-editor__help typography-body-sm">
+          Changes labels only, not names entered on records.
+        </p>
+      </div>
+      <div class="firma2-settings-table-scroll">
+        <table class="firma2-vocabulary-editor__table">
+        <thead>
+          <tr>
+            <th scope="col">Default term</th>
+            <th scope="col">Custom term</th>
+            <th scope="col"><span class="visually-hidden">Reset</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {NOUNS.map((noun) => (
+            <tr data-noun={noun.key}>
+              <th scope="row">{noun.singular}</th>
+              <td><esa-text-field data-field="singular" size="md" aria-label={`Custom term for ${noun.singular.toLowerCase()}`} placeholder={noun.singular}></esa-text-field></td>
+              <td>
+                <span data-reset-wrap hidden>
+                  <EsaButton variant="ghost" size="sm" iconOnly icon="rotate-ccw" aria-label={`Restore the default term for ${noun.singular.toLowerCase()}`} data-reset>Reset</EsaButton>
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </div>
+</div>
+
+<style>
+  .firma2-vocabulary-editor [hidden] {
+    display: none !important;
+  }
+
+  .firma2-vocabulary-editor__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .firma2-vocabulary-editor__table th,
+  .firma2-vocabulary-editor__table td {
+    padding: var(--spacing-200) var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+    text-align: start;
+    vertical-align: middle;
+    font-weight: normal;
+  }
+
+  .firma2-vocabulary-editor__table thead th {
+    color: var(--color-text-secondary);
+  }
+
+  /* Unboxed: the outer columns sit on the section's own edges. */
+  .firma2-vocabulary-editor__table tr > :first-child {
+    padding-inline-start: 0;
+  }
+
+  .firma2-vocabulary-editor__table tr > :last-child {
+    padding-inline-end: 0;
+  }
+
+  .firma2-vocabulary-editor__help {
+    color: var(--color-text-secondary);
+  }
+
+  /* Off: the application's words are in force, so the column of them is
+     what the reader should see; the locked fields recede. */
+  .firma2-vocabulary-editor[data-off] .firma2-vocabulary-editor__table td {
+    opacity: 0.6;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-switch-toggle';
+  import type { Vocabulary } from '../../data/firma2-vocabulary';
+  import { isAliasingEnabled, readStoredVocabulary, setAliasingEnabled, writeVocabulary } from '../../lib/vocabulary';
+
+  type Field = HTMLElement & { value?: string; placeholder?: string; disabled?: boolean };
+  type Switch = HTMLElement & { checked?: boolean };
+
+  document.querySelectorAll<HTMLElement>('.firma2-vocabulary-editor').forEach((root) => {
+    const rows = [...root.querySelectorAll<HTMLTableRowElement>('tr[data-noun]')];
+    const aliasing = root.querySelector<Switch>('[data-aliasing]')!;
+
+    const paintRow = (tr: HTMLTableRowElement, vocabulary: Vocabulary) => {
+      const alias = vocabulary[tr.dataset.noun!] ?? {};
+      const singular = tr.querySelector<Field>('[data-field="singular"]')!;
+      singular.value = alias.singular ?? '';
+      const on = isAliasingEnabled();
+      singular.disabled = !on;
+      // visibility, not `hidden`: the column keeps its width whether or not any
+      // row has something to reset, so the fields never shift sideways when
+      // the switch flips or the first word is typed. A visibility-hidden
+      // button is also out of the tab order.
+      const wrap = tr.querySelector<HTMLElement>('[data-reset-wrap]')!;
+      wrap.hidden = false;
+      wrap.style.visibility = !on || !alias.singular?.trim() ? 'hidden' : '';
+    };
+
+    const paintAll = () => {
+      const on = isAliasingEnabled();
+      root.toggleAttribute('data-off', !on);
+      aliasing.checked = on;
+      const vocabulary = readStoredVocabulary();
+      rows.forEach((tr) => paintRow(tr, vocabulary));
+    };
+
+    // Both legos before the first paint: `checked` and `disabled` are reactive
+    // properties, and set before upgrade they would shadow the accessors.
+    Promise.all([customElements.whenDefined('esa-text-field'), customElements.whenDefined('esa-switch-toggle')]).then(paintAll);
+
+    aliasing.addEventListener('change', () => {
+      setAliasingEnabled(Boolean(aliasing.checked));
+      paintAll();
+    });
+
+    const commit = (tr: HTMLTableRowElement) => {
+      const singular = String(tr.querySelector<Field>('[data-field="singular"]')!.value ?? '').trim();
+      const vocabulary = readStoredVocabulary();
+      // Saved without a plural, so one typed before the field was removed
+      // stops overriding the derived form the moment the row is touched.
+      if (singular) vocabulary[tr.dataset.noun!] = { singular };
+      else delete vocabulary[tr.dataset.noun!];
+      writeVocabulary(vocabulary);
+      paintRow(tr, vocabulary);
+    };
+
+    rows.forEach((tr) => {
+      // `change` fires when the field is left — the spoke's save boundary.
+      tr.querySelectorAll('esa-text-field').forEach((f) => f.addEventListener('change', () => commit(tr)));
+      tr.querySelector('[data-reset]')?.addEventListener('click', () => {
+        tr.querySelectorAll<Field>('esa-text-field').forEach((f) => (f.value = ''));
+        commit(tr);
+      });
+    });
+  });
+</script>

@@ -1,0 +1,99 @@
+---
+// firma2-project-peek-layout — the page spine that lets any project link on
+// the page open the project in a docked side panel: a `.sidebar` track with
+// firma2-project-peek at its end and the page's content beside it. The
+// Projects index's construction, lifted so every page that lists projects
+// gets the same panel (user, 2026-10-03).
+//
+// Use on an AppLayout with width="full": the panel docks against the window's
+// edge, and this caps the content column itself (CONTENT_MAX unless `max`
+// says otherwise; `max={false}` for a page that runs edge to edge, like the
+// map-based My Projects).
+//
+// It also renders the one template src/lib/project-peek.ts clones for rows
+// built at runtime (map popups, repainted tables), so a runtime button is the
+// same server-rendered firma2-project-peek-button as a static one.
+//
+// SCRIPTS TRAPPED IN TEMPLATES. Astro writes a component's script tag where the
+// component first renders. Here that is often inside the panel's per-project
+// <template>s — the panel renders before the page's content — and a script in
+// a template never runs: on every page with the panel, editable fields and
+// hover cards were dead, on the page and in the panel alike. The script below
+// moves any module script out of the page's templates and runs it once, and
+// takes it out of the template so a cloned record never carries a copy.
+//
+// A RAIL SLOT, AND THE PEEK TAKES ITS PLACE (user, 2026-10-09). A record
+// page that lists projects may also have a rail of its own (the measure page's
+// Key facts; the classification and organization pages had one until the
+// Connections graph left the product, 2026-10-22). Pass it in
+// `slot="rail"`, wrapped in firma2-record-rail, and the two share ONE track:
+// the rail by default, the peek while one is open, the rail again when it
+// closes. No script — the peek's own [hidden] is the state, and a :has() rule
+// reads it. They size independently: the peek keeps --sidebar-width (its
+// 46rem), the rail writes --firma2-record-rail-width (its 25rem), so a reader
+// who widens one never finds the other widened.
+//
+// THE CLASSIFICATION PEEK RIDES THE SAME SPINE (2026-10-21): `peek=
+// "classification"` docks firma2-classification-peek in the track instead,
+// for the classifications board — same script rescue, same caps.
+//
+// --sidebar-content-min is small on purpose: content scrolls inside its own
+// frame when the panel takes the room, which beats wrapping a 100dvh panel
+// below it (projects.astro's note).
+import EsaContainer from '@esa/ecology/esa-container.astro';
+import Firma2ProjectPeek from './firma2-project-peek.astro';
+import Firma2ClassificationPeek from '../classifications/firma2-classification-peek.astro';
+import Firma2ProjectPeekButton from './firma2-project-peek-button.astro';
+import { CONTENT_MAX } from '../../lib/content-width';
+
+interface Props {
+  /** The content column's cap; false for none. */
+  max?: string | false;
+  /** The panel's opening width; the reader can drag it from there. A page
+   *  whose content needs the room (the Map) opens it narrower. */
+  panelWidth?: string;
+  /** Which record the panel peeks. */
+  peek?: 'project' | 'classification';
+}
+
+const { max = CONTENT_MAX, panelWidth = '46rem', peek = 'project' } = Astro.props;
+const hasRail = Astro.slots.has('rail');
+---
+<div
+  class:list={['sidebar', 'firma2-project-peek-layout', { 'firma2-project-peek-layout--rail': hasRail }]}
+  data-side="end"
+  style={`--sidebar-width: ${panelWidth}; --sidebar-content-min: 20rem${hasRail ? '; --firma2-record-rail-width: 25rem' : ''}`}
+>
+  {peek === 'classification' ? <Firma2ClassificationPeek /> : <Firma2ProjectPeek />}
+  <slot name="rail" />
+  {max === false ? <div><slot /></div> : <div><EsaContainer maxWidth={max}><slot /></EsaContainer></div>}
+</div>
+<template data-project-peek-button>
+  <Firma2ProjectPeekButton slug="" name="" />
+</template>
+
+<script>
+  document.querySelectorAll('template').forEach((template) => {
+    template.content.querySelectorAll('script[type="module"]').forEach((trapped) => {
+      const script = document.createElement('script');
+      for (const { name, value } of trapped.attributes) script.setAttribute(name, value);
+      script.textContent = trapped.textContent;
+      trapped.remove();
+      document.body.append(script);
+    });
+  });
+</script>
+
+<style>
+  /* The rail is the track's SECOND aside. `.sidebar` orders only its first
+     child (the peek) to the trailing edge, so the rail is sent there too. */
+  .firma2-project-peek-layout--rail > :global(.firma2-record-rail) {
+    order: 2;
+  }
+  /* One track, one occupant: while the peek is open, the rail steps out.
+     Global whole: Astro does not rewrite a :global() nested inside :has(),
+     and ships it as an invalid selector. */
+  :global(.firma2-project-peek-layout--rail:has(> .firma2-project-peek:not([hidden])) > .firma2-record-rail) {
+    display: none;
+  }
+</style>

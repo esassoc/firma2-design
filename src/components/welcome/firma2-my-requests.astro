@@ -1,0 +1,124 @@
+---
+// firma2-my-requests — the newcomer's own requests: where each went, what it
+// asked, and how it stands (.scratch/access-requests/spec.md, stories 9–12).
+//
+// THE REQUESTER'S SIDE OF THE QUEUE. A manager sees a request on Members; the
+// person who made it sees it here, with Withdraw while it waits and the
+// manager's reason once it's declined. Several at once is normal — a
+// consultant asks two organizations (decision 26).
+//
+// GONE WHEN EMPTY, like every request band: no requests is not a state worth
+// a sentence on a first screen.
+//
+// bcn-lego-checked: esa-badge for status, esa-button for Withdraw,
+// esa-snackbar-container for the result — composed unchanged. The table is
+// firma2-settings-table's (no esa- table lego). Beacon is not cloned on this
+// machine. The only CSS hides the band when it is empty.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import '../settings/firma2-settings-table.css';
+import { NEWCOMER } from '../../data/firma2-access-requests';
+
+interface Props {
+  /** `first`: the newcomer on first sign-in. `app`: whoever is signed in. */
+  context?: 'first' | 'app';
+}
+const { context = 'first' } = Astro.props;
+---
+<section class="firma2-my-requests stack" data-gap="sm" data-email={NEWCOMER.email} data-context={context} data-empty>
+  <h2 class="typography-label-md">Your requests</h2>
+  <div class="firma2-settings-table-scroll">
+    <table class="firma2-settings-table firma2-settings-table--actions" aria-label="Your requests">
+      <thead>
+        <tr>
+          <th scope="col">Organization</th>
+          <th scope="col">Status</th>
+          <th scope="col" class="firma2-settings-table__act"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody data-my-requests></tbody>
+    </table>
+  </div>
+
+  <template data-row>
+    <tr>
+      <th scope="row">
+        <span data-slot="organization"></span>
+        <span class="firma2-settings-table__meta typography-body-sm" data-slot="meta"></span>
+      </th>
+      <td data-slot="status"></td>
+      <td class="firma2-settings-table__act" data-slot="act">
+        <EsaButton variant="ghost" size="md" data-withdraw>Withdraw</EsaButton>
+      </td>
+    </tr>
+  </template>
+  <template data-status="pending"><EsaBadge value="Waiting" variant="info" size="sm" /></template>
+  <template data-status="approved"><EsaBadge value="Approved" variant="success" size="sm" /></template>
+  <template data-status="declined"><EsaBadge value="Declined" variant="secondary" size="sm" /></template>
+
+  <esa-snackbar-container class="firma2-my-requests__toasts"></esa-snackbar-container>
+</section>
+
+<script>
+  import '@esa/ecology/esa-snackbar-container';
+  import { currentPerson } from '../../lib/workspace-permissions';
+  import { readRequests, withdrawRequest, CHANGED } from '../../lib/access-requests';
+  import { askedLabel, type AccessRequest } from '../../data/firma2-access-requests';
+
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
+
+  document.querySelectorAll<HTMLElement>('.firma2-my-requests').forEach((root) => {
+    const email = root.dataset.context === 'app' ? currentPerson().email : root.dataset.email ?? '';
+    const body = root.querySelector<HTMLElement>('[data-my-requests]')!;
+    const template = root.querySelector<HTMLTemplateElement>('[data-row]')!;
+    const toasts = root.querySelector<Toasts>('.firma2-my-requests__toasts');
+
+    // What the line under the name says: what was asked, and once answered, what
+    // came of it — the granted level when it was lower, the reason when given.
+    const meta = (r: AccessRequest): string => {
+      const what = r.kind === 'organization' ? 'New organization' : askedLabel[r.asked];
+      if (r.status === 'approved' && r.granted && r.granted !== r.asked) return `${what} · approved to ${askedLabel[r.granted].toLowerCase()}`;
+      if (r.status === 'declined' && r.reason) return `${what} · “${r.reason}”`;
+      return what;
+    };
+
+    function render() {
+      const mine = readRequests().filter((r) => r.email === email && r.status !== 'withdrawn');
+      root.toggleAttribute('data-empty', mine.length === 0);
+      body.replaceChildren(
+        ...mine.map((r) => {
+          const tr = (template.content.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement;
+          tr.dataset.request = r.id;
+          tr.querySelector('[data-slot="organization"]')!.textContent = r.organization;
+          tr.querySelector('[data-slot="meta"]')!.textContent = meta(r);
+          tr.querySelector('[data-slot="status"]')!.append(
+            root.querySelector<HTMLTemplateElement>(`[data-status="${r.status}"]`)!.content.cloneNode(true),
+          );
+          const withdraw = tr.querySelector('[data-withdraw]');
+          if (r.status === 'pending') withdraw?.setAttribute('aria-label', `Withdraw request to ${r.organization}`);
+          else tr.querySelector('[data-slot="act"]')!.replaceChildren();
+          return tr;
+        }),
+      );
+    }
+
+    body.addEventListener('click', (event) => {
+      const id = (event.target as Element).closest('[data-withdraw]')?.closest<HTMLElement>('tr')?.dataset.request;
+      if (!id) return;
+      withdrawRequest(id);
+      toasts?.show({ message: 'Request withdrawn.', variant: 'success' });
+    });
+
+    render();
+    window.addEventListener(CHANGED, render);
+  });
+</script>
+
+<style>
+  .firma2-my-requests[data-empty] {
+    display: none;
+  }
+  .firma2-my-requests h2 {
+    margin: 0;
+  }
+</style>

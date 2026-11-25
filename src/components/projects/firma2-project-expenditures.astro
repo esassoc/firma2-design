@@ -17,14 +17,14 @@
 // TWO KINDS OF MONEY, AND THE CARD KEEPS THEM APART. Estimated cost builds the
 // work; annual operating cost keeps it working, every year, after the last
 // invoice clears. ProjectFirma stores both on the project for a reason a
-// steward feels directly — the capital grant is the easy half — so the second
+// manager feels directly — the capital grant is the easy half — so the second
 // figure sits in the same row as the first rather than being folded into it.
 // It is deliberately NOT added to spent-to-date or netted against remaining:
 // they are different obligations on different clocks, and one arithmetic
 // between them would be a claim this record cannot support.
 //
 // A SERIES, NOT A SET. Funding sources, measures and milestones are each a
-// COLLECTION a steward adds to, edits and removes from — that is why they
+// COLLECTION a manager adds to, edits and removes from — that is why they
 // carry an "Add" affordance in their card header. A year of spend is not
 // something anyone adds; it accrues as reporting periods close, exactly the
 // way a performance measure's activity accrues. The correct action here is
@@ -100,12 +100,6 @@ const totalSpent = expenditures.reduce((sum, year) => sum + year.spent, 0);
 // negative "remaining" would read as a bug rather than a finding.
 const remaining = Math.max(estimatedTotalCost - totalSpent, 0);
 
-// The share of the budget drawn down, as a whole percent. Carried on both the
-// spent and the remaining tile so the pair reads as one burn-down and neither
-// figure has to be divided in the reader's head. Guarded against a zero total,
-// which no seeded project has and a hand-edited one could.
-const spentShare = estimatedTotalCost > 0 ? Math.round((totalSpent / estimatedTotalCost) * 100) : 0;
-
 // NOTHING DRAWN AGAINST A PROJECT THAT HAS SPENT NOTHING. Seven of the
 // twenty-four seeded projects are in Proposal or Planning & Design, and every
 // one of them reports $0 against every year in its window. That used to render
@@ -136,6 +130,8 @@ const hasSpend = totalSpent > 0;
 const noteId = 'firma2-expenditures-note';
 ---
 
+<!-- Contents-only wrapper: marks the card title as a renameable noun (src/lib/vocabulary.ts) without adding a box. -->
+<div data-aliasable-title style="display: contents">
 <EsaCard title="Expenditures">
   <!-- RECORD SPEND, not "Add expenditure", and the verb is the whole argument
        this card spent a release making by carrying NO action at all. A year of
@@ -166,24 +162,10 @@ const noteId = 'firma2-expenditures-note';
     data-estimated-total-cost={estimatedTotalCost}
     data-has-spend={hasSpend ? '' : undefined}
   >
-    <!-- THE FOUR FIGURES, AS ONE BLOCK. `.grid` from the hub's layout
-         primitives carries the gap and the box; what this component overrides
-         is the TRACK COUNT, and only because auto-fit gets this particular case
-         wrong. Four tiles at a 36px display value need roughly 200px each, and
-         the column they sit in is 662px wide at a 1440 viewport — so auto-fit
-         resolves to three tracks and orphans the fourth tile on a row of its
-         own, which reads as a wrap accident rather than a grouping. Two-up or
-         four-up, never three. See the CSS for why the breakpoint is a CONTAINER
-         query and not a media query. -->
+    <!-- THE THREE FIGURES, AS ONE BLOCK. Estimated cost is not a tile: Key
+         facts states it and the funding table totals it, and spent plus left
+         to spend already add up to it. See the CSS for the track count. -->
     <div class="firma2-project-expenditures__figures grid" data-gap="md">
-      <!-- FIRST, because it is the denominator of the two tiles after it. `sub`
-           says the one thing this card exists to correct: the figure covers the
-           whole project, so the bars below are not slices of it. -->
-      <EsaStat
-        value={currency.format(estimatedTotalCost)}
-        label="Estimated cost"
-        sub="Total across all years"
-      />
       <!-- WRAPPED, because esa-stat takes no arbitrary attributes (it destructures
            value/label/sub/accent and spreads nothing) and these two tiles have to
            be findable by the script that repaints them after a spend is recorded.
@@ -193,32 +175,29 @@ const noteId = 'firma2-expenditures-note';
         <EsaStat
           value={currency.format(totalSpent)}
           label="Spent to date"
-          sub={`${spentShare}% of estimated cost`}
         />
       </div>
-      <!-- "Remaining" ALONE would be ambiguous sitting beside an operating-cost
-           tile — remaining of which? The sub answers it, and pairs with the tile
-           to its left so the two read as one burn-down. -->
+      <!-- "Remaining" alone would be ambiguous beside an operating-cost tile —
+           remaining of which? The label answers it; a percentage sub would only
+           restate the two figures beside it. -->
       <div data-spend-tile="remaining">
         <EsaStat
           value={currency.format(remaining)}
-          label="Remaining"
-          sub={`${100 - spentShare}% of estimated cost`}
+          label="Left to spend"
         />
       </div>
-      <!-- LAST, and separated by meaning rather than by a rule: the three tiles
+      <!-- LAST, and separated by meaning rather than by a rule: the two tiles
            before it are one budget being drawn down; this is a different
            obligation on a different clock, which is why nothing sums it into
            them. NO `accent`. It carried the brand green for a build, on the
            reasoning that the odd figure out should be marked as such — and the
            green made the SMALLEST number the loudest thing in the card, louder
-           than the three larger figures in near-black beside it. Reading order
-           and the sub already say what it is; a colour that shouts is not a
+           than the larger figures in near-black beside it. Reading order
+           and the label already say what it is; a colour that shouts is not a
            colour that explains. -->
       <EsaStat
         value={currency.format(estimatedAnnualOperatingCost)}
         label="Est. annual operating cost"
-        sub="Once built, every year"
       />
     </div>
 
@@ -279,8 +258,7 @@ const noteId = 'firma2-expenditures-note';
            runtime, so the gate never needs re-evaluating. -->
       {hasSpend && (
         <p id={noteId} class="firma2-project-expenditures__note typography-body-sm">
-          Yearly figures are estimated: the project&rsquo;s total spend to date, spread
-          across the years spending could have reached.
+          Yearly figures are estimated from the total spent to date.
         </p>
       )}
 
@@ -312,7 +290,7 @@ const noteId = 'firma2-expenditures-note';
     </div>
 
     <!-- THE SPEND SHEET — where one period's expenditure is filed. Composed
-         from legos (esa-side-dialog, esa-select, esa-text-field, esa-button) and
+         from legos (bcn-side-sheet, esa-select, esa-text-field, esa-button) and
          layout primitives; the data attributes are query hooks, not skins.
          DELIBERATELY SHORTER THAN THE MEASURES SHEET, and the difference is the
          model's, not a simplification. An entry has to ask which measure it
@@ -326,7 +304,7 @@ const noteId = 'firma2-expenditures-note';
          years catching up after a late reconciliation is the normal case — so
          Save appends to the log and clears the figure while HOLDING the year, and
          Done is how a sitting ends. Same rhythm as Record work. -->
-    <esa-side-dialog
+    <bcn-side-sheet
       class="firma2-project-expenditures__sheet"
       heading="Record spend"
       size="md"
@@ -356,9 +334,9 @@ const noteId = 'firma2-expenditures-note';
       </div>
       <div slot="footer" class="repel">
         <EsaButton variant="ghost" size="md" data-spend-done>Done</EsaButton>
-        <EsaButton variant="primary" size="md" data-spend-save>Save entry</EsaButton>
+        <EsaButton variant="primary" size="md" data-spend-save>Save</EsaButton>
       </div>
-    </esa-side-dialog>
+    </bcn-side-sheet>
 
     <!-- Remove-button template, cloned into log rows by the script — the same
          lego-clone trick the measures sheet and the data grids use, so a
@@ -371,18 +349,19 @@ const noteId = 'firma2-expenditures-note';
     </div>
   </div>
 </EsaCard>
+</div>
 
 <script>
   // ---------------------------------------------------------------------------
   // THE SECTION IS NOW READ-WRITE, and that changes what this script is. It used
   // to mint a chart from a server payload and stop. It now owns a small pipeline:
   // SEED (built figures from firma2-project-detail) + RECORDED (what was filed in
-  // this browser) -> merged rows -> the four tiles, the chart and the data grid,
+  // this browser) -> merged rows -> the tiles, the chart and the data grid,
   // all repainted from ONE function so they cannot disagree. Everything a
   // reporter files lands in all three places or none.
   // ---------------------------------------------------------------------------
   import '@esa/ecology/esa-chart';
-  import '@esa/ecology/esa-side-dialog';
+  import '../shared/bcn-side-sheet';
   import '@esa/ecology/esa-select';
   import '@esa/ecology/esa-text-field';
   import { currencyFormatter as currency } from '../../lib/format';
@@ -391,9 +370,6 @@ const noteId = 'firma2-expenditures-note';
     readExpenditures,
     removeExpenditure,
   } from '../../lib/expenditure-draft';
-  // esa-side-dialog lands flush-left and content-tall in Chrome without this;
-  // src/lib/side-dialog-fix.ts explains the why. Same call the measures sheet makes.
-  import { fixSideDialog } from '../../lib/side-dialog-fix';
 
   /** esa-chart's element class is not imported for typing — the module is
    *  imported for its REGISTRATION side effect, which is all a custom element
@@ -593,8 +569,6 @@ const noteId = 'firma2-expenditures-note';
     // ---- the tiles ---------------------------------------------------------
     const tileValue = (name: string): HTMLElement | null =>
       root.querySelector<HTMLElement>(`[data-spend-tile="${name}"] .esa-stat__value`);
-    const tileSub = (name: string): HTMLElement | null =>
-      root.querySelector<HTMLElement>(`[data-spend-tile="${name}"] .esa-stat__sub`);
 
     /**
      * ONE REPAINT FOR THE WHOLE SECTION. Tiles, chart and grid all read the same
@@ -605,17 +579,12 @@ const noteId = 'firma2-expenditures-note';
       const rs = rows();
       const spent = sum(rs);
       const remaining = Math.max(total - spent, 0);
-      const share = total > 0 ? Math.round((spent / total) * 100) : 0;
 
       const spentValue = tileValue('spent');
       if (spentValue) spentValue.textContent = currency.format(spent);
-      const spentSub = tileSub('spent');
-      if (spentSub) spentSub.textContent = `${share}% of estimated cost`;
 
       const remainingValue = tileValue('remaining');
       if (remainingValue) remainingValue.textContent = currency.format(remaining);
-      const remainingSub = tileSub('remaining');
-      if (remainingSub) remainingSub.textContent = `${100 - share}% of estimated cost`;
 
       // The reveal. A project that arrives with nothing spent has the chart, the
       // note and the table in the DOM but not on the screen; the first figure
@@ -647,7 +616,6 @@ const noteId = 'firma2-expenditures-note';
     if (root.hasAttribute('data-has-spend')) mountChart();
 
     if (!sheet || !slug || !yearField || !amountField || !log || !logBlock) return;
-    void fixSideDialog(sheet);
 
     const cloneButton = (label: string): HTMLElement | null => {
       const btn = removeTemplate?.firstElementChild?.cloneNode(true) as HTMLElement | undefined;
@@ -770,25 +738,16 @@ const noteId = 'firma2-expenditures-note';
     container-type: inline-size;
   }
 
+  /* Three-up or one-up, never two: two tracks would orphan the third tile on
+     a row of its own. 40rem gives each tile ~210px, room for the widest seeded
+     value ($9,640,000 at display-sm). */
   .firma2-project-expenditures__figures {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  /* 60rem, not the 56rem the four tiles technically fit in: at 902px the tiles
-     land on ~205px and the widest seeded value ($9,640,000 at display-sm) very
-     nearly fills that. The threshold buys the biggest figure in the portfolio
-     room to breathe rather than sizing the row for the median project. */
-  @container (min-width: 60rem) {
+  @container (min-width: 40rem) {
     .firma2-project-expenditures__figures {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-  }
-
-  /* One column below ~26rem — two tracks of ~150px would clip a seven-figure
-     value mid-number, which is the one failure mode a money tile cannot have. */
-  @container (max-width: 26rem) {
-    .firma2-project-expenditures__figures {
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
 

@@ -1,0 +1,1041 @@
+---
+// firma2-classification-roster — everything the workspace files projects
+// under, in Workspace settings: one section per TOP-LEVEL GROUP, each the
+// groups and classifications beneath it as grouped rows on one column grid —
+// a tree read as a table (the construction came from the Tags board, removed
+// with Tags on 2026-11-24; firma2-schema-board shares it).
+//
+// THE PAGE SAYS WHAT CAN BE DONE ON IT (user, 2026-11-23: it did not — "Add
+// classification" eleven times, no way to add a group inside a group, group
+// names that did not look like links, ten tables repeating one header).
+//
+//   a top-level group's heading   opens the group (name, colour, parent)
+//   a group's line                its name opens it; "Add" makes a
+//                                 classification or a group inside it; "…"
+//                                 converts it
+//   a classification's row        its name opens it; the figures are its
+//                                 setup: projects and performance
+//                                 measures; "…" converts it
+//
+// THE TREE IS FREE (user, 2026-11-23: "if I want to move it I should be able
+// to"). A group holds groups and classifications together and goes under any
+// other group or to the top level. A classification sits in any group — but
+// always in one: MOVED OUT OF EVERY GROUP, IT BECOMES A GROUP (user,
+// 2026-11-23), so the top level holds groups only. In each group its
+// classifications come first, then its groups.
+// Levels, a uniform depth and a groups-or-classifications rule were each
+// built and withdrawn the same day.
+//
+// GROUPS FOLD (user, 2026-11-23: "to see less at once"). Each group's line
+// has a chevron that hides what is inside it; which groups are folded is
+// remembered per reader (localStorage, a convenience — all open when storage
+// is unavailable). Adding into a folded group opens it. A folded group still
+// takes a row sent to it by "Move to"; it is not a place to drop one.
+//
+// BACK TO A–Z (user, 2026-11-24). An order arranged by hand can always be put
+// back: "Sort A to Z" in a group's "…" menu sorts what is directly inside it
+// — its classifications among themselves, its groups among themselves — and
+// the page header's "Sort A to Z" sorts the top-level groups. It does not
+// reach into the groups inside; each has its own.
+//
+// ONE KIND BECOMES THE OTHER (user, 2026-11-23):
+// "Convert to group" on a classification, "Convert to classification" on a
+// group, each keeping the name, colour, description and place. A
+// classification's measures and targets go — a group has none — so one that
+// is in use asks first. A group that holds anything asks what happens to it:
+// kept, moved up to where the group was, or removed. A TOP-LEVEL group has no
+// "Convert to classification": a classification cannot stand at the top
+// level, so there is nowhere for it to become one.
+//
+// ADDING IS ADDING A ROW (user, 2026-11-23: "the ways tags handle item and
+// group creation" — the Tags board, since removed). An add opens an empty row where the
+// new thing will sit, with the cursor in its name. Enter keeps it and opens
+// the next, the way a spreadsheet takes a list; leaving the field keeps a
+// named row and drops an empty one; Escape drops it. A name another one
+// already has is refused in the row. This replaces the add PAGES for
+// everything inside a top-level group — a classification or a group starts
+// as a name, which a row holds; its measures, targets and colour are on its
+// own page, one click on the name. (With no script the adds are still links
+// to those pages.) A top-level group is added the same way, from the page
+// header's "Add group": its row opens at the foot of the list.
+//
+// A GROUP'S ROW HAS NO FIGURES: measures and targets are set on
+// classifications, and a count of projects across a branch would count a
+// project filed twice in it twice. It says how many classifications it holds.
+//
+// THE MEASURE COUNT IS THE ADMINISTRATOR'S FINDING: a classification with no
+// measures cannot report progress, and this is the screen that shows it. A
+// "Targets set" column stood beside it until the user cut it (2026-11-23:
+// not relevant here); targets are on each classification's own page.
+//
+// MOVING IS ONE GRIP (user, 2026-11-23). Every row has a grip,
+// shown when you are on the row: drag it to reorder, or over another group to
+// drop the row there; click it for a menu that does the same moves without
+// dragging, "Move to <group>" included (bcn-sortable-list, linked lists).
+// ANY GROUP GOES UNDER ANY OTHER, or to the top level, at any depth — only
+// never inside itself. A classification goes into any group; sent to the top
+// level ("Move to top level", or dropped on the row that appears above the
+// groups while one is dragged) it becomes a group there, asking first if it
+// is in use. Every move saves at once, and the order is the Classifications
+// page's.
+//
+// A DRAG SHOWS WHAT WILL BECOME PART OF WHAT (user, 2026-11-23: "the UI for
+// what becomes part of what is not good … see apple examples"), the way
+// Finder and Reminders do. Nothing moves until the drop. Between rows, an
+// INSERTION LINE marks the gap, drawn at the indent of the group the row
+// would join. Over a group's own line, THE GROUP IS MARKED — tinted, ringed —
+// and the row joins it. The dragged row follows the pointer, dimmed.
+//
+// RENDERED IN THE BROWSER, from the store (src/lib/taxonomy-edits.ts): groups
+// and classifications are added, moved and removed there, so the tree is only
+// known there. The build supplies what the browser cannot compute — each
+// classification's project count and its seeded measures and targets — and
+// the legos to clone.
+//
+// NOTHING AT ALL YET is a first-run screen (esa-empty-state): what belongs
+// here and how to start. The page header's "Add group" is the action.
+//
+// bcn-lego-checked: bcn-sortable-list reorders and moves every row (no esa-
+// list does either; esassoc/ecology#39); esa-button every add and grip;
+// esa-text-field the new row's name; esa-dropdown-menu "Add" and "…";
+// esa-confirm-dialog and esa-dialog the two questions a conversion asks. The classes only lay the rows on one
+// shared column grid, which no esa- component does — firma2-schema-board's
+// construction. The swatch is firma2-goal-card's 12px square. Beacon is not
+// cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { CLASSIFICATIONS } from '../../data/firma2-classifications';
+import { kpisFor } from '../../data/firma2-classification-rollup';
+import { projects } from '../../data/firma2-projects';
+
+// What only the build knows, so the script can apply this browser's edits over it.
+const seeded = Object.fromEntries(
+  CLASSIFICATIONS.map((c) => [
+    c.slug,
+    {
+      projects: projects.filter((p) => p.classifications.includes(c.name)).length,
+      kpis: kpisFor(c.name).map((m) => m.slug),
+    },
+  ]),
+);
+---
+<div class="firma2-classification-roster" data-classification-roster data-seeded={JSON.stringify(seeded)}>
+  <bcn-sortable-list data-top-sort group="groups" label="Top level" move-label="Move to top level" drop="line">
+    <template data-sort-handle><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+    <ol class="firma2-classification-roster__roots" data-roots></ol>
+  </bcn-sortable-list>
+
+  <esa-confirm-dialog data-confirm></esa-confirm-dialog>
+  <!-- A group that holds something is asked what becomes of it. -->
+  <esa-dialog size="md" show-close-button data-contents>
+    <p data-contents-message></p>
+    <div slot="footer" class="cluster" data-gap="xs">
+      <EsaButton variant="primary" size="md" data-contents-keep>Keep them</EsaButton>
+      <EsaButton variant="danger" appearance="soft" size="md" data-contents-remove>Remove them</EsaButton>
+      <EsaButton variant="ghost" size="md" data-contents-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <!-- Shown only while the workspace has no groups and no classifications. -->
+  <div data-blank hidden>
+    <div class="firma2-classification-roster__blank">
+      <EsaEmptyState size="md" title="No classifications yet" description="Add a group, or a classification on its own." />
+    </div>
+  </div>
+
+  <!-- Clone sources: real legos, copied by the script per row. -->
+  <template data-tpl-fold><EsaButton variant="chrome" size="sm" iconOnly icon="chevron-down" aria-label="Hide" aria-expanded="true">Hide</EsaButton></template>
+  <template data-tpl-grip><EsaButton variant="chrome" size="md" iconOnly icon="menu" aria-label="Move">Move</EsaButton></template>
+  <template data-tpl-add><esa-dropdown-menu position="below-end"><EsaButton variant="ghost" size="md" icon="plus">Add</EsaButton></esa-dropdown-menu></template>
+  <template data-tpl-menu><esa-dropdown-menu position="below-end"><EsaButton variant="chrome" size="md" iconOnly icon="ellipsis" label="Actions" /></esa-dropdown-menu></template>
+</div>
+
+<style>
+  /* ONE COLUMN GRID FOR EVERY ROW: the name takes what the three figures do
+     not, and the figures are fixed, so they line up down the page whatever a
+     row's depth. Rows are built in the browser, so every rule is global under
+     the root. */
+  .firma2-classification-roster {
+    --roster-tracks: minmax(0, 1fr) 5rem 6.5rem;
+    --roster-grip: 2.5rem;
+    /* The fold chevron's place. A classification's row and the column heads
+       hold it too, so every name at one depth starts on one line. */
+    --roster-fold: 2rem;
+  }
+
+  .firma2-classification-roster :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-classification-roster :global(ol) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* TOP-LEVEL GROUPS SIT CLOSE WHEN FOLDED AND APART WHEN OPEN (user,
+     2026-11-24: folded, a fixed 3rem between them left a page of gaps). The
+     room belongs to an open group's contents, so it is added under a group
+     only while its contents show. */
+  .firma2-classification-roster__roots {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .firma2-classification-roster__roots > :global(li:has(> section > [data-fold-body]:not([hidden]))) {
+    margin-block-end: var(--spacing-650, 2.5rem);
+  }
+
+  /* A top-level group's line is its section's heading: no rule under it, the
+     column heads' rule does that. */
+  .firma2-classification-roster :global(.firma2-classification-roster__section > .firma2-classification-roster__line) {
+    border-block-end: 0;
+  }
+
+  /* Under the name, starting where the name's swatch does. */
+  .firma2-classification-roster :global(.firma2-classification-roster__desc) {
+    padding-inline-start: calc(var(--roster-grip) + var(--roster-fold));
+    margin-block-end: var(--spacing-300, 0.75rem);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__section) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__heading) {
+    flex: 1 1 12rem;
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__title) {
+    display: inline;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  /* A NAME IS A LINK, AND LOOKS LIKE ONE, on every level. */
+  .firma2-classification-roster :global(.firma2-classification-roster__link) {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--spacing-200, 0.5rem);
+    color: var(--color-content-link, var(--color-content-brand, #2a7e3b));
+    text-decoration: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-classification-roster :global(.firma2-classification-roster__link:hover) {
+      text-decoration: underline;
+    }
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__glyph) {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+  }
+  .firma2-classification-roster :global(.firma2-classification-roster__swatch) {
+    flex: none;
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__meta) {
+    margin: 0;
+    max-inline-size: 60ch;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__meta:empty) {
+    display: none;
+  }
+
+  /* The column heads, and each classification's cells, on the shared tracks.
+     The heads sit one grip in, over the rows' own cells. */
+  .firma2-classification-roster :global(.firma2-classification-roster__head) {
+    display: flex;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__cells) {
+    display: grid;
+    grid-template-columns: var(--roster-tracks);
+    column-gap: var(--spacing-400, 1rem);
+    align-items: center;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__head) {
+    padding-block: var(--spacing-300, 0.75rem);
+    padding-inline-start: calc(var(--roster-grip) + var(--roster-fold));
+    color: var(--color-content-default-secondary, #646464);
+    border-block-end: 1px solid var(--color-border-default, #cecece);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__cells) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__num) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A row: the grip's place, then its content. Rules between rows, as the
+     settings tables draw them. */
+  .firma2-classification-roster :global(.firma2-classification-roster__row),
+  .firma2-classification-roster :global(.firma2-classification-roster__line) {
+    display: flex;
+    align-items: center;
+    min-block-size: 3.5rem;
+    border-block-end: 1px solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__row) {
+    padding-block: var(--spacing-200, 0.5rem);
+  }
+
+  /* The grip's track holds its width on every row, so names line up whether
+     or not a grip is showing. */
+  .firma2-classification-roster :global([data-sort-grip]),
+  .firma2-classification-roster :global([data-sort-spacer]),
+  .firma2-classification-roster :global(.firma2-classification-roster__grip) {
+    flex: none;
+    inline-size: var(--roster-grip);
+  }
+
+  /* One step in per level. */
+  .firma2-classification-roster :global(.firma2-classification-roster__inside) {
+    padding-inline-start: var(--spacing-600, 2rem);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__name) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-050, 0.125rem);
+    min-inline-size: 0;
+  }
+
+  /* A group's line: its name and count at the leading edge, its add at the
+     trailing one. */
+  .firma2-classification-roster :global(.firma2-classification-roster__group-name) {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    font-weight: var(--font-weight-semibold, 600);
+  }
+
+  /* The fold chevron: 28px in the line, pointing up while its group is open. */
+  .firma2-classification-roster :global(.firma2-classification-roster__fold) {
+    flex: none;
+    inline-size: var(--roster-fold);
+    line-height: 0;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__fold .esa-button__native) {
+    block-size: 28px;
+    inline-size: 28px;
+    padding: 0;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__fold [aria-expanded='true'] svg) {
+    transform: rotate(180deg);
+  }
+
+  /* THE CHEVRON'S HIT AREA reaches past its 28px box: 40px tall for a mouse,
+     44px for a finger, and sideways only as far as its own slot — the grip is
+     hard against it on one side and the name on the other. */
+  .firma2-classification-roster :global(.firma2-classification-roster__fold .esa-button__native) {
+    position: relative;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__fold .esa-button__native)::before {
+    content: '';
+    position: absolute;
+    inset: -6px 0;
+  }
+
+  @media (pointer: coarse) {
+    .firma2-classification-roster {
+      --roster-fold: 2.75rem;
+    }
+
+    .firma2-classification-roster :global(.firma2-classification-roster__fold) {
+      display: flex;
+      justify-content: center;
+    }
+
+    .firma2-classification-roster :global(.firma2-classification-roster__fold .esa-button__native)::before {
+      inset: -8px;
+    }
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__actions) {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--spacing-100, 0.25rem);
+  }
+
+  /* A row's "…" sits past its figures, one grip wide, on every row. */
+  .firma2-classification-roster :global(.firma2-classification-roster__menu) {
+    flex: none;
+    inline-size: var(--roster-grip);
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__head) {
+    padding-inline-end: var(--roster-grip);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__error) {
+    margin: 0;
+    padding-block: var(--spacing-200, 0.5rem);
+    padding-inline-start: var(--roster-grip);
+    color: var(--color-content-utility-danger, #ce2c31);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__count) {
+    margin-inline-start: var(--spacing-200, 0.5rem);
+    color: var(--color-content-default-secondary, #646464);
+    font-weight: var(--font-weight-regular, 400);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Nothing at all yet: what belongs here and how to start, not a blank page. */
+  .firma2-classification-roster :global(.firma2-classification-roster__blank) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-400, 1rem);
+    padding-block: var(--spacing-700, 3rem);
+  }
+
+  /* DROPPING INTO A GROUP marks the group's own line, not everything under
+     it: a tint and a ring in the drop colour. */
+  .firma2-classification-roster :global(li[data-drop-into]) {
+    outline: 0;
+  }
+
+  .firma2-classification-roster :global(li[data-drop-into] > .firma2-classification-roster__line),
+  .firma2-classification-roster :global(li[data-drop-into] > section > .firma2-classification-roster__line) {
+    border-radius: var(--radius-md, 0.5rem);
+    border-block-end-color: transparent;
+    background: color-mix(in srgb, var(--color-border-default-focus, #2a7e3b) 10%, transparent);
+    box-shadow: inset 0 0 0 2px var(--color-border-default-focus, #2a7e3b);
+  }
+
+  /* An empty list takes no room: its group's line is where a row is dropped
+     into it. The one drop row that shows is the top level's, while a
+     classification is dragged — where it leaves every group and becomes one. */
+  .firma2-classification-roster :global(li[data-sort-placeholder]) {
+    display: none;
+    margin-block-end: var(--spacing-400, 1rem);
+    padding: var(--spacing-300, 0.75rem);
+    border: 1px dashed var(--color-border-default, #cecece);
+    border-radius: var(--radius-md, 0.5rem);
+    color: var(--color-content-default-secondary, #646464);
+    text-align: center;
+  }
+
+  :global(.firma2-classification-roster:has(bcn-sortable-list[group='classifications'][data-sorting]) .firma2-classification-roster__out li[data-sort-placeholder]) {
+    display: block;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__out li[data-sort-placeholder][data-drop-into]) {
+    border-style: solid;
+    border-color: var(--color-border-default-focus, #2a7e3b);
+    background: color-mix(in srgb, var(--color-border-default-focus, #2a7e3b) 10%, transparent);
+    color: var(--color-content-default, #202020);
+    outline: 0;
+  }
+
+  /* The new row: one name field where the new thing will sit. */
+  .firma2-classification-roster :global(.firma2-classification-roster__adding) {
+    padding-block: var(--spacing-200, 0.5rem);
+    padding-inline-start: calc(var(--roster-grip) + var(--roster-fold));
+    border-block-end: 1px solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__adding esa-text-field) {
+    display: block;
+    max-inline-size: 24rem;
+  }
+
+  /* QUIET UNTIL YOU'RE ON A ROW: a column of identical grips is
+     noise. Opacity, so each stays in the tab order; keyboard focus, a drag,
+     and a device with no hover all show it outright. */
+  .firma2-classification-roster :global([data-sort-grip]),
+  .firma2-classification-roster :global(.firma2-classification-roster__menu) {
+    opacity: 0;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__row:focus-within > .firma2-classification-roster__menu),
+  .firma2-classification-roster :global(.firma2-classification-roster__line:focus-within .firma2-classification-roster__menu),
+  .firma2-classification-roster :global(.firma2-classification-roster__menu:has([open])) {
+    opacity: 1;
+  }
+
+  .firma2-classification-roster :global(.firma2-classification-roster__row:focus-within [data-sort-grip]),
+  .firma2-classification-roster :global(.firma2-classification-roster__line:focus-within [data-sort-grip]),
+  .firma2-classification-roster :global(li[data-dragging] [data-sort-grip]) {
+    opacity: 1;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-classification-roster :global(.firma2-classification-roster__row:hover > .firma2-classification-roster__menu),
+    .firma2-classification-roster :global(.firma2-classification-roster__line:hover .firma2-classification-roster__menu),
+    .firma2-classification-roster :global(.firma2-classification-roster__row:hover [data-sort-grip]),
+    .firma2-classification-roster :global(.firma2-classification-roster__line:hover [data-sort-grip]) {
+      opacity: 1;
+    }
+  }
+
+  @media (hover: none) {
+    .firma2-classification-roster :global(.firma2-classification-roster__menu),
+    .firma2-classification-roster :global([data-sort-grip]) {
+      opacity: 1;
+    }
+  }
+
+  /* A phone gives the name more of the row. */
+  @media (max-width: 45rem) {
+    .firma2-classification-roster {
+      --roster-tracks: minmax(0, 1fr) 3.5rem 4.5rem;
+    }
+  }
+</style>
+
+<script>
+  import '../shared/bcn-sortable-list';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-dropdown-menu';
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-dialog';
+  import { announce } from '@esa/ecology/announcer';
+  import {
+    addEntry,
+    arrangeClassifications,
+    classificationsIn,
+    classificationsUnder,
+    convertToClassification,
+    convertToGroup,
+    editEntry,
+    getEntry,
+    groupAndDescendants,
+    groupsIn,
+    groupTrail,
+    kpiSlugs,
+    sortAlphabetically,
+    nameTaken,
+  } from '../../lib/taxonomy-edits';
+  import type { TaxonomyEntry } from '../../lib/taxonomy-edits';
+  import { recordHref } from '../../lib/taxonomy-record';
+
+  const LIST = '/prototypes/workspace-settings/classifications';
+  const GROUPS = `${LIST}/groups`;
+  const C = 'firma2-classification-roster';
+
+  type Kind = 'classification' | 'classificationGroup';
+  type MenuItem = { label: string; action: string; divider?: boolean; variant?: 'danger' };
+  type Menu = HTMLElement & { items: MenuItem[] };
+  type Field = HTMLElement & { value: string; errorText: string };
+  type Confirm = HTMLElement & { heading: string; message: string; show: () => void };
+  type Dialog = HTMLElement & { heading: string; open: boolean };
+  const NOUN: Record<Kind, string> = { classification: 'classification', classificationGroup: 'group' };
+  const count = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`;
+
+  document.querySelectorAll<HTMLElement>('[data-classification-roster]').forEach((root) => {
+    const seeded: Record<string, { projects: number; kpis: string[] }> = JSON.parse(root.dataset.seeded ?? '{}');
+    const rootsOl = root.querySelector<HTMLOListElement>('[data-roots]')!;
+    const topSort = root.querySelector<HTMLElement>('[data-top-sort]')!;
+    const confirm = root.querySelector<Confirm>('[data-confirm]')!;
+    const contents = root.querySelector<Dialog>('[data-contents]')!;
+    const tpl = (name: string) => root.querySelector<HTMLTemplateElement>(`template[data-tpl-${name}]`)!;
+
+    const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text) node.textContent = text;
+      return node;
+    };
+
+    // ---- menus ----------------------------------------------------------------
+    /** A cloned esa-dropdown-menu: its items, its accessible name, what a pick does. */
+    const menu = (template: string, label: string, items: MenuItem[], onAction: (action: string) => void): HTMLElement => {
+      const node = tpl(template).content.firstElementChild!.cloneNode(true) as Menu;
+      node.querySelector('button')?.setAttribute('aria-label', label);
+      // Assigned only after define, or the items shadow the lego's setter.
+      customElements.whenDefined('esa-dropdown-menu').then(() => (node.items = items));
+      node.addEventListener('menu-action', (event) => {
+        event.stopPropagation();
+        onAction((event as CustomEvent<string>).detail);
+      });
+      return node;
+    };
+
+    // ---- folding ---------------------------------------------------------------
+    // The groups whose contents are hidden, remembered per reader.
+    const FOLD_KEY = 'firma2:classification-roster:closed';
+    let closed = new Set<string>();
+    try {
+      closed = new Set<string>(JSON.parse(localStorage.getItem(FOLD_KEY) ?? '[]'));
+    } catch {}
+    const remember = (): void => {
+      try {
+        localStorage.setItem(FOLD_KEY, JSON.stringify([...closed]));
+      } catch {}
+    };
+    /** A group's chevron. What it hides is marked `data-fold-body` in the group's own item. */
+    const foldButton = (g: TaxonomyEntry): HTMLElement => {
+      const slot = el('span', `${C}__fold`);
+      slot.append(tpl('fold').content.cloneNode(true));
+      const button = slot.querySelector<HTMLElement>('[aria-expanded]');
+      const show = (): void => {
+        const open = !closed.has(g.slug);
+        button?.setAttribute('aria-expanded', String(open));
+        button?.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} what is in ${g.name}`);
+        const li = slot.closest('li');
+        li?.querySelectorAll<HTMLElement>('[data-fold-body]').forEach((body) => {
+          if (body.closest('li') === li) body.hidden = !open;
+        });
+      };
+      slot.addEventListener('click', () => {
+        if (closed.has(g.slug)) closed.delete(g.slug);
+        else closed.add(g.slug);
+        remember();
+        show();
+      });
+      // First paint, once the line is in its item.
+      queueMicrotask(show);
+      return slot;
+    };
+
+    /** "Add" inside a group: a classification or a group, as a row in place. */
+    const addMenu = (g: TaxonomyEntry): HTMLElement =>
+      menu(
+        'add',
+        `Add to ${g.name}`,
+        [
+          { label: 'Classification', action: 'classification' },
+          { label: 'Group', action: 'classificationGroup' },
+        ],
+        (kind) => {
+          adding = { home: g.slug, kind: kind as Kind };
+          // A row cannot open inside a folded group.
+          if (closed.delete(g.slug)) remember();
+          paint();
+        },
+      );
+
+    // ---- becoming the other kind ------------------------------------------------
+    // A refusal is said on the row it is about, until the next repaint.
+    let refused: { key: string; text: string } | null = null;
+
+    /**
+     * A classification becomes a group — where it stands, or at the top level
+     * when it was moved out of every group (`top`). `undo` redraws the list
+     * when the reader says no to a move already shown.
+     */
+    const toGroup = (e: TaxonomyEntry, top = false, undo: () => void = () => {}): void => {
+      if (nameTaken('classificationGroup', e.name)) {
+        refused = { key: `c:${e.slug}`, text: 'A group already has this name.' };
+        paint();
+        return;
+      }
+      const go = (): void => {
+        if (top) editEntry('classification', e.slug, { group: '' });
+        convertToGroup(e.slug);
+        announce(`${e.name} is now a group.`);
+        paint();
+      };
+      // What converting costs: a group has no measures or targets, and
+      // projects are not filed on groups.
+      const seed = seeded[e.slug];
+      const projects = seed?.projects ?? 0;
+      const measures = kpiSlugs(e.slug, seed?.kpis ?? []).length;
+      if (!projects && !measures) return go();
+      const costs = [
+        projects ? `${count(projects, 'project')} filed under it ${projects === 1 ? 'loses' : 'lose'} it.` : '',
+        measures ? `Its ${measures === 1 ? 'performance measure stops' : `${measures} performance measures stop`} tracking it.` : '',
+      ].filter(Boolean);
+      confirm.heading = top ? `Make ${e.name} a group?` : `Convert ${e.name} to a group?`;
+      confirm.message = `${top ? 'Outside every group, a classification becomes a group. ' : ''}${costs.join(' ')}`;
+      confirm.setAttribute('confirm-label', top ? 'Make it a group' : 'Convert');
+      confirm.addEventListener('resolved', (event) => ((event as CustomEvent<{ confirmed: boolean }>).detail.confirmed ? go() : undo()), { once: true });
+      confirm.show();
+    };
+
+    let converting: TaxonomyEntry | null = null;
+    const toClassification = (g: TaxonomyEntry): void => {
+      if (nameTaken('classification', g.name)) {
+        refused = { key: `g:${g.slug}`, text: 'A classification already has this name.' };
+        paint();
+        return;
+      }
+      const inside = classificationsUnder(g.slug).length;
+      const groupsInside = groupAndDescendants(g.slug).length - 1;
+      if (!inside && !groupsInside) {
+        convertToClassification(g.slug, 'keep');
+        announce(`${g.name} is now a classification.`);
+        paint();
+        return;
+      }
+      // It holds something: kept (moved up to where the group was) or removed.
+      converting = g;
+      const held = [inside ? count(inside, 'classification') : '', groupsInside ? count(groupsInside, 'group') : ''].filter(Boolean).join(' and ');
+      contents.heading = `Convert ${g.name} to a classification?`;
+      contents.querySelector('[data-contents-message]')!.textContent = `It holds ${held}. Keep them, moved up one level, or remove them.`;
+      contents.open = true;
+    };
+    const settle = (how: 'keep' | 'remove' | null): void => {
+      const g = converting;
+      converting = null;
+      contents.open = false;
+      if (!g || !how) return;
+      convertToClassification(g.slug, how);
+      announce(`${g.name} is now a classification.`);
+      paint();
+    };
+    contents.querySelector('[data-contents-keep]')!.addEventListener('click', () => settle('keep'));
+    contents.querySelector('[data-contents-remove]')!.addEventListener('click', () => settle('remove'));
+    contents.querySelector('[data-contents-cancel]')!.addEventListener('click', () => settle(null));
+
+    // ---- rows -----------------------------------------------------------------
+    const nameLink = (e: TaxonomyEntry, href: string, swatch?: string): HTMLAnchorElement => {
+      const a = el('a', `${C}__link`);
+      a.href = href;
+      if (e.iconPaths) {
+        // The chosen icon leads the name, tinted in the group's colour (a classification: the text colour).
+        const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        glyph.setAttribute('class', `${C}__glyph`);
+        glyph.setAttribute('viewBox', '0 0 24 24');
+        glyph.setAttribute('width', '16');
+        glyph.setAttribute('height', '16');
+        glyph.setAttribute('fill', 'none');
+        glyph.setAttribute('aria-hidden', 'true');
+        if (swatch) glyph.style.color = swatch;
+        glyph.innerHTML = e.iconPaths;
+        a.append(glyph);
+      } else if (swatch) {
+        const square = el('span', `${C}__swatch`);
+        square.style.background = swatch;
+        square.setAttribute('aria-hidden', 'true');
+        a.append(square);
+      }
+      a.append(el('span', '', e.name));
+      return a;
+    };
+
+    /** A figure with its column's name for a reader who cannot see the heads. */
+    const figure = (label: string, value: string, col: string): HTMLElement => {
+      const cell = el('span', `${C}__num`);
+      cell.dataset.col = col;
+      cell.append(el('span', 'visually-hidden', `${label}: `), value);
+      return cell;
+    };
+
+    const rowMenu = (label: string, items: MenuItem[], onPick: (action: string) => void): HTMLElement => {
+      const slot = el('span', `${C}__menu`);
+      slot.append(menu('menu', label, items, onPick));
+      return slot;
+    };
+
+    /** What is directly inside a group, back in alphabetical order. */
+    const sortGroup = (home: string, name: string): void => {
+      sortAlphabetically(home);
+      announce(home ? `${name} sorted A to Z.` : 'Groups sorted A to Z.');
+      paint();
+    };
+
+    const errorLine = (key: string): HTMLElement[] => {
+      if (refused?.key !== key) return [];
+      const line = el('p', `${C}__error typography-body-sm`, refused.text);
+      line.setAttribute('role', 'alert');
+      return [line];
+    };
+
+    const classificationRow = (e: TaxonomyEntry): HTMLLIElement => {
+      const li = el('li');
+      li.dataset.sortKey = e.slug;
+      li.dataset.sortLabel = e.name;
+      const row = el('div', `${C}__row`);
+      // The grip goes in the row's own line.
+      const grip = el('span', `${C}__grip`);
+      grip.dataset.sortGripSlot = '';
+      const cells = el('div', `${C}__cells`);
+      const name = el('div', `${C}__name`);
+      name.append(nameLink(e, recordHref(LIST, e.slug)));
+      if (e.description) name.append(el('span', `${C}__meta typography-body-sm`, e.description));
+      const seed = seeded[e.slug];
+      const kpis = kpiSlugs(e.slug, seed?.kpis ?? []);
+      cells.append(
+        name,
+        figure('Projects', String(seed?.projects ?? 0), 'projects'),
+        figure('Performance measures', String(kpis.length), 'measures'),
+      );
+      // No chevron, but its place: names line up with the groups beside them.
+      const spacer = el('span', `${C}__fold`);
+      spacer.setAttribute('aria-hidden', 'true');
+      row.append(grip, spacer, cells, rowMenu(`Actions for ${e.name}`, [{ label: 'Convert to group', action: 'convert' }], () => toGroup(e)));
+      li.append(row, ...errorLine(`c:${e.slug}`));
+      return li;
+    };
+
+    /** A group's line: grip, name and count, then "Add" and — below the top level — "…". */
+    const groupLine = (g: TaxonomyEntry, top = false): HTMLElement => {
+      const line = el('div', `${C}__line`);
+      const grip = el('span', `${C}__grip`);
+      grip.dataset.sortGripSlot = '';
+      const name = el('span', `${C}__group-name`);
+      name.append(nameLink(g, recordHref(GROUPS, g.slug), g.color));
+      name.append(el('span', `${C}__count`, count(classificationsUnder(g.slug).length, 'classification')));
+      const actions = el('span', `${C}__actions`);
+      // A classification cannot stand at the top level, so a top-level group
+      // has no "Convert to classification".
+      const items: MenuItem[] = [
+        { label: 'Sort A to Z', action: 'sort' },
+        ...(top ? [] : [{ label: '', action: '', divider: true }, { label: 'Convert to classification', action: 'convert' }]),
+      ];
+      actions.append(
+        addMenu(g),
+        rowMenu(`Actions for ${g.name}`, items, (action) => (action === 'sort' ? sortGroup(g.slug, g.name) : toClassification(g))),
+      );
+      line.append(grip, foldButton(g), name, actions);
+      return line;
+    };
+
+    const groupItem = (g: TaxonomyEntry): HTMLLIElement => {
+      const li = el('li', `${C}__group`);
+      li.dataset.sortKey = g.slug;
+      li.dataset.sortLabel = g.name;
+      li.append(groupLine(g), ...errorLine(`g:${g.slug}`), inside(g.slug, g.name));
+      return li;
+    };
+
+    // ---- adding a row ---------------------------------------------------------
+    // The empty row that is open, if any: where, and what it makes. One at a
+    // time. The top level's home is ''.
+    type Adding = { home: string; kind: Kind };
+    let adding: Adding | null = null;
+    // A header add pressed while a row is open: the press blurs that row,
+    // which keeps or drops it and repaints. Remembered so the blur can open
+    // the row the press meant.
+    let pressed: Adding | null = null;
+
+    /** The empty row: one name field where the new thing will sit. */
+    const addRow = (at: Adding): HTMLElement => {
+      const { home, kind } = at;
+      const row = el('div', `${C}__adding`);
+      const field = document.createElement('esa-text-field') as Field;
+      field.setAttribute('size', 'md');
+      field.setAttribute('aria-label', `Name of the new ${NOUN[kind]}`);
+      field.setAttribute('placeholder', kind === 'classification' ? 'Classification name' : 'Group name');
+      field.dataset.addField = '';
+      row.append(field);
+
+      let settled = false;
+      // Keep a named row; `again` opens the next one in the same place.
+      const keep = (again: boolean): void => {
+        if (settled) return;
+        const value = (field.value ?? '').trim();
+        if (value && nameTaken(kind, value)) {
+          field.errorText = `A ${NOUN[kind]} already has this name.`;
+          return;
+        }
+        settled = true;
+        if (value) addEntry(kind, { name: value, description: '', group: home });
+        adding = again && value ? at : again ? null : pressed;
+        pressed = null;
+        paint();
+      };
+      field.addEventListener('input', () => {
+        if (field.errorText) field.errorText = '';
+      });
+      field.addEventListener('keydown', (event) => {
+        const key = (event as KeyboardEvent).key;
+        if (key === 'Enter') keep(true);
+        else if (key === 'Escape') {
+          settled = true;
+          adding = null;
+          paint();
+        }
+      });
+      // Leaving the field keeps a named row and drops an empty one.
+      field.addEventListener('focusout', () => {
+        if (!settled && !field.errorText) keep(false);
+      });
+      return row;
+    };
+
+    // ---- lists ----------------------------------------------------------------
+    /**
+     * One sortable list. Every list of a kind is linked to every other, so a
+     * row can be dragged, or "Moved to", any of them. `label` names it in
+     * another row's "Move to".
+     */
+    const sortable = (home: string, label: string, kind: Kind, rows: HTMLLIElement[], moveLabel = ''): HTMLElement => {
+      const list = document.createElement('bcn-sortable-list');
+      list.setAttribute('group', kind === 'classification' ? 'classifications' : 'groups');
+      // Nothing moves until the drop: a line shows the gap, a marked group
+      // shows what the row would join (bcn-sortable-list, drop="line").
+      list.setAttribute('drop', 'line');
+      list.setAttribute('label', label);
+      if (moveLabel) list.setAttribute('move-label', moveLabel);
+      // A group is never nested in itself or in a group beneath it.
+      if (kind === 'classificationGroup' && home) list.setAttribute('refuse', groupTrail(home).map((x) => x.slug).join(' '));
+      list.dataset.listKind = kind;
+      list.dataset.home = home;
+      const handle = document.createElement('template');
+      handle.dataset.sortHandle = '';
+      handle.content.append(tpl('grip').content.cloneNode(true));
+      const ol = el('ol');
+      const placeholder = el('li', 'typography-body-sm', kind === 'classification' ? 'Drop a classification here' : 'Drop a group here');
+      placeholder.dataset.sortPlaceholder = '';
+      ol.append(...rows, placeholder);
+      list.append(handle, ol);
+      return list;
+    };
+
+    /** What is directly inside a group: its classifications, then its groups, then the open row. */
+    const inside = (home: string, label: string): HTMLElement => {
+      const wrap = el('div', `${C}__inside`);
+      if (home) wrap.dataset.foldBody = '';
+      const open = adding?.home === home ? adding : null;
+      wrap.append(sortable(home, label, 'classification', classificationsIn(home).map(classificationRow)));
+      if (open?.kind === 'classification') wrap.append(addRow(open));
+      wrap.append(sortable(home, label, 'classificationGroup', groupsIn(home).map(groupItem)));
+      if (open?.kind === 'classificationGroup') wrap.append(addRow(open));
+      return wrap;
+    };
+
+    const head = (): HTMLElement => {
+      const row = el('div', `${C}__head typography-body-md`);
+      row.setAttribute('aria-hidden', 'true');
+      const heads: [string, string][] = [['Name', 'name'], ['Projects', 'projects'], ['Performance measures', 'measures']];
+      const cells = el('div', `${C}__cells`);
+      cells.append(
+        ...heads.map(([text, col], i) => {
+          const cell = el('span', i ? `${C}__num` : '', text);
+          cell.dataset.col = col;
+          return cell;
+        }),
+      );
+      row.append(cells);
+      return row;
+    };
+
+    /** A top-level group: a section with its heading, column heads, and what is inside it. */
+    const rootItem = (g: TaxonomyEntry): HTMLLIElement => {
+      const li = el('li', `${C}__group`);
+      li.dataset.sortKey = g.slug;
+      li.dataset.sortLabel = g.name;
+      const section = el('section', `${C}__section`);
+      section.setAttribute('aria-labelledby', `group-${g.slug}`);
+      const line = groupLine(g, true);
+      // The top level's name is the section's heading.
+      const name = line.querySelector(`.${C}__group-name`)!;
+      const h2 = el('h2', `${C}__title typography-title-sm-strong`);
+      h2.id = `group-${g.slug}`;
+      h2.append(...name.childNodes);
+      name.append(h2);
+      const body = inside(g.slug, g.name);
+      body.classList.remove(`${C}__inside`);
+      const heads = head();
+      heads.dataset.foldBody = '';
+      section.append(line, ...(g.description ? [el('p', `${C}__meta ${C}__desc typography-body-sm`, g.description)] : []), ...errorLine(`g:${g.slug}`), heads, body);
+      li.append(section);
+      return li;
+    };
+
+    // THE TOP LEVEL HOLDS GROUPS ONLY. This list holds no rows; it is where a
+    // classification is sent to leave every group — the "Move to top level" on
+    // its grip, and a drop row while one is dragged — and what lands in it
+    // becomes a group (see the arrangement, below).
+    const outHost = el('div', `${C}__out`);
+    const topAdd = el('div');
+    topSort.before(outHost);
+    topSort.after(topAdd);
+    topSort.dataset.listKind = 'classificationGroup';
+    topSort.dataset.home = '';
+
+    const paint = (): void => {
+      const out = sortable('', 'Top level', 'classification', [], 'Move to top level');
+      out.querySelector('li[data-sort-placeholder]')!.textContent = 'Drop here to make it a group';
+      outHost.replaceChildren(out);
+      rootsOl.replaceChildren(...groupsIn('').map(rootItem));
+      // A new top-level group's row opens at the foot of the list.
+      topAdd.replaceChildren(...(adding?.home === '' ? [addRow(adding)] : []));
+      const blank = root.querySelector<HTMLElement>('[data-blank]');
+      if (blank) blank.hidden = groupsIn('').length > 0 || adding !== null;
+      refused = null;
+      // The cursor goes to the open row's name. Assigned after define, as ever.
+      const open = root.querySelector<HTMLElement>('[data-add-field]');
+      if (open) {
+        customElements.whenDefined('esa-text-field').then(() =>
+          requestAnimationFrame(() => {
+            open.scrollIntoView({ block: 'nearest' });
+            open.focus();
+          }),
+        );
+      }
+    };
+
+    // THE PAGE HEADER'S "Add group" (a link to the add-group page, with no
+    // script) opens a top-level group's row.
+    const headerAdd = (target: EventTarget | null): Adding | null => {
+      const link = (target as HTMLElement | null)?.closest<HTMLAnchorElement>('a[href]');
+      if (!link || root.contains(link)) return null;
+      const path = new URL(link.href, location.href);
+      return !path.search && path.pathname.endsWith(`${GROUPS}/new`) ? { home: '', kind: 'classificationGroup' } : null;
+    };
+    document.addEventListener('pointerdown', (event) => {
+      pressed = headerAdd(event.target);
+    });
+    // The page header's "Sort A to Z" puts the top-level groups in order.
+    document.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement | null)?.closest('[data-sort-top-level]')) sortGroup('', '');
+    });
+    document.addEventListener('click', (event) => {
+      const at = headerAdd(event.target);
+      if (!at) return;
+      event.preventDefault();
+      pressed = null;
+      adding = at;
+      paint();
+    });
+
+    // ---- the arrangement ------------------------------------------------------
+    // Every move — a row reordered, or dropped into another group — lands as a
+    // sort-change bubbling up here. The page already shows it; this reads the
+    // arrangement off the page and keeps it.
+    const keysOf = (list: Element): string[] =>
+      [...(list.querySelector(':scope > ol')?.children ?? [])].flatMap((li) => ((li as HTMLElement).dataset.sortKey ? [(li as HTMLElement).dataset.sortKey!] : []));
+    root.addEventListener('sort-change', () => {
+      const lists = [...root.querySelectorAll<HTMLElement>('bcn-sortable-list[data-list-kind]')];
+      const isOut = (list: HTMLElement): boolean => list.dataset.listKind === 'classification' && !list.dataset.home;
+      // A classification sent out of every group becomes a group there. Its
+      // row is not kept at the top level: the arrangement is saved without
+      // it, so declining the question leaves it where it was.
+      const leaving = lists.filter(isOut).flatMap(keysOf)[0];
+      arrangeClassifications(
+        lists
+          .filter((list) => !isOut(list))
+          .map((list) => ({ kind: list.dataset.listKind as Kind, home: list.dataset.home ?? '', keys: keysOf(list).filter((k) => k !== leaving) })),
+      );
+      const entry = leaving ? getEntry('classification', leaving) : undefined;
+      if (entry) {
+        toGroup(entry, true, paint);
+        return;
+      }
+      // Redrawn from the store: a moved group changes its old and new
+      // parents' counts, and whether it is drawn as a top-level section or a
+      // line. The list puts focus back on the moved row's grip after a repaint.
+      requestAnimationFrame(paint);
+    });
+
+    paint();
+  });
+</script>

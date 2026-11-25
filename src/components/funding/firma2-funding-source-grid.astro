@@ -1,0 +1,131 @@
+---
+// firma2-funding-source-grid — the Funding sources index body: every funding
+// source as one row of a sortable, searchable table, with who offers it and
+// what it adds up to across projects.
+//
+// A FUNDING SOURCE IS AN ENTITY (docs/data-model.md, decision 1, user
+// 2026-11-24): money one organization offers that can fund many projects. This
+// is its list. A TABLE, because an index that can grow is one (the Performance
+// measures index made the same call, 2026-10-09).
+//
+// A SOURCE ADDED IN THIS BROWSER (src/lib/added-funding-sources.ts) leads the
+// list. It has no page of its own, so its name is not a link.
+//
+// bcn-lego-checked: ecology has no table lego. AG Grid Community through
+// shared/grid-chrome + firma2-data-grid-chrome.css is this spoke's tabular
+// surface, reused verbatim. Controls are legos: esa-text-field (search),
+// esa-button (CSV), esa-empty-state (no matches). Beacon is not cloned on this
+// machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { fundingSourceHref } from '../../data/firma2-funding-sources';
+import { fundingSourceRollups } from '../../data/firma2-funding-source-rollup';
+import { withBase } from '../../lib/base';
+
+const rows = fundingSourceRollups().map((rollup) => ({
+  slug: rollup.source.slug,
+  name: rollup.source.name,
+  href: withBase(fundingSourceHref(rollup.source.slug)),
+  organization: rollup.source.organization,
+  projects: rollup.projects,
+  amount: rollup.amount,
+}));
+---
+<section class="firma2-funding-source-grid stack" data-gap="md">
+  <div class="firma2-data-grid__controls repel">
+    <div class="firma2-data-grid__controls-filters cluster">
+      <div class="firma2-data-grid__search">
+        <esa-text-field label="Search funding sources" placeholder="Name or organization" size="md" data-fs-search></esa-text-field>
+      </div>
+    </div>
+    <EsaButton variant="chrome" iconOnly icon="download" label="Download CSV" size="sm" data-fs-csv />
+  </div>
+
+  <div class="firma2-data-grid__grid" data-fs-grid></div>
+
+  <footer class="firma2-data-grid__footer">
+    <span class="typography-meta" data-fs-count>{rows.length} funding sources</span>
+  </footer>
+
+  <div data-fs-empty hidden aria-hidden="true">
+    <EsaEmptyState size="sm" title="No matching funding sources" />
+  </div>
+
+  <script type="application/json" data-fs-data set:html={JSON.stringify(rows)}></script>
+</section>
+
+<style>
+  /* Wrapped cells need prose leading: AG Grid sets line-height to the row
+     height, which becomes the gap between wrapped lines (firma2-project-funding
+     measured it). */
+  .firma2-funding-source-grid :global(.ag-cell-wrap-text) {
+    line-height: 1.45;
+    padding-block: var(--spacing-200, 0.5rem);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import { escGridHtml as esc, gridCurrencyFormatter as currency, wireDataGrid } from '../shared/grid-chrome';
+  import type { ColDef } from 'ag-grid-community';
+  import { announce } from '@esa/ecology/announcer';
+  import { readAddedFundingSources, takeJustAddedFundingSource } from '../../lib/added-funding-sources';
+
+  type Row = {
+    slug: string;
+    name: string;
+    href: string;
+    organization: string;
+    projects: number;
+    amount: number;
+  };
+
+  function init(root: HTMLElement) {
+    const emptyState = root.querySelector<HTMLElement>('[data-fs-empty] > *');
+    const money = (value: unknown): string => (Number(value) > 0 ? currency.format(Number(value)) : '—');
+
+    // Sources added in this browser go in before the grid reads its rows, so
+    // search, the count and the CSV all include them.
+    const dataEl = root.querySelector<HTMLScriptElement>('[data-fs-data]');
+    const added = readAddedFundingSources();
+    if (dataEl && added.length) {
+      const built = JSON.parse(dataEl.textContent ?? '[]') as Row[];
+      const have = new Set(built.map((row) => row.slug));
+      const fresh = added
+        .filter((source) => !have.has(source.slug))
+        .map((source): Row => ({ slug: source.slug, name: source.name, href: '', organization: source.organization, projects: 0, amount: 0 }));
+      dataEl.textContent = JSON.stringify([...fresh, ...built]);
+    }
+    const justAdded = takeJustAddedFundingSource();
+    if (justAdded) announce(`${justAdded} added.`);
+
+    wireDataGrid<Row>({
+      root,
+      gridSelector: '[data-fs-grid]',
+      dataSelector: '[data-fs-data]',
+      searchSelector: '[data-fs-search]',
+      countSelector: '[data-fs-count]',
+      csvSelector: '[data-fs-csv]',
+      countNoun: 'funding sources',
+      csvFileName: 'projectfirma-funding-sources.csv',
+      columnDefs: [
+        // The name is the door to the source's page. Search finds a source by
+        // its name or by who offers it.
+        {
+          headerName: 'Funding source', field: 'name', colId: 'name',
+          flex: 2, minWidth: 240, cellClass: 'firma2-grid-name', wrapText: true, autoHeight: true,
+          getQuickFilterText: (p) => (p.data ? `${p.data.name} ${p.data.organization}` : ''),
+          cellRenderer: (p: { data?: Row }) =>
+            !p.data ? '' : p.data.href ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>` : esc(p.data.name),
+        },
+        { headerName: 'Offered by', field: 'organization', colId: 'organization', flex: 2, minWidth: 220, wrapText: true, autoHeight: true },
+        { headerName: 'Projects', field: 'projects', colId: 'projects', width: 110, type: 'numericColumn' },
+        { headerName: 'Funding', field: 'amount', colId: 'amount', width: 160, type: 'numericColumn', valueFormatter: (p) => money(p.value) },
+      ] satisfies ColDef[],
+      gridOptions: { overlayNoRowsTemplate: emptyState?.outerHTML },
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>('.firma2-funding-source-grid').forEach(init);
+</script>

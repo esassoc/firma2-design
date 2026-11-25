@@ -1,7 +1,7 @@
 ---
 // firma2-project-contacts — WHO TO CALL about this project: the three people on
 // the record, each led by what they ARE to it rather than by their name. The
-// second tab of the project's record rail.
+// last section of the project's record rail, under Key facts and Work areas.
 //
 // THE ROLE IS THE LOOKUP KEY, WHICH IS WHY IT IS THE LABEL. Nobody opens a
 // contacts panel knowing the name they want — they arrive with a question ("who
@@ -9,8 +9,8 @@
 // and the role is what answers it. So a contact renders in the SAME shape every
 // other fact on this record renders in: the term above the value, the term being
 // the role and the value being the person. Key facts and Contacts are then one
-// column with two contents rather than two designs, which is the whole reason
-// the tabs can sit on top of each other.
+// column with two contents rather than two designs, which is what lets the
+// sections stack with nothing but a heading between them.
 //
 // THE PERSON IS ONE LINE, NOT FOUR — and firma2-contact-card owns that argument.
 // This panel spent a release printing name, organization and address as three
@@ -25,18 +25,38 @@
 // row is a label and a card, both components, and the only decision left here
 // is the order of the three.
 //
+// CONTACTS AN IMPORT ADDED ARE ROWS HERE TOO (.scratch/project-updates/spec.md,
+// decision 14). Import a report can add a person the document names; this
+// browser keeps them in src/lib/report-imports.ts, and the script appends one
+// row each: the same role label and the same contact card, cloned from a
+// <template> rendered at build time, plus one line naming the document. A
+// person whose address is already on the record is skipped. An added contact
+// is a name and an address, nothing more: no invitation, no account, and the
+// row says nothing that suggests either. The rows repaint when the store
+// changes, so Undo removes them. The slug comes from firma2-project-imported's
+// element, because the rail that mounts this has none to pass.
+//
+// EACH ROW CAN BE CORRECTED OR REMOVED (story 81, user 2026-11-23). A pencil at
+// the row's end, shown while the page is being edited, opens the docked sheet
+// (firma2-project-row-editor, mounted by the funding section in the main
+// column, because a sheet takes the rail's place and one inside the rail would
+// leave with it). What a person changes or removes is kept in
+// src/lib/project-rows.ts as an overlay on the rows, seeded or imported, and
+// this script repaints from it. An imported contact corrected by hand keeps
+// the line naming its document.
+//
 // bcn-lego-checked: no esa- contact/person/roster lego — walked the catalog
 // (`ls node_modules/@esa/ecology/src/components/`, 67 files): esa-avatar is a
 // glyph, not a row, and it is deliberately NOT used here (an initials disc for
 // an invented person spends 32px of a 22rem column on decoration); esa-card is
 // the main column's section surface and the rail already supplies one; esa-stat
 // is a figure with a label, not a person. Beacon is not cloned on this machine.
-// Everything composable IS composed: firma2-rail-section is the panel shell,
+// Everything composable IS composed: esa-collapsible is the panel shell,
 // firma2-contact-card is the person (and esa-popover inside it is the card),
 // esa-button is the Add affordance, `.stack` is the only layout, and the type
 // roles are composites. The two rules at the bottom are ink and one shared
 // inset, not a layout.
-import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
 import Firma2ContactCard from '../shared/firma2-contact-card.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import type { ProjectContact } from '../../data/firma2-project-detail';
@@ -47,11 +67,13 @@ interface Props {
 
 const { contacts } = Astro.props;
 ---
-<!-- TITLE HIDDEN: the tab above this panel already says "Contacts", and saying
-     it twice one line apart is the redundancy design-principles cuts. The
-     heading stays in the document so the panel is still named in the heading
-     list — see the prop's own note in firma2-rail-section. -->
-<Firma2RailSection title="Contacts" titleHidden>
+<!-- COLLAPSIBLE, LIKE THE KEY FACTS GROUPS ABOVE IT (user, 2026-10-22: "why
+     not make contacts collapsible?"). The same esa-collapsible, bordered, open by
+     default; its title is the section's name, so there is no separate
+     heading. data-facts-group lets firma2-project-facts' script remember a
+     reader's choice with the groups'. -->
+<div data-facts-group="contacts">
+<EsaCollapsible title="Contacts" open>
   <div class="stack" data-gap="md">
     <!-- A <dl>: these ARE term/value pairs, exactly as the Key facts tab's rows
          are, and the list semantics come free and correct. The <div> wrappers
@@ -60,25 +82,43 @@ const { contacts } = Astro.props;
          .stacks, no bespoke flex. layouts.css zeroes the UA margins on dl/dd
          at :where(), so there is nothing to undo. -->
     <dl class="firma2-project-contacts stack" data-gap="md">
-      {contacts.map((contact) => (
-        <div class="stack" data-gap="2xs">
+      {contacts.map((contact, index) => (
+        <div class="stack" data-gap="2xs" data-contact-row data-contact-id={`seed:${index}`} data-contact={JSON.stringify(contact)}>
           <dt class="typography-label-sm">{contact.role}</dt>
-          <dd>
+          <dd class="repel">
             <Firma2ContactCard contact={contact} />
+            <EsaButton variant="chrome" iconOnly icon="pencil" size="sm" aria-label={`Edit ${contact.name}`} data-edit-only data-contact-edit>Edit</EsaButton>
           </dd>
         </div>
       ))}
     </dl>
+
+    <!-- THE ROW AN IMPORT ADDS, for the script to clone and fill. After the
+         list, so the contact card's own script is first rendered by a real
+         row and not trapped in here. -->
+    <template data-imported-contact-row>
+      <div class="stack" data-gap="2xs" data-contact-row data-imported-contact>
+        <dt class="typography-label-sm"></dt>
+        <dd class="stack" data-gap="2xs">
+          <div class="repel">
+            <Firma2ContactCard contact={{ name: '', role: '', organization: '', email: '' }} />
+            <EsaButton variant="chrome" iconOnly icon="pencil" size="sm" aria-label="Edit" data-edit-only data-contact-edit>Edit</EsaButton>
+          </div>
+          <span class="firma2-project-contacts__source typography-body-xs" data-imported-source></span>
+        </dd>
+      </div>
+    </template>
 
     <!-- INERT, AND DELIBERATELY NOT `disabled`. Same stance as every other Add
          on this page: a greyed-out control claims the action is unavailable to
          this reader, which is a different and false claim from "not wired yet".
          It renders, focuses, takes a click, and nothing happens. -->
     <div>
-      <EsaButton variant="chrome" size="sm" icon="plus">Add contact</EsaButton>
+      <EsaButton variant="chrome" size="sm" icon="plus" data-edit-only>Add contact</EsaButton>
     </div>
   </div>
-</Firma2RailSection>
+</EsaCollapsible>
+</div>
 
 <style>
   /* THE LIST STANDS ON THE SAME x AS THE OTHER TWO TABS. Key facts renders its
@@ -99,7 +139,129 @@ const { contacts } = Astro.props;
   /* The role reads as the same term the Key facts tab's labels are: the label
      composite is on the element in the markup, and the ink is the one thing the
      composite does not carry. */
-  dt {
+  dt,
+  .firma2-project-contacts__source {
     color: var(--color-content-default-secondary, #646464);
   }
+
+  /* A file name is one unbroken token; it wraps inside the rail. */
+  .firma2-project-contacts__source {
+    overflow-wrap: anywhere;
+  }
 </style>
+
+<script>
+  import { IMPORTS_EVENT, importedContacts, sourceLine } from '../../lib/report-imports';
+  import { ROWS_EVENT, readRows, requestRowEdit, sameText } from '../../lib/project-rows';
+  import type { ContactValues } from '../../lib/project-rows';
+
+  // The project, from firma2-project-imported. Absent on a project with no
+  // reading, where nothing can have been imported and no row can be edited:
+  // the store is keyed by project, and this panel is given no slug of its own.
+  const slug = document.querySelector<HTMLElement>('[data-project-imported]')?.dataset.slug;
+
+  if (slug) {
+    document.querySelectorAll<HTMLElement>('dl.firma2-project-contacts').forEach((list) => {
+      const template = list.parentElement?.querySelector<HTMLTemplateElement>('template[data-imported-contact-row]');
+      const source = template?.content.firstElementChild;
+      if (!source) return;
+
+      const text = (root: Element, selector: string, value: string): void => {
+        const el = root.querySelector(selector);
+        if (el) el.textContent = value;
+      };
+
+      /** Write one person into a row: its role label and its contact card. */
+      const fill = (row: HTMLElement, contact: ContactValues): void => {
+        const email = contact.email.trim();
+        const role = contact.role || 'Contact';
+        row.dataset.contact = JSON.stringify(contact);
+        text(row, 'dt', role);
+        text(row, '[data-card-kind]', role);
+        text(row, '[data-card-title]', contact.name);
+        const name = row.querySelector<HTMLAnchorElement>('.firma2-contact-card__name');
+        if (name) {
+          name.textContent = contact.name;
+          if (email) name.href = `mailto:${email}`;
+          else name.removeAttribute('href');
+        }
+        // The card's two lines: the organization to read, the address to copy.
+        // Emptied lines are hidden, not removed, so a later edit can fill them.
+        const organization = row.querySelector<HTMLElement>('.firma2-hover-card__line:not(.firma2-hover-card__line--copy)');
+        if (organization) {
+          organization.textContent = contact.organization;
+          organization.style.display = contact.organization ? '' : 'none';
+        }
+        const copy = row.querySelector<HTMLElement>('.firma2-hover-card__line--copy');
+        if (copy) copy.style.display = email ? '' : 'none';
+        if (email) {
+          text(row, '.firma2-hover-card__line-text', email);
+          (
+            row.querySelector('[data-copy-value]') ??
+            row.querySelector('.firma2-hover-card__line--copy .esa-button__native')
+          )?.setAttribute('data-copy-value', email);
+        }
+        // Each pencil is named for the person it opens.
+        row.querySelector('[data-contact-edit]')?.setAttribute('aria-label', `Edit ${contact.name}`);
+      };
+
+      const seeded = [...list.querySelectorAll<HTMLElement>('[data-contact-row]:not([data-imported-contact])')];
+      /** Each seeded row's person as built, so clearing the store restores it. */
+      const built = new Map(seeded.map((row) => [row.dataset.contactId ?? '', JSON.parse(row.dataset.contact ?? '{}') as ContactValues]));
+
+      const paint = (): void => {
+        const byHand = readRows(slug).contacts;
+        list.querySelectorAll('[data-imported-contact]').forEach((row) => row.remove());
+
+        // The seeded rows first: as built, as corrected, or gone.
+        // `style.display`, not `hidden`: `.stack` sets a display of its own.
+        const known = new Set<string>();
+        seeded.forEach((row) => {
+          const id = row.dataset.contactId ?? '';
+          const edit = byHand[id];
+          row.style.display = edit === null ? 'none' : '';
+          if (edit === null) return;
+          const contact = edit ?? built.get(id);
+          if (!contact) return;
+          fill(row, contact);
+          if (contact.email.trim()) known.add(contact.email.trim().toLowerCase());
+        });
+
+        importedContacts(slug).forEach(({ change, contact, from }) => {
+          const edit = byHand[change.key];
+          if (edit === null) return;
+          const person = edit ?? contact;
+          const email = person.email.trim();
+          const key = email ? email.toLowerCase() : `name:${person.name.toLowerCase()}`;
+          // Already on the record, by address: an untouched import is skipped.
+          // One corrected by hand is a row the person chose, so it stays.
+          if (!edit && known.has(key)) return;
+          known.add(key);
+
+          const row = source.cloneNode(true) as HTMLElement;
+          row.dataset.contactId = change.key;
+          fill(row, person);
+          text(row, '[data-imported-source]', sourceLine(from));
+          list.append(row);
+        });
+      };
+
+      paint();
+      document.addEventListener(IMPORTS_EVENT, paint);
+      document.addEventListener(ROWS_EVENT, paint);
+
+      // One listener for every pencil, cloned rows included.
+      list.addEventListener('click', (event) => {
+        const control = (event.target as Element).closest<HTMLElement>('[data-contact-edit]');
+        const row = control?.closest<HTMLElement>('[data-contact-row]');
+        if (!control || !row?.dataset.contactId) return;
+        const values = JSON.parse(row.dataset.contact ?? '{}') as ContactValues;
+        const others = [...list.querySelectorAll<HTMLElement>('[data-contact-row]')]
+          .filter((other) => other !== row && other.style.display !== 'none')
+          .map((other) => (JSON.parse(other.dataset.contact ?? '{}') as ContactValues).email ?? '')
+          .filter((email) => email.trim() !== '' && !sameText(email, ''));
+        requestRowEdit({ kind: 'contact', slug, id: row.dataset.contactId, values, others, opener: control });
+      });
+    });
+  }
+</script>

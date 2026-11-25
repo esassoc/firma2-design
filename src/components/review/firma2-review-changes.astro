@@ -1,0 +1,811 @@
+---
+// firma2-review-changes — what is different between a project's public page
+// and its record: one row per thing changed, read as a difference (the
+// published value struck, the record's marked, how far it moved;
+// src/lib/review-diff.ts), who changed it, and the document it was read from
+// when it came from one.
+//
+// A NET DIFF, NOT A HISTORY. The log entries since the last publish fold into
+// one row per field (firma2-publish-history): two cost edits read as one line
+// from the published figure to today's, and a field changed and changed back
+// is not here at all. The row says how many edits it folds, and the project's
+// History sheet keeps every one — the evidence behind the review.
+//
+// GROUPED BY WHERE IT SITS ON THE PAGE — key facts, performance measures,
+// funding sources, contacts, work areas — so a manager checks each change
+// against the section it will appear in.
+//
+// IMPORTED CHANGES ARE ROWS HERE TOO (.scratch/project-updates/spec.md,
+// decisions 5, 30, 31). What Import a report added in this browser
+// (src/lib/report-imports.ts) is laid over the seeded rows by review-rows.ts:
+// a clone of this file's own row, so the two cannot drift, with the import's
+// person as its editor. An import that set a field a seeded row already holds
+// takes that row's place — one row per field, the published value from the
+// seeded row, the record's value and the source from the import.
+//
+// ONLY THE EXCEPTION NAMES ITS SOURCE. An imported row carries "From
+// <document>"; a hand edit carries nothing, because a label on every row is
+// read by nobody. The source is a button: it opens the document beside the
+// diff at the passage that change was read from (firma2-report-source). From
+// 64rem the diff and the document are two columns, the document sticky and
+// scrolling inside itself; narrower, the document takes the diff's place and
+// Back returns to the row. With no source open the diff keeps its full width.
+//
+// AN IMPORT'S NOTE sits above the rows, once per import that still has a
+// change waiting, with who wrote it and the document it came with (decision
+// 32).
+//
+// HOLD, REVERT, AND THE MARKERS (.scratch/project-updates/spec.md, build 2:
+// decisions 33, 34, 36, 38).
+//   - HOLD keeps one change out of this publish: one click, no note, nobody
+//     told. It is the reviewer's own "I'll come back to this" (user,
+//     2026-11-18: review is a pre-publish check — "this is right, publish; I
+//     want to take a closer look at that, let me hold that"). The value stays
+//     on the record and stays waiting, under the inbox's Held view; Release
+//     lets it go out after all.
+//   - REVERT puts a change back to the published value, with a required
+//     reason its editors are sent. Seeded rows revert where a field holds the
+//     value; an imported row reverts its field, the measure entry it filed,
+//     or the contact or funding source it added. A redrawn boundary has no
+//     single value to restore, so its row has no Revert.
+//   - MARKERS name, in words, the three rows a manager should look at twice:
+//     a measure or funding figure with no document behind it, a figure the
+//     person changed from the document's, and a value filled in after an
+//     unsure reading. Worked out from the data; nothing is scored.
+// Editing stays out of the review (decision 35): the record is the project
+// page's.
+//
+// PUBLISH COVERS BOTH. Every paint hands firma2-review-actions the change keys
+// still waiting, seeded and imported (firma2:review-pending), and Publish
+// records exactly those. Imported rows leave with the rest and return on an
+// undo.
+//
+// UNDO LAST PUBLISH lives in the publish history at the foot of the diff,
+// which appears once this browser has published or undone here. Undo puts the
+// public page back to the snapshot before the newest publish and is logged as
+// its own row ("Publish undone"), never by deleting the publish; it is offered
+// only while nothing newer has happened to the project (src/lib/publish-undo.ts).
+// The changes that publish carried come back into the diff above.
+//
+// bcn-lego-checked: Hold, Release, Revert, the source button and Close
+// document are esa-button, the note esa-dialog + esa-textarea, the markers
+// and Held esa-badge, "New" is esa-badge, the first-publish note esa-alert-box, the
+// document firma2-report-source — legos and an existing spoke component,
+// unchanged. The rows are a definition list on the layout primitives; no esa-
+// lego compares two values of one field (esa-card and esa-stat are
+// single-value). The import's note is two lines of text on .stack: esa-alert-box
+// is a system message with a status colour, not a person's words, and esa-card
+// would box it. The two-column grid is the one bespoke layout: .sidebar wraps
+// by content width and cannot hold a sticky, viewport-tall second column.
+// Beacon is not cloned on this machine. firma2-review-changes is the reusable
+// home for a publish diff.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import Firma2ReportSource from '../shared/firma2-report-source.astro';
+import type { UnpublishedChange } from '../../data/firma2-publish-history';
+import { labelOfIso } from '../../data/firma2-publish-history';
+import { renderDiff } from '../../lib/review-diff';
+
+interface Props {
+  slug: string;
+  changes: UnpublishedChange[];
+  /** null: never published — every row is new to the public. */
+  publishedIso: string | null;
+  publishedBy: string | null;
+}
+
+const { slug, changes, publishedIso, publishedBy } = Astro.props;
+// Every group renders, empty ones hidden: an import can add to a section the
+// seed left alone.
+const ORDER: string[] = ['Key facts', 'Performance measures', 'Funding sources', 'Contacts', 'Work areas'];
+const groups = ORDER.map((group) => ({ group, rows: changes.filter((c) => c.group === group) }));
+const meta = (c: UnpublishedChange) =>
+  // Who and when. Not how many saves (user, 2026-11-18): the review shows the
+  // net change, so a count of in-between edits says nothing about the value.
+  [c.editors.join(', '), labelOfIso(c.lastIso)].filter(Boolean).join(' · ');
+// A measure or funding figure typed in by hand: nothing to check it against.
+const unbacked = (c: UnpublishedChange) => c.key.startsWith('report:') || c.key.startsWith('funding:');
+---
+<section class="firma2-review-changes" data-slug={slug} data-published-iso={publishedIso ?? undefined} data-published-by={publishedBy ?? undefined} aria-label="Unpublished changes">
+  <div class="firma2-review-changes__main stack" data-gap="lg">
+  {/* Both render; the script shows the one this browser's publishes and undos leave true. */}
+  <dl class="firma2-review-changes__last cluster" data-gap="xs" data-last hidden={!publishedIso}>
+    <dt class="typography-label-md-strong">Last published</dt>
+    <dd class="typography-body-md" data-last-text>{publishedIso ? `${labelOfIso(publishedIso)}, ${publishedBy}` : ''}</dd>
+  </dl>
+  <div data-never hidden={!!publishedIso}>
+    <EsaAlertBox variant="info" title="Not public yet" />
+  </div>
+
+  {/* One block per import that left a note and still has a change waiting. */}
+  <div class="stack" data-gap="lg" data-notes hidden></div>
+
+  {groups.map(({ group, rows }) => (
+    <section class="stack" data-gap="sm" data-group={group} hidden={rows.length === 0}>
+      <h2 class="typography-title-sm-strong">{group}</h2>
+      <ol class="firma2-review-changes__list" role="list">
+        {rows.map((c) => (
+          <li class="firma2-review-changes__row" data-change={c.key} data-from={c.from} data-editors={JSON.stringify(c.editors)} data-revert={c.revert ? JSON.stringify(c.revert) : undefined}>
+            <div class="repel" data-gap="md">
+              <div class="stack" data-gap="xs">
+                <p class="typography-label-md-strong firma2-review-changes__label">
+                  <span>{c.label}</span>
+                </p>
+                {/* A first publish's rows all share the record's creation; saying so on each is noise. */}
+                {publishedIso && <p class="typography-body-sm firma2-review-changes__meta">{meta(c)}</p>}
+              </div>
+              <span class="cluster" data-gap="xs" data-row-actions>
+                <EsaButton variant="secondary" appearance="outline" size="md" data-hold-button aria-label={`Hold ${c.label}`}>Hold</EsaButton>
+                {c.revert && (
+                  <EsaButton variant="secondary" appearance="outline" size="md" data-revert-button aria-label={`Revert ${c.label}`}>Revert</EsaButton>
+                )}
+              </span>
+            </div>
+            {unbacked(c) && <p class="firma2-review-changes__marker"><EsaBadge value="No document behind this figure" variant="warning" size="sm" /></p>}
+            {c.to && <p class="typography-body-md firma2-review-changes__diff" set:html={renderDiff({ from: c.from, to: c.to, first: !publishedIso || c.key.startsWith('area:') })} />}
+          </li>
+        ))}
+      </ol>
+    </section>
+  ))}
+
+  {/* PUBLISH HISTORY — only once this browser has published or undone here;
+      before that it would repeat the Last published line above. Newest first.
+      The undo is here as well as on the publish toast: a toast's button can't
+      be reached by keyboard, so the page must offer the same act. */}
+  <section class="stack" data-gap="sm" data-publish-history hidden aria-labelledby={`publish-history-${slug}`}>
+    <div class="repel" data-gap="md">
+      <h2 class="typography-title-sm-strong" id={`publish-history-${slug}`}>Publish history</h2>
+      <span data-undo-wrap hidden>
+        <EsaButton variant="secondary" appearance="outline" size="md" data-undo-publish>Undo last publish</EsaButton>
+      </span>
+    </div>
+    <ol class="firma2-review-changes__list" role="list" data-history-list></ol>
+  </section>
+  </div>
+
+  {/* THE DOCUMENT — closed until a row's source is opened. Close is rendered
+      here and moved into the pane's own header by the script, so the pane has
+      one header row on every screen. */}
+  <div class="firma2-review-changes__source" data-source hidden>
+    <Firma2ReportSource label="Source document" />
+    <span class="firma2-review-changes__close" data-close-wrap>
+      <EsaButton variant="ghost" size="md" icon="x" iconOnly label="Close document" data-source-close />
+    </span>
+  </div>
+
+  {/* An imported row: the seeded row's own markup, filled by the script. */}
+  <template data-row-template>
+    <li class="firma2-review-changes__row" data-imported>
+      <div class="repel" data-gap="md">
+        <div class="stack" data-gap="xs">
+          <p class="typography-label-md-strong firma2-review-changes__label">
+            <span data-row-label></span>
+          </p>
+          <p class="typography-body-sm firma2-review-changes__meta" data-row-meta></p>
+        </div>
+        <span class="cluster" data-gap="xs" data-row-actions>
+          <EsaButton variant="secondary" appearance="outline" size="md" data-hold-button>Hold</EsaButton>
+          <EsaButton variant="secondary" appearance="outline" size="md" data-revert-button>Revert</EsaButton>
+        </span>
+      </div>
+      <p class="firma2-review-changes__marker" data-marker hidden><EsaBadge value="Check" variant="warning" size="sm" /></p>
+      <p class="typography-body-md firma2-review-changes__diff" data-row-diff></p>
+      <div class="firma2-review-changes__opener">
+        <EsaButton variant="ghost" size="md" icon="file-text" data-source-open>From document</EsaButton>
+      </div>
+    </li>
+  </template>
+
+  {/* A held row's mark, under its values: who held it and when. */}
+  <template data-held-template>
+    <p class="firma2-review-changes__held cluster" data-gap="xs" data-held>
+      <EsaBadge value="Held" variant="info" size="sm" />
+      <span class="typography-body-sm firma2-review-changes__meta" data-held-by></span>
+    </p>
+  </template>
+
+  {/* REVERT ASKS FOR A REASON: its editors are sent it. In its own wrapper so
+      it never nests in a sibling dialog. */}
+  <div>
+    <esa-dialog class="firma2-review-changes__dialog" heading="" size="sm" show-close-button data-note-dialog>
+      <esa-textarea label="" help-text="" size="md" rows="3" required data-note-input></esa-textarea>
+      <div class="cluster" data-gap="xs" slot="footer">
+        <EsaButton variant="primary" size="md" data-note-submit>Revert change</EsaButton>
+        <EsaButton variant="ghost" size="md" data-note-cancel>Cancel</EsaButton>
+      </div>
+    </esa-dialog>
+  </div>
+
+  <template data-note-template>
+    <figure class="firma2-review-changes__note stack" data-gap="2xs">
+      <blockquote class="typography-body-md" data-note-text></blockquote>
+      <figcaption class="typography-body-sm firma2-review-changes__meta" data-note-by></figcaption>
+    </figure>
+  </template>
+</section>
+
+
+<style>
+  .firma2-review-changes [hidden] {
+    display: none !important;
+  }
+
+  /* bcn-lego-checked: the diff and its document are a two-track grid. .sidebar
+     wraps on content width and has no sticky, viewport-tall track, and
+     firma2-rail is a page rail in the pane's corner, not a column beside one
+     section. No esa- lego lays a document beside a list. */
+  .firma2-review-changes {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-600);
+    align-items: start;
+  }
+  .firma2-review-changes__main {
+    min-inline-size: 0;
+  }
+
+  /* As tall as the sheet allows under the app's top bar, so the pane's body
+     is what scrolls. */
+  .firma2-review-changes__source {
+    --_above: calc(var(--firma2-band-height, 48px) + var(--spacing-400));
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    block-size: calc(var(--firma2-fold, 100dvh) - var(--_above) - var(--spacing-400));
+    min-block-size: 20rem;
+    scroll-margin-block-start: var(--_above);
+  }
+  .firma2-review-changes__source :global(.firma2-report-source) {
+    flex: 1 1 auto;
+  }
+
+  @media (min-width: 64rem) {
+    .firma2-review-changes[data-source-open] {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .firma2-review-changes__source {
+      position: sticky;
+      top: calc(var(--firma2-sticky-origin, 0px) + var(--_above));
+    }
+  }
+
+  /* No room for two columns: the document takes the diff's place, and the
+     pane's own Back is the way out. */
+  @media not all and (min-width: 64rem) {
+    .firma2-review-changes[data-source-open] > .firma2-review-changes__main {
+      display: none;
+    }
+    .firma2-review-changes__source :global(.firma2-report-source__back) {
+      display: inline-flex;
+    }
+    .firma2-review-changes__close {
+      display: none;
+    }
+  }
+
+  /* The source button holds a file name, which can outrun a phone: it keeps
+     to the row and the name is cut, never the page widened. */
+  .firma2-review-changes__opener {
+    min-inline-size: 0;
+  }
+  .firma2-review-changes__opener :global(.esa-button),
+  .firma2-review-changes__opener :global(.esa-button__native) {
+    max-inline-size: 100%;
+    min-inline-size: 0;
+  }
+  .firma2-review-changes__opener :global(.esa-button__label) {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .firma2-review-changes__marker {
+    margin: 0;
+  }
+  /* The row's actions keep to one line beside the label. */
+  .firma2-review-changes :global([data-row-actions]) {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* A person's words, kept as written: their line breaks stand. */
+  .firma2-review-changes__note,
+  .firma2-review-changes__note blockquote,
+  .firma2-review-changes :global(.firma2-review-changes__held) {
+    margin: 0;
+  }
+  .firma2-review-changes__note blockquote {
+    max-inline-size: 72ch;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+
+  .firma2-review-changes__last {
+    margin: 0;
+  }
+  .firma2-review-changes__last dd {
+    margin: 0;
+  }
+
+  .firma2-review-changes__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Ruled like firma2-settings-table: a hairline between rows, no card.
+     CONCISE (user, 2026-11-18: "space between Stage and Proposal is so big").
+     Hold and Revert take a column of their own on the right, so the 40px
+     buttons no longer set the height of the label's line: label, who and when,
+     and the value read as one tight block. */
+  .firma2-review-changes__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--spacing-400);
+    row-gap: var(--spacing-100);
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-review-changes__row > .repel {
+    display: contents;
+  }
+  .firma2-review-changes__row > * {
+    grid-column: 1;
+  }
+  .firma2-review-changes__row > .repel > :global([data-row-actions]) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+  .firma2-review-changes__row > .repel > .stack {
+    grid-column: 1;
+    gap: 0;
+  }
+  .firma2-review-changes__row:last-child {
+    border-block-end: 0;
+  }
+  /* The heading sits closer to its first change than the changes sit to each
+     other, so it reads as that list's heading (user, 2026-11-18). */
+  .firma2-review-changes__row:first-child {
+    padding-block-start: 0;
+  }
+
+  /* The history's rows are built by the script, so they carry no scope
+     attribute; the same ruled rows as the diff, one line of meta each. */
+  .firma2-review-changes :global(.firma2-review-changes__history-row) {
+    display: grid;
+    gap: var(--spacing-100);
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+  .firma2-review-changes :global(.firma2-review-changes__history-row:last-child) {
+    border-block-end: 0;
+  }
+  .firma2-review-changes :global(.firma2-review-changes__history-row > p) {
+    margin: 0;
+  }
+  .firma2-review-changes :global(.firma2-review-changes__history-row > p.firma2-review-changes__history-note) {
+    color: var(--color-content-default-primary, inherit);
+    white-space: pre-line;
+  }
+  .firma2-review-changes :global(.firma2-review-changes__history-row > p + p:not(.firma2-review-changes__history-note)) {
+    color: var(--color-content-default-secondary);
+  }
+
+  .firma2-review-changes__label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200);
+    margin: 0;
+  }
+  .firma2-review-changes__meta {
+    margin: 0;
+    color: var(--color-content-default-secondary);
+  }
+
+  /* STRUCK AND MARKED (src/lib/review-diff.ts): the old value struck, the new
+     one marked, how far it moved in the secondary colour. The marks are built
+     as HTML, so they carry no scope attribute. */
+  .firma2-review-changes__diff {
+    margin: 0;
+    max-inline-size: 72ch;
+    font-variant-numeric: tabular-nums;
+  }
+  .firma2-review-changes :global(.firma2-review-diff__del),
+  .firma2-review-changes :global(.firma2-review-diff__ins) {
+    border-radius: 2px;
+    padding-inline: 1px;
+  }
+  .firma2-review-changes :global(.firma2-review-diff__del) {
+    color: var(--color-content-utility-danger);
+    background: var(--color-background-utility-danger-subtle);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+  .firma2-review-changes :global(.firma2-review-diff__ins) {
+    color: var(--color-content-utility-success);
+    background: var(--color-background-utility-success-subtle);
+    text-decoration: none;
+  }
+  .firma2-review-changes :global(.firma2-review-diff__by),
+  .firma2-review-changes :global(.firma2-review-diff__arrow) {
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-review-changes :global(.firma2-review-diff__text) {
+    display: block;
+  }
+
+</style>
+
+<script>
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-textarea';
+  import { hold, readPublishing, release, revert } from '../../lib/publish-store';
+  import type { ReviewNote } from '../../lib/publish-store';
+  import { removeEntry } from '../../lib/entry-draft';
+  import { PUBLISH_LOG_CHANGED, eventsFor, undoPublish, undoablePublish } from '../../lib/publish-undo';
+  import { IMPORTS_EVENT, importFile, importedChanges, readImports, sourceLine } from '../../lib/report-imports';
+  import type { ReportImport } from '../../lib/report-imports';
+  import { fileUrl } from '../../lib/page-files';
+  import { paintSource, showAt } from '../../lib/report-source';
+  import type { SourceDocument } from '../../lib/report-source';
+  import { reviewRows } from './review-rows';
+  import type { ImportedRow } from './review-rows';
+  import { CURRENT_USER } from '../../data/firma2-directory';
+  import { TODAY_ISO, labelOfIso } from '../../data/firma2-publish-history';
+  import { renderDiff } from '../../lib/review-diff';
+
+  // The rows this browser has already published or reverted leave the diff;
+  // what it imported joins it; a group with nothing left goes. The actions
+  // component listens for the keys so Publish knows what is in front of the
+  // manager.
+  document.querySelectorAll<HTMLElement>('.firma2-review-changes').forEach((root) => {
+    const slug = root.dataset.slug!;
+    const rows = () => [...root.querySelectorAll<HTMLElement>('[data-change]')];
+    const seedIso = root.dataset.publishedIso ?? null;
+    const seedBy = root.dataset.publishedBy ?? null;
+    const part = <T extends HTMLElement>(name: string) => root.querySelector<T>(`[data-${name}]`)!;
+    const rowTemplate = part<HTMLTemplateElement>('row-template');
+    const noteTemplate = part<HTMLTemplateElement>('note-template');
+    // Which import each built row came from, for its source button.
+    const built = new WeakMap<HTMLElement, ImportedRow>();
+
+    const changesOf = (keys: string[]) => importedChanges(slug).filter((c) => keys.includes(c.key));
+    const names = (people: string[]) => (people.length < 2 ? people.join('') : `${people.slice(0, -1).join(', ')} and ${people.at(-1)}`);
+
+    /** What a row stands for: every change key behind it, its name, and who made it. */
+    type RowInfo = { keys: string[]; label: string; editors: string[] };
+    const infoOf = (li: HTMLElement): RowInfo => {
+      const label = li.querySelector('.firma2-review-changes__label span')?.textContent ?? '';
+      const imported = built.get(li);
+      // A folded row stands for the hand edit under it too: holding or
+      // reverting it does the same to that one.
+      if (imported) return { keys: [...imported.keys, ...(imported.folds ? [imported.folds] : [])], label, editors: [imported.from.by] };
+      return { keys: [li.dataset.change!], label, editors: JSON.parse(li.dataset.editors ?? '[]') };
+    };
+    const visibleRows = () => [...root.querySelectorAll<HTMLElement>('[data-change]:not([hidden]), [data-imported]')];
+    const rowOf = (key: string) => visibleRows().find((li) => infoOf(li).keys.includes(key));
+
+    // ---- Held rows --------------------------------------------------------
+    const heldTemplate = part<HTMLTemplateElement>('held-template');
+    const paintHeld = () => {
+      const held = readPublishing().held[slug] ?? {};
+      visibleRows().forEach((li) => {
+        const info = infoOf(li);
+        // A row is held when any change behind it is: a folded row keeps the hold on the edit it covers.
+        const note = info.keys.map((k) => held[k]).find(Boolean);
+        li.querySelector('[data-held]')?.remove();
+        li.toggleAttribute('data-is-held', !!note);
+        const button = li.querySelector<HTMLElement>('[data-hold-button]');
+        if (button) {
+          button.querySelector('.esa-button__label')!.textContent = note ? 'Release' : 'Hold';
+          button.setAttribute('aria-label', `${note ? 'Release' : 'Hold'} ${info.label}`);
+        }
+        if (!note) return;
+        const block = heldTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement;
+        block.querySelector('[data-held-by]')!.textContent = `${note.by} · ${labelOfIso(note.iso)}`;
+        li.append(block);
+      });
+      // Every key behind a held row stays out of the publish, not just the held one.
+      const out = new Set<string>();
+      visibleRows().forEach((li) => {
+        const keys = infoOf(li).keys;
+        if (keys.some((k) => held[k])) keys.forEach((k) => out.add(k));
+      });
+      Object.keys(held).forEach((k) => out.add(k));
+      return out;
+    };
+
+    // ---- Imported rows ----------------------------------------------------
+    const buildRow = (row: ImportedRow, seeded: HTMLElement | undefined, everPublished: boolean): HTMLElement => {
+      const li = rowTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      // A folded row keeps the seeded row's name for the field and its published value.
+      const label = seeded?.querySelector('.firma2-review-changes__label span')?.textContent ?? row.change.label;
+      const published = seeded ? seeded.dataset.from : row.published;
+      li.dataset.imported = row.keys.join(' ');
+      li.querySelector('[data-row-label]')!.textContent = label;
+      li.querySelector('[data-row-meta]')!.textContent = `${row.from.by} · ${labelOfIso(row.from.iso)}`;
+      li.querySelector('[data-row-diff]')!.innerHTML = renderDiff({ from: published, to: row.change.to, first: !everPublished });
+      // data-* lands on the lego's native <button>; the text is its own span.
+      const opener = li.querySelector<HTMLElement>('[data-source-open]')!;
+      const source = sourceLine(row.from);
+      opener.querySelector('.esa-button__label')!.textContent = source;
+      opener.setAttribute('aria-label', `${source}, ${label}`);
+      opener.setAttribute('aria-expanded', 'false');
+      li.querySelector('[data-hold-button]')!.setAttribute('aria-label', `Hold ${label}`);
+      // Revert where the import left something to take back.
+      const takesBack = changesOf(row.keys).some((c) => c.field || c.entryId || c.contact || c.funding);
+      const revertButton = li.querySelector<HTMLElement>('[data-revert-button]')!;
+      if (takesBack) revertButton.setAttribute('aria-label', `Revert ${label}`);
+      else revertButton.closest('.esa-button')?.remove();
+      // The two imported markers; the third (no document) cannot apply to a row read from one.
+      const why = row.change.edited ? 'Changed from the document’s figure' : row.change.filled ? 'Filled in after an unsure reading' : '';
+      const marker = li.querySelector<HTMLElement>('[data-marker]')!;
+      if (why) {
+        marker.hidden = false;
+        (marker.querySelector('.esa-badge__text') ?? marker.querySelector('.esa-badge'))!.textContent = why;
+      } else marker.remove();
+      built.set(li, row);
+      return li;
+    };
+
+    const paintNotes = (imported: ImportedRow[], imports: ReportImport[]) => {
+      const waiting = new Set(imported.flatMap((r) => r.keys));
+      const noted = imports.filter((i) => i.note.trim() && i.changes.some((c) => waiting.has(c.key)));
+      const box = part('notes');
+      box.replaceChildren(
+        ...noted.map((i) => {
+          const note = noteTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement;
+          note.querySelector('[data-note-text]')!.textContent = i.note.trim();
+          note.querySelector('[data-note-by]')!.textContent = `${i.by}, with ${i.document.kind === 'text' ? 'pasted text' : i.document.name}`;
+          return note;
+        }),
+      );
+      box.hidden = noted.length === 0;
+    };
+
+    const paint = () => {
+      const view = reviewRows(slug, rows().map((r) => r.dataset.change!));
+      const left = new Set(view.seeded);
+      const folded = new Map(view.imported.flatMap((r) => (r.folds ? [[r.folds, r] as const] : [])));
+      const everPublished = !!(readPublishing().published[slug]?.iso ?? seedIso);
+
+      root.querySelectorAll('[data-imported]').forEach((el) => el.remove());
+      rows().forEach((r) => {
+        const key = r.dataset.change!;
+        r.hidden = !left.has(key) || folded.has(key);
+        const over = folded.get(key);
+        if (over) r.after(buildRow(over, r, everPublished));
+      });
+      view.imported
+        .filter((r) => !r.folds)
+        .forEach((r) => {
+          const group = root.querySelector<HTMLElement>(`[data-group="${CSS.escape(r.change.group)}"]`) ?? root.querySelector<HTMLElement>('[data-group]')!;
+          group.querySelector('.firma2-review-changes__list')!.append(buildRow(r, undefined, everPublished));
+        });
+      root.querySelectorAll<HTMLElement>('[data-group]').forEach((g) => {
+        g.hidden = !g.querySelector('[data-change]:not([hidden]), [data-imported]');
+      });
+      paintNotes(view.imported, readImports(slug));
+      // A held change stays waiting but does not go out with this publish.
+      const held = paintHeld();
+
+      // The open document's row may have just been published or taken back.
+      if (opened && !openerOf(opened)) closeSource(false);
+      markOpen();
+      document.dispatchEvent(new CustomEvent('firma2:review-pending', { detail: { slug, keys: view.pending.filter((k) => !held.has(k)) } }));
+      paintHistory();
+    };
+
+    // ---- The document beside the diff --------------------------------------
+    const sourceBox = part('source');
+    const pane = sourceBox.querySelector<HTMLElement>('[data-report-source]')!;
+    const WIDE = window.matchMedia('(min-width: 64rem)');
+    // One header row: Close joins the pane's own, where Back already is.
+    pane.querySelector('.firma2-report-source__head')?.append(part('close-wrap'));
+    let opened: string | null = null; // the open row's keys
+    let painted: string | null = null; // the import whose document is drawn
+    let shown: SourceDocument | null = null;
+
+    function openerOf(keys: string): HTMLElement | null {
+      return [...root.querySelectorAll<HTMLElement>('[data-imported]')].find((li) => li.dataset.imported === keys)?.querySelector<HTMLElement>('[data-source-open]') ?? null;
+    }
+    function markOpen() {
+      root.querySelectorAll<HTMLElement>('[data-source-open]').forEach((b) => {
+        b.setAttribute('aria-expanded', String(!!opened && b.closest<HTMLElement>('[data-imported]')?.dataset.imported === opened));
+      });
+    }
+    const documentOf = async (from: ReportImport): Promise<SourceDocument> => {
+      const name = from.document.kind === 'text' ? 'Pasted text' : from.document.name;
+      if (from.document.kind !== 'file') return { name, pages: from.document.pages };
+      // A file this browser no longer holds: the pane says so and shows the quote.
+      const file = await importFile(slug, from.id).catch(() => undefined);
+      return file ? { name, fileUrl: fileUrl(file), fileType: file.type } : { name };
+    };
+
+    const openSource = async (row: ImportedRow) => {
+      if (painted !== row.from.id || !shown) {
+        shown = await documentOf(row.from);
+        paintSource(pane, shown);
+        painted = row.from.id;
+      }
+      opened = row.keys.join(' ');
+      // Shown before it is moved: a passage has no offset in a hidden pane.
+      sourceBox.hidden = false;
+      root.dataset.sourceOpen = '';
+      showAt(pane, shown, { passage: row.change.passage, page: row.change.page, quote: row.change.quote });
+      markOpen();
+      if (!WIDE.matches) {
+        // The diff just left the screen; the document starts under the top bar.
+        sourceBox.scrollIntoView({ block: 'start' });
+        pane.querySelector<HTMLElement>('[data-source-back]')?.focus({ preventScroll: true });
+      }
+    };
+
+    function closeSource(refocus = true) {
+      if (!opened) return;
+      const keys = opened;
+      opened = null;
+      sourceBox.hidden = true;
+      delete root.dataset.sourceOpen;
+      markOpen();
+      if (!refocus) return;
+      // Back to the row the reader left, which a narrow screen had hidden.
+      const opener = openerOf(keys);
+      if (!WIDE.matches) opener?.scrollIntoView({ block: 'center' });
+      opener?.focus({ preventScroll: true });
+    }
+
+    sourceBox.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('[data-source-back], [data-source-close]')) closeSource();
+    });
+    sourceBox.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeSource();
+    });
+
+    // ---- Last published, and the publish history -------------------------
+    // What the public page shows now: this browser's newest publish standing,
+    // else the seed's. An undo puts the store back, so this follows it.
+    // Undo follows who may publish; firma2-review-actions owns that check.
+    let allowed = true;
+    document.addEventListener('firma2:review-state', (event) => {
+      const detail = (event as CustomEvent<{ slug: string; allowed: boolean }>).detail;
+      if (detail.slug !== slug) return;
+      allowed = detail.allowed;
+      paintHistory();
+    });
+
+    function paintHistory() {
+      const local = readPublishing().published[slug];
+      const iso = local?.iso ?? seedIso;
+      const by = local?.by ?? seedBy;
+      part('last').hidden = !iso;
+      part('never').hidden = !!iso;
+      if (iso) part('last-text').textContent = `${labelOfIso(iso)}, ${by}`;
+
+      const events = eventsFor(slug);
+      // Each revert once, with the reason its editors were sent.
+      const reverts = [...new Map(Object.values(readPublishing().revertNotes[slug] ?? {}).map((n) => [`${n.label}|${n.iso}|${n.note}`, n])).values()];
+      part('publish-history').hidden = events.length === 0 && reverts.length === 0;
+      part('undo-wrap').hidden = !allowed || !undoablePublish(slug);
+      const list = part('history-list');
+      const rows: { what: string; iso: string; by: string; note?: string }[] = [
+        ...events.map((e) => ({ what: e.kind === 'publish' ? 'Published' : 'Publish undone', iso: e.iso, by: e.by })),
+        ...reverts.map((n) => ({ what: `Reverted ${n.label}`, iso: n.iso, by: n.by, note: n.note })),
+      ].reverse();
+      if (seedIso && seedBy) rows.push({ what: 'Published', iso: seedIso, by: seedBy });
+      list.replaceChildren(
+        ...rows.map((r) => {
+          const li = document.createElement('li');
+          li.className = 'firma2-review-changes__row firma2-review-changes__history-row';
+          const what = Object.assign(document.createElement('p'), { className: 'typography-label-md-strong firma2-review-changes__label', textContent: r.what });
+          const meta = Object.assign(document.createElement('p'), { className: 'typography-body-sm firma2-review-changes__meta', textContent: `${labelOfIso(r.iso)} · ${r.by}` });
+          li.append(what, meta);
+          if (r.note) li.append(Object.assign(document.createElement('p'), { className: 'typography-body-md firma2-review-changes__history-note', textContent: r.note }));
+          return li;
+        }),
+      );
+    }
+
+    part('undo-publish').addEventListener('click', () => {
+      if (!undoPublish(slug, CURRENT_USER.name, TODAY_ISO)) return;
+      paint();
+      // The button leaves with the act; focus goes to the history's heading.
+      const heading = root.querySelector<HTMLElement>(`#publish-history-${CSS.escape(slug)}`);
+      heading?.setAttribute('tabindex', '-1');
+      heading?.focus();
+      document.dispatchEvent(new CustomEvent('firma2:review-toast', { detail: { message: 'Publish undone. Its changes are back in review.' } }));
+    });
+    // An undo from the toast, or another of this tab's components.
+    document.addEventListener(PUBLISH_LOG_CHANGED, () => paint());
+    // An import added or taken back in this tab.
+    document.addEventListener(IMPORTS_EVENT, (event) => {
+      if ((event as CustomEvent<{ slug: string }>).detail?.slug === slug) paint();
+    });
+
+    root.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      const opener = target.closest<HTMLElement>('[data-source-open]');
+      const imported = opener && built.get(opener.closest<HTMLElement>('[data-imported]')!);
+      if (imported) {
+        void openSource(imported);
+        return;
+      }
+      const li = target.closest<HTMLElement>('[data-change], [data-imported]');
+      if (!li) return;
+      if (target.closest('[data-revert-button]')) {
+        void ask('revert', li);
+        return;
+      }
+      if (!target.closest('[data-hold-button]')) return;
+      const info = infoOf(li);
+      const heldNow = readPublishing().held[slug] ?? {};
+      if (!info.keys.some((k) => heldNow[k])) {
+        hold(slug, info.keys, { note: '', by: CURRENT_USER.name, iso: TODAY_ISO, told: [], label: info.label });
+        paint();
+        rowOf(info.keys[0])?.querySelector<HTMLElement>('[data-hold-button]')?.focus();
+        document.dispatchEvent(new CustomEvent('firma2:review-toast', { detail: { message: `Held ${info.label}. It stays out of this publish.` } }));
+        return;
+      }
+      release(slug, info.keys);
+      paint();
+      rowOf(info.keys[0])?.querySelector<HTMLElement>('[data-hold-button]')?.focus();
+      document.dispatchEvent(new CustomEvent('firma2:review-toast', { detail: { message: `Released ${info.label}. It goes out with this publish.` } }));
+    });
+
+    // ---- Revert asks for a reason -----------------------------------------
+    type NoteDialog = HTMLElement & { heading: string; show: () => void; close: () => void };
+    type NoteInput = HTMLElement & { label: string; helpText: string; errorText: string; value: string };
+    const dialog = part<NoteDialog>('note-dialog');
+    const input = part<NoteInput>('note-input');
+    const submit = part<HTMLElement>('note-submit');
+    let asking: { info: RowInfo; li: HTMLElement } | null = null;
+
+    async function ask(_mode: 'revert', li: HTMLElement) {
+      await Promise.all([customElements.whenDefined('esa-dialog'), customElements.whenDefined('esa-textarea')]);
+      const info = infoOf(li);
+      asking = { info, li };
+      dialog.heading = `Revert ${info.label}?`;
+      input.label = 'Reason';
+      input.helpText = `Sent to ${names(info.editors)}. The record goes back to what the public page shows.`;
+      input.errorText = '';
+      input.value = '';
+      dialog.show();
+    }
+
+    part('note-cancel').addEventListener('click', () => dialog.close());
+    input.addEventListener('input', () => {
+      if (input.errorText && String(input.value ?? '').trim()) input.errorText = '';
+    });
+    submit.addEventListener('click', () => {
+      if (!asking) return;
+      const { info, li } = asking;
+      const text = String(input.value ?? '').trim();
+      if (!text) {
+        input.errorText = 'Write a reason first';
+        return;
+      }
+      const note: ReviewNote = { note: text, by: CURRENT_USER.name, iso: TODAY_ISO, told: info.editors, label: info.label };
+      dialog.close();
+      asking = null;
+      // Focus would fall to <body> with the row it was on; hand it to the next
+      // change still waiting, or to the page's heading when none is left.
+      const all = visibleRows();
+      const at = all.indexOf(li);
+      const after = all.slice(at + 1).concat(all.slice(0, at)).map((r) => infoOf(r).keys[0]);
+      // An imported measure entry leaves the entry store; fields, contacts and
+      // funding read the revert from the publish store when the record loads.
+      changesOf(info.keys).forEach((c) => c.entryId && removeEntry(slug, c.entryId));
+      revert(slug, info.keys, note);
+      paint();
+      const next = after.map(rowOf).find(Boolean)?.querySelector<HTMLElement>('button, a') ?? document.querySelector<HTMLElement>('h1');
+      if (next && next.tagName === 'H1') next.setAttribute('tabindex', '-1');
+      next?.focus();
+      document.dispatchEvent(new CustomEvent('firma2:review-toast', { detail: { message: `Reverted ${info.label}. Your reason was sent to ${names(info.editors)}.` } }));
+    });
+
+    paint();
+  });
+</script>

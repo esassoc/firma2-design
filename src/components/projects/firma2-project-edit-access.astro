@@ -1,0 +1,227 @@
+---
+// firma2-project-edit-access — "Request edit access", in place of Edit, for a
+// signed-in reader who cannot edit this project (.scratch/access-requests/
+// spec.md, decisions 3, 15, 27).
+//
+// WHO CAN EDIT. A Contributor edits every project LED by an organization they
+// belong to (decision 3); an Administrator edits everything; a Viewer edits
+// nothing. Funding gives no edit rights. The reader is the directory's
+// signed-in person, seen through the prototype's `?as=` switch
+// (currentActor()), with CURRENT_USER_ORGANIZATIONS as theirs — so `?as=viewer`
+// shows the request on every project, and `?as=contributor` on every project
+// their two organizations do not lead.
+//
+// THE CTA TAKES EDIT'S PLACE, not a place beside it. A reader who cannot edit
+// is offered the one act that leads to editing; showing Edit as well would
+// promise what Update could not keep. So this hides firma2-record-mode's switch
+// and holds the record in view mode — the read-only state the page already
+// has, which hides every [data-edit-only] control. Nothing else of the record's
+// edit model changes here.
+//
+// A REQUEST IS A JOIN REQUEST to the lead organization, asking to edit its
+// projects (decision 27). The dialog names where it goes — the organization's
+// managers, or the administrators when it has none (decision 16) — because
+// "edit this project" is really "edit every project it leads", and the reader
+// should know who decides. One pending request per organization (decision 26):
+// once sent, the button says so and the dialog offers Withdraw (decision 25).
+// After a decline, asking again waits REASK_DAYS, and the dialog says how long.
+//
+// bcn-lego-checked: every control is a lego — esa-button for the CTA and the
+// dialog's acts, esa-dialog for the question, esa-textarea for the message,
+// esa-snackbar-container for the confirmation, composed unchanged. There is no CSS: the
+// wrappers toggle with inline display, because `hidden` loses to
+// the legos' own display rules (esa-hidden-attribute-trap). Beacon is not
+// cloned on this machine. This is a project-record section, so it lives here
+// beside firma2-project-actions.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2InheritedAccess from '../settings/firma2-inherited-access.astro';
+import { getOrganization, membersOf, organizationSlug } from '../../data/firma2-directory';
+
+interface Props {
+  /** The project's name, carried on the request so the manager sees where it came from. */
+  project: string;
+  /** The organization that leads it — where the request goes. */
+  leadOrganization: string;
+}
+
+const { project, leadOrganization } = Astro.props;
+
+// Who answers: the lead organization's active managers, else the administrators.
+const hasManagers = membersOf(leadOrganization).some(
+  (u) => u.managerOf.includes(leadOrganization) && u.status === 'Active',
+);
+const goesTo = hasManagers
+  ? `Goes to ${leadOrganization}’s managers.`
+  : `${leadOrganization} has no manager, so this goes to the administrators.`;
+
+// Who already edits and sees it, said before the ask — roles and the lead
+// organization, never people (firma2-inherited-access).
+const lead = getOrganization(organizationSlug(leadOrganization));
+---
+<div
+  class="firma2-project-edit-access"
+  style="display: none"
+  data-edit-access
+  data-project={project}
+  data-lead={leadOrganization}
+>
+  <span data-edit-access-ask><EsaButton variant="ghost" size="md" data-edit-access-open>Request edit access</EsaButton></span>
+  <span style="display: none" data-edit-access-pending><EsaButton variant="ghost" size="md" data-edit-access-open>Edit access requested</EsaButton></span>
+
+  <esa-dialog class="firma2-project-edit-access__dialog" heading="Request edit access" size="sm" show-close-button>
+    <div class="stack" data-gap="lg">
+    {lead && <Firma2InheritedAccess scope="project" organization={lead} />}
+    <div data-edit-access-form>
+      <div class="stack" data-gap="lg">
+        <div class="stack" data-gap="2xs">
+          <p class="typography-body-md">{goesTo}</p>
+          <p class="typography-body-md">If approved, you can edit every project {leadOrganization} leads.</p>
+        </div>
+        <esa-textarea label="Message (optional)" rows="3" size="md" name="message" data-edit-access-message></esa-textarea>
+      </div>
+    </div>
+    <div style="display: none" data-edit-access-waiting>
+      <p class="typography-body-md" data-edit-access-waiting-text></p>
+    </div>
+    <div style="display: none" data-edit-access-declined>
+      <p class="typography-body-md" data-edit-access-declined-text></p>
+    </div>
+    </div>
+    <div class="cluster" data-gap="xs" slot="footer">
+      <span data-edit-access-send-wrap><EsaButton variant="primary" size="md" data-edit-access-send>Send request</EsaButton></span>
+      <span style="display: none" data-edit-access-withdraw-wrap><EsaButton variant="danger" appearance="soft" size="md" data-edit-access-withdraw>Withdraw request</EsaButton></span>
+      <EsaButton variant="ghost" size="md" data-edit-access-cancel>Cancel</EsaButton>
+    </div>
+  </esa-dialog>
+
+  <esa-snackbar-container data-edit-access-toasts></esa-snackbar-container>
+</div>
+
+<script>
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-snackbar-container';
+
+  import { daysSince } from '../../data/firma2-access-requests';
+  import { currentActor, currentPerson } from '../../lib/workspace-permissions';
+  import { setRecordMode, onRecordMode } from '../../lib/record-mode';
+  import {
+    CHANGED,
+    createRequest,
+    daysUntilReask,
+    pendingRequest,
+    withdrawRequest,
+  } from '../../lib/access-requests';
+
+  type Dialog = HTMLElement & { heading: string; show(): void; close(): void };
+  type Textarea = HTMLElement & { value: string };
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
+
+  const ago = (days: number) => (days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`);
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  document.querySelectorAll<HTMLElement>('[data-edit-access]').forEach((root) => {
+    const lead = root.dataset.lead ?? '';
+    const project = root.dataset.project ?? '';
+    const { role } = currentActor();
+    // Whoever is signed in — the directory's reader, or the flow's newcomer.
+    const me = currentPerson();
+    const canEdit = role === 'Administrator' || (role === 'Contributor' && me.organizations.includes(lead));
+    if (canEdit) return;
+
+    // Edit gives way: its switch leaves the bar and the record stays read-only,
+    // whatever `?edit` or a stray event asks for.
+    document.querySelectorAll<HTMLElement>('[data-record-mode-switch]').forEach((s) => (s.style.display = 'none'));
+    // Reporting is editing for this reader too: someone who can't edit the
+    // record can't file work or spend against it, so those doors go with Edit.
+    // A page flag and a stylesheet rule, not a sweep of elements — the measures
+    // card renders after this script, and a rule covers it whenever it lands.
+    document.documentElement.toggleAttribute('data-firma2-cannot-edit', true);
+    onRecordMode((mode) => {
+      if (mode === 'edit') setRecordMode('view');
+    });
+    setRecordMode('view');
+    root.style.display = '';
+
+    const $ = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const dialog = $<Dialog>('.firma2-project-edit-access__dialog');
+    const message = $<Textarea>('[data-edit-access-message]');
+    const toasts = $<Toasts>('[data-edit-access-toasts]');
+    const show = (el: HTMLElement, on: boolean) => (el.style.display = on ? '' : 'none');
+
+    const render = () => {
+      const pending = pendingRequest(me.email, lead);
+      const wait = pending ? 0 : daysUntilReask(me.email, lead);
+      show($('[data-edit-access-ask]'), !pending);
+      show($('[data-edit-access-pending]'), !!pending);
+      show($('[data-edit-access-form]'), !pending && wait === 0);
+      show($('[data-edit-access-waiting]'), !!pending);
+      show($('[data-edit-access-declined]'), wait > 0);
+      show($('[data-edit-access-send-wrap]'), !pending && wait === 0);
+      show($('[data-edit-access-withdraw-wrap]'), !!pending);
+      if (pending) {
+        $('[data-edit-access-waiting-text]').textContent =
+          `Sent to ${lead} ${ago(daysSince(pending.created))}.`;
+      }
+      if (wait > 0) {
+        $('[data-edit-access-declined-text]').textContent =
+          `${lead} declined your last request. You can ask again in ${plural(wait, 'day')}.`;
+      }
+      // Cancel abandons a request being written; with one already sent there is
+      // nothing to abandon, so the same button only closes.
+      const cancel = root.querySelector('[data-edit-access-cancel]')?.closest('.esa-button')?.querySelector('.esa-button__label');
+      if (cancel) cancel.textContent = pending ? 'Close' : 'Cancel';
+      customElements.whenDefined('esa-dialog').then(() => {
+        dialog.heading = pending ? 'Edit access requested' : 'Request edit access';
+      });
+    };
+
+    render();
+    window.addEventListener(CHANGED, render);
+    window.addEventListener('storage', render);
+
+    root.querySelectorAll('[data-edit-access-open]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        await customElements.whenDefined('esa-dialog');
+        render();
+        dialog.show();
+      }),
+    );
+    $('[data-edit-access-cancel]').addEventListener('click', () => dialog.close());
+
+    $('[data-edit-access-send]').addEventListener('click', async () => {
+      await customElements.whenDefined('esa-textarea');
+      createRequest({
+        kind: 'join',
+        name: me.name,
+        email: me.email,
+        organization: lead,
+        asked: 'Contributor',
+        message: message.value.trim() || undefined,
+        via: 'project',
+        project,
+      });
+      message.value = '';
+      dialog.close();
+      await customElements.whenDefined('esa-snackbar-container');
+      toasts.show({ message: `Request sent to ${lead}.`, variant: 'success' });
+    });
+
+    $('[data-edit-access-withdraw]').addEventListener('click', async () => {
+      const pending = pendingRequest(me.email, lead);
+      if (pending) withdrawRequest(pending.id);
+      dialog.close();
+      await customElements.whenDefined('esa-snackbar-container');
+      toasts.show({ message: 'Request withdrawn.', variant: 'success' });
+    });
+  });
+</script>
+
+<style>
+  /* See the script: a reader who can't edit doesn't see the reporting doors.
+     The wrapper span is what renders (esa-button-runtime-clones); the whole
+     selector sits inside :global (astro-global-inside-has-trap). */
+  :global(html[data-firma2-cannot-edit] .esa-button:has(> [data-firma2-pm-record-work], > [data-firma2-spend-record])) {
+    display: none;
+  }
+</style>

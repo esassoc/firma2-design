@@ -1,0 +1,92 @@
+---
+// Import a report — a document the project's team already wrote, read against
+// one project and added to it. Projects › *Project* › Import a report.
+//
+// The brief's five (docs/product-brief.md §5):
+//
+// 1. ONE QUESTION: "Is what was read from my report right, so I can add it?"
+// 2. READERS: whoever keeps the project, holding a report they already filed
+//    with a funder. They track the work somewhere else and come here to hand
+//    it over. Hardest: the one whose report counts things this workspace does
+//    not, in units it does not use; each of those is named on its row and
+//    left empty. WHO IS NOT HERE: the manager who will publish these changes,
+//    and reads them in the review beside the same document; and the public,
+//    who see nothing until that publish.
+// 3. SERIES/SCALAR: a series of proposed changes, grouped by the section of
+//    the project page each will land in. One scalar leads: how many are ready
+//    and how many need the reader.
+// 4. IRREVERSIBLE: nothing. Changes save to the record, not to the public
+//    page, and the project page offers Undo for the whole import. So the
+//    commit is a count, not a warning.
+// 5. CUT: proposing a location (shapes change only from spatial data), creating
+//    organizations or accounts, spend (funders state it by grant, the record
+//    holds it by year), several documents at once, a document covering several
+//    projects, and a per-change note (one note covers the import).
+//
+// ONE PAGE PER PROJECT THAT HAS A READING TO SHOW. The deployed site reads
+// invented samples only, so the route exists where a sample does; the project
+// page offers the link under the same test.
+//
+// Zero page CSS. .scratch/project-updates/spec.md holds the decisions.
+import AppLayout from '../../../../layouts/AppLayout.astro';
+import Firma2PageHeader from '../../../../components/shared/firma2-page-header.astro';
+import Firma2ProjectReportImport from '../../../../components/projects/firma2-project-report-import.astro';
+import Firma2ReportImportActions from '../../../../components/projects/firma2-report-import-actions.astro';
+import { IMPORT_FIXTURES } from '../../../../data/firma2-report-import';
+import { projects, projectHref, projectSlug } from '../../../../data/firma2-projects';
+import type { Project } from '../../../../data/firma2-projects';
+import { getProjectDetail, isClosedPeriod } from '../../../../data/firma2-project-detail';
+import { organizations, users } from '../../../../data/firma2-directory';
+import { withBase } from '../../../../lib/base';
+
+export function getStaticPaths() {
+  return projects
+    .filter((project) => IMPORT_FIXTURES[projectSlug(project)])
+    .map((project) => ({ params: { project: projectSlug(project) }, props: { project } }));
+}
+
+interface Props {
+  project: Project;
+}
+
+const { project } = Astro.props;
+const detail = getProjectDetail(project);
+const slug = projectSlug(project);
+const years = (detail.measures[0]?.series.filter(isClosedPeriod).map((period) => period.year) ?? []).reverse();
+---
+<!-- manifest:
+  layout: stack(2xl)
+  sections:
+    - page header + acts -> firma2-page-header (actions: firma2-report-import-actions)
+    - import             -> firma2-project-report-import (document pane: firma2-report-source)
+-->
+<AppLayout title={`Import a report — ${project.projectName} — ProjectFirma 2.0`} active="projects">
+  <div class="stack" data-gap="2xl">
+    <Firma2PageHeader
+      title="Import a report"
+      crumbs={[
+        { label: 'Projects', href: withBase('/prototypes/projects'), aliasable: true },
+        { label: project.projectName, href: withBase(projectHref(project)) },
+        { label: 'Import a report' },
+      ]}
+    >
+      <Firma2ReportImportActions slot="actions" cancelHref={withBase(projectHref(project))} />
+    </Firma2PageHeader>
+    <Firma2ProjectReportImport
+      projectSlug={slug}
+      projectName={project.projectName}
+      projectHref={projectHref(project)}
+      years={years}
+      units={Object.fromEntries(detail.measures.map((measure) => [measure.name, measure.unit]))}
+      reported={Object.fromEntries(detail.measures.map((measure) => [measure.name, measure.reported]))}
+      fields={{
+        timeline: `${project.implementationStartYear},${project.completionYear}`,
+        county: project.county,
+      }}
+      contacts={detail.contacts.map(({ name, email }) => ({ name, email }))}
+      funding={detail.funding.map(({ name, organization }) => ({ name, organization }))}
+      organizations={organizations.map((organization) => organization.name)}
+      people={users.map(({ name, email }) => ({ name, email }))}
+    />
+  </div>
+</AppLayout>

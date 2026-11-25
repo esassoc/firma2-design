@@ -1,0 +1,751 @@
+---
+// firma2-review-inbox — the sweep in one place: the projects waiting to
+// publish on the left, the selected one's changes on the right, and Publish
+// and next moving down the list without leaving the page (user, 2026-11-17:
+// "admins very rarely will go to an individual project and do that review
+// there"; the inbox was picked in /proto/review-sweep over the list-then-page
+// flow, expanding rows in the list, and publishing from a summary).
+//
+// THE LIST SAYS WHAT CHANGED. Each row carries its first changes struck and
+// marked (src/lib/review-diff.ts), so a manager can see which project is a
+// typo and which is a $2M cost jump before opening it.
+//
+// THE PANE IS THE REVIEW, NOT A COPY OF IT. Each waiting project renders
+// firma2-review-changes, the same component as the project's own review page:
+// struck-and-marked rows, Hold and Revert, imported rows with their document,
+// the import's note, the publish history. Only the selected one shows. The
+// publish itself goes through src/lib/publish-undo.ts as it does there, with
+// exactly the keys the pane reported on firma2:review-pending, so held and
+// reverted changes stay out.
+//
+// HELD IS ITS OWN VIEW (user, 2026-11-18). A publish is a snapshot of the
+// project; a change held at review is treated as if it arrived after that
+// snapshot: a determination was made, just deferred. So it leaves Waiting and
+// sits under Held, with who held it and how long ago (no note: a hold is the
+// reviewer's own bookmark, not a message), until someone
+// releases it (back to Waiting) or reverts it. A project with both kinds shows
+// in both views. Waiting / Held is esa-button-toggle above the list; the view
+// is kept in the address (?view=held).
+//
+// PROPOSALS ARE THE THIRD VIEW (user, 2026-11-18). A proposal asks whether a
+// project should exist here; an update asks whether a change is accurate. The
+// decision differs (Approve or Return, not Publish), so it keeps its own
+// buttons, but it is made in the same inbox rather than a block above it. The
+// list and the pane are built in the browser from the intake store
+// (src/lib/intake-form.ts), with the answers read back as the intake flow
+// reads them (answerText). Return asks what needs to change; it goes to the
+// person who proposed it.
+//
+// THE PROJECT RAIL (firma2-review-project-rail) shows the selected project's
+// Key facts; select() tells it which on firma2:review-select. With the rail
+// open the inbox is narrower, so the list keeps to names and counts (a
+// container query, no script).
+//
+// THE STATUS IS A BYLINE (user, 2026-11-18, picked "Byline" in
+// /proto/review-meta over the bold Last published row as built, a strip of four
+// properties, a Public page section in the rail, and a line under Publish):
+// "Last published 2 March 2026 · Changes by Ivy Nakamura and Renata Alvarez", or
+// "Not public yet", and Overdue. Not who published last (user, same day: it
+// doesn't help judge accuracy; the publish history keeps it). Who made the changes is
+// also on each change row; the byline names them all at once (user, same day:
+// "we should also know who made the changes we're reviewing").
+// How long it has waited is left out here and in the list ("not necessary").
+// firma2-review-changes' own Last published row and Not public yet box are
+// hidden inside the inbox; its project page keeps them.
+//
+// A DOCUMENT OPENED BESIDE A CHANGE takes the list's room: the list steps out
+// while it is open, so the changes and the document keep two readable columns.
+//
+// WHO CAN. Publish follows src/lib/publish-permission.ts. Below the threshold,
+// or on an unverified organization's project for a non-administrator, the
+// buttons do not render and the pane says who publishes.
+//
+// The per-project review page (/prototypes/review/<project>) stays, for the
+// project page's "Review changes" link and organization queues.
+//
+// bcn-lego-checked: the Waiting / Held switch is esa-button-toggle; the acts are esa-button, Overdue esa-badge, the empty
+// state esa-empty-state, the who-publishes note esa-alert-box, toasts
+// esa-snackbar-container; the pane is firma2-review-changes. The list items
+// are native buttons in a list (a selection list like Linear's inbox): no
+// esa- lego is a master list with rich rows. The two-track grid is bespoke:
+// .sidebar wraps on content width and cannot keep the list sticky beside a
+// long pane. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaAlertBox from '@esa/ecology/esa-alert-box.astro';
+import Firma2ReviewChanges from './firma2-review-changes.astro';
+import Firma2IconAction from '../shared/firma2-icon-action.astro';
+import type { ReviewItem } from '../../data/firma2-publishing';
+import { publicHref } from '../../data/firma2-publishing';
+import { labelOfIso } from '../../data/firma2-publish-history';
+import { renderDiff } from '../../lib/review-diff';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** Waiting projects, oldest first. */
+  items: ReviewItem[];
+  /** Slugs overdue on any organization's schedule. */
+  overdue: Set<string>;
+}
+const { items, overdue } = Astro.props;
+const LINES = 2;
+// The project's status, one muted line under its name: no row of its own.
+const names = (people: string[]) => (people.length < 2 ? people.join('') : `${people.slice(0, -1).join(', ')} and ${people.at(-1)}`);
+const byline = (item: ReviewItem) => (item.publishedIso ? `Last published ${labelOfIso(item.publishedIso)}` : 'Not public yet');
+const count = (n: number) => `${n} change${n === 1 ? '' : 's'}`;
+const lineOf = (item: ReviewItem, i: number) => {
+  const c = item.changes[i];
+  return renderDiff({ from: c.from, to: c.to, first: !item.publishedIso || c.key.startsWith('area:'), compact: true });
+};
+---
+<div class="firma2-review-inbox-frame">
+<div class="firma2-review-inbox" data-review-inbox>
+  <div class="firma2-review-inbox__views">
+    <esa-button-toggle size="md" aria-label="Show" data-inbox-view></esa-button-toggle>
+  </div>
+  <nav class="firma2-review-inbox__list" aria-label="Review">
+    <ul role="list" data-project-list>
+      {items.map((item, i) => (
+        <li data-inbox-item={item.slug} data-keys={JSON.stringify(item.changes.map((c) => c.key))}>
+          <button type="button" class="firma2-review-inbox__item" data-inbox-pick={item.slug} aria-current={i === 0 ? 'true' : undefined}>
+            <span class="typography-label-md-strong">{item.project.projectName}</span>
+            <span class="typography-body-sm firma2-review-inbox__muted">{item.project.leadOrganization}</span>
+            <span class="typography-body-sm firma2-review-inbox__line">
+              <span data-inbox-count data-first={item.publishedIso ? undefined : ''}>{item.publishedIso ? count(item.changes.length) : 'First publish'}</span>
+              {overdue.has(item.slug) && <span data-inbox-waiting-only><EsaBadge value="Overdue" variant="warning" size="sm" /></span>}
+            </span>
+            <span class="typography-body-sm firma2-review-inbox__lines" data-inbox-held-lines hidden></span>
+            {item.publishedIso && (
+              <span class="typography-body-sm firma2-review-inbox__lines" data-inbox-change-lines>
+                {item.changes.slice(0, LINES).map((c, k) => (
+                  <span><span class="firma2-review-inbox__muted">{c.label}:</span> <span set:html={lineOf(item, k)} /></span>
+                ))}
+                {item.changes.length > LINES && <span class="firma2-review-inbox__muted">and {item.changes.length - LINES} more</span>}
+              </span>
+            )}
+          </button>
+        </li>
+      ))}
+    </ul>
+    <ul role="list" data-proposal-list hidden></ul>
+  </nav>
+
+  <div class="firma2-review-inbox__pane">
+    {items.map((item, i) => (
+      <section class="stack" data-gap="lg" data-inbox-pane={item.slug} data-lead={item.project.leadOrganization} data-name={item.project.projectName} hidden={i !== 0} aria-labelledby={`inbox-title-${item.slug}`}>
+        <div class="repel firma2-review-inbox__head" data-gap="md">
+          <div class="stack" data-gap="2xs">
+            <div class="cluster" data-gap="xs">
+              <h2 class="typography-title-md-strong" id={`inbox-title-${item.slug}`}>{item.project.projectName}</h2>
+              <Firma2IconAction icon="arrow-right" label="Open project" href={withBase(item.projectHref)} />
+              {item.publishedIso && <Firma2IconAction icon="globe" label="Public page" href={withBase(publicHref(item.project))} />}
+            </div>
+            <p class="typography-body-sm firma2-review-inbox__byline">
+              <span data-inbox-byline data-original={byline(item)}>{byline(item)}</span>
+              {item.editors.length > 0 && <span>· Changes by {names(item.editors)}</span>}
+              {overdue.has(item.slug) && <EsaBadge value="Overdue" variant="warning" size="sm" />}
+            </p>
+          </div>
+          <span class="cluster" data-gap="xs" data-inbox-acts>
+            <EsaButton variant="primary" size="md" data-inbox-publish={item.slug}>Publish and next</EsaButton>
+            <EsaButton variant="secondary" appearance="outline" size="md" data-inbox-skip={item.slug}>Skip</EsaButton>
+          </span>
+        </div>
+        <div data-inbox-readonly hidden>
+          <EsaAlertBox variant="info" title="Managers and administrators publish">Ask a manager of this project's organization.</EsaAlertBox>
+        </div>
+        <div data-inbox-unverified hidden>
+          <EsaAlertBox variant="info" title="An administrator publishes this project">
+            <span data-inbox-unverified-text>Its organization isn't verified yet.</span>
+          </EsaAlertBox>
+        </div>
+        <Firma2ReviewChanges slug={item.slug} changes={item.changes} publishedIso={item.publishedIso} publishedBy={item.publishedBy} />
+      </section>
+    ))}
+    <div data-inbox-done hidden={items.length > 0}>
+      <EsaEmptyState title="Every public page is up to date" size="sm" />
+    </div>
+    <div data-inbox-none-held hidden>
+      <EsaEmptyState title="Nothing held" size="sm" />
+    </div>
+
+    {/* The proposal selected in the Proposals view, filled by the script. */}
+    <section class="stack" data-gap="lg" data-proposal-pane hidden aria-labelledby="inbox-proposal-title">
+      <div class="repel firma2-review-inbox__head" data-gap="md">
+        <div class="stack" data-gap="2xs">
+          <h2 class="typography-title-md-strong" id="inbox-proposal-title" data-proposal-name></h2>
+          <p class="typography-body-sm firma2-review-inbox__muted firma2-review-inbox__flat" data-proposal-meta></p>
+        </div>
+        <span class="cluster" data-gap="xs">
+          <EsaButton variant="primary" size="md" data-proposal-approve>Approve</EsaButton>
+          <EsaButton variant="secondary" appearance="outline" size="md" data-proposal-return>Return</EsaButton>
+        </span>
+      </div>
+      <div class="stack" data-gap="lg" data-proposal-answers></div>
+    </section>
+    <div data-inbox-none-proposals hidden>
+      <EsaEmptyState title="No new projects waiting" size="sm" />
+    </div>
+  </div>
+  <esa-snackbar-container data-inbox-toasts></esa-snackbar-container>
+  {/* Its own wrapper: a dialog beside the panes' dialogs must not nest in one. */}
+  <div>
+    <esa-dialog heading="Return this project" size="md" show-close-button data-return-dialog>
+      <esa-textarea label="What needs to change?" size="md" rows="4" required data-return-text></esa-textarea>
+      <div class="cluster" data-gap="xs" slot="footer">
+        <EsaButton variant="primary" size="md" data-return-confirm>Return project</EsaButton>
+        <EsaButton variant="secondary" appearance="outline" size="md" data-return-cancel>Cancel</EsaButton>
+      </div>
+    </esa-dialog>
+  </div>
+</div>
+</div>
+
+<style>
+  .firma2-review-inbox-frame {
+    container: review-inbox / inline-size;
+  }
+  .firma2-review-inbox {
+    display: grid;
+    grid-template-columns: 20rem minmax(0, 1fr);
+    gap: var(--spacing-300) var(--spacing-600);
+    align-items: start;
+  }
+  /* A document open beside a change takes the list's room. */
+  :global(.firma2-review-inbox:has(.firma2-review-changes[data-source-open])) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :global(.firma2-review-inbox:has(.firma2-review-changes[data-source-open]) > .firma2-review-inbox__list) {
+    display: none;
+  }
+  .firma2-review-inbox__list {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px) + var(--spacing-400));
+    max-block-size: calc(var(--firma2-fold, 100dvh) - var(--firma2-band-height, 48px) - var(--spacing-800));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-inline-end: var(--spacing-300);
+    border-inline-end: 1px solid var(--color-border-default);
+  }
+  .firma2-review-inbox__list ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /* Proposals / Waiting / Held spans the list and the pane: three segments
+     do not fit a list narrowed by the rail. */
+  .firma2-review-inbox__views {
+    grid-column: 1 / -1;
+  }
+  .firma2-review-inbox :global(.firma2-review-inbox__item) {
+    display: grid;
+    gap: 2px;
+    inline-size: 100%;
+    padding: var(--spacing-300);
+    border: 0;
+    border-radius: var(--radius-200);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    transition: background-color 150ms ease-out;
+  }
+  .firma2-review-inbox :global(.firma2-review-inbox__item:hover) {
+    background: var(--color-background-default-hover, rgba(0, 0, 0, 0.04));
+  }
+  .firma2-review-inbox :global(.firma2-review-inbox__item[aria-current='true']) {
+    background: var(--color-background-default-selected, rgba(0, 0, 0, 0.06));
+  }
+  .firma2-review-inbox :global(.firma2-review-inbox__item:focus-visible) {
+    outline: 2px solid var(--focus-ring-color, currentColor);
+    outline-offset: -2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-review-inbox :global(.firma2-review-inbox__item) { transition: none; }
+  }
+  .firma2-review-inbox__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-100);
+  }
+  .firma2-review-inbox__lines {
+    display: grid;
+    gap: 2px;
+    margin-block-start: var(--spacing-100);
+    font-variant-numeric: tabular-nums;
+  }
+  .firma2-review-inbox__byline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-100) var(--spacing-200);
+    margin: 0;
+    color: var(--color-content-default-secondary);
+  }
+  /* The byline says it; the review's own row and box would say it again. */
+  .firma2-review-inbox :global(.firma2-review-changes__last),
+  .firma2-review-inbox :global(.firma2-review-changes [data-never]) {
+    display: none !important;
+  }
+  .firma2-review-inbox__flat {
+    margin: 0;
+  }
+  /* A proposal's answers, as the intake flow reads them back. */
+  .firma2-review-inbox :global(.firma2-review-inbox__answers) {
+    display: grid;
+    grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr);
+    gap: var(--spacing-200) var(--spacing-600);
+    margin: 0;
+  }
+  .firma2-review-inbox :global(.firma2-review-inbox__answers dt) {
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-review-inbox :global(.firma2-review-inbox__answers dd) {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .firma2-review-inbox :global(.firma2-review-inbox__answers + h3),
+  .firma2-review-inbox :global(.firma2-review-inbox__proposal-section h3) {
+    margin: 0;
+  }
+  /* The rail open beside a narrower inbox: the list keeps to names and counts. */
+  @container review-inbox (max-width: 56rem) {
+    .firma2-review-inbox {
+      grid-template-columns: 15rem minmax(0, 1fr);
+    }
+    .firma2-review-inbox__lines {
+      display: none !important;
+    }
+  }
+  .firma2-review-inbox__note {
+    overflow-wrap: anywhere;
+  }
+  .firma2-review-inbox__muted {
+    color: var(--color-content-default-secondary);
+  }
+  /* The list's marks are built as HTML: the same struck-and-marked look as the pane. */
+  .firma2-review-inbox :global(.firma2-review-diff__del),
+  .firma2-review-inbox :global(.firma2-review-diff__ins) {
+    border-radius: 2px;
+    padding-inline: 1px;
+  }
+  .firma2-review-inbox :global(.firma2-review-diff__del) {
+    color: var(--color-content-utility-danger);
+    background: var(--color-background-utility-danger-subtle);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+  .firma2-review-inbox :global(.firma2-review-diff__ins) {
+    color: var(--color-content-utility-success);
+    background: var(--color-background-utility-success-subtle);
+    text-decoration: none;
+  }
+  .firma2-review-inbox :global(.firma2-review-diff__by),
+  .firma2-review-inbox :global(.firma2-review-diff__arrow) {
+    color: var(--color-content-default-secondary);
+  }
+  /* The project and its Publish stay in view however long the review runs. */
+  .firma2-review-inbox__head {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px));
+    z-index: 2;
+    align-items: flex-start;
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+    background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
+  }
+  .firma2-review-inbox__head h2 {
+    margin: 0;
+  }
+  /* Narrower than two readable columns: the list above, the review below. */
+  @media (max-width: 64rem) {
+    .firma2-review-inbox {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .firma2-review-inbox__list {
+      position: static;
+      max-block-size: 20rem;
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--color-border-default);
+      padding-block-end: var(--spacing-300);
+    }
+  }
+  .firma2-review-inbox [hidden] {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-snackbar-container';
+  import '@esa/ecology/esa-button-toggle';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-textarea';
+  import { publishBlock } from '../../lib/publish-permission';
+  import { publishWithUndo, undoPublish } from '../../lib/publish-undo';
+  import { readPublishing } from '../../lib/publish-store';
+  import { reviewRows } from './review-rows';
+  import { CURRENT_USER } from '../../data/firma2-directory';
+  import { TODAY_ISO, labelOfIso } from '../../data/firma2-publish-history';
+  import { waitingLabel } from '../../data/firma2-publishing';
+  import type { ReviewNote } from '../../lib/publish-store';
+  import type { IntakeProject } from '../../data/firma2-intake';
+  import { CURRENT_USER_ORGANIZATIONS } from '../../data/firma2-directory';
+  import { answerKey, answerText, decide, formFor, projectName, readIntakeProjects, visibleScreens } from '../../lib/intake-form';
+  import { currentActor } from '../../lib/workspace-permissions';
+
+  type Toasts = HTMLElement & { show: (c: { message: string; variant?: string; action?: string }) => string; dismiss: (id: string) => void };
+
+  document.querySelectorAll<HTMLElement>('[data-review-inbox]').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel);
+    const order = [...root.querySelectorAll<HTMLElement>('[data-inbox-item]')].map((li) => li.dataset.inboxItem!);
+    const seeded = new Map(order.map((slug) => [slug, JSON.parse($(`[data-inbox-item="${CSS.escape(slug)}"]`)!.dataset.keys ?? '[]') as string[]]));
+    // What each pane would publish: its keys, held and reverted ones out (firma2-review-changes).
+    const going = new Map<string, string[]>();
+    let selected: string | null = order[0] ?? null;
+    type View = 'proposals' | 'waiting' | 'held';
+    const asView = (v: string | null | undefined): View => (v === 'held' || v === 'proposals' ? v : 'waiting');
+    let view: View = asView(new URLSearchParams(window.location.search).get('view'));
+    const daysSince = (iso: string) => Math.max(0, Math.round((Date.parse(TODAY_ISO) - Date.parse(iso)) / 86400000));
+
+    // Until a pane reports (scripts may run in either order), work it out the same way it does.
+    const goingOf = (slug: string) => {
+      if (going.has(slug)) return going.get(slug)!;
+      const held = readPublishing().held[slug] ?? {};
+      return reviewRows(slug, seeded.get(slug)!).pending.filter((k) => !held[k]);
+    };
+    const left = () => order.filter((s) => !$(`[data-inbox-item="${CSS.escape(s)}"]`)!.hidden);
+
+    const select = (slug: string | null, focus = false) => {
+      selected = slug;
+      $('[data-proposal-pane]')!.hidden = true;
+      $('[data-inbox-none-proposals]')!.hidden = true;
+      // The rail beside the inbox shows this project's facts, marked where they change.
+      // A first publish marks nothing: every field is new.
+      const first = slug ? $(`[data-inbox-item="${CSS.escape(slug)}"] [data-inbox-count]`)?.dataset.first !== undefined : true;
+      document.dispatchEvent(new CustomEvent('firma2:review-select', { detail: { slug, view, keys: slug && !first ? reviewRows(slug, seeded.get(slug)!).pending : [] } }));
+      root.querySelectorAll<HTMLElement>('[data-inbox-pick]').forEach((b) => {
+        if (b.dataset.inboxPick === slug) b.setAttribute('aria-current', 'true');
+        else b.removeAttribute('aria-current');
+      });
+      root.querySelectorAll<HTMLElement>('[data-inbox-pane]').forEach((p) => (p.hidden = p.dataset.inboxPane !== slug));
+      $('[data-inbox-done]')!.hidden = slug !== null || view !== 'waiting';
+      $('[data-inbox-none-held]')!.hidden = slug !== null || view !== 'held';
+      if (!slug) return;
+      const pick = $(`[data-inbox-pick="${CSS.escape(slug)}"]`);
+      if (focus) pick?.focus({ preventScroll: true });
+      pick?.scrollIntoView({ block: 'nearest' });
+      // The pane starts at its top, not wherever the last one was scrolled to.
+      const pane = $(`[data-inbox-pane="${CSS.escape(slug)}"]`)!;
+      if (pane.getBoundingClientRect().top < 0) pane.scrollIntoView({ block: 'start' });
+      const url = new URL(window.location.href);
+      url.searchParams.set('project', slug);
+      history.replaceState(history.state, '', url);
+    };
+
+    // Each project's waiting and held rows: a folded row's keys share one note.
+    const tally = (slug: string) => {
+      const rows = reviewRows(slug, seeded.get(slug)!);
+      const held = readPublishing().held[slug] ?? {};
+      const notes = new Map<string, ReviewNote>();
+      rows.pending.filter((k) => held[k]).forEach((k) => notes.set(JSON.stringify(held[k]), held[k]));
+      return { waiting: rows.count - notes.size, held: [...notes.values()] };
+    };
+
+    // The switch above the list counts projects, not changes.
+    const paintView = async () => {
+      let w = 0;
+      let h = 0;
+      order.forEach((slug) => {
+        const t = tally(slug);
+        if (t.waiting) w++;
+        if (t.held.length) h++;
+      });
+      await customElements.whenDefined('esa-button-toggle');
+      const toggle = $<HTMLElement & { options: unknown; value: string }>('[data-inbox-view]')!;
+      toggle.options = [
+        { label: `New projects (${proposals.length})`, value: 'proposals' },
+        { label: `Waiting (${w})`, value: 'waiting' },
+        { label: `Held (${h})`, value: 'held' },
+      ];
+      toggle.value = view;
+    };
+    const after = (slug: string) => {
+      const rest = left();
+      const at = order.indexOf(slug);
+      return [...order.slice(at + 1), ...order.slice(0, at)].find((s) => s !== slug && rest.includes(s)) ?? null;
+    };
+
+    // A row follows the pane: imports add rows, reverts take them away, a
+    // hold moves a change from Waiting to Held.
+    const paintRow = (slug: string) => {
+      const li = $(`[data-inbox-item="${CSS.escape(slug)}"]`)!;
+      const t = tally(slug);
+      li.hidden = view === 'waiting' ? t.waiting === 0 : t.held.length === 0;
+      const label = li.querySelector<HTMLElement>('[data-inbox-count]')!;
+      if (view === 'held') label.textContent = `${t.held.length} held`;
+      else label.textContent = label.dataset.first !== undefined ? 'First publish' : `${t.waiting} change${t.waiting === 1 ? '' : 's'}`;
+      // How long it has waited, and Overdue, are about what is waiting; a held
+      // change says how long it has been held instead.
+      li.querySelectorAll<HTMLElement>('[data-inbox-waiting-only]').forEach((el) => (el.hidden = view === 'held'));
+      const changeLines = li.querySelector<HTMLElement>('[data-inbox-change-lines]');
+      if (changeLines) changeLines.hidden = view === 'held';
+      const heldLines = li.querySelector<HTMLElement>('[data-inbox-held-lines]')!;
+      heldLines.hidden = view !== 'held';
+      heldLines.replaceChildren(
+        ...t.held.map((n) => {
+          const line = document.createElement('span');
+          line.className = 'firma2-review-inbox__note';
+          const what = document.createElement('span');
+          what.className = 'firma2-review-inbox__muted';
+          line.textContent = `${n.label}`;
+          what.textContent = ` · held ${waitingLabel(daysSince(n.iso)).toLowerCase()} by ${n.by}`;
+          line.append(what);
+          return line;
+        }),
+      );
+    };
+    const repaint = () => {
+      order.forEach(paintRow);
+      void paintView();
+    };
+
+    // ---- Proposals -----------------------------------------------------------
+    // Submitted proposals this reader may decide: an administrator, or a
+    // manager of the proposed lead organization (as firma2-intake-flow decides).
+    const mayApprove = (p: IntakeProject) => {
+      const actor = currentActor();
+      return actor.role === 'Administrator' || (actor.manager && CURRENT_USER_ORGANIZATIONS.includes(String(p.answers.leadOrganization ?? '')));
+    };
+    const readProposals = () => readIntakeProjects().filter((p) => p.status === 'submitted' && mayApprove(p));
+    let proposals = readProposals();
+    let proposal: string | null = null;
+    const day = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : '');
+    const proposalMeta = (p: IntakeProject) =>
+      [p.answers.solicitation ? String(p.answers.solicitation) : '', p.answers.leadOrganization ? String(p.answers.leadOrganization) : '', `submitted by ${p.createdBy} on ${day(p.submittedAt)}`].filter(Boolean).join(' · ');
+
+    const paintProposalList = () => {
+      const list = $('[data-proposal-list]')!;
+      list.replaceChildren(
+        ...proposals.map((p) => {
+          const li = document.createElement('li');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'firma2-review-inbox__item';
+          button.dataset.proposalPick = p.id;
+          const name = Object.assign(document.createElement('span'), { className: 'typography-label-md-strong', textContent: projectName(p) });
+          const meta = Object.assign(document.createElement('span'), { className: 'typography-body-sm firma2-review-inbox__muted', textContent: proposalMeta(p) });
+          button.append(name, meta);
+          li.append(button);
+          return li;
+        }),
+      );
+    };
+
+    const showProposal = (id: string | null, focus = false) => {
+      proposal = id;
+      root.querySelectorAll<HTMLElement>('[data-inbox-pane]').forEach((p) => (p.hidden = true));
+      $('[data-inbox-done]')!.hidden = true;
+      $('[data-inbox-none-held]')!.hidden = true;
+      document.dispatchEvent(new CustomEvent('firma2:review-select', { detail: { slug: null, view } }));
+      root.querySelectorAll<HTMLElement>('[data-proposal-pick]').forEach((b) => {
+        if (b.dataset.proposalPick === id) b.setAttribute('aria-current', 'true');
+        else b.removeAttribute('aria-current');
+      });
+      const p = proposals.find((x) => x.id === id);
+      $('[data-proposal-pane]')!.hidden = !p;
+      $('[data-inbox-none-proposals]')!.hidden = !!p;
+      if (!p) return;
+      $('[data-proposal-name]')!.textContent = projectName(p);
+      $('[data-proposal-meta]')!.textContent = proposalMeta(p);
+      const form = formFor(false);
+      $('[data-proposal-answers]')!.replaceChildren(
+        ...visibleScreens(form, p.answers).map((screen, i, all) => {
+          const section = document.createElement('section');
+          section.className = 'stack firma2-review-inbox__proposal-section';
+          section.dataset.gap = 'sm';
+          const h = Object.assign(document.createElement('h3'), { className: 'typography-title-sm-strong', textContent: screen.title || `Step ${i + 1}` });
+          const dl = Object.assign(document.createElement('dl'), { className: 'firma2-review-inbox__answers' });
+          screen.blocks.forEach((b) => {
+            if (b.type === 'text') return;
+            const dt = Object.assign(document.createElement('dt'), { className: 'typography-body-md', textContent: b.label || 'Untitled question' });
+            const value = answerText(b, p.answers[answerKey(b)]);
+            const dd = Object.assign(document.createElement('dd'), { className: `typography-body-md${value ? '' : ' firma2-review-inbox__muted'}`, textContent: value || 'Not answered' });
+            dl.append(dt, dd);
+          });
+          // One untitled step needs no heading: the proposal's name is above it.
+          if (screen.title || all.length > 1) section.append(h);
+          section.append(dl);
+          return section;
+        }),
+      );
+      const pick = $(`[data-proposal-pick="${CSS.escape(p.id)}"]`);
+      if (focus) pick?.focus({ preventScroll: true });
+      pick?.scrollIntoView({ block: 'nearest' });
+      const url = new URL(window.location.href);
+      url.searchParams.set('proposal', p.id);
+      history.replaceState(history.state, '', url);
+    };
+
+    // After a decision: the next proposal down, or the one above at the end.
+    const decided = (id: string, message: string) => {
+      const at = proposals.findIndex((p) => p.id === id);
+      proposals = readProposals();
+      paintProposalList();
+      void paintView();
+      showProposal(proposals[Math.min(at, proposals.length - 1)]?.id ?? null, true);
+      void toast(message);
+    };
+
+    $('[data-proposal-approve]')!.addEventListener('click', () => {
+      if (!proposal) return;
+      const p = decide(proposal, 'approved', CURRENT_USER.name);
+      if (p) decided(p.id, `${projectName(p)} approved. Now in Planning & Design.`);
+    });
+    type Dialog = HTMLElement & { show: () => void; close: () => void };
+    type Area = HTMLElement & { value: string; errorText: string };
+    const returnDialog = $<Dialog>('[data-return-dialog]')!;
+    const returnText = $<Area>('[data-return-text]')!;
+    $('[data-proposal-return]')!.addEventListener('click', async () => {
+      await Promise.all([customElements.whenDefined('esa-dialog'), customElements.whenDefined('esa-textarea')]);
+      returnText.value = '';
+      returnText.errorText = '';
+      returnDialog.show();
+    });
+    $('[data-return-cancel]')!.addEventListener('click', () => returnDialog.close());
+    returnText.addEventListener('input', () => {
+      if (returnText.errorText && String(returnText.value ?? '').trim()) returnText.errorText = '';
+    });
+    $('[data-return-confirm]')!.addEventListener('click', () => {
+      const comment = String(returnText.value ?? '').trim();
+      if (!comment) {
+        returnText.errorText = 'Say what needs to change.';
+        return;
+      }
+      if (!proposal) return;
+      const p = decide(proposal, 'returned', CURRENT_USER.name, comment);
+      returnDialog.close();
+      if (p) decided(p.id, `Returned to ${p.createdBy}.`);
+    });
+
+    const paintActs = (slug: string) => {
+      const pane = $(`[data-inbox-pane="${CSS.escape(slug)}"]`)!;
+      const blocked = publishBlock(pane.dataset.lead ?? '');
+      const keys = goingOf(slug);
+      pane.querySelector<HTMLElement>('[data-inbox-readonly]')!.hidden = blocked !== 'threshold';
+      pane.querySelector<HTMLElement>('[data-inbox-unverified]')!.hidden = blocked !== 'unverified';
+      if (blocked === 'unverified') pane.querySelector('[data-inbox-unverified-text]')!.textContent = `${pane.dataset.lead} isn't verified yet.`;
+      const publishBtn = pane.querySelector<HTMLElement>('[data-inbox-publish]')!;
+      publishBtn.closest<HTMLElement>('.esa-button')!.hidden = blocked !== null || keys.length === 0;
+      publishBtn.querySelector('.esa-button__label')!.textContent = after(slug) ? 'Publish and next' : 'Publish';
+      pane.querySelector<HTMLElement>('[data-inbox-skip]')!.closest<HTMLElement>('.esa-button')!.hidden = !after(slug);
+      // The pane's own "Undo last publish" follows the same check.
+      document.dispatchEvent(new CustomEvent('firma2:review-state', { detail: { slug, allowed: blocked === null } }));
+    };
+
+    document.addEventListener('firma2:review-pending', (event) => {
+      const { slug, keys } = (event as CustomEvent<{ slug: string; keys: string[] }>).detail;
+      if (!seeded.has(slug)) return;
+      going.set(slug, keys);
+      paintRow(slug);
+      paintActs(slug);
+      void paintView();
+    });
+
+    const toasts = () => $<Toasts>('[data-inbox-toasts]')!;
+    const toast = async (message: string, action?: string): Promise<string> => {
+      await customElements.whenDefined('esa-snackbar-container');
+      return toasts().show({ message, variant: 'success', action });
+    };
+    // The panes speak through the same event the project's review page uses.
+    document.addEventListener('firma2:review-toast', (event) => void toast((event as CustomEvent<{ message: string }>).detail.message));
+
+    root.addEventListener('click', async (event) => {
+      const t = event.target as HTMLElement;
+      const pick = t.closest<HTMLElement>('[data-inbox-pick]');
+      if (pick) return select(pick.dataset.inboxPick!);
+      const proposalPick = t.closest<HTMLElement>('[data-proposal-pick]');
+      if (proposalPick) return showProposal(proposalPick.dataset.proposalPick!);
+      const skip = t.closest<HTMLElement>('[data-inbox-skip]');
+      if (skip) return select(after(skip.dataset.inboxSkip!), true);
+      const pub = t.closest<HTMLElement>('[data-inbox-publish]');
+      if (!pub) return;
+      const slug = pub.dataset.inboxPublish!;
+      const pane = $(`[data-inbox-pane="${CSS.escape(slug)}"]`)!;
+      const keys = goingOf(slug);
+      if (!keys.length || publishBlock(pane.dataset.lead ?? '') !== null) return;
+      const next = after(slug);
+      publishWithUndo(slug, { iso: TODAY_ISO, by: CURRENT_USER.name, keys });
+      const bylineOf = pane.querySelector<HTMLElement>('[data-inbox-byline]')!;
+      bylineOf.textContent = `Last published ${labelOfIso(TODAY_ISO)}`;
+      // The pane repaints on the publish log's event; a project with only
+      // held changes left keeps its row, marked, for the next review.
+      paintRow(slug);
+      void paintView();
+      const stays = !$(`[data-inbox-item="${CSS.escape(slug)}"]`)!.hidden;
+      select(stays && !next ? slug : next, true);
+      document.dispatchEvent(new CustomEvent('firma2:review-queue-change'));
+      const id = await toast(`Published ${pane.dataset.name}`, 'Undo');
+      const onAction = (e: Event) => {
+        if ((e as CustomEvent<{ id: string }>).detail?.id !== id) return;
+        toasts().removeEventListener('snackbar-action', onAction);
+        toasts().dismiss(id);
+        if (!undoPublish(slug, CURRENT_USER.name, TODAY_ISO)) return;
+        bylineOf.textContent = bylineOf.dataset.original ?? '';
+        paintRow(slug);
+        void paintView();
+        select(slug, true);
+        document.dispatchEvent(new CustomEvent('firma2:review-queue-change'));
+        void toast('Publish undone. Its changes are back in review.');
+      };
+      toasts().addEventListener('snackbar-action', onAction);
+    });
+
+    // Up and down move through the list, as in an inbox.
+    $('.firma2-review-inbox__list')!.addEventListener('keydown', (event) => {
+      const e = event as KeyboardEvent;
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = view === 'proposals'
+        ? [...root.querySelectorAll<HTMLElement>('[data-proposal-pick]')]
+        : [...root.querySelectorAll<HTMLElement>('[data-inbox-item]:not([hidden]) [data-inbox-pick]')];
+      const at = items.indexOf(document.activeElement as HTMLElement);
+      const next = items[Math.min(items.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)))];
+      if (!next) return;
+      e.preventDefault();
+      if (view === 'proposals') showProposal(next.dataset.proposalPick!, true);
+      else select(next.dataset.inboxPick!, true);
+    });
+
+    // Proposals / Waiting / Held: the list redraws, the selection stays if it is still in view.
+    const enter = (next: View, asked?: string | null) => {
+      view = next;
+      $('[data-project-list]')!.hidden = view === 'proposals';
+      $('[data-proposal-list]')!.hidden = view !== 'proposals';
+      repaint();
+      const url = new URL(window.location.href);
+      if (view === 'waiting') url.searchParams.delete('view');
+      else url.searchParams.set('view', view);
+      if (view !== 'proposals') url.searchParams.delete('proposal');
+      history.replaceState(history.state, '', url);
+      if (view === 'proposals') {
+        showProposal(proposals.find((p) => p.id === asked)?.id ?? proposal ?? proposals[0]?.id ?? null);
+        return;
+      }
+      const shown = left();
+      const want = asked ?? selected;
+      select(want && shown.includes(want) ? want : shown[0] ?? null);
+    };
+    $('[data-inbox-view]')!.addEventListener('change', (event) => {
+      const next = asView((event.currentTarget as HTMLElement & { value: string }).value);
+      if (next !== view) enter(next);
+    });
+
+    // Start where the link pointed, or on the oldest still waiting.
+    paintProposalList();
+    const params = new URLSearchParams(window.location.search);
+    enter(view, view === 'proposals' ? params.get('proposal') : params.get('project'));
+    order.forEach(paintActs);
+  });
+</script>

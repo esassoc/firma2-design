@@ -1,0 +1,154 @@
+---
+// firma2-public-site-navigation — Public site › Navigation: which destinations
+// the public bar shows, in what order, under what names, plus the workspace's
+// own outside links and which custom pages the Pages menu lists.
+//
+// THE DESTINATIONS ARE THE PRODUCT'S; THE WORDS ARE THE WORKSPACE'S. A row can
+// be renamed, moved and removed, and put back from Add item. An outside link is
+// the one thing that can be created here: a label and an address.
+//
+// THE BAR FOLDS ITSELF. However many items there are, the public bar measures
+// its own row and folds into one Menu when it no longer fits
+// (src/lib/public-site-apply.ts), so nothing here has to count characters.
+//
+// bcn-lego-checked: firma2-ordered-picker (the list), esa-text-field,
+// esa-switch-toggle in firma2-switch-list rows, firma2-rail-section. No class
+// beyond one quiet line. firma2-menu-order-editor orders the APP's menu and
+// cannot rename, remove or add. Beacon is not cloned on this machine.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import '../shared/firma2-switch-list.css';
+import Firma2OrderedPicker from './firma2-ordered-picker.astro';
+import { publicSiteDefaults } from '../../data/firma2-public-site';
+
+const { pages } = publicSiteDefaults();
+---
+<div class="firma2-public-site-navigation stack" data-gap="2xl" data-site-part="navigation">
+  <Firma2RailSection title="Navigation bar">
+    <Firma2OrderedPicker name="nav" label="Navigation bar items" addLabel="Add item" edit emptyText="The navigation bar has no items." />
+  </Firma2RailSection>
+
+  <div hidden data-nav-panel data-bind-scope tabindex="-1">
+    <Firma2RailSection title="Navigation item">
+      <div class="stack" data-gap="lg">
+        <esa-text-field label="Label" size="md" data-nav-label></esa-text-field>
+        <div hidden data-nav-address-wrap>
+          <esa-text-field label="Address" size="md" placeholder="e.g. https://example.org" data-nav-address></esa-text-field>
+        </div>
+      </div>
+    </Firma2RailSection>
+  </div>
+
+  <Firma2RailSection title="Pages menu">
+    {pages.length > 0 ? (
+      <div class="firma2-switch-list">
+        {pages.map((page) => (
+          <div class="firma2-switch-list__row">
+            <esa-switch-toggle label={page.label} label-position="before" data-bind-absent="nav.hiddenPages" data-entry={page.value}></esa-switch-toggle>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <p class="firma2-public-site-navigation__quiet typography-body-sm">This workspace has no custom pages yet.</p>
+    )}
+  </Firma2RailSection>
+</div>
+
+<style>
+  .firma2-public-site-navigation [data-nav-panel]:focus {
+    outline: none;
+  }
+  .firma2-public-site-navigation__quiet {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-switch-toggle';
+  import { orderedPicker } from '../../lib/ordered-picker';
+  import { bind, commit, config, defaults, write } from '../../lib/public-site-form';
+  import { PUBLIC_SITE_EVENT } from '../../lib/public-site-store';
+
+  type Field = HTMLElement & { value: string };
+
+  const root = document.querySelector<HTMLElement>('[data-site-part="navigation"]');
+  if (root && defaults) {
+    const nav = config.nav;
+    const list = root.querySelector<HTMLElement>('[data-picker="nav"]')!;
+    const panel = root.querySelector<HTMLElement>('[data-nav-panel]')!;
+    const label = panel.querySelector<Field>('[data-nav-label]')!;
+    const address = panel.querySelector<Field>('[data-nav-address]')!;
+    const addressWrap = panel.querySelector<HTMLElement>('[data-nav-address-wrap]')!;
+    const standard = (key: string): string => defaults.navItems.find((item) => item.value === key)?.label ?? key;
+    const labelOf = (key: string): string => (nav.links[key] ? nav.links[key].label.trim() || 'New link' : nav.labels[key]?.trim() || standard(key));
+
+    let open: string | null = null;
+    const mark = (): void => {
+      list.querySelectorAll<HTMLElement>('li[data-sort-key]').forEach((li) => (li.dataset.sortKey === open ? li.setAttribute('aria-current', 'true') : li.removeAttribute('aria-current')));
+    };
+    const show = (key: string | null): void => {
+      open = key;
+      panel.hidden = !key;
+      mark();
+      if (!key) return;
+      const link = nav.links[key];
+      addressWrap.hidden = !link;
+      void customElements.whenDefined('esa-text-field').then(() => {
+        label.value = link ? link.label : (nav.labels[key] ?? standard(key));
+        address.value = link?.href ?? '';
+      });
+      requestAnimationFrame(() => {
+        panel.focus({ preventScroll: true });
+        panel.scrollIntoView({ block: 'nearest' });
+      });
+    };
+    label.addEventListener('change', () => {
+      if (!open) return;
+      if (nav.links[open]) nav.links[open].label = label.value;
+      // A destination's own name, typed back, is no rename.
+      else if (label.value.trim() && label.value.trim() !== standard(open)) nav.labels[open] = label.value;
+      else delete nav.labels[open];
+      commit();
+    });
+    address.addEventListener('change', () => {
+      if (!open || !nav.links[open]) return;
+      nav.links[open].href = address.value;
+      commit();
+    });
+
+    const items = orderedPicker(list, {
+      keys: () => nav.order,
+      set: (next) => write('nav.order', next),
+      labelOf,
+      noteOf: (key) => {
+        const link = nav.links[key];
+        if (link) return link.label.trim() && link.href.trim() ? '' : 'Not shown until filled in';
+        return key === 'pages' && defaults.pages.every((page) => nav.hiddenPages.includes(page.value)) ? 'Nothing to show yet' : '';
+      },
+      choices: () => {
+        const missing = defaults.navItems.filter((item) => !nav.order.includes(item.value)).map((item) => ({ label: item.label, action: item.value }));
+        return [...missing, ...(missing.length ? [{ label: '', action: '', divider: true }] : []), { label: 'Outside link', action: 'new:link' }];
+      },
+      add: (action) => {
+        if (action !== 'new:link') return action;
+        const id = `link-${Date.now().toString(36)}`;
+        nav.links[id] = { label: '', href: '' };
+        return id;
+      },
+      onEdit: show,
+      onRemove: (key) => {
+        delete nav.links[key];
+        if (open === key) show(null);
+        commit();
+      },
+      onChange: mark,
+    });
+
+    document.addEventListener(PUBLIC_SITE_EVENT, () => {
+      items.paint();
+      mark();
+    });
+    bind(root);
+  }
+</script>

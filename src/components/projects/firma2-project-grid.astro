@@ -1,9 +1,9 @@
 ---
 // firma2-project-grid — the Projects index: a scannable, searchable, filterable
-// table of every project in the portfolio, with the Stage/Program filter
+// table of every project in the portfolio, with the Stage/Classification filter
 // dropdowns, quick search, record-count footer, and CSV export that this
 // spoke's data grids share. Column set follows the open-source ProjectFirma data model
-// (ProjectName, taxonomy tier, lead organization, ProjectStage,
+// (ProjectName, classifications, lead organization, ProjectStage,
 // ImplementationStartYear, CompletionYear, EstimatedTotalCost) so the screen
 // speaks the product's own language.
 //
@@ -22,7 +22,7 @@
 // as a direct dependency with the same Theming-API-only setup), and
 // shared/firma2-data-grid-chrome.css is the reusable home for its frame. Every
 // other control here IS a lego: esa-text-field for search, esa-filter-container
-// + esa-filter-dropdown for the Stage and Program filters, esa-button for the
+// + esa-filter-dropdown for the Stage and Classification filters, esa-button for the
 // CTA and the CSV download, and the Stage cells clone real server-rendered
 // esa-pill markup rather than restyling a chip by hand.
 import EsaButton from '@esa/ecology/esa-button.astro';
@@ -30,15 +30,21 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
 import EsaPill from '@esa/ecology/esa-pill.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2RecentProjects from './firma2-recent-projects.astro';
 import '../shared/firma2-data-grid-chrome.css';
-import { projects as defaultProjects, programs, STAGE_ORDER, STAGE_TONE } from '../../data/firma2-projects';
+import { projects as defaultProjects, STAGE_ORDER, STAGE_TONE } from '../../data/firma2-projects';
+import { CLASSIFICATIONS } from '../../data/firma2-classifications';
+import { PROJECT_TYPES } from '../../data/firma2-project-types';
+import { stageSettings } from '../../data/firma2-workspace-settings';
 import type { Project } from '../../data/firma2-projects';
 
 interface Props {
   projects?: Project[];
+  /** The search box lists your recently opened projects while it is empty (the Projects index). */
+  recents?: boolean;
 }
 
-const { projects = defaultProjects } = Astro.props;
+const { projects = defaultProjects, recents = false } = Astro.props;
 
 // The dot colour each esa-pill variant paints, so a stage option in the panel
 // reads as the same thing as its pill in the Stage column. All five are the
@@ -63,9 +69,14 @@ const stageOptions = STAGE_ORDER.filter((s) => projects.some((p) => p.stage === 
   color: TONE_DOT[STAGE_TONE[s]],
 }));
 
-// Program options — same convention, derived from the data. No dots: program is
-// a taxonomy tier, not a status, and nothing else on the screen colours it.
-const programOptions = programs.map((p) => ({ value: p, label: p }));
+// Project type and classification options — same convention, derived
+// from the data, in vocabulary order. No dots: these are vocabulary, not
+// status, and nothing else on the screen colours them. A project matches a
+// set filter if it carries ANY selected value.
+const present = <T extends { name: string }>(list: T[], has: (p: Project, name: string) => boolean) =>
+  list.filter((x) => projects.some((p) => has(p, x.name))).map((x) => ({ value: x.name, label: x.name }));
+const typeOptions = present(PROJECT_TYPES, (p, n) => p.projectType === n);
+const classificationOptions = present(CLASSIFICATIONS, (p, n) => p.classifications.includes(n as Project['classifications'][number]));
 
 // panel-right is not in the icon registry, so the path rides in explicitly —
 // same glyph, same technique as the measure table's peek.
@@ -73,7 +84,7 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
 ---
 <section class="firma2-project-grid stack" data-gap="md">
   <!-- Search and the two filters are ONE row now. The filters are collapsed
-       dropdowns rather than chip rows: every stage and every program used to be
+       dropdowns rather than chip rows: every stage and every classification used to be
        on screen permanently, which is a wall of options a reader has to skip
        past on the way to the table. A trigger spends one word per dimension and
        only spends the options once someone opens the dimension they actually
@@ -102,10 +113,12 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
       <div class="firma2-data-grid__search">
         <esa-text-field
           label="Search projects"
+          data-aliasable-attr="label,placeholder"
           placeholder="Project, organization, or county"
           size="md"
           data-projects-search
         ></esa-text-field>
+        {recents && <Firma2RecentProjects projects={projects} />}
       </div>
 
       <EsaFilterContainer>
@@ -119,13 +132,23 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
           options={JSON.stringify(stageOptions)}
         ></esa-filter-dropdown>
         <esa-filter-dropdown
-          data-projects-program-filter
-          name="program"
-          label="Program"
+          data-projects-type-filter
+          name="projectType"
+          label="Project type"
           size="md"
           multiple
-          placeholder="Search programs"
-          options={JSON.stringify(programOptions)}
+          placeholder="Search project types"
+          options={JSON.stringify(typeOptions)}
+        ></esa-filter-dropdown>
+        <esa-filter-dropdown
+          data-projects-classification-filter
+          name="classification"
+          label="Classification"
+          data-aliasable-attr="label"
+          size="md"
+          multiple
+          placeholder="Search classifications"
+          options={JSON.stringify(classificationOptions)}
         ></esa-filter-dropdown>
       </EsaFilterContainer>
     </div>
@@ -157,11 +180,15 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
        cells, so the status chips in the table ARE the lego rather than a
        hand-rolled copy of it. removable=false: a stage indicator, not a
        removable filter chip. All six stages render, including any not currently
-       present in the data, so a newly-created project still finds its pill. -->
+       present in the data, so a newly-created project still finds its pill.
+       Each leads with its stage's icon from Workspace settings › Stages; the
+       script redraws the glyph from that page's saved edits. -->
   <div data-projects-badge-templates hidden aria-hidden="true">
     {STAGE_ORDER.map((s) => (
       <span data-stage={s}>
-        <EsaPill label={s} variant={STAGE_TONE[s]} size="sm" removable={false} />
+        <EsaPill label={s} variant={STAGE_TONE[s]} size="sm" removable={false}>
+          <EsaIcon slot="icon" name="" size="xs" paths={stageSettings.find((x) => x.key === s)?.iconPaths} />
+        </EsaPill>
       </span>
     ))}
   </div>
@@ -173,7 +200,7 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
        slot because panel-right is not in the registry — same as the measure
        table's peek, so the two grids wear one affordance. -->
   <div data-projects-peek-template hidden aria-hidden="true">
-    <EsaButton variant="chrome" size="sm" aria-label="Open project">
+    <EsaButton variant="chrome" size="sm" aria-label="Preview project" title="Preview project">
       <EsaIcon name="panel-right" size="sm" paths={PANEL_RIGHT} />
     </EsaButton>
   </div>
@@ -181,14 +208,12 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
   <!-- The no-match empty state, server-rendered once and handed to AG Grid as its
        overlayNoRowsTemplate. Without this the grid falls back to its OWN built-in
        "No Rows To Show" — Title Case, not this product's voice, and it names no way
-       out. Copy follows esa-empty-state's contract: the title states what is absent
-       as a fact, the description is one imperative recovery action naming the actual
-       controls on screen. -->
+       out. The title states what is absent as a fact; the search and filters sit
+       directly above it, so the way out needs no sentence. -->
   <div data-projects-empty hidden aria-hidden="true">
     <EsaEmptyState
       size="sm"
       title="No matching projects"
-      description="Try a different search, or clear the Stage and Program filters."
     />
   </div>
 
@@ -224,7 +249,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
      keyboard users, whose focus is what reveals it. */
   .firma2-project-grid :global(.firma2-grid-peek) {
     opacity: 0;
-    transition: opacity 120ms ease;
     flex: none;
     line-height: 0;
   }
@@ -237,12 +261,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
   @media (hover: none) {
     .firma2-project-grid :global(.firma2-grid-peek) {
       opacity: 1;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .firma2-project-grid :global(.firma2-grid-peek) {
-      transition: none;
     }
   }
 
@@ -260,9 +278,14 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-filter-dropdown';
   import { escGridHtml as esc, gridCurrencyFormatter as money, wireDataGrid } from '../shared/grid-chrome';
+  // Column headers name renameable nouns; resolved once, at grid build.
+  import { label } from '../../lib/vocabulary';
+  import { watchGridDefault } from '../../lib/grid-defaults';
   import { STAGE_ORDER, projectHref, projectSlug } from '../../data/firma2-projects';
   import type { Project } from '../../data/firma2-projects';
   import { withBase } from '../../lib/base';
+  import { readStages } from '../../lib/stage-draft';
+  import { importedProjects, importedUpdates, norm } from '../../lib/project-import';
   import type { ColDef } from 'ag-grid-community';
 
   /** Lifecycle position, so the Stage column sorts Proposal → Deferred rather than alphabetically. */
@@ -277,12 +300,19 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     // would hand it the surrounding whitespace text nodes as well.
     const emptyState = root.querySelector<HTMLElement>('[data-projects-empty] > *');
     const stageFilter = root.querySelector<HTMLElement>('[data-projects-stage-filter]');
-    const programFilter = root.querySelector<HTMLElement>('[data-projects-program-filter]');
+    const classificationFilter = root.querySelector<HTMLElement>('[data-projects-classification-filter]');
+    const typeFilter = root.querySelector<HTMLElement>('[data-projects-type-filter]');
 
     // Pre-clone the real esa-pill markup per stage (server-rendered with the
     // design-system scope hash) so grid cells reuse the lego verbatim.
+    // The icon is redrawn from the Stages page's saved edits first, so a glyph
+    // picked there is the one the table shows.
+    const stageLook = new Map(readStages().map((s) => [s.key, s.iconPaths]));
     const pillHTML = new Map<string, string>();
     root.querySelectorAll<HTMLElement>('[data-projects-badge-templates] [data-stage]').forEach((el) => {
+      const svg = el.querySelector('.esa-pill__icon svg');
+      const paths = stageLook.get(el.dataset.stage ?? '');
+      if (svg && paths) svg.innerHTML = paths;
       pillHTML.set(el.dataset.stage ?? '', el.innerHTML);
     });
 
@@ -295,9 +325,10 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     // are multi-select: an empty array means "no constraint on this dimension",
     // which is what the removed "All" chip used to say out loud.
     let stageValues: string[] = [];
-    let programValues: string[] = [];
+    let classificationValues: string[] = [];
+    let typeValues: string[] = [];
 
-    // Only name/organization/county feed quick search — stage and program have
+    // Only name/organization/county feed quick search — stage and classification have
     // their own dropdowns. defaultColDef opts every column out; these three opt in.
     const handle = wireDataGrid<Project>({
       root,
@@ -306,7 +337,7 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
       searchSelector: '[data-projects-search]',
       countSelector: '[data-projects-count]',
       csvSelector: '[data-projects-csv]',
-      countNoun: 'projects',
+      countNoun: label('projects'),
       csvFileName: 'projectfirma-projects.csv',
       suppressCellFocus: true,
       columnDefs: [
@@ -330,13 +361,15 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
         // invalid HTML and a double announcement). Same anatomy as the
         // measure table's name cell.
         {
-          headerName: 'Project', field: 'projectName', colId: 'projectName',
-          flex: 2, minWidth: 200, cellClass: 'firma2-grid-name', tooltipField: 'projectName',
+          headerName: label('Project'), field: 'projectName', colId: 'projectName',
+          flex: 2, minWidth: 170, cellClass: 'firma2-grid-name', tooltipField: 'projectName',
           getQuickFilterText: (p) => p.data?.projectName ?? '',
           cellRenderer: (p: { data?: Project }) => {
             if (!p.data) return '';
             const name = esc(p.data.projectName);
-            const peek = peekHTML.replace('aria-label="Open project"', `aria-label="Open ${name}"`);
+            // Imported here, so the prototype built no page for it: plain text, never a dead link.
+            if ((p.data as Project & { imported?: true }).imported) return `<span class="firma2-grid-namecell"><span class="firma2-grid-namecell__text">${name}</span></span>`;
+            const peek = peekHTML.replace('aria-label="Preview project"', `aria-label="Preview ${name}"`);
             return (
               `<span class="firma2-grid-namecell">` +
               `<a class="firma2-grid-link firma2-grid-namecell__text" href="${esc(withBase(projectHref(p.data)))}">${name}</a>` +
@@ -344,10 +377,18 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
             );
           },
         },
-        { headerName: 'Program', field: 'program', colId: 'program', flex: 1, minWidth: 150, tooltipField: 'program' },
         {
-          headerName: 'Lead organization', field: 'leadOrganization', colId: 'leadOrganization',
-          flex: 1, minWidth: 170, tooltipField: 'leadOrganization',
+          headerName: 'Project type', field: 'projectType', colId: 'projectType', flex: 1, minWidth: 120,
+          tooltipField: 'projectType',
+        },
+        {
+          headerName: label('Classifications'), colId: 'classifications', flex: 1, minWidth: 130,
+          valueGetter: (p) => (p.data?.classifications ?? []).join(', '),
+          tooltipValueGetter: (p) => (p.data?.classifications ?? []).join(', '),
+        },
+        {
+          headerName: label('Lead organization'), field: 'leadOrganization', colId: 'leadOrganization',
+          flex: 1, minWidth: 140, tooltipField: 'leadOrganization',
           getQuickFilterText: (p) => p.data?.leadOrganization ?? '',
         },
         {
@@ -356,25 +397,22 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
         },
         {
           headerName: 'Stage', field: 'stage', colId: 'stage', width: 175,
-          headerTooltip: 'Lifecycle order, Proposal through Completed. Deferred means work is paused.',
           comparator: (a: string, b: string) => stageRank(a) - stageRank(b),
           cellRenderer: (p: { value: string }) =>
             `<span class="firma2-grid-status">${pillHTML.get(p.value) ?? esc(p.value)}</span>`,
         },
         // Start and completion read as one fact — a span — so they share a
         // column. Two year columns cost ~90px of width that the truncating
-        // Program and Lead organization columns need more, and sorting on the
+        // Classifications and Lead organization columns need more, and sorting on the
         // underlying start year is what a reader means by "sort by timeline".
         {
-          headerName: 'Timeline', field: 'implementationStartYear', colId: 'timeline', width: 125,
-          headerTooltip: 'Implementation start to completion.',
+          headerName: 'Timeline', field: 'implementationStartYear', colId: 'timeline', width: 112,
           cellClass: 'firma2-grid-num',
           valueFormatter: (p) =>
             p.data ? `${p.data.implementationStartYear}–${p.data.completionYear}` : '',
         },
         {
           headerName: 'Estimated cost', field: 'estimatedTotalCost', colId: 'estimatedTotalCost', width: 150,
-          headerTooltip: 'Total across all years.',
           cellClass: 'firma2-grid-cost', headerClass: 'firma2-grid-cost-header',
           valueFormatter: (p) => (typeof p.value === 'number' ? money.format(p.value) : ''),
         },
@@ -385,14 +423,35 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
         // scoped styles) as the single source. A JS overlayComponent would mean
         // re-authoring the lego's markup by hand.
         overlayNoRowsTemplate: emptyState?.outerHTML,
-        isExternalFilterPresent: () => stageValues.length > 0 || programValues.length > 0,
+        isExternalFilterPresent: () =>
+          stageValues.length > 0 || classificationValues.length > 0 || typeValues.length > 0,
         doesExternalFilterPass: (node) =>
           (stageValues.length === 0 || stageValues.includes(node.data?.stage ?? '')) &&
-          (programValues.length === 0 || programValues.includes(node.data?.program ?? '')),
+          (typeValues.length === 0 || typeValues.includes(node.data?.projectType ?? '')) &&
+          (classificationValues.length === 0 ||
+            (node.data?.classifications ?? []).some((c) => classificationValues.includes(c))),
       },
     });
     if (!handle) return;
+    // The workspace's column layout (Workspace settings → Grid defaults).
+    watchGridDefault(handle.gridApi, 'projects');
     const { gridApi } = handle;
+
+    // What Import projects wrote in this browser: its updates over the seeded
+    // rows, its new projects after them (src/lib/project-import.ts).
+    const overlay = importedUpdates();
+    if (overlay.size) {
+      gridApi.forEachNode((node) => {
+        const o = node.data && overlay.get(norm(node.data.projectName));
+        if (o) node.setData({ ...node.data!, ...(o as Partial<Project>) });
+      });
+    }
+    const added = importedProjects();
+    if (added.length) {
+      handle.data.push(...(added as unknown as Project[]));
+      handle.countState.total += added.length;
+      gridApi.applyTransaction({ add: added as unknown as Project[] });
+    }
 
     // `selection-change` carries the whole selection (an array, because these are
     // `multiple`), so each handler replaces its dimension's list wholesale — the
@@ -402,7 +461,8 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
       gridApi.onFilterChanged();
     };
     stageFilter?.addEventListener('selection-change', onSelection((v) => { stageValues = v; }));
-    programFilter?.addEventListener('selection-change', onSelection((v) => { programValues = v; }));
+    classificationFilter?.addEventListener('selection-change', onSelection((v) => { classificationValues = v; }));
+    typeFilter?.addEventListener('selection-change', onSelection((v) => { typeValues = v; }));
   }
 
   document.querySelectorAll<HTMLElement>('.firma2-project-grid').forEach(initProjectGrid);

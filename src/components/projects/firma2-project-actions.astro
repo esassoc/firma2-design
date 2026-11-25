@@ -1,7 +1,9 @@
 ---
 // firma2-project-actions — the record-level actions in the project header:
-// Share, Fact sheet, and the change history. Slotted into firma2-page-header's
-// "toolbar" slot by the page, so the three ride the BREADCRUMB row — the
+// Review changes (when the public page is behind), Import a report (when the
+// project has a reading), Public page (once published), Share, Fact sheet, and the change history. Slotted
+// into firma2-page-header's
+// "toolbar" slot by the page, so they ride the BREADCRUMB row — the
 // page's chrome strip — rather than the title's own bar, and stay on screen
 // with the sticky band for the whole page.
 //
@@ -22,23 +24,36 @@
 // claim more than the prototype has. Real, enabled, un-`disabled`, per the
 // page's standing stance on unwired affordances.
 //
-// TEXT-ONLY BUTTONS, deliberately. The registry has glyphs for two of the
-// three (download, history) and none for share; two icons and a bare label
-// would read as a ragged set, and three labels carry the whole meaning anyway
-// — polish is subtractive. `sm`, the same rung every card-section header
-// control on this page renders at ("Add milestone", "Add source", …), because
-// these live on the CRUMB ROW — the page's chrome strip, whose own text is
-// meta-scale — and md boxes there outweigh the crumb they sit beside
-// (user-directed 2026-08-25; they sat beside the title at md for one pass).
-// Known cost, carried by the whole sm rung on this page: the label renders
-// 12px, under the 13px floor — the incomplete-sm hub gap, filed, and the fix
-// is the hub finishing the rung, not this spoke hand-sizing one cluster.
-// All three match exactly, per the sibling-match rule. Secondary outline,
-// because a primary is reserved for a creating action and none of these
-// creates anything.
+// IMPORT A REPORT IS THE ONE THAT DOES CHANGE THE RECORD, and it is here
+// anyway (.scratch/project-updates/spec.md, decision 8: an item in the project
+// page's "…" menu). It is a LINK to the import page, like Review changes: it
+// acts on the whole record, has no single section, and nothing changes until
+// that page's own button is pressed. Under 45rem it folds into the bar's "…"
+// with the rest, which is the menu item the decision names.
 //
-// bcn-lego-checked: everything interactive here is a lego — esa-button (the
-// three actions), esa-side-dialog (the history sheet), esa-snackbar-container
+// PUBLIC PAGE IS THE DOOR TO WHAT READERS SEE (user, 2026-11-23): a link to the
+// project's page on the public site, with the glyph and name the review pages
+// already use for it. Offered only once the project has been published — by
+// the seed or in this browser — because before that there is no public page to
+// open, and the status row already says "Not public yet".
+//
+// THE HISTORY NAMES THE DOCUMENT (decision 5). Each import in this browser
+// (src/lib/report-imports.ts) is a row above the seeded log, newest first:
+// how many changes, from which document, who and when. The rows repaint when
+// the store changes, so Undo takes its row away.
+//
+// ICON-ONLY CHROME BUTTONS, since 2026-10-20 (user — refining the top bar):
+// in the bar, only Edit/Update keeps a label, because it is the one workflow
+// act on the record; these touch nothing, so they step down to glyphs with
+// their names as aria-label and an esa-tooltip (firma2-icon-action). The registry now carries all four
+// (share-2, download, history, git-compare), which is what retired the old
+// text-only stance (no glyph for share, a ragged set). Chrome, like the bar's
+// own "…" menus, and md — the bar pins every icon-only button to a 32px
+// square. All four match exactly, per the sibling-match rule. Under 45rem the
+// bar folds them into its "…" menu, named by the same labels.
+//
+// bcn-lego-checked: everything interactive here is a lego — esa-button +
+// esa-tooltip via firma2-icon-action (the actions), bcn-side-sheet (the history sheet), esa-snackbar-container
 // (the copy confirmation). The bespoke part is the change-log <table> inside
 // the sheet: no esa-table exists (walked the catalog 2026-08-25), and the
 // spoke's AG Grid chrome (grid-chrome.ts) is priced for searchable
@@ -46,27 +61,55 @@
 // seven-row chronological log in an overlay can use. Beacon is not cloned on
 // this machine. firma2-project-actions is the home because the table exists
 // only as this sheet's content.
-import EsaButton from '@esa/ecology/esa-button.astro';
-import type { AuditEntry } from '../../data/firma2-project-detail';
+import Firma2IconAction from '../shared/firma2-icon-action.astro';
+import type { Change } from '../../data/firma2-changes';
+import { labelOfIso } from '../../data/firma2-publish-history';
+import '../settings/firma2-settings-table.css';
 
 interface Props {
   /** The record's change log, newest first — the order buildAudit() emits. */
-  audit: AuditEntry[];
+  audit: Change[];
+  /**
+   * The project's review page, when its public page is behind the record.
+   * Hidden by firma2-project-publish-state once this browser has published.
+   */
+  reviewHref?: string;
+  /** The project's Import a report page. Set only for a project with a reading. */
+  importHref?: string;
+  /** The project's page on the public site. */
+  publicHref?: string;
+  /** Whether the seed has published the project; this browser's publishes are read by the script. */
+  published?: boolean;
+  /** The project's slug: the key the history reads this browser's imports by. */
+  slug?: string;
 }
 
-const { audit } = Astro.props;
+const { audit, reviewHref, importHref, publicHref, published = false, slug } = Astro.props;
 ---
-<EsaButton variant="secondary" appearance="outline" size="sm" data-project-share>Share</EsaButton>
-<EsaButton variant="secondary" appearance="outline" size="sm" data-project-fact-sheet>Fact sheet</EsaButton>
-<EsaButton variant="secondary" appearance="outline" size="sm" data-project-history>History</EsaButton>
+{reviewHref && <Firma2IconAction icon="git-compare" label="Review changes" href={reviewHref} data-project-review />}
+{importHref && <Firma2IconAction icon="upload" label="Import a report" href={importHref} data-project-import />}
+{publicHref && (
+  <Firma2IconAction
+    icon="globe"
+    label="Public page"
+    href={publicHref}
+    data-project-public
+    data-project-public-pending={published ? undefined : ''}
+    data-slug={slug}
+  />
+)}
+<Firma2IconAction icon="share-2" label="Share" data-project-share />
+<Firma2IconAction icon="download" label="Fact sheet" data-project-fact-sheet />
+<Firma2IconAction icon="history" label="History" data-project-history />
 
 {/* "Change history", not "Audit log": the public reader is the widest one this
     page serves, and "audit" is compliance vocabulary — precise to staff, alarm
     bells to a visitor. What the sheet holds is exactly a history of changes,
     and the columns underneath say the rest. The BUTTON is one word because the
     cluster prices width; the sheet, with room, states its full name. */}
-<esa-side-dialog class="firma2-project-actions__sheet" heading="Change history" position="right">
-  <table class="firma2-project-actions__log">
+<bcn-side-sheet class="firma2-project-actions__sheet" heading="Change history" position="right" data-slug={slug}>
+  <div class="firma2-settings-table-scroll">
+    <table class="firma2-project-actions__log">
     <caption class="visually-hidden">Change history</caption>
     <thead>
       <tr>
@@ -75,21 +118,46 @@ const { audit } = Astro.props;
         <th scope="col" class="typography-label-sm-strong">Change</th>
       </tr>
     </thead>
+    {/* What this browser changed, filled by the script from the record's one
+        change log (src/lib/changes.ts): each change made by hand is a row, and
+        an import's changes fold into one row naming its document. Its own
+        <tbody> so a repaint replaces these rows and never the seeded log. */}
+    <tbody data-import-log></tbody>
     <tbody>
       {audit.map((entry) => (
         <tr>
-          <td class="firma2-project-actions__log-date typography-body-sm">{entry.date}</td>
-          <td class="typography-body-sm">{entry.user}</td>
-          <td class="typography-body-sm">{entry.change}</td>
+          <td class="firma2-project-actions__log-date typography-body-sm">{labelOfIso(entry.at)}</td>
+          <td class="typography-body-sm">{entry.by}</td>
+          <td class="typography-body-sm">{entry.summary}</td>
         </tr>
       ))}
     </tbody>
   </table>
-</esa-side-dialog>
+  </div>
+  {/* The log's own row, for the script to clone: same cells, same classes. */}
+  <template data-import-log-row>
+    <tr>
+      <td class="firma2-project-actions__log-date typography-body-sm"></td>
+      <td class="typography-body-sm"></td>
+      <td class="typography-body-sm"></td>
+    </tr>
+  </template>
+</bcn-side-sheet>
 
 <esa-snackbar-container class="firma2-project-actions__toasts"></esa-snackbar-container>
 
 <style>
+  /* Review changes leaves the row once this browser has published. */
+  :global(.esa-button[hidden]) {
+    display: none !important;
+  }
+
+  /* Public page stays out until the project is published; the script keeps it
+     for a publish made in this browser and removes it otherwise. */
+  :global(.esa-button:has(> [data-project-public-pending])) {
+    display: none !important;
+  }
+
   /* The sheet host is an inline element sitting in the header's actions flex
      cluster; fixed takes it out of flow so it does not claim a gap slot beside
      the buttons. Its panel positions itself against the viewport regardless.
@@ -130,8 +198,14 @@ const { audit } = Astro.props;
   /* The last rule would close the table against the sheet's own bottom edge —
      the sheet ends where the content does, and a trailing hairline under the
      oldest entry ("Project created") draws a boundary nothing sits below. */
-  .firma2-project-actions__log tbody tr:last-child td {
+  .firma2-project-actions__log tbody:last-of-type tr:last-child td {
     border-block-end: none;
+  }
+
+  /* A document's name is one unbroken token; it wraps rather than widening
+     the sheet past a phone. */
+  .firma2-project-actions__log td:last-child {
+    overflow-wrap: anywhere;
   }
 
   /* A date is one token, and the column scans because the years stack. */
@@ -143,10 +217,11 @@ const { audit } = Astro.props;
 </style>
 
 <script>
-  import '@esa/ecology/esa-side-dialog';
+  import '../shared/bcn-side-sheet';
   import '@esa/ecology/esa-snackbar-container';
-  import { fixSideDialog } from '../../lib/side-dialog-fix';
   import { shareRecord } from '../../lib/share-record';
+  import { CHANGES_EVENT, readChanges, recordChange } from '../../lib/changes';
+  import { readPublishing } from '../../lib/publish-store';
 
   type Dialog = HTMLElement & { show: () => void; close: () => void };
   type Snackbar = HTMLElement & {
@@ -158,11 +233,92 @@ const { audit } = Astro.props;
   const sheet = document.querySelector<Dialog>('.firma2-project-actions__sheet');
   const toasts = document.querySelector<Snackbar>('.firma2-project-actions__toasts');
 
+  // PUBLIC PAGE, for a project the seed has not published: it stays if this
+  // browser published it, and otherwise leaves the DOM — tooltip and all — so
+  // the bar's "…" fold under 45rem never lists a door to a page that is not there.
+  const publicLink = document.querySelector<HTMLElement>('[data-project-public-pending]');
+  if (publicLink) {
+    if (readPublishing().published[publicLink.dataset.slug ?? '']) {
+      publicLink.removeAttribute('data-project-public-pending');
+    } else {
+      (publicLink.closest('esa-tooltip') ?? publicLink.closest('.esa-button') ?? publicLink).remove();
+    }
+  }
+
   if (sheet) {
-    void fixSideDialog(sheet);
     document
       .querySelector('[data-project-history]')
       ?.addEventListener('click', () => sheet.show());
+  }
+
+  // WHAT THIS BROWSER CHANGED, above the seeded log and newest first: the
+  // record's one change log. A change made by hand is a row. Everything one
+  // import added folds into one row naming its document, because nine rows
+  // from one report read as one act. The dates are in the log's own
+  // "12 August 2026" form.
+  const slug = sheet?.dataset.slug;
+  const importLog = sheet?.querySelector<HTMLElement>('[data-import-log]');
+  const importRow = sheet?.querySelector<HTMLTemplateElement>('template[data-import-log-row]');
+  if (slug && importLog && importRow) {
+    const day = (iso: string): string =>
+      new Date(iso.length > 10 ? iso : `${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const paintLog = (): void => {
+      const rows: { at: string; by: string; text: string }[] = [];
+      const folded = new Map<string, { at: string; by: string; name: string; n: number }>();
+      readChanges(slug).forEach((change) => {
+        if (change.source.kind !== 'document') {
+          rows.push({ at: change.at, by: change.by, text: change.source.kind === 'data-source' ? `${change.summary} (from ${change.source.name})` : change.summary });
+          return;
+        }
+        // `import:<import id>:<proposal id>`: one import, one row.
+        const importId = change.id.split(':').slice(0, 2).join(':');
+        const fold = folded.get(importId) ?? { at: change.at, by: change.by, name: change.source.name, n: 0 };
+        fold.n += 1;
+        folded.set(importId, fold);
+      });
+      folded.forEach((fold) => rows.push({ at: fold.at, by: fold.by, text: `${fold.n} change${fold.n === 1 ? '' : 's'} from ${fold.name}` }));
+      rows.sort((a, b) => b.at.localeCompare(a.at));
+      importLog.replaceChildren(
+        ...rows.map((entry) => {
+          const row = importRow.content.firstElementChild!.cloneNode(true) as HTMLElement;
+          const [date, user, change] = row.querySelectorAll('td');
+          date.textContent = day(entry.at);
+          user.textContent = entry.by;
+          change.textContent = entry.text;
+          return row;
+        }),
+      );
+    };
+    paintLog();
+    document.addEventListener(CHANGES_EVENT, paintLog);
+  }
+
+  // A KEY FACT EDITED BY HAND IS A CHANGE TOO. firma2-editable-field announces
+  // every commit as firma2:field-save; the row's own label names it.
+  let describedHere = false;
+  if (slug) {
+    document.addEventListener('firma2:field-save', (event) => {
+      const { field, value, fromSet } = (event as CustomEvent<{ field?: string; value?: string; fromSet?: boolean }>).detail ?? {};
+      // A value set from outside (a restored draft, an import) is not a hand
+      // edit; the import logs its own changes with their document.
+      if (!field || fromSet) return;
+      // The description announces every settled keystroke run; one row per
+      // page view says it was edited.
+      if (field === 'projectDescription') {
+        if (describedHere) return;
+        describedHere = true;
+      }
+      const row = (event.target as Element | null)?.closest?.('[data-editable-field]');
+      const label = row?.querySelector('.firma2-editable-field__label')?.textContent?.trim() || (field === 'projectDescription' ? 'Description' : field);
+      const long = field === 'projectDescription' || (value ?? '').length > 80;
+      recordChange(slug, {
+        subject: field.startsWith('field:') || field.startsWith('program:') ? 'custom-field' : 'field',
+        key: field,
+        action: 'set',
+        to: value,
+        summary: long || !value ? `${label} edited` : `${label} set to ${value}`,
+      });
+    });
   }
 
   // SHARE SHEET FIRST, CLIPBOARD SECOND. Where the platform offers a real

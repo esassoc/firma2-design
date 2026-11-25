@@ -4,8 +4,12 @@
 //
 // AN ENTRY IS THE MODEL'S ATOM: one figure, for one measure on one project in
 // one period, qualified by the reporter's answers to the measure's
-// subcategory schemas. The system-answered splits are NOT here — the whole
-// point of a system schema is that no one types it.
+// breakdowns — at most one option per question, and none is legitimate.
+//
+// EVERY WRITE IS LOGGED (src/lib/changes.ts, the record's one change log):
+// filing an entry is a create, removing one a delete. A caller that rewrites
+// entries as one act — a corrected amount, a re-keyed answer — passes
+// `{ log: false }` and logs the act itself, once.
 //
 // THE MEASURE KEY. Added measures reference the catalog by slug. A project's
 // SEED measures are authored display data with no catalog id, so they key by
@@ -19,8 +23,17 @@ export interface EntryDraft {
   measureKey: string;
   year: number;
   amount: number;
-  /** Subcategory answers, keyed by schema name. Only what was answered. */
+  /** Breakdown answers, keyed by the question. Only what was answered. */
   answers: Record<string, string>;
+}
+
+import { periodName } from '../data/firma2-performance-measures';
+import { numberText, recordChange } from './changes';
+import { getMeasure } from '../data/firma2-performance-measures';
+
+/** `{ log: false }` when the caller logs the act itself. */
+interface WriteOptions {
+  log?: boolean;
 }
 
 const KEY_VERSION = 'v1';
@@ -64,6 +77,7 @@ export const readEntries = (projectSlug: string): EntryDraft[] => {
 export const addEntry = (
   projectSlug: string,
   entry: Omit<EntryDraft, 'id'>,
+  { log = true }: WriteOptions = {},
 ): EntryDraft | null => {
   const store = storage();
   if (!store) return null;
@@ -74,19 +88,50 @@ export const addEntry = (
     while (taken.has(`entry-${n}`)) n += 1;
     const full: EntryDraft = { ...entry, id: `entry-${n}` };
     store.setItem(keyFor(projectSlug), JSON.stringify([...existing, full]));
+    if (log) logEntry(projectSlug, full, null, full.amount);
     return full;
   } catch {
     return null;
   }
 };
 
-export const removeEntry = (projectSlug: string, id: string): void => {
+export const removeEntry = (projectSlug: string, id: string, { log = true }: WriteOptions = {}): void => {
   const store = storage();
   if (!store) return;
   try {
-    const rest = readEntries(projectSlug).filter((e) => e.id !== id);
-    store.setItem(keyFor(projectSlug), JSON.stringify(rest));
+    const all = readEntries(projectSlug);
+    const gone = all.find((e) => e.id === id);
+    store.setItem(keyFor(projectSlug), JSON.stringify(all.filter((e) => e.id !== id)));
+    if (log && gone) logEntry(projectSlug, gone, gone.amount, null);
   } catch {
     // A blocked store also had nothing to remove.
   }
+};
+
+/** A measure's name from an entry's key: a catalog slug, or `name:<display name>` for a seed row. */
+export const measureNameOf = (measureKey: string): string =>
+  measureKey.startsWith('name:') ? measureKey.slice(5) : getMeasure(measureKey)?.name ?? measureKey;
+
+/**
+ * One measure-entry change in the log: filed (no value before), removed (none
+ * after) or changed.
+ */
+export const logEntry = (
+  projectSlug: string,
+  entry: Pick<EntryDraft, 'measureKey' | 'year'>,
+  oldValue: number | null,
+  newValue: number | null,
+): void => {
+  const what = `${measureNameOf(entry.measureKey)}, ${periodName(entry.year)}`;
+  const from = numberText(oldValue);
+  const to = numberText(newValue);
+  if (from === to) return;
+  recordChange(projectSlug, {
+    subject: 'measure-entry',
+    key: `${entry.measureKey}:${periodName(entry.year)}`,
+    action: from === undefined ? 'add' : to === undefined ? 'remove' : 'set',
+    from,
+    to,
+    summary: from === undefined ? `Reported value filed: ${what}` : to === undefined ? `Reported value removed: ${what}` : `Reported value changed from ${from} to ${to}: ${what}`,
+  });
 };

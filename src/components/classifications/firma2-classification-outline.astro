@@ -1,0 +1,353 @@
+---
+// firma2-classification-outline — the Outline view of the Classifications
+// index: the whole classification tree as ONE table. A row per group and per
+// classification, indented by depth; projects and funders in columns that
+// compare down the page; and one ring per performance measure, so a row shows
+// how many measures a classification has and how far each is.
+//
+// GROUPS FOLD THEIR BRANCH; A CLASSIFICATION OPENS TO ITS MEASURES, each with
+// its ring and its figure ("14.5 of 30 miles goal"). Groups start open and
+// measures start closed: the first read is the tree and its counts.
+//
+// EVERY COLUMN MEANS ONE THING ON EVERY ROW (user, 2026-11-23: the first
+// headers did not — "Classification" headed group rows too, and "Performance
+// measures" held a count of classifications on a group's row and unnamed
+// rings on a classification's). Name; Projects; Funders; Performance
+// measures, a count; Progress, one ring per measure. A group's row counts
+// what is beneath it, each project and each measure once, and says how many
+// classifications that is beside its name. PROGRESS IS BLANK ON A GROUP:
+// targets are set on classifications, so a group has no ring to draw without
+// the page inventing one.
+//
+// A RING NAMES ITSELF ON HOVER (user, 2026-11-23): a bcn-tooltip under it
+// with the measure's name on one line and its figure on the next — "Large
+// Wood Placement" over "14.5 of 30 miles goal". Not esa-tooltip: the rings are the table's last column, and
+// the lego's bubble was cut at the table's edge (see bcn-tooltip). The same
+// two facts are the row's opened measure lines, so nothing is reachable by
+// hover alone; `labelled`, because the ring's own accessible name says them.
+//
+// Chosen 2026-11-23 from four directions (.scratch/classifications/spec.md,
+// decision 6), with firma2-classification-browse as its other view.
+//
+// FAKED: drawn from the build's data. Groups and classifications edited in
+// Workspace settings in this browser do not show here.
+//
+// bcn-lego-checked: a plain <table> (no esa- table lego exists;
+// firma2-settings-table's and firma2-classification-measures' finding, and an
+// AG Grid has no tree rows in the community build), esa-button the chevrons,
+// bcn-progress-ring every ring, firma2-project-peek-button the side-panel
+// door. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2ClassMark from './firma2-class-mark.astro';
+import BcnProgressRing from '../shared/bcn-progress-ring.astro';
+import Firma2ProjectPeekButton from '../projects/firma2-project-peek-button.astro';
+import { tree } from '../../data/firma2-classification-tree';
+import type { ClassificationNode, GroupNode } from '../../data/firma2-classification-tree';
+
+type Row =
+  | { kind: 'group'; node: GroupNode; depth: number; parents: string[] }
+  | { kind: 'classification'; node: ClassificationNode; depth: number; parents: string[] };
+
+// Tree order: a group, its own classifications, then the groups inside it.
+const rowsOf = (g: GroupNode, parents: string[]): Row[] => [
+  { kind: 'group', node: g, depth: g.depth, parents },
+  ...g.classifications.map((c): Row => ({ kind: 'classification', node: c, depth: g.depth + 1, parents: [...parents, g.slug] })),
+  ...g.groups.flatMap((child) => rowsOf(child, [...parents, g.slug])),
+];
+const rows = tree().flatMap((g) => rowsOf(g, []));
+---
+<div class="firma2-classification-outline" data-firma2-classification-outline>
+  <div class="firma2-classification-outline__scroll">
+    <table class="firma2-classification-outline__table">
+      <caption class="visually-hidden">Classifications, by group</caption>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col" class="firma2-classification-outline__num">Projects</th>
+          <th scope="col" class="firma2-classification-outline__num">Funders</th>
+          <th scope="col" class="firma2-classification-outline__num">Performance measures</th>
+          <th scope="col">Progress</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) =>
+          row.kind === 'group' ? (
+            <tr class="firma2-classification-outline__group" data-row={`g:${row.node.slug}`} data-parents={row.parents.join(' ')}>
+              <th scope="row" style={`--depth:${row.depth}`}>
+                <span class="firma2-classification-outline__name">
+                  <span class="firma2-classification-outline__toggle" data-toggle>
+                    <EsaButton variant="chrome" iconOnly icon="chevron-down" size="sm" aria-label={`Hide ${row.node.name}`} aria-expanded="true">Hide</EsaButton>
+                  </span>
+                  <Firma2ClassMark color={row.node.color} paths={row.node.iconPaths} />
+                  <a class="firma2-classification-outline__link" href={row.node.href}>{row.node.name}</a>
+                  <span class="firma2-classification-outline__meta firma2-classification-outline__count">{`${row.node.total} ${row.node.total === 1 ? 'classification' : 'classifications'}`}</span>
+                </span>
+              </th>
+              <td class="firma2-classification-outline__num">{row.node.projects}</td>
+              <td class="firma2-classification-outline__num">{row.node.funders}</td>
+              <td class="firma2-classification-outline__num">{row.node.measureCount}</td>
+              <td></td>
+            </tr>
+          ) : (
+            <Fragment>
+              <tr class="firma2-classification-outline__item" data-row={`c:${row.node.slug}`} data-parents={row.parents.join(' ')} data-peek-row>
+                <th scope="row" style={`--depth:${row.depth}`}>
+                  <span class="firma2-classification-outline__name">
+                    <span class="firma2-classification-outline__toggle" data-toggle>
+                      {row.node.measures.length > 0 && (
+                        <EsaButton variant="chrome" iconOnly icon="chevron-down" size="sm" aria-label={`Show measures for ${row.node.name}`} aria-expanded="false">Show measures</EsaButton>
+                      )}
+                    </span>
+                    <Firma2ClassMark color={row.node.color} paths={row.node.iconPaths} />
+                    <span class="firma2-peek-pair">
+                      <a class="firma2-classification-outline__link" href={row.node.href}>{row.node.name}</a>
+                      <Firma2ProjectPeekButton slug={row.node.slug} name={row.node.name} kind="classification" />
+                    </span>
+                  </span>
+                </th>
+                <td class="firma2-classification-outline__num">{row.node.projects}</td>
+                <td class="firma2-classification-outline__num">{row.node.funders}</td>
+                <td class="firma2-classification-outline__num">{row.node.measures.length}</td>
+                <td>
+                  {row.node.measures.length > 0 && (
+                    <ul class="firma2-classification-outline__rings" aria-label={`${row.node.measures.length} performance measures`}>
+                      {row.node.measures.map((m) => (
+                        <li>
+                          <bcn-tooltip text={`${m.name}\n${m.total}`} labelled>
+                            <BcnProgressRing value={m.percent} secondary={m.plannedPercent} size="xs" decorative={false} label={`${m.name}: ${m.total}`} />
+                          </bcn-tooltip>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </td>
+              </tr>
+              {row.node.measures.map((m) => (
+                <tr class="firma2-classification-outline__measure" data-measure-of={row.node.slug} data-parents={row.parents.join(' ')} hidden>
+                  <th scope="row" style={`--depth:${row.depth + 1}`}>
+                    <span class="firma2-classification-outline__name">
+                      <BcnProgressRing value={m.percent} secondary={m.plannedPercent} size="xs" />
+                      <span>{m.name}</span>
+                    </span>
+                  </th>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td class="firma2-classification-outline__figure">{m.total}</td>
+                </tr>
+              ))}
+            </Fragment>
+          ),
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .firma2-classification-outline__scroll {
+    position: relative;
+    overflow-x: auto;
+  }
+
+  .firma2-classification-outline__table {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-size: var(--typography-body-md-font-size);
+    line-height: var(--typography-body-md-line-height);
+  }
+
+  .firma2-classification-outline__table :global(tr[hidden]) {
+    display: none;
+  }
+
+  .firma2-classification-outline__table :global(th),
+  .firma2-classification-outline__table :global(td) {
+    padding-block: var(--spacing-200, 0.5rem);
+    padding-inline: var(--spacing-300, 0.75rem);
+    text-align: start;
+    vertical-align: middle;
+    font-weight: inherit;
+  }
+
+  .firma2-classification-outline__table thead :global(th) {
+    color: var(--color-content-default-secondary, #646464);
+    font-weight: var(--font-weight-semibold, 600);
+    white-space: nowrap;
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default, #cecece);
+  }
+
+  .firma2-classification-outline__table tbody :global(tr) > :global(*) {
+    border-block-end: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
+  }
+
+  /* One step in per level; the first column's own padding is the base. */
+  .firma2-classification-outline__table tbody :global(th) {
+    padding-inline-start: calc(var(--depth, 0) * var(--spacing-600, 2rem));
+    min-inline-size: 18rem;
+  }
+
+  .firma2-classification-outline__name {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-200, 0.5rem);
+    min-inline-size: 0;
+  }
+
+  /* The chevron's column holds its width on rows with nothing to open, so
+     names at one depth start on one line. */
+  .firma2-classification-outline__toggle {
+    flex: none;
+    inline-size: 28px;
+    block-size: 28px;
+    line-height: 0;
+  }
+
+  .firma2-classification-outline__toggle :global(.esa-button__native) {
+    block-size: 28px;
+    inline-size: 28px;
+    padding: 0;
+  }
+
+  @media (pointer: coarse) {
+    .firma2-classification-outline__toggle :global(.esa-button__native) {
+      position: relative;
+    }
+    .firma2-classification-outline__toggle :global(.esa-button__native)::before {
+      content: '';
+      position: absolute;
+      inset: -8px;
+    }
+  }
+
+  .firma2-classification-outline__toggle :global([aria-expanded='true'] svg) {
+    transform: rotate(180deg);
+  }
+
+  .firma2-classification-outline__swatch {
+    flex: none;
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  .firma2-classification-outline__link {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-classification-outline__link:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .firma2-classification-outline__group :global(th) {
+    font-weight: var(--font-weight-semibold, 600);
+  }
+
+  .firma2-classification-outline__group > :global(*) {
+    background: var(--color-background-elevation-sunken, #f4f4f4);
+  }
+
+  /* Written at the cells' own weight, so it outranks their text-align. */
+  .firma2-classification-outline__table :global(th.firma2-classification-outline__num),
+  .firma2-classification-outline__table :global(td.firma2-classification-outline__num) {
+    inline-size: 1%;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* A two-word head over a one- or two-digit count wraps, so the column is
+     the width of its longer word and the name keeps the rest. */
+  .firma2-classification-outline__table thead :global(th.firma2-classification-outline__num) {
+    white-space: normal;
+    min-inline-size: 6.5rem;
+  }
+
+  /* ON A PHONE THE TABLE SCROLLS SIDEWAYS AND THE NAME STAYS PUT, as the
+     measures table on a classification's page pins its first column. */
+  @media (max-width: 45rem) {
+    .firma2-classification-outline__table :global(tr) > :global(:first-child) {
+      position: sticky;
+      inset-inline-start: 0;
+      z-index: 1;
+      min-inline-size: 11rem;
+      max-inline-size: 11rem;
+      background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
+    }
+
+    .firma2-classification-outline__group > :global(:first-child) {
+      background: var(--color-background-elevation-sunken, #f4f4f4);
+    }
+  }
+
+  .firma2-classification-outline__meta,
+  .firma2-classification-outline__measure > :global(*) {
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* Regular weight beside the group's semibold name: a count, not a title. */
+  .firma2-classification-outline__count {
+    font-weight: var(--font-weight-regular, 400);
+    white-space: nowrap;
+  }
+
+  .firma2-classification-outline__figure {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Room for eight rings on one line, so a row is one line tall for all but
+     the classifications with the most measures. The name takes the rest. */
+  .firma2-classification-outline__rings {
+    min-inline-size: 16rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-200, 0.5rem);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-classification-outline__rings :global(li) {
+    display: flex;
+  }
+</style>
+
+<script>
+  import '../shared/bcn-tooltip';
+
+  // Groups fold their whole branch; a classification unfolds its measures.
+  document.querySelectorAll<HTMLElement>('[data-firma2-classification-outline]').forEach((root) => {
+    const rows = [...root.querySelectorAll<HTMLTableRowElement>('tbody tr')];
+    const closed = new Set<string>();
+    const open = new Set<string>();
+
+    const paint = (): void => {
+      for (const tr of rows) {
+        const parents = (tr.dataset.parents ?? '').split(' ').filter(Boolean);
+        const folded = parents.some((p) => closed.has(p));
+        const of = tr.dataset.measureOf;
+        tr.hidden = folded || (of != null && !open.has(of));
+      }
+    };
+
+    root.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-toggle] button, [data-toggle] [aria-expanded]');
+      const tr = button?.closest<HTMLTableRowElement>('tr');
+      if (!button || !tr) return;
+      const [kind, slug] = (tr.dataset.row ?? '').split(':');
+      const name = tr.querySelector('.firma2-classification-outline__link')?.textContent ?? '';
+      const set = kind === 'g' ? closed : open;
+      if (set.has(slug)) set.delete(slug);
+      else set.add(slug);
+      const expanded = kind === 'g' ? !closed.has(slug) : open.has(slug);
+      const toggle = tr.querySelector<HTMLElement>('[data-toggle] [aria-expanded]');
+      toggle?.setAttribute('aria-expanded', String(expanded));
+      toggle?.setAttribute('aria-label', kind === 'g' ? `${expanded ? 'Hide' : 'Show'} ${name}` : `${expanded ? 'Hide' : 'Show'} measures for ${name}`);
+      paint();
+    });
+  });
+</script>

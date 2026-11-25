@@ -17,6 +17,8 @@
 // withBase() at render, the same contract src/data/prototypes.ts uses.
 
 import { projects } from './firma2-projects';
+import { CURRENT_USER_ORGANIZATIONS, organizationSlug } from './firma2-directory';
+import { organizationNavKey, organizationPageHref } from './firma2-organization-pages';
 
 export interface Firma2NavItem {
   /** Stable id, matched against AppLayout's `active` prop. */
@@ -28,35 +30,205 @@ export interface Firma2NavItem {
   icon: string;
   /** Section heading this item sits under. Items are grouped in array order. */
   group?: string;
+  /**
+   * The label names a renameable noun (src/data/firma2-vocabulary.ts), so the
+   * tenant's vocabulary rewrites it. Opt-in: "Progress Dashboard" names a feature,
+   * not the record, and stays as written.
+   */
+  aliasable?: boolean;
+  /** Sub-rows: the item becomes an expandable parent instead of a link. */
+  children?: Firma2NavItem[];
 }
 
-// Four groups, in reading order: find something, work the records, read the
-// results, administer the tenant.
+// In reading order: an unheaded block of starting points (your projects, the
+// map), then the whole workspace, then the reader's own organizations. There
+// is no Manage group: administering the tenant (users, organizations, GIS subscriptions) lives in Workspace settings,
+// the mode below, so the app rail carries only what every reader comes to do.
 //
-// Organizations and Funding Sources deliberately appear TWICE — once under Track
-// as the browse index every user sees, once under Manage as the admin surface,
-// which is how ProjectFirma itself splits them. The group heading alone was not
-// enough to tell two identical words apart at a glance, so the Manage entries
-// carry the verb in their label.
+// WORKSPACE is everything shared across the tenant — its records and its
+// results in one list, because a reader looking for Progress Dashboard should not
+// have to know it was filed under "Report" and Funding Sources under "Track".
 //
 // Home is not a row: the wordmark at the top of the rail is already a link to
 // `/`, and a second one below it would be two affordances for one destination.
+// (An organization's Home, below, is a different place: that organization's.)
 export const navItems: Firma2NavItem[] = [
-  { key: 'project-finder', label: 'Project Finder', icon: 'search', group: 'Explore' },
-  { key: 'map', label: 'Map', icon: 'map-pin', group: 'Explore' },
+  // UNGROUPED, AT THE TOP: the reader's own starting points need no heading.
+  // Map is the editor's landing page (hackathon team 5's My Projects, renamed
+  // 2026-11-02 when its map-based view replaced the portfolio map): where
+  // someone who updates projects starts; Projects below is the portfolio.
+  { key: 'map', label: 'Map', href: '/prototypes/map', icon: 'map' },
 
-  { key: 'projects', label: 'Projects', href: '/prototypes/projects', icon: 'folder', group: 'Track' },
-  { key: 'organizations', label: 'Organizations', icon: 'users', group: 'Track' },
-  { key: 'funding-sources', label: 'Funding Sources', icon: 'database', group: 'Track' },
+  { key: 'projects', label: 'Projects', href: '/prototypes/projects', icon: 'folder', group: 'Workspace', aliasable: true },
+  // No index route yet — only one page per classification — so the row is inert.
+  { key: 'classifications', label: 'Classifications', href: '/prototypes/classifications', icon: 'list', group: 'Workspace', aliasable: true },
+  // The same reading for places: what is happening in each watershed, habitat
+  // area or district (.scratch/geospatial-areas/spec.md, decision 1).
+  { key: 'geospatial-areas', label: 'Geospatial areas', href: '/prototypes/geospatial-areas', icon: 'map', group: 'Workspace' },
+  // READ HERE, SET UP IN SETTINGS (user, 2026-10-09): the reading index of
+  // performance measures, beside Classifications — the same two-page split
+  // that entity has. The catalog stays in Workspace settings › Projects.
+  { key: 'performance-measures', label: 'Performance measures', href: '/prototypes/performance-measures', icon: 'trending-up', group: 'Workspace', aliasable: true },
+  // The Progress Dashboard left this group on 2026-11-12 for a Dashboards group
+  // of its own (src/data/firma2-pages.ts, MAIN_DASHBOARD), where the dashboards
+  // an administrator adds sit beside it.
+  // THE ADMINISTRATOR'S SWEEP (user, 2026-10-09): the queue of public pages
+  // that are behind — each organization's Review page, at workspace scope.
+  // The workspace Updates feed was removed on 2026-11-24 (user: not needed);
+  // each organization keeps its own.
+  { key: 'review', label: 'Review', href: '/prototypes/review', icon: 'circle-check', group: 'Workspace' },
+  // MORE: the workspace's less-visited lists, one expandable row so the
+  // everyday rows above stay short. All four have a list and a page per record
+  // since 2026-11-24 (Funding Sources is built in a parallel pass). Performance measures left
+  // More on 2026-10-08 and returned as a Workspace row on 2026-10-09 (above).
+  {
+    key: 'more',
+    label: 'More',
+    icon: 'ellipsis',
+    group: 'Workspace',
+    children: [
+      { key: 'organizations', label: 'Organizations', href: '/prototypes/organizations', icon: 'users', aliasable: true },
+      { key: 'funding-sources', label: 'Funding Sources', href: '/prototypes/funding-sources', icon: 'database', aliasable: true },
+      { key: 'members', label: 'Members', href: '/prototypes/members', icon: 'user' },
+      { key: 'access-requests', label: 'Access Requests', href: '/prototypes/access-requests', icon: 'circle-check' },
+      { key: 'support-requests', label: 'Support Requests', href: '/prototypes/support-requests', icon: 'circle-question-mark' },
+    ],
+  },
+];
 
-  { key: 'progress-dashboard', label: 'Progress Dashboard', icon: 'layout-dashboard', group: 'Report' },
-  { key: 'performance-measures', label: 'Performance Measures', href: '/prototypes/performance-measures', icon: 'trending-up', group: 'Report' },
-  { key: 'funding-status', label: 'Funding Status', icon: 'credit-card', group: 'Report' },
+/**
+ * The app rail as one page sees it. When the current page lives inside a
+ * parent row (More), its row steps out and sits just above that parent, in
+ * the parent's group: a closed parent would otherwise hide where you are.
+ */
+export const navItemsFor = (active?: string): Firma2NavItem[] =>
+  navItems.flatMap((item) => {
+    const current = item.children?.find((child) => child.key === active);
+    if (!current) return [item];
+    return [
+      { ...current, group: item.group },
+      { ...item, children: item.children!.filter((child) => child !== current) },
+    ];
+  });
 
-  { key: 'users', label: 'Users', icon: 'user', group: 'Manage' },
-  { key: 'manage-organizations', label: 'Manage Organizations', icon: 'users', group: 'Manage' },
-  { key: 'manage-funding-sources', label: 'Manage Funding Sources', icon: 'database', group: 'Manage' },
-  { key: 'custom-pages', label: 'Custom Pages', icon: 'file-text', group: 'Manage' },
+/** The group heading over the reader's organizations, singular for one. */
+export const YOUR_ORGANIZATIONS_GROUP =
+  CURRENT_USER_ORGANIZATIONS.length === 1 ? 'Your organization' : 'Your organizations';
+
+// YOUR ORGANIZATIONS: one expandable row per organization the reader belongs
+// to, each holding the same pages scoped to it
+// (src/pages/prototypes/organizations/[organization]/). Keys carry the slug, and
+// each page marks itself with organizationNavKey() so its row shows current.
+export const organizationNavItems: Firma2NavItem[] = CURRENT_USER_ORGANIZATIONS.map((name) => {
+  const slug = organizationSlug(name);
+  return {
+    key: `org-${slug}`,
+    label: name,
+    icon: 'building-2',
+    group: YOUR_ORGANIZATIONS_GROUP,
+    children: [
+      { key: organizationNavKey(slug, 'home'), label: 'Home', href: organizationPageHref(slug, 'home'), icon: 'home' },
+      { key: organizationNavKey(slug, 'projects'), label: 'Projects', href: organizationPageHref(slug, 'projects'), icon: 'folder', aliasable: true },
+      { key: organizationNavKey(slug, 'review'), label: 'Review', href: organizationPageHref(slug, 'review'), icon: 'circle-check' },
+      { key: organizationNavKey(slug, 'reports'), label: 'Reports', href: organizationPageHref(slug, 'reports'), icon: 'file-text' },
+    ],
+  };
+});
+
+// WORKSPACE SETTINGS REPLACES THE RAIL rather than sitting on a page under it.
+// Settings is a mode, not a destination: once you are in it, the app's
+// navigation is noise and the settings sections are the navigation. Each
+// section is its own page so it can be bookmarked and linked, and the groups
+// are the objects being configured, in the order a new tenant sets them up.
+//
+// The section list is ProjectFirma's own tenant configuration (Tenant
+// Configuration, project stages, custom attributes, classification systems,
+// organization types, field definitions, roles), regrouped by object. Unbuilt
+// sections carry no href, same contract as navItems.
+//
+// "Back to app" is the first row and ungrouped: leaving the mode is the one
+// thing every reader of this rail can want, wherever they are in it.
+export const workspaceSettingsNavItems: Firma2NavItem[] = [
+  { key: 'back-to-app', label: 'Back to app', href: '/prototypes/projects', icon: 'arrow-left' },
+
+  // PERSONAL FIRST: the one section every account can use. The four pages were one Settings screen;
+  // split the way Linear splits its account settings, so each is linkable and
+  // Security and access had somewhere to go. Routes live under /prototypes/settings
+  // because these are one person's settings, not the workspace's.
+  { key: 'me-preferences', label: 'Preferences', href: '/prototypes/settings/preferences', icon: 'star', group: 'Personal' },
+  { key: 'me-profile', label: 'Profile', href: '/prototypes/settings/profile', icon: 'circle-user', group: 'Personal' },
+  { key: 'me-notifications', label: 'Notifications', href: '/prototypes/settings/notifications', icon: 'bell', group: 'Personal' },
+  { key: 'me-security', label: 'Security and access', href: '/prototypes/settings/security', icon: 'circle-check', group: 'Personal' },
+
+  // "Look and language", not "Workspace": the workspace's own record moved to
+  // Administration › Workspace, and two "Workspace" headings in one rail would
+  // make a reader guess which one holds the name. Branding is the look; labels
+  // and definitions are the language.
+  { key: 'ws-branding', label: 'Branding', href: '/prototypes/workspace-settings/branding', icon: 'eye', group: 'Look and language' },
+  // The public site's own settings: five parts under one row, which stays active on each.
+  { key: 'ws-public-site', label: 'Public site', href: '/prototypes/workspace-settings/public-site/home', icon: 'globe', group: 'Look and language' },
+  { key: 'ws-labels', label: 'Terminology', href: '/prototypes/workspace-settings/labels', icon: 'file-text', group: 'Look and language' },
+  // Where everyone's app menu starts; each person can rearrange their own (2026-10-19).
+  { key: 'ws-menu-order', label: 'Menu order', href: '/prototypes/workspace-settings/menu-order', icon: 'list-ordered', group: 'Look and language' },
+
+  { key: 'ws-project-types', label: 'Project types', href: '/prototypes/workspace-settings/project-types', icon: 'folder', group: 'Projects' },
+  { key: 'ws-classifications', label: 'Classifications', href: '/prototypes/workspace-settings/classifications', icon: 'folder', group: 'Projects' },
+  // Performance measures moved here from the app rail's More (2026-10-08):
+  // the catalog is configured by an administrator, not visited by readers —
+  // projects and classifications are where a measure's results are read.
+  // After Classifications because a goal carries its performance measures.
+  { key: 'ws-performance-measures', label: 'Performance measures', href: '/prototypes/workspace-settings/performance-measures', icon: 'trending-up', group: 'Projects', aliasable: true },
+  { key: 'ws-stages', label: 'Stages', href: '/prototypes/workspace-settings/stages', icon: 'activity', group: 'Projects' },
+  { key: 'ws-custom-fields', label: 'Custom fields', href: '/prototypes/workspace-settings/custom-fields', icon: 'pencil', group: 'Projects' },
+  // How a new project starts: the form every proposal fills (2026-10-19).
+  { key: 'ws-intake-form', label: 'Intake form', href: '/prototypes/workspace-settings/intake-form', icon: 'file-plus', group: 'Projects' },
+  // The calls new projects are entered under; the intake form offers the active ones (2026-11-24).
+  { key: 'ws-solicitations', label: 'Solicitations', href: '/prototypes/workspace-settings/solicitations', icon: 'file-text', group: 'Projects' },
+
+  // MAPS: where projects come from, and what every map sits against. A
+  // workspace's GIS arrangement, set once — hackathon team 2.
+  { key: 'ws-project-source', label: 'Project source', href: '/prototypes/workspace-settings/project-source', icon: 'database', group: 'Maps', aliasable: true },
+  { key: 'ws-gis-subscriptions', label: 'GIS subscriptions', href: '/prototypes/workspace-settings/gis-subscriptions', icon: 'rotate-ccw', group: 'Maps' },
+  { key: 'ws-gis-sync', label: 'GIS sync', href: '/prototypes/workspace-settings/gis-sync', icon: 'rotate-ccw', group: 'Maps' },
+  { key: 'ws-map-layers', label: 'Map layers', href: '/prototypes/workspace-settings/map-layers', icon: 'map-pin', group: 'Maps' },
+  { key: 'ws-geospatial-areas', label: 'Geospatial areas', href: '/prototypes/workspace-settings/geospatial-areas', icon: 'map', group: 'Maps' },
+
+  { key: 'ws-funding-fields', label: 'Funding source fields', href: '/prototypes/workspace-settings/funding-source-fields', icon: 'database', group: 'Funding' },
+
+
+  // ADMINISTRATION is the workspace's own records rather than its vocabulary:
+  // what it is called, who belongs to it, and the data going in and out. Last,
+  // the way Linear orders it — a new tenant configures its lists first and
+  // invites people once there is something to show them. Workspace is the page
+  // that was "General"; its route keeps the old slug so existing links hold.
+  { key: 'ws-workspace', label: 'Workspace', href: '/prototypes/workspace-settings/general', icon: 'settings', group: 'Administration' },
+  { key: 'ws-organizations', label: 'Organizations', href: '/prototypes/workspace-settings/organizations', icon: 'users', group: 'Administration', aliasable: true },
+  { key: 'ws-users', label: 'Users', href: '/prototypes/workspace-settings/users', icon: 'user', group: 'Administration' },
+  { key: 'ws-security', label: 'Security', href: '/prototypes/workspace-settings/security', icon: 'shield', group: 'Administration' },
+  { key: 'ws-custom-pages', label: 'Custom pages', href: '/prototypes/workspace-settings/custom-pages', icon: 'file-text', group: 'Administration' },
+  { key: 'ws-import-export', label: 'Import and export', href: '/prototypes/workspace-settings/import-export', icon: 'upload', group: 'Administration' },
+
+  // The index of the organization's settings pages (General, Members, …) and
+  // the way out of it. Its sub-pages keep this row active.
+  { key: 'ws-organization-settings', label: 'Settings', href: '/prototypes/workspace-settings/organization-settings', icon: 'settings', group: 'Your organization' },
+];
+
+/** Where the top bar's home glyph goes: the rail's first row. */
+export const HOME_HREF = '/prototypes/map';
+
+/** Where Settings opens: the first row of its rail. */
+export const SETTINGS_HOME = '/prototypes/settings/preferences';
+
+/** The keyboard shortcut that opens Settings, as the omnibox shows it. */
+export const SETTINGS_SHORTCUT_HINT = 'Shortcut: G then S';
+
+/** One organization's settings pages, listed on its Organization settings index. */
+export const organizationSettingsPages = [
+  { label: 'General', href: '/prototypes/workspace-settings/organization-settings/general' },
+  { label: 'Members', href: '/prototypes/workspace-settings/organization-settings/members' },
+  { label: 'Access and permissions', href: '/prototypes/workspace-settings/organization-settings/access' },
+  { label: 'Notifications', href: '/prototypes/workspace-settings/organization-settings/notifications' },
+  { label: 'Review schedule', href: '/prototypes/workspace-settings/organization-settings/review' },
 ];
 
 export interface Firma2SearchEntry {
@@ -83,7 +255,9 @@ const projectsPerOrg = projects.reduce<Record<string, number>>((acc, p) => {
  * rather than on a 404. Re-point these at the detail route when it ships.
  */
 export const searchIndex: Firma2SearchEntry[] = [
+  // Rows inside a parent (More) are pages too; they take the parent's group.
   ...navItems
+    .flatMap((item) => [item, ...(item.children ?? []).map((child) => ({ ...child, group: item.group }))])
     .filter((item) => item.href)
     .map((item) => ({
       id: item.href!,
@@ -91,6 +265,43 @@ export const searchIndex: Firma2SearchEntry[] = [
       subtitle: item.group,
       category: 'Pages',
     })),
+  // An organization's pages share their labels across organizations, so the
+  // organization rides as the subtitle — "Reports" alone would not say whose.
+  ...organizationNavItems.flatMap((org) =>
+    (org.children ?? []).map((page) => ({
+      id: page.href!,
+      title: page.label,
+      subtitle: org.label,
+      category: 'Pages',
+    })),
+  ),
+  // SETTINGS IS FINDABLE BY NAME. The omnibox matches title and subtitle, never
+  // category, so a reader typing "settings" found nothing but the one row that
+  // happened to be called it. Every settings page now carries its place in the
+  // rail as its subtitle — "Settings › Projects" — which both answers that query
+  // and tells "Stages" apart from a page in the app. Back to app is a way out of
+  // the settings rail, not a destination.
+  { id: SETTINGS_HOME, title: 'Settings', subtitle: SETTINGS_SHORTCUT_HINT, category: 'Settings' },
+  // The changelog has no rail row; Help's footer and search are its doors.
+  { id: '/prototypes/changelog', title: 'What’s new', subtitle: 'Changelog', category: 'Pages' },
+  ...workspaceSettingsNavItems
+    .filter((item) => item.href && item.group)
+    .map((item) => ({
+      id: item.href!,
+      // The organization's index is "Settings" in its rail group; alone in a
+      // result list it would read as the whole of Settings.
+      title: item.key === 'ws-organization-settings' ? 'Organization settings' : item.label,
+      subtitle: `Settings › ${item.group}`,
+      category: 'Settings',
+    })),
+  // The organization's own pages hang off its index, not the rail, so they are
+  // listed here by hand.
+  ...organizationSettingsPages.map((page) => ({
+    id: page.href,
+    title: page.label,
+    subtitle: 'Settings › Organization settings',
+    category: 'Settings',
+  })),
   ...projects.map((p) => ({
     id: '/prototypes/projects',
     title: p.projectName,

@@ -1,0 +1,89 @@
+---
+// firma2-inherited-access — the one sentence before a list of people (or a set
+// of who-can settings) that says who ELSE has access, and why.
+//
+// THE QUESTION IT ANSWERS: "this list doesn't show everyone who can get in —
+// who else can, and through what?" A members table lists members; it cannot
+// show the administrators who manage every organization without belonging to
+// it, or say that funding a project gives no edit rights. Readers took the list
+// for the whole answer. FieldDoc's share dialog taught it: it names the
+// organization, workspace and program whose members can see a record, before
+// it lists the people.
+//
+// WHO READS IT. An organization's manager deciding whether removing someone
+// actually cuts them off; an administrator on Users wondering what a role
+// reaches; a Viewer on a project asking why they can't edit. The hardest is the
+// last — they know no vocabulary — so the project sentence names roles and the
+// lead organization, never people (requesters-never-see-managers).
+//
+// EVERY CLAIM IS docs/roles-and-permissions.md, derived from the directory:
+//   - Administrators count as managers of every organization and edit every
+//     project ("Rules that never change"; "Roles").
+//   - Contributors edit the projects their organizations LEAD; funding gives no
+//     edit rights ("Roles", Contributor row).
+//   - Viewers read published values; an organizationless Viewer sees exactly
+//     what the public sees ("The model in one paragraph").
+//   - Managers can always do the four organization permissions, whatever the
+//     setting ("Organization: … Access and permissions").
+//   - Who SEES a project follows its lead organization's visibility (Access ›
+//     "Who can see this organization and its projects").
+// Counts come from the directory, so a sentence can't promise a project the
+// organization doesn't lead.
+//
+// WHAT WAS CUT. A sentence about Viewers' member-only views on the Members page
+// (nobody errs without it), and any list of names — the list below is that.
+//
+// bcn-lego-checked: one <p> at the typography-body-md composite; no esa- lego
+// holds a plain lead sentence (esa-alert-box is a status, wrong weight for a
+// standing fact). Beacon is not cloned on this machine. No <style>.
+import type { Organization } from '../../data/firma2-directory';
+
+type Scope =
+  /** Workspace settings › Users: what each role reaches. */
+  | 'workspace'
+  /** Organization settings › Members: who edits this organization's projects besides its members. */
+  | 'organization'
+  /** Organization settings › Access › permissions: who can always act, whatever is chosen. */
+  | 'organization-permissions'
+  /** A project: who edits it, who sees it. */
+  | 'project';
+
+interface Props {
+  scope: Scope;
+  /** The organization the list belongs to — for a project, its lead organization. */
+  organization?: Organization;
+}
+
+const { scope, organization: org } = Astro.props;
+
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+const sentence = (() => {
+  if (scope === 'workspace') {
+    return 'Administrators edit every project and setting. Contributors edit the projects their organizations lead, and Viewers read published pages.';
+  }
+  if (!org) throw new Error(`firma2-inherited-access: scope "${scope}" needs an organization`);
+  if (scope === 'organization-permissions') {
+    return 'Managers and workspace administrators can always do all four.';
+  }
+  if (scope === 'organization') {
+    const led = org.projectsLed;
+    const funded = org.projectsFunded;
+    const first = led > 0
+      ? `Contributors here edit the ${count(led, 'project')} this organization leads${funded > 0 ? `; funding ${funded} more gives no edit rights` : ''}.`
+      : funded > 0
+        ? 'Funding a project gives this organization’s members no edit rights.'
+        : '';
+    return `${first} Workspace administrators manage this organization too, listed here or not.`.trim();
+  }
+  // project
+  const seen =
+    org.visibility === 'public'
+      ? 'Viewers and the public see its published page.'
+      : org.visibility === 'workspace'
+        ? 'Anyone signed in to this workspace sees its published page.'
+        : `Only ${org.name}’s members and administrators see its published page.`;
+  return `Administrators and ${org.name}’s Contributors can edit this project. ${seen}`;
+})();
+---
+<p class="firma2-inherited-access typography-body-md" data-inherited-access={scope}>{sentence}</p>

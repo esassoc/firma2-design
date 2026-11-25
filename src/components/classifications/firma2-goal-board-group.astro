@@ -1,0 +1,110 @@
+---
+// firma2-goal-board-group — one classification group on the Classifications
+// board (firma2-goal-board): a collapsible carrying the group's name, swatch
+// and stored description, the door to the group's own page, its goals as scan
+// cards, and then the groups inside it — each drawn by this same component, so
+// the board nests as deep as the workspace's groups do (user, 2026-11-23).
+//
+// A GROUP'S OWN GOALS COME FIRST, the groups inside it after, one step in.
+// The swatch is the group's colour, drawn before its name; the lego's summary
+// takes a title string only, so the square is a ::before on it.
+//
+// THE DOOR IS A BUTTON IN THE BODY, not the name: the name is the
+// collapsible's <summary>, which already has a job.
+//
+// The board's script keeps every level in step with this browser's settings
+// edits; the data hooks here are what it writes into.
+//
+// bcn-lego-checked: esa-collapsible is the disclosure, esa-button the door,
+// firma2-goal-card each goal; layout is repel/grid/stack. Beacon is not cloned
+// on this machine.
+import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2GoalCard from './firma2-goal-card.astro';
+import { childGroups, classificationsInGroup } from '../../data/firma2-classifications';
+import type { ClassificationGroup } from '../../data/firma2-classifications';
+import { classificationGroupHref, rollupClassification } from '../../data/firma2-classification-rollup';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  group: ClassificationGroup;
+  /** 0 for the board's outermost level. */
+  depth?: number;
+  /** False where the page has no classification side panel to open. */
+  peek?: boolean;
+}
+
+const { group, depth = 0, peek = true } = Astro.props;
+const rollups = classificationsInGroup(group.slug).map(rollupClassification);
+---
+<section class="firma2-goal-board-group" aria-label={group.name} data-group={group.slug} data-depth={depth} style={`--firma2-group-color:${group.color}`}>
+  <EsaCollapsible title={group.name} open flush>
+    <div class="repel" data-gap="sm">
+      <p class="firma2-goal-board-group__description typography-body-md" data-group-desc>{group.description}</p>
+      <EsaButton variant="secondary" size="md" tag="a" href={withBase(classificationGroupHref(group.slug))} data-group-open>Open group</EsaButton>
+    </div>
+    <div class="firma2-goal-board-group__grid grid" data-gap="lg" data-cards>
+      {rollups.map((rollup) => <Firma2GoalCard rollup={rollup} peek={peek} />)}
+    </div>
+    <div class="firma2-goal-board-group__inside stack" data-gap="sm" data-subgroups>
+      {childGroups(group.slug).map((child) => <Astro.self group={child} depth={depth + 1} peek={peek} />)}
+    </div>
+  </EsaCollapsible>
+</section>
+
+<style>
+  .firma2-goal-board-group[hidden] {
+    display: none;
+  }
+
+  .firma2-goal-board-group__description {
+    margin: 0;
+    max-inline-size: 60ch;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* auto-FILL, not the primitive's auto-fit: a group with one goal keeps a
+     card the width of its neighbours' instead of stretching across the row.
+     20rem holds a measure name of ~28 characters beside its share. */
+  .firma2-goal-board-group__grid {
+    --grid-min: 20rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min), 100%), 1fr));
+  }
+
+  /* Nothing filed directly here, or no groups inside: no room taken. */
+  .firma2-goal-board-group__grid:not(:has(> *)),
+  .firma2-goal-board-group__inside:not(:has(> *)) {
+    display: none;
+  }
+
+  .firma2-goal-board-group__inside {
+    padding-inline-start: var(--spacing-600, 2rem);
+  }
+
+  /* The group's name reads above its cards' titles: the outermost level in
+     the title role, the levels inside it one step down. */
+  .firma2-goal-board-group > :global(.esa-collapsible) > :global(.esa-collapsible__summary) {
+    font-family: var(--typography-title-strong-font-family);
+    font-size: var(--typography-title-strong-font-size);
+    font-weight: var(--typography-title-strong-font-weight);
+    line-height: var(--typography-title-strong-line-height);
+    letter-spacing: var(--typography-title-strong-letter-spacing);
+  }
+
+  .firma2-goal-board-group:not([data-depth='0']) > :global(.esa-collapsible) > :global(.esa-collapsible__summary) {
+    font-family: var(--typography-title-sm-strong-font-family);
+    font-size: var(--typography-title-sm-strong-font-size);
+    font-weight: var(--typography-title-sm-strong-font-weight);
+    line-height: var(--typography-title-sm-strong-line-height);
+    letter-spacing: var(--typography-title-sm-strong-letter-spacing);
+  }
+
+  .firma2-goal-board-group > :global(.esa-collapsible) > :global(.esa-collapsible__summary)::before {
+    content: '';
+    flex: none;
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--firma2-group-color);
+  }
+</style>

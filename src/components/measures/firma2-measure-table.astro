@@ -1,23 +1,26 @@
 ---
 // firma2-measure-table — the Performance Measures index: the tenant's whole
-// catalog of measures as one scannable, searchable, filterable table, with the
-// Type/Classifications/Status filter dropdowns, quick search, Clear all,
-// record-count footer and CSV export this spoke's data grids share.
+// catalog of measures as one scannable, searchable table, with the Status
+// filter, quick search, Clear all, record-count footer and CSV export this
+// spoke's data grids share.
 //
-// THE COLUMNS ARE THE MEASURE'S ATTRIBUTE LIST — name, status, type,
-// classifications, unit, counting rule, subcategory schemas — and THE GRID IS
-// AN EDITOR: name edits as text, status/type/unit/counting-rule edit as
-// selects, on DOUBLE-CLICK, committed straight to the same draft store the
-// sheet writes. The sidesheet remains the full record — opened by the peek button
-// that surfaces on the Measure cell when its row is hovered — for the fields
-// a cell cannot hold (definition, guidance, classifications, schemas). Status
-// sits beside the name rather than at the far edge; it is the first fact a
-// reader wants about a row ("is this collecting values?") and the sheet lists
-// it in the same position.
+// A PAGE FOR FINDING, NOT BROWSING (user, 2026-10-09). An admin opens this
+// settings page already meaning to change something: fix a measure they can
+// name, add one, or finish a draft. So the table is built to find a row and
+// go — full names that never truncate, Unit and Status for the quick
+// look-ups made on the way, and
+// DRAFTS FIRST, because setup is rarely finished in one sitting.
 //
-// Deliberately absent: definition, reporter guidance, decimal places. All real
-// fields, none SCANNABLE — a paragraph in a cell is a wall. Definition still
-// reaches the reader, as the Measure column's tooltip.
+// THREE COLUMNS: Measure, Unit, Status. PM 2's Theme, Sums, Breakdowns and
+// Entries were here briefly (reconciled 2026-10-09) and went the same day:
+// they describe a measure's definition or its health, which nobody opens a
+// settings page to survey. Each is one click away on the measure's page.
+// "Do we already measure this?" is asked where a duplicate would be made —
+// the New measure draft lists similar measures — not here.
+//
+// THE NAME IS A DOOR to the measure's own page (Workspace settings ›
+// Performance measures › <measure>), where everything is edited; the grid is
+// read-only. Definition reaches the reader as the Measure column's tooltip.
 //
 // Search and filters live INSIDE this component rather than beside it: both feed
 // the same AG Grid instance (quick filter and external filter), so splitting
@@ -32,18 +35,17 @@
 // surface across this spoke family, and shared/firma2-data-grid-chrome.css is
 // the reusable home for its frame — reused here verbatim, not forked. Every
 // other control IS a lego: esa-text-field for search, esa-filter-container +
-// esa-filter-dropdown for the Type, Classifications and Status filters,
+// esa-filter-dropdown for the Status filter,
 // esa-filter-clear-button for Clear all, esa-button for the CSV download,
 // esa-empty-state for the no-results overlay, and the Status cells clone real
 // server-rendered esa-pill markup rather than restyling a chip by hand.
 import EsaButton from '@esa/ecology/esa-button.astro';
-import EsaIcon from '@esa/ecology/esa-icon.astro';
 import EsaPill from '@esa/ecology/esa-pill.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaFilterClearButton from '@esa/ecology/esa-filter-clear-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
-import { measuresByName, MEASURE_KINDS, MEASURE_STATUS_TONE, CLASSIFICATIONS } from '../../data/firma2-performance-measures';
+import { measuresByName, MEASURE_STATUS_TONE } from '../../data/firma2-performance-measures';
 import type { MeasureStatus, PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
 
 interface Props {
@@ -82,33 +84,9 @@ const statusOptions = STATUS_ORDER.filter((s) => measures.some((m) => m.status =
   color: TONE_DOT[MEASURE_STATUS_TONE[s]],
 }));
 
-// Classification options come from the portfolio's vocabulary (CLASSIFICATIONS),
-// narrowed to the branches this catalog actually uses — same "never offer an
-// empty filter" convention as the status list. No dots: a classification is a
-// goal, not a status, and nothing else on the screen colours it.
-const classificationOptions = CLASSIFICATIONS.filter((c) =>
-  measures.some((m) => m.classifications.includes(c)),
-).map((p) => ({
-  value: p,
-  label: p,
-}));
-
-// "Show me the outcomes" is a question about the whole catalog, and outcomes
-// are the minority of it. Values are the stored ids ('output'), labels the
-// module's own names ('Output'), order MEASURE_KINDS' declared one.
-const typeOptions = MEASURE_KINDS.filter((k) => measures.some((m) => m.kind === k.id)).map((k) => ({
-  value: k.id,
-  label: k.name,
-}));
-
-// Lucide `panel-right` (paths copied from lucide.dev, the registry's own
-// convention) — the sidebar glyph, supplied through esa-icon's documented
-// `paths` escape hatch because the registry does not ship it yet. Worth a
-// /request-lego so the name lands in the hub's icon-registry.
-const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>';
 ---
 <section class="firma2-measure-table stack" data-gap="md">
-  <!-- Search, the three filters and Clear all are ONE row; Download CSV alone
+  <!-- Search, the Status filter and Clear all are ONE row; Download CSV alone
        at the right. See firma2-project-grid for the shared layout reasoning;
        size="md" everywhere because the sm rung is unfinished across the form
        family (filed as esassoc/ecology#31). -->
@@ -117,33 +95,13 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
       <div class="firma2-data-grid__search">
         <esa-text-field
           label="Search measures"
-          placeholder="Name, unit, or classification"
+          placeholder="Name or unit"
           size="md"
           data-measures-search
         ></esa-text-field>
       </div>
 
       <EsaFilterContainer>
-        <!-- Type leads the three, matching the column order: it is the
-             coarsest cut in the catalog. -->
-        <esa-filter-dropdown
-          data-measures-type-filter
-          name="type"
-          label="Type"
-          size="md"
-          multiple
-          placeholder="Search types"
-          options={JSON.stringify(typeOptions)}
-        ></esa-filter-dropdown>
-        <esa-filter-dropdown
-          data-measures-classification-filter
-          name="classifications"
-          label="Classifications"
-          size="md"
-          multiple
-          placeholder="Search classifications"
-          options={JSON.stringify(classificationOptions)}
-        ></esa-filter-dropdown>
         <esa-filter-dropdown
           data-measures-status-filter
           name="status"
@@ -188,17 +146,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     ))}
   </div>
 
-  <!-- The peek affordance — a real esa-button, server-rendered once and cloned
-       into every Measure cell, same trick as the pills. It opens the sidesheet;
-       the cell's TEXT is for editing in place. Quiet until the row is hovered
-       or focused (CSS below). The glyph rides in the default slot rather than
-       the `icon` name prop because panel-right is not in the registry and an
-       iconOnly button renders no slot. -->
-  <div data-measures-peek-template hidden aria-hidden="true">
-    <EsaButton variant="chrome" size="sm" aria-label="Open measure">
-      <EsaIcon name="panel-right" size="sm" paths={PANEL_RIGHT} />
-    </EsaButton>
-  </div>
 
   <!-- The no-match empty state, server-rendered once and handed to AG Grid as
        its overlayNoRowsTemplate — the lego, not the grid's built-in string. -->
@@ -206,7 +153,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     <EsaEmptyState
       size="sm"
       title="No matching measures"
-      description="Try a different search, or clear the filters above."
     />
   </div>
 
@@ -216,12 +162,9 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
 </section>
 
 <style>
-  /* bcn-lego-checked: every rule below adjusts a lego or the shared grid
-     chrome in place — no bespoke control. Clear-all height + hidden are the
-     esa-filter-clear-button adjustments documented in this table since the
-     lego shipped; the rest lay out the Measure cell (editable text + the
-     cloned esa-button peek) and keep the peek quiet until asked for, the same
-     reveal contract bcn-option-list's remove button states. */
+  /* bcn-lego-checked: every rule below adjusts a lego in place — no bespoke
+     control. Clear-all height + hidden are the esa-filter-clear-button
+     adjustments documented in this table since the lego shipped. */
   .firma2-measure-table :global(.esa-filter-clear-button) {
     height: 40px;
   }
@@ -229,81 +172,22 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
   .firma2-measure-table :global(.esa-filter-clear-button[hidden]) {
     display: none;
   }
-
-  /* The Measure cell: text takes the room and truncates; the peek docks at the
-     cell's end and never wraps under. */
-  .firma2-measure-table :global(.firma2-grid-namecell) {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-200, 0.5rem);
-    inline-size: 100%;
-  }
-
-  .firma2-measure-table :global(.firma2-grid-namecell__text) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* QUIET UNTIL ASKED FOR: opacity (not display) so the cell text does not
-     reflow when the row is hovered, and the button stays in the tab order for
-     keyboard users, whose focus is what reveals it. */
-  .firma2-measure-table :global(.firma2-grid-peek) {
-    opacity: 0;
-    transition: opacity 120ms ease;
-    flex: none;
-    line-height: 0;
-  }
-
-  .firma2-measure-table :global(.ag-row-hover .firma2-grid-peek),
-  .firma2-measure-table :global(.firma2-grid-peek:focus-within) {
-    opacity: 1;
-  }
-
-  @media (hover: none) {
-    .firma2-measure-table :global(.firma2-grid-peek) {
-      opacity: 1;
-    }
-  }
-
-  /* The cloned esa-button's sm icon-only rung is taller than a grid row; pin
-     it to a 28px square so the row height never moves — same measured-pin
-     technique the chrome uses on the CSV button. */
-  .firma2-measure-table :global(.firma2-grid-peek .esa-button__native) {
-    block-size: 28px;
-    inline-size: 28px;
-    padding: 0;
-  }
 </style>
 
 <script>
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-filter-dropdown';
   import { escGridHtml as esc, wireDataGrid } from '../shared/grid-chrome';
+  import { watchGridDefault } from '../../lib/grid-defaults';
+  import { draftedSlugs, isLocalMeasureSlug, mergeDraft, readDraft, withDraft } from '../../lib/measure-draft';
+  import { recordHref } from '../../lib/taxonomy-record';
   import {
-    draftedSlugs,
-    isLocalMeasureSlug,
-    MEASURE_CHANGE_EVENT,
-    emitMeasureChange,
-    mergeDraft,
-    persistMeasure,
-    readDraft,
-    withDraft,
-  } from '../../lib/measure-draft';
-  import {
-    COUNTING_RULES,
-    MEASURE_KINDS,
     MEASURE_STATUS_TONE,
-    UNITS,
-    countingRulesFor,
-    getSchema,
     measureDisplayName,
-    outstandingFields,
-    unitFromLabel,
   } from '../../data/firma2-performance-measures';
-  import { readLocalSchemas, SCHEMA_CHANGE_EVENT } from '../../lib/schema-draft';
-  import type { PerformanceMeasureDefinition, SubcategorySchema } from '../../data/firma2-performance-measures';
+  import type { PerformanceMeasureDefinition } from '../../data/firma2-performance-measures';
+
+  type MeasureRow = PerformanceMeasureDefinition;
   import type { ColDef } from 'ag-grid-community';
 
   /** What an unanswered optional field shows. An em dash, not a blank cell. */
@@ -311,11 +195,8 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
 
   /**
    * Sort a closed vocabulary in the order the vocabulary itself declares, not
-   * alphabetically: Status is a lifecycle (Active → Draft → Retired), the
-   * counting rules run output rules then outcome rules, and Type only LOOKS
-   * alphabetical ('outcome' sorts before 'output' on a string compare, which
-   * would lead the catalog with its minority kind). Anything not in the list
-   * sorts last, which is also how an unset optional lands at the bottom.
+   * alphabetically: Status is a lifecycle — Draft, the work in progress, then
+   * Published, then Retired. Anything not in the list sorts last.
    */
   const rankBy = (order: readonly string[]) => (a: string, b: string) => {
     const at = order.indexOf(a);
@@ -323,16 +204,12 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     return (at === -1 ? order.length : at) - (bt === -1 ? order.length : bt);
   };
 
-  const STATUS_ORDER = Object.keys(MEASURE_STATUS_TONE);
-  const COUNTING_RULE_ORDER = COUNTING_RULES.map((r) => r.id as string);
-  const COUNTING_RULE_NAME = new Map(COUNTING_RULES.map((r) => [r.id as string, r.name] as const));
-  const TYPE_ORDER = MEASURE_KINDS.map((k) => k.id as string);
-  const TYPE_NAME = new Map(MEASURE_KINDS.map((k) => [k.id as string, k.name] as const));
+  const STATUS_ORDER = ['Draft', 'Published', 'Retired'];
+  // Base-less; recordHref() adds the base and picks the seeded or draft route.
+  const LIST_PATH = '/prototypes/workspace-settings/performance-measures';
 
   function initMeasureTable(root: HTMLElement) {
     const emptyState = root.querySelector<HTMLElement>('[data-measures-empty] > *');
-    const typeFilter = root.querySelector<HTMLElement>('[data-measures-type-filter]');
-    const classificationFilter = root.querySelector<HTMLElement>('[data-measures-classification-filter]');
     const statusFilter = root.querySelector<HTMLElement>('[data-measures-status-filter]');
     const clearButton = root.querySelector<HTMLElement>('[data-esa-filter-clear]');
 
@@ -343,52 +220,11 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
       pillHTML.set(el.dataset.status ?? '', el.innerHTML);
     });
 
-    // The peek button, cloned per Measure cell. Its generic accessible name is
-    // swapped for the row's own at render time.
-    const peekHTML = root.querySelector('[data-measures-peek-template]')?.innerHTML ?? '';
-
-    // The peek opens the SHEET, and only the sheet: the sidesheet's document
-    // CAPTURE listener has already fired by the time this capture handler
-    // stops the click, so AG Grid never sees it and no inline edit starts.
-    root.addEventListener(
-      'click',
-      (event) => {
-        if ((event.target as Element).closest('.firma2-grid-peek')) event.stopPropagation();
-      },
-      true,
-    );
-
-    let typeValues: string[] = [];
-    let classificationValues: string[] = [];
     let statusValues: string[] = [];
-
-    // True only for the synchronous span of an inline edit's own
-    // emitMeasureChange, so the repaint listener can tell its own writes from
-    // the sheet's.
-    let selfEdit = false;
-
-    // Browser-local schemas, refreshed whenever a measure changes (the sheet
-    // may have minted one in the same gesture). Cached per repaint rather than
-    // read per cell — readLocalSchemas parses localStorage.
-    let localSchemas: SubcategorySchema[] = [];
-    const refreshLocalSchemas = () => {
-      try {
-        localSchemas = readLocalSchemas();
-      } catch {
-        localSchemas = [];
-      }
-    };
-    refreshLocalSchemas();
-
-    const schemaNames = (m: PerformanceMeasureDefinition): string =>
-      (m.subcategorySchemaIds ?? [])
-        .map((id) => getSchema(id, localSchemas)?.name)
-        .filter(Boolean)
-        .join(', ');
 
     // THE ROWS ARE SEEDS + DRAFTS, recomputed as one list: every seed with its
     // local draft laid over it, then every measure minted in this browser.
-    // LOCAL DRAFTS WIN OVER THE SEED — save a name in the sheet, and a table
+    // LOCAL DRAFTS WIN OVER THE SEED — rename a measure on its page, and a table
     // still showing "Untitled measure" would read as a bug.
     const seedNode = root.querySelector<HTMLElement>('[data-measures-data]');
     let seeded: PerformanceMeasureDefinition[] = [];
@@ -398,18 +234,25 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
       // A malformed payload is a build bug; degrading to an empty catalog at
       // least renders the empty state instead of throwing.
     }
-    const currentRows = (): PerformanceMeasureDefinition[] => [
-      ...seeded.map((seed) => mergeDraft(seed, readDraft(seed.slug))),
-      ...draftedSlugs()
-        .filter(isLocalMeasureSlug)
-        .map((slug) => withDraft(slug)),
-    ];
+    // DRAFTS FIRST, then by name: the row order at rest, before anyone sorts.
+    // A draft is unfinished work its author is coming back to.
+    const currentRows = (): MeasureRow[] =>
+      [
+        ...seeded.map((seed) => mergeDraft(seed, readDraft(seed.slug))),
+        ...draftedSlugs()
+          .filter(isLocalMeasureSlug)
+          .map((slug) => withDraft(slug)),
+      ].sort(
+        (a, b) =>
+          Number(b.status === 'Draft') - Number(a.status === 'Draft') ||
+          measureDisplayName(a).localeCompare(measureDisplayName(b)),
+      );
 
     // The merged rows are written back into the payload BEFORE wireDataGrid
     // parses it — one data path, no second write racing the first.
     if (seedNode) seedNode.textContent = JSON.stringify(currentRows());
 
-    const handle = wireDataGrid<PerformanceMeasureDefinition>({
+    const handle = wireDataGrid<MeasureRow>({
       root,
       gridSelector: '[data-measures-grid]',
       dataSelector: '[data-measures-data]',
@@ -418,220 +261,65 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
       csvSelector: '[data-measures-csv]',
       countNoun: 'measures',
       csvFileName: 'projectfirma-performance-measures.csv',
-      // Editable grid: the cell focus ring is the keyboard user's cursor.
-      suppressCellFocus: false,
       columnDefs: [
         // Widths are explicit on every fixed column: AG Grid's `minWidth` is only
         // a floor, and a column without `width` defaults to 200px, which silently
         // pushes the last column off-screen at 1280.
         //
-        // The name is the widest column because it is what people scan for.
-        // CLICKING THE TEXT EDITS IT IN PLACE; the cloned esa-button peek at
-        // the cell's end opens the sidesheet for everything a cell cannot hold
-        // (definition, guidance, classifications, schemas). Two affordances,
-        // one split: the text is the value, the button is the door. Escaped
+        // The name is the widest column because it is what people scan for,
+        // and it is the DOOR: a link to the measure's page, the way every
+        // settings list opens its records (firma2-organization-grid). Escaped
         // through esc() on every interpolation: a cellRenderer takes a string
         // of HTML and unescaped interpolation here is an injection point.
         //
-        // The text is measureDisplayName(), never the raw name: a measure
-        // minted from the blank sheet reaches this catalog before it is named,
-        // and a blank editable cell would be indistinguishable from a
-        // rendering fault. The tooltip is the stored DEFINITION — what counts
-        // and what does not is the fact a reader is missing here.
+        // The text is measureDisplayName(), never the raw name: a measure made
+        // in this browser can reach this catalog before it is named, and a
+        // blank link would be indistinguishable from a rendering fault. The
+        // tooltip is the stored DEFINITION — what counts and what does not is
+        // the fact a reader is missing here.
         {
           headerName: 'Measure', field: 'name', colId: 'name',
-          flex: 2, minWidth: 220, cellClass: 'firma2-grid-name', tooltipField: 'definition',
-          editable: true, cellEditor: 'agTextCellEditor',
-          valueSetter: (p) => {
-            if (!p.data) return false;
-            p.data.name = String(p.newValue ?? '').trim();
-            return true;
-          },
+          // FULL NAMES, NEVER TRUNCATED: the name is what the admin scans
+          // for, so it wraps onto a second line rather than ending in "…".
+          flex: 1, minWidth: 260, cellClass: 'firma2-grid-name', tooltipField: 'definition',
+          wrapText: true, autoHeight: true,
           getQuickFilterText: (p) => (p.data ? measureDisplayName(p.data) : ''),
-          cellRenderer: (p: { data?: PerformanceMeasureDefinition }) => {
-            if (!p.data) return '';
-            const name = esc(measureDisplayName(p.data));
-            const peek = peekHTML.replace('aria-label="Open measure"', `aria-label="Open ${name}"`);
-            return (
-              `<span class="firma2-grid-namecell"><span class="firma2-grid-namecell__text">${name}</span>` +
-              `<span class="firma2-grid-peek" data-open-measure="${esc(p.data.slug)}">${peek}</span></span>`
-            );
-          },
-        },
-        // Status beside the name, not at the far edge: "is this collecting
-        // values?" is the first question about a row, and the sheet lists the
-        // field in the same position. The cloned esa-pill — a badge, never a
-        // coloured row edge. The tooltip explains the vocabulary, not any row.
-        // Editable in place, and THE GATE RIDES IN THE OPTION LIST: an
-        // incomplete measure's editor simply does not offer Active — the same
-        // outstandingFields() rule the sheet's disabled option states, worn as
-        // absence rather than grey. The header tooltip carries the why.
-        {
-          headerName: 'Status', field: 'status', colId: 'status', width: 135,
-          headerTooltip: 'Draft measures are not collecting values yet. Retired measures keep past values but take no new ones. Active is offered once every required field is filled.',
-          comparator: rankBy(STATUS_ORDER),
-          editable: true, cellEditor: 'agSelectCellEditor',
-          cellEditorParams: (p: { data?: PerformanceMeasureDefinition }) => ({
-            values: STATUS_ORDER.filter(
-              (s) => s !== 'Active' || !p.data || outstandingFields(p.data).length === 0,
-            ),
-          }),
-          cellRenderer: (p: { value: string }) =>
-            `<span class="firma2-grid-status">${pillHTML.get(p.value) ?? esc(p.value)}</span>`,
-        },
-        // Output or outcome. PLAIN TEXT, NOT A SECOND PILL: the Status pill is
-        // the only saturated thing in the grid, which is exactly why it reads
-        // at a glance, and two values distinguished by hue is unreadable to a
-        // colourblind reader anyway. The cell spends the module's name
-        // ("Output"), never the stored id; the Type filter dropdown and the
-        // declared-order sort are the answers to the shared-four-letters
-        // scanning cost.
-        // Editable: the type stopped being fixed at creation when the create
-        // dialog died. Switching it can strand a counting rule the new type
-        // cannot use; the change handler clears that rather than storing a
-        // meaningless pair.
-        {
-          headerName: 'Type', field: 'kind', colId: 'kind', width: 110,
-          headerTooltip: 'Outputs record work a project did. Outcomes record a condition a monitoring effort measured — so the two allow different counting rules.',
-          comparator: rankBy(TYPE_ORDER),
-          editable: true, cellEditor: 'agSelectCellEditor',
-          cellEditorParams: { values: TYPE_ORDER },
-          valueFormatter: (p) => (p.value ? TYPE_NAME.get(p.value) ?? p.value : UNSET),
-        },
-        // UNSET IS A REAL STATE, not a missing value: a measure minted from the
-        // blank sheet genuinely has not answered these yet, and the em dash
-        // says "not answered" where an empty cell would read as a fault.
-        // A SET IN A CELL, joined once in the valueGetter so the sort, the
-        // tooltip and the text all read the same string.
-        {
-          headerName: 'Classifications', colId: 'classifications',
-          // Read-only in the grid (a SET edits in the sheet) — one ink rung
-          // back, so the affordance map is readable before it is clicked.
-          cellClass: 'firma2-grid-readonly',
-          valueGetter: (p) => (p.data?.classifications ?? []).join(', '),
-          flex: 1, minWidth: 170,
-          getQuickFilterText: (p) => p.value ?? '',
-          tooltipValueGetter: (p) => p.value || undefined,
-          valueFormatter: (p) => p.value || UNSET,
+          cellRenderer: (p: { data?: MeasureRow }) =>
+            p.data
+              ? `<a class="firma2-grid-link" href="${esc(recordHref(LIST_PATH, p.data.slug))}">${esc(measureDisplayName(p.data))}</a>`
+              : '',
         },
         // Just the unit: the Measure column already says of what, because a
-        // measure's name is its number's label. Editable from the closed UNITS
-        // list — the whole argument for a closed list is that this cell can be
-        // a picker instead of a spelling.
+        // measure's name is its number's label.
         {
-          headerName: 'Unit', colId: 'unit', width: 130,
+          headerName: 'Unit', colId: 'unit', width: 180,
           valueGetter: (p) => p.data?.unit ?? '',
-          editable: true, cellEditor: 'agSelectCellEditor',
-          cellEditorParams: { values: [...UNITS] },
-          valueSetter: (p) => {
-            if (!p.data) return false;
-            p.data.unit = unitFromLabel(String(p.newValue ?? ''));
-            return true;
-          },
           getQuickFilterText: (p) => p.value ?? '',
           valueFormatter: (p) => p.value || UNSET,
         },
-        // The counting rule decides what a total MEANS, so the cell spends the
-        // rule's whole name rather than its stored id. Sorted in
-        // COUNTING_RULES' declared order, which clusters by type for free.
-        // The editor offers only the rules legal for the ROW's type — the
-        // same countingRulesFor() the sheet uses.
+        // The cloned esa-pill — a badge, never a coloured row edge.
         {
-          headerName: 'Counting rule', colId: 'countingRule', width: 180,
-          headerTooltip: 'How entries combine into a total. Outputs sum or union; outcome readings supersede or average.',
-          valueGetter: (p) => p.data?.countingRule ?? '',
-          editable: true, cellEditor: 'agSelectCellEditor',
-          cellEditorParams: (p: { data?: PerformanceMeasureDefinition }) => ({
-            values: countingRulesFor(p.data?.kind ?? 'output').map((r) => r.id),
-          }),
-          valueSetter: (p) => {
-            if (!p.data) return false;
-            const id = String(p.newValue ?? '');
-            p.data.countingRule = COUNTING_RULE_NAME.has(id)
-              ? (id as PerformanceMeasureDefinition['countingRule'])
-              : undefined;
-            return true;
-          },
-          comparator: rankBy(COUNTING_RULE_ORDER),
-          valueFormatter: (p) => (p.value ? COUNTING_RULE_NAME.get(p.value) ?? p.value : UNSET),
-        },
-        // The schemas by NAME, not by count: which lists divide a measure is
-        // the fact a reader compares ("do these two split by the same thing?"),
-        // and a count cannot answer it. System schemas are listed with the
-        // rest — attached is attached, whoever fills the value in. The full
-        // set rides in the tooltip for the rows that overflow.
-        {
-          headerName: 'Subcategory schemas', colId: 'subcategorySchemas',
-          // Read-only in the grid (attached in the sheet, authored in their
-          // own view) — secondary ink, same rule as Classifications.
-          cellClass: 'firma2-grid-readonly',
-          flex: 1, minWidth: 200,
-          valueGetter: (p) => (p.data ? schemaNames(p.data) : ''),
-          tooltipValueGetter: (p) => p.value || undefined,
-          valueFormatter: (p) => p.value || UNSET,
+          headerName: 'Status', field: 'status', colId: 'status', width: 135,
+          comparator: rankBy(STATUS_ORDER),
+          cellRenderer: (p: { value: string }) =>
+            `<span class="firma2-grid-status">${pillHTML.get(p.value) ?? esc(p.value)}</span>`,
         },
       ] satisfies ColDef[],
       gridOptions: {
         overlayNoRowsTemplate: emptyState?.outerHTML,
-        // DOUBLE-CLICK to edit — AG Grid's own convention, kept deliberately:
-        // a single click is how a reader lands on a cell to scan or select,
-        // and a grid that opened an editor on every landing made reading feel
-        // like defusing. (Single-click was tried first; user-reverted.)
-        // A committed cell edit IS a save — same patch-vs-base persistence the
-        // sheet's Save runs, so the two surfaces cannot disagree about what
-        // "changed" means. Kind edits can strand a counting rule the new type
-        // cannot use; it is cleared here, not stored.
-        onCellValueChanged: (event) => {
-          const record = event.data as PerformanceMeasureDefinition;
-          if (record.countingRule && !countingRulesFor(record.kind).some((r) => r.id === record.countingRule)) {
-            record.countingRule = undefined;
-          }
-          persistMeasure(record);
-          // The grid's own row already holds the new value, so its repaint
-          // listener skips this event; the schemas view still hears it.
-          selfEdit = true;
-          emitMeasureChange(record);
-          selfEdit = false;
-          event.api.refreshCells({ rowNodes: [event.node], force: true });
-        },
-        isExternalFilterPresent: () =>
-          typeValues.length > 0 || classificationValues.length > 0 || statusValues.length > 0,
-        doesExternalFilterPass: (node) =>
-          (typeValues.length === 0 || typeValues.includes(node.data?.kind ?? '')) &&
-          // A ROW MATCHES IF IT CARRIES ANY SELECTED CLASSIFICATION — `some`,
-          // not equality: selecting two classifications widens the result,
-          // which is what every other filter on this bar already means.
-          (classificationValues.length === 0 ||
-            (node.data?.classifications ?? []).some((c) => classificationValues.includes(c))) &&
-          (statusValues.length === 0 || statusValues.includes(node.data?.status ?? '')),
+        isExternalFilterPresent: () => statusValues.length > 0,
+        doesExternalFilterPass: (node) => statusValues.length === 0 || statusValues.includes(node.data?.status ?? ''),
       },
     });
     if (!handle) return;
-    const { gridApi, countState } = handle;
-
-    // A SHEET SAVED (or deleted). Rebuild the whole row list from seeds +
-    // drafts rather than patching one row: a save can also have minted a local
-    // schema (the Subcategory schemas cells read those) or removed a local
-    // measure, and one recompute handles every case the same way. The SCHEMA
-    // event matters too — renaming a schema in ITS sheet changes what these
-    // cells say without any measure changing. Inline edits set selfEdit while
-    // they emit: their row already holds the new value, and resetting rowData
-    // under the editor would throw the keyboard user's focus away.
-    const repaint = () => {
-      if (selfEdit) return;
-      refreshLocalSchemas();
-      const rows = currentRows();
-      countState.total = rows.length;
-      gridApi.setGridOption('rowData', rows);
-    };
-    document.addEventListener(MEASURE_CHANGE_EVENT, repaint);
-    document.addEventListener(SCHEMA_CHANGE_EVENT, repaint);
+    // The workspace's column layout (Workspace settings → Grid defaults).
+    watchGridDefault(handle.gridApi, 'performance-measures');
+    const { gridApi } = handle;
 
     // Clear all is only in the row when there is something to clear.
     const syncClearVisibility = () => {
       if (clearButton) {
-        clearButton.hidden =
-          typeValues.length === 0 && classificationValues.length === 0 && statusValues.length === 0;
+        clearButton.hidden = statusValues.length === 0;
       }
     };
     syncClearVisibility();
@@ -641,8 +329,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
       gridApi.onFilterChanged();
       syncClearVisibility();
     };
-    typeFilter?.addEventListener('selection-change', onSelection((v) => { typeValues = v; }));
-    classificationFilter?.addEventListener('selection-change', onSelection((v) => { classificationValues = v; }));
     statusFilter?.addEventListener('selection-change', onSelection((v) => { statusValues = v; }));
 
     // esa-filter-clear-button is presentational: it emits a bubbling
@@ -651,12 +337,8 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     // lego has no public clear(); writing the reactive property re-renders but
     // does NOT emit selection-change, so the local arrays reset here too.
     root.addEventListener('esa-filter-clear', () => {
-      [typeFilter, classificationFilter, statusFilter].forEach((el) => {
-        const dropdown = el as (HTMLElement & { _selected?: string[] }) | null;
-        if (dropdown) dropdown._selected = [];
-      });
-      typeValues = [];
-      classificationValues = [];
+      const dropdown = statusFilter as (HTMLElement & { _selected?: string[] }) | null;
+      if (dropdown) dropdown._selected = [];
       statusValues = [];
       gridApi.onFilterChanged();
       syncClearVisibility();

@@ -1,0 +1,1094 @@
+---
+// firma2-public-project — a project's public page, built by its project
+// type and worn in the tenant's brand. Ported from ProjectFirma2 hackathon team 3.
+//
+// WHO READS THIS: the brief's hardest reader — the public or a funder,
+// arrived from a link with no account, no task and no vocabulary. Their first
+// question is "what is this, whose is it, and is it real?". The tenant's name
+// is the public header's (firma2-public-header), above this; the page states
+// facts rather than offering edits.
+//
+// REWORKED 2026-11-20 IN THE PUBLIC HOME'S LANGUAGE (user: "taking
+// inspiration with some of the design choices we made in the main home
+// page"). What it borrows, and where:
+//   - THE DARK HERO: name and two facts at poster size on the left, the
+//     record's Featured photo running to the window's edge on the right.
+//   - SECTIONS AS BANDS, NOT CARDS IN A COLUMN: each section is the page's
+//     width with its own heading; no rail. The rail's facts are a strip under
+//     the hero.
+//   - EACH SECTION SHOWS ITS DATA IN ITS OWN SHAPE: results as figure cards
+//     with a year-by-year bar of reported against planned; funding as a
+//     TREEMAP (area = dollars, src/lib/treemap.ts); spending as a column per
+//     year; photos open on a BEFORE-AND-AFTER the reader drags across.
+//   - GOALS WEAR THEIR ICONS (the home's goal icons).
+//   - Hover motion answers the pointer only, and each section moves in its
+//     own way; reduced motion keeps colour and drops movement.
+//
+// THE PROJECT TYPE BUILDS THE PAGE. Which sections appear, in what
+// order, and which of the tenant's own fields sit in the facts strip ("rail")
+// or under Project details all come from the project's type
+// (src/data/firma2-project-types.ts). The sections render once at build;
+// the script folds its current delta over them — the same resolver the
+// studio's preview runs, because the preview IS this page, in a frame. The
+// hooks it needs (data-section + order, data-fields, data-aliasable-*) are
+// kept on the same elements.
+//
+// THE PUBLISHED STATE, NOT THE RECORD: values a publish has not covered carry
+// data-publish-key + data-current, and the last script swaps them in once this
+// browser has published that change.
+//
+// WITHHELD, NOT HIDDEN — in production. The hackathon's sharpest point: a
+// section switched off is pruned from the data the page is served, so it
+// cannot be found in dev tools. A static prototype cannot prune; it hides.
+// Said here so nobody mistakes the prototype's mechanism for the design.
+import { iconSvg } from '@esa/ecology/icon-registry';
+import Firma2ProjectTimeline from '../projects/firma2-project-timeline.astro';
+import Firma2ProjectGallery from '../projects/firma2-project-gallery.astro';
+import Firma2ProjectMap from '../projects/firma2-project-map.astro';
+import Firma2VerifiedMark from '../shared/firma2-verified-mark.astro';
+import { organizations } from '../../data/firma2-directory';
+import { classificationNamed, isGoal } from '../../data/firma2-classifications';
+import type { ProjectDetail } from '../../data/firma2-project-detail';
+import type { PublishedSnapshot } from '../../data/firma2-publish-history';
+import { projectSlug } from '../../data/firma2-projects';
+import { latestReport } from '../../data/firma2-project-detail';
+import { publicGoalHref, publicGoalIcon } from '../../data/firma2-public-site';
+import {
+  FIELD_DEFINITIONS,
+  PAGE_SECTIONS,
+  fieldRows,
+  resolveSections,
+  projectTypeFor,
+} from '../../data/firma2-project-types';
+import type { FieldRow } from '../../data/firma2-project-types';
+import { withBase } from '../../lib/base';
+import { currencyFormatter } from '../../lib/format';
+import { photoSrc } from '../../lib/project-photos';
+import { treemap } from '../../lib/treemap';
+import { leadPair, leadPhoto, plainPhotos } from '../../lib/photo-meta';
+
+interface Props {
+  detail: ProjectDetail;
+  /**
+   * The public page's own route passes this: the page shows the last PUBLISHED
+   * state of the record, not the record (the review-and-publish workflow,
+   * user 2026-10-09). Where the two differ, the element carries the change's
+   * key and its current value, and the script swaps the value in once this
+   * browser has published that change. The project-type studio's preview
+   * omits it — the preview shows the record as it is.
+   */
+  published?: PublishedSnapshot;
+}
+
+const { detail, published } = Astro.props;
+const { project } = detail;
+const leadOrg = organizations.find((o) => o.name === project.leadOrganization);
+const projectType = projectTypeFor(project);
+const years = `${project.implementationStartYear}–${project.completionYear}`;
+const fmt = (n: number, decimals = 1) => n.toLocaleString('en-US', { maximumFractionDigits: decimals });
+const compactUsd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
+
+// What the public sees, and what each differing value becomes after a publish.
+const shown = {
+  cost: currencyFormatter.format(published?.estimatedTotalCost ?? project.estimatedTotalCost),
+  years: published ? `${published.implementationStartYear}–${published.completionYear}` : years,
+  county: published?.county ?? project.county,
+  stage: published?.stage ?? project.stage,
+  description: published?.description ?? detail.projectDescription,
+};
+const current = {
+  cost: currencyFormatter.format(project.estimatedTotalCost),
+  years,
+  county: project.county,
+  stage: project.stage,
+  description: detail.projectDescription,
+};
+/** data-publish-key + data-current where the public value is behind the record. */
+const pending = (key: string, publicValue: string, currentValue: string) =>
+  publicValue === currentValue ? {} : { 'data-publish-key': key, 'data-current': currentValue };
+const withheldReport = (name: string, year: number) =>
+  Boolean(published?.withheldReports.some((r) => r.measure === name && r.year === year));
+
+// ---- Results: each measure as published (a withheld filing is not in its
+// total, its last year or its bar), with its year-by-year series.
+const results = detail.measures.map((m) => {
+  const withheld = m.series.find((p) => withheldReport(m.name, p.year));
+  const visible = m.reported - (withheld?.value ?? 0);
+  const series = m.series.map((p) => ({ ...p, value: withheldReport(m.name, p.year) ? null : p.value }));
+  const top = Math.max(1, ...series.map((p) => Math.max(p.planned ?? 0, p.value ?? 0)));
+  return {
+    name: m.name,
+    unit: m.unit,
+    figure: fmt(visible),
+    figureNow: fmt(m.reported),
+    percent: m.expected > 0 ? Math.min(100, Math.round((visible / m.expected) * 100)) : 0,
+    expected: fmt(m.expected),
+    last: String(latestReport(m.series.filter((p) => !withheldReport(m.name, p.year)))?.year ?? '—'),
+    lastNow: String(latestReport(m.series)?.year ?? '—'),
+    key: withheld ? `report:${m.name}:${withheld.year}` : '',
+    bars: series.map((p) => ({
+      year: p.year,
+      planned: ((p.planned ?? 0) / top) * 100,
+      reported: p.value === null ? null : (p.value / top) * 100,
+      label: `${p.year}: ${p.value === null ? 'not reported' : `${fmt(p.value)} reported`}${p.planned ? ` of ${fmt(p.planned)} planned` : ''}`,
+    })),
+  };
+});
+
+// ---- Funding: a treemap of the sources the public sees; a source withheld
+// from the last publish is listed after it, hidden, until a publish reveals it.
+const sources = [...detail.funding].sort((a, b) => b.amount - a.amount);
+const shownSources = sources.filter((f) => !published?.withheldFunding.includes(f.name));
+const withheldSources = sources.filter((f) => published?.withheldFunding.includes(f.name));
+const fundingTotal = shownSources.reduce((sum, f) => sum + f.amount, 0);
+// Fewer sources read as a band; more need height to stay near square.
+const FUND_WIDE = shownSources.length <= 2 ? 4.5 : shownSources.length === 3 ? 3.4 : 2.6;
+const FUND_TALL = 0.8;
+const fundWide = treemap(shownSources.map((f) => f.amount), FUND_WIDE);
+const fundTall = treemap(shownSources.map((f) => f.amount), FUND_TALL);
+const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
+const fundPlace = (i: number) =>
+  `--x:${pct(fundWide[i].x)};--y:${pct(fundWide[i].y)};--w:${pct(fundWide[i].w)};--h:${pct(fundWide[i].h)};--tx:${pct(fundTall[i].x)};--ty:${pct(fundTall[i].y)};--tw:${pct(fundTall[i].w)};--th:${pct(fundTall[i].h)};--pad:${fundWide[i].w < 0.14 ? 'var(--spacing-300)' : 'var(--spacing-500)'}`;
+
+// ---- Spending: one column per year with money spent.
+const spent = detail.expenditures.filter((e) => e.spent > 0);
+const spentTotal = spent.reduce((sum, e) => sum + e.spent, 0);
+const spentTop = Math.max(1, ...spent.map((e) => e.spent));
+
+// ---- Goals: the plan goals this project works toward, with their icons.
+const goals = project.classifications
+  .map((name) => classificationNamed(name))
+  .filter((c): c is NonNullable<typeof c> => !!c && isGoal(c));
+
+const rows = (placement: 'rail' | 'details'): FieldRow[] =>
+  fieldRows(projectType, project, FIELD_DEFINITIONS, placement);
+
+/** One <div><dt><dd></div> per row — the markup the script rebuilds, identically. */
+const rowsHtml = (list: FieldRow[]) =>
+  list
+    .map(
+      (r) =>
+        `<div><dt>${r.label}</dt><dd>${r.value || '<span class="firma2-public-project__none">Not answered</span>'}</dd></div>`,
+    )
+    .join('');
+
+// Build-time resolution, so the page is right before the script runs.
+const resolved = resolveSections(projectType.sections);
+const orderIndex = new Map(resolved.map((r, i) => [r.section.key, i]));
+const hiddenAtBuild = new Set(resolved.filter((r) => !r.visible).map((r) => r.section.key));
+const label = (key: string) => PAGE_SECTIONS.find((s) => s.key === key)?.label ?? key;
+
+// The Featured photo, tall, for the hero's right half. Every candidate's URL
+// rides along so this browser's choice can swap in without a rebuild.
+const slug = projectSlug(project);
+const seedPhotos = plainPhotos(slug, detail.photos);
+// A private photo never leads the page, and never fills the compare: the
+// seed's choice here, this browser's edits laid over it by the script below.
+const featuredId = leadPhoto(seedPhotos)?.id;
+const leadPhotos = detail.photos.map((photo, i) => ({ id: `p${i}`, public: photo.public, src: photoSrc(photo, 1100, 1240, 70), caption: photo.caption, date: photo.date }));
+const lead = featuredId && !hiddenAtBuild.has('gallery') ? leadPhotos.find((p) => p.id === featuredId) : undefined;
+
+// Before and after: two photos at one photo point, a Before and an After.
+// The wide crops of every photo ride along so an edit made in this browser
+// can re-pick the pair without a rebuild.
+const pair = leadPair(seedPhotos);
+const before = pair?.before;
+const after = pair?.after;
+const wide = Object.fromEntries(detail.photos.map((photo, i) => [`p${i}`, photoSrc(photo, 1600, 800, 70)]));
+---
+<!-- bcn-lego-checked: the bands, hero, facts strip, result cards, treemap and
+     spending columns are layout for this page's sections — no esa- component
+     draws a treemap or a column chart (esa-chart is bars/lines/pies on a
+     canvas, and these must be plain, linkable markup); esa-badge is the
+     stage; the timeline, photos and map are the project page's own section
+     components. Beacon is not cloned on this machine. -->
+<article
+  class="firma2-public-project"
+  data-project-type-slug={projectType.slug}
+  data-publish-slug={published ? projectSlug(project) : undefined}
+  data-project={JSON.stringify({ projectName: project.projectName, implementationStartYear: project.implementationStartYear })}
+>
+  <header class:list={['firma2-public-project__hero', !lead && 'firma2-public-project__hero--text']}>
+    <div class="firma2-public-project__hero-text stack" data-gap="xl">
+      <div class="stack" data-gap="md">
+        {projectType && <p class="firma2-public-project__type typography-label-lg-strong">{projectType.name}</p>}
+        <h1 class="typography-display">{project.projectName}</h1>
+        <p class="firma2-public-project__meta cluster typography-body-lg" data-gap="sm">
+          <span class="firma2-public-project__stage" {...pending('stage', shown.stage, current.stage)}>{shown.stage}</span>
+          <span><span {...pending('county', shown.county, current.county)}>{shown.county}</span> County</span>
+        </p>
+      </div>
+      <dl class="firma2-public-project__poster">
+        <div data-count-host>
+          <dt class="typography-label-lg">Estimated cost</dt>
+          <dd {...pending('estimatedTotalCost', shown.cost, current.cost)} data-count={shown.cost === current.cost ? '' : undefined}>{shown.cost}</dd>
+        </div>
+        <div>
+          <dt class="typography-label-lg">Timeline</dt>
+          <dd {...pending('timeline', shown.years, current.years)}>{shown.years}</dd>
+        </div>
+      </dl>
+    </div>
+    {lead && (
+      <figure class="firma2-public-project__featured" data-featured-slug={slug} data-featured-photos={JSON.stringify(leadPhotos)}>
+        {/* alt="" because the caption on it says what it shows. */}
+        <img src={lead.src} alt="" width="1100" height="1240" decoding="async" fetchpriority="high" data-featured-image />
+        <figcaption class="typography-body-sm"><span data-featured-caption>{lead.caption}</span> · <span data-featured-date>{lead.date}</span></figcaption>
+      </figure>
+    )}
+  </header>
+
+  <!-- The facts strip: who leads it, plus the tenant's own questions the
+       project type places here ("rail" fields). -->
+  <div class="firma2-public-project__strip" data-aliasable-labels>
+    <div class="firma2-public-project__strip-inner">
+      <dl class="firma2-public-project__strip-fields">
+        <div><dt>Lead organization</dt><dd>{project.leadOrganization}{leadOrg && <> <Firma2VerifiedMark organization={leadOrg} /></>}</dd></div>
+      </dl>
+      <dl class="firma2-public-project__strip-fields" data-fields="rail" set:html={rowsHtml(rows('rail'))}></dl>
+    </div>
+  </div>
+
+  <div class="firma2-public-project__sections" data-sections>
+    <section data-section="details" data-aliasable-title class="firma2-public-project__band" style={`order:${orderIndex.get('details')}`} hidden={hiddenAtBuild.has('details')} aria-labelledby="firma2-pp-details">
+      <div class="firma2-public-project__col stack" data-gap="lg">
+        <h2 id="firma2-pp-details" class="typography-heading-lg">{label('details')}</h2>
+        <div class="firma2-public-project__about">
+          <p class="firma2-public-project__description typography-body-lg" {...pending('description', shown.description, current.description)}>{shown.description}</p>
+          <dl class="firma2-public-project__facts" data-fields="details" set:html={rowsHtml(rows('details'))}></dl>
+        </div>
+        {goals.length > 0 && (
+          <div class="stack" data-gap="sm">
+            <h3 class="typography-title-sm-strong" id="firma2-pp-goals">Goals it works toward</h3>
+            <ul class="firma2-public-project__goals cluster" data-gap="sm" aria-labelledby="firma2-pp-goals">
+              {goals.map((g) => (
+                <li>
+                  <a href={withBase(publicGoalHref(g))}>
+                    <span class="firma2-public-project__goal-icon" aria-hidden="true" set:html={iconSvg(publicGoalIcon(g), 28) ?? ''} />
+                    <span class="typography-label-md-strong">{g.name}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </section>
+
+    <section data-section="measures" data-aliasable-title class="firma2-public-project__band" style={`order:${orderIndex.get('measures')}`} hidden={hiddenAtBuild.has('measures')} aria-labelledby="firma2-pp-measures">
+      <div class="firma2-public-project__col stack" data-gap="lg">
+        <h2 id="firma2-pp-measures" class="typography-heading-lg">{label('measures')}</h2>
+        {results.length === 0 ? (
+          <p class="firma2-public-project__quiet typography-body-md">No performance measures yet.</p>
+        ) : (
+          <ul class="firma2-public-project__results">
+            {results.map((r) => (
+              <li class="firma2-public-project__result" data-count-host>
+                <div class="stack" data-gap="2xs">
+                  <span class="firma2-public-project__figure">
+                    <span data-count {...(r.key ? { 'data-publish-key': r.key, 'data-current': r.figureNow } : {})}>{r.figure}</span>
+                  </span>
+                  <span class="typography-label-md-strong">{r.name}</span>
+                  <span class="firma2-public-project__quiet typography-body-sm">
+                    of {r.expected} {r.unit} planned · last reported <span {...(r.key ? { 'data-publish-key': r.key, 'data-current': r.lastNow } : {})}>{r.last}</span>
+                  </span>
+                </div>
+                <div class="firma2-public-project__share" role="img" aria-label={`${r.percent}% of planned`}>
+                  <span style={`--share:${r.percent / 100}`}></span>
+                </div>
+                <ol class="firma2-public-project__years" aria-label="Reported and planned, by year">
+                  {r.bars.map((b) => (
+                    <li title={b.label}>
+                      <span class="firma2-public-project__planned" style={`--h:${b.planned.toFixed(1)}%`}></span>
+                      {b.reported !== null && <span class="firma2-public-project__reported" style={`--h:${b.reported.toFixed(1)}%`}></span>}
+                      <span class="visually-hidden">{b.label}</span>
+                    </li>
+                  ))}
+                </ol>
+                <span class="firma2-public-project__year-span typography-body-sm" aria-hidden="true">
+                  <span>{r.bars[0]?.year}</span><span>{r.bars[r.bars.length - 1]?.year}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+
+    <section data-section="funding" data-aliasable-title class="firma2-public-project__band" style={`order:${orderIndex.get('funding')}`} hidden={hiddenAtBuild.has('funding')} aria-labelledby="firma2-pp-funding">
+      <div class="firma2-public-project__col stack" data-gap="lg">
+        <h2 id="firma2-pp-funding" class="typography-heading-lg">{label('funding')}</h2>
+        {shownSources.length > 0 && (
+          <ul class="firma2-public-project__treemap" style={`--wide:${FUND_WIDE};--tall:${FUND_TALL}`}>
+            {shownSources.map((f, i) => (
+              <li style={fundPlace(i)}>
+                <div class="firma2-public-project__tile">
+                  <span class="firma2-public-project__tile-amount">{currencyFormatter.format(f.amount)}</span>
+                  <span class="firma2-public-project__tile-name">{f.name}</span>
+                  <span class="firma2-public-project__tile-from">{f.organization} · {Math.round((f.amount / fundingTotal) * 100)}%</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {withheldSources.map((f) => (
+          <p class="typography-body-md" hidden data-publish-key={`funding:${f.name}`} data-reveal>
+            {f.name} · {f.organization} · {currencyFormatter.format(f.amount)}
+          </p>
+        ))}
+      </div>
+    </section>
+
+    <section data-section="expenditures" data-aliasable-title class="firma2-public-project__band" style={`order:${orderIndex.get('expenditures')}`} hidden={hiddenAtBuild.has('expenditures')} aria-labelledby="firma2-pp-spent">
+      <div class="firma2-public-project__col stack" data-gap="lg">
+        <h2 id="firma2-pp-spent" class="typography-heading-lg">{label('expenditures')}</h2>
+        {spent.length === 0 ? (
+          <p class="firma2-public-project__quiet typography-body-md">Nothing spent yet.</p>
+        ) : (
+          <div class="firma2-public-project__spending">
+            <div class="stack" data-gap="2xs" data-count-host>
+              <span class="firma2-public-project__figure" data-count>{currencyFormatter.format(spentTotal)}</span>
+              <span class="typography-label-md-strong">Spent to date</span>
+              <span class="firma2-public-project__quiet typography-body-sm">
+                {Math.round((spentTotal / project.estimatedTotalCost) * 100)}% of the {compactUsd.format(project.estimatedTotalCost)} estimated cost
+              </span>
+            </div>
+            <ol class="firma2-public-project__columns">
+              {spent.map((e) => (
+                <li>
+                  <span class="firma2-public-project__column-value typography-label-sm-strong">{compactUsd.format(e.spent)}</span>
+                  <span class="firma2-public-project__column" style={`--h:${((e.spent / spentTop) * 100).toFixed(1)}%`}></span>
+                  <span class="firma2-public-project__column-year typography-body-sm">{e.year}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </div>
+    </section>
+
+    <section data-section="timeline" data-aliasable-title class="firma2-public-project__band" style={`order:${orderIndex.get('timeline')}`} hidden={hiddenAtBuild.has('timeline')}>
+      <div class="firma2-public-project__col">
+        <Firma2ProjectTimeline milestones={detail.milestones} readonly />
+      </div>
+    </section>
+
+    <section data-section="gallery" data-aliasable-title class="firma2-public-project__band" style={`order:${orderIndex.get('gallery')}`} hidden={hiddenAtBuild.has('gallery')}>
+      <div class="firma2-public-project__col stack" data-gap="lg">
+        <figure class="firma2-public-project__compare stack" data-gap="sm" data-compare data-wide={JSON.stringify(wide)} hidden={!(before && after)}>
+          <div class="firma2-public-project__wipe" data-wipe style="--split: 50%">
+            <img src={after ? wide[after.id] : ''} alt={after?.alt || after?.caption || ''} width="1600" height="800" loading="lazy" decoding="async" data-compare-after />
+            <img class="firma2-public-project__wipe-before" src={before ? wide[before.id] : ''} alt={before?.alt || before?.caption || ''} width="1600" height="800" loading="lazy" decoding="async" data-compare-before />
+            <span class="firma2-public-project__wipe-line" aria-hidden="true"><span></span></span>
+            <span class="firma2-public-project__when firma2-public-project__when--before typography-label-sm-strong" aria-hidden="true" data-compare-before-date>{before?.date}</span>
+            <span class="firma2-public-project__when firma2-public-project__when--after typography-label-sm-strong" aria-hidden="true" data-compare-after-date>{after?.date}</span>
+            <input class="firma2-public-project__wipe-range" type="range" min="0" max="100" value="50" aria-label={before && after ? `Compare ${before.date} with ${after.date}` : 'Compare before and after'} data-wipe-range />
+          </div>
+          <figcaption class="firma2-public-project__quiet typography-body-sm" data-compare-caption>{before && after ? `${before.caption} (${before.date}) · ${after.caption} (${after.date})` : ''}</figcaption>
+        </figure>
+        <Firma2ProjectGallery photos={detail.photos} readonly slug={slug} />
+      </div>
+    </section>
+
+    <section data-section="map" data-aliasable-title class="firma2-public-project__band firma2-public-project__band--bleed" style={`order:${orderIndex.get('map')}`} hidden={hiddenAtBuild.has('map')}>
+      <Firma2ProjectMap detail={detail} readonly />
+    </section>
+  </div>
+</article>
+
+<style>
+  .firma2-public-project [hidden] {
+    display: none !important;
+  }
+  .firma2-public-project {
+    --_gutter: var(--firma2-public-gutter, var(--spacing-600));
+    --_ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /* The page column: the public site's 76rem measure and the frame's gutter. */
+  .firma2-public-project__col {
+    box-sizing: border-box;
+    max-inline-size: 76rem;
+    margin-inline: auto;
+    padding-inline: var(--_gutter);
+  }
+  .firma2-public-project h1,
+  .firma2-public-project h2,
+  .firma2-public-project h3,
+  .firma2-public-project p,
+  .firma2-public-project dl,
+  .firma2-public-project dd,
+  .firma2-public-project figure {
+    margin: 0;
+  }
+  .firma2-public-project h1,
+  .firma2-public-project h2 {
+    text-wrap: balance;
+  }
+  .firma2-public-project__quiet {
+    color: var(--color-content-default-secondary);
+  }
+
+  /* ---- The hero: the public home's dark band. Dark in both themes. ---- */
+  .firma2-public-project__hero {
+    --_ground: var(--color-background-inverse);
+    --_ink: var(--color-content-inverse);
+    --_accent: var(--color-background-brand);
+    display: grid;
+    grid-template-columns: minmax(0, 11fr) minmax(0, 9fr);
+    min-block-size: min(40rem, calc(100dvh - 8rem));
+    background: var(--_ground);
+    color: var(--_ink);
+  }
+  :global(html[data-scheme='dark']) .firma2-public-project__hero {
+    --_ground: var(--color-background-elevation-sunken);
+    --_ink: var(--color-content-default);
+  }
+  .firma2-public-project__hero--text {
+    grid-template-columns: minmax(0, 1fr);
+    min-block-size: 0;
+  }
+  .firma2-public-project__hero-text {
+    box-sizing: border-box;
+    align-content: center;
+    padding-block: var(--spacing-900);
+    /* The page column's left edge, whatever the window's width. */
+    padding-inline: max(var(--_gutter), calc((100vw - 76rem) / 2 + var(--_gutter))) var(--spacing-800);
+  }
+  .firma2-public-project__type {
+    color: var(--_accent);
+  }
+  .firma2-public-project__meta {
+    opacity: 0.86;
+  }
+  .firma2-public-project__meta > * + *::before {
+    content: '·';
+    margin-inline-end: var(--spacing-200);
+  }
+  .firma2-public-project__poster {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-500) var(--spacing-800);
+  }
+  .firma2-public-project__poster > div {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: var(--spacing-100);
+  }
+  .firma2-public-project__poster dd {
+    font-family: var(--typography-font-family-display);
+    font-weight: var(--typography-font-weight-bold);
+    font-size: clamp(2.5rem, 4.6vw, 4.5rem);
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--_accent);
+  }
+  .firma2-public-project__poster dt {
+    opacity: 0.86;
+  }
+  .firma2-public-project__featured {
+    position: relative;
+    overflow: hidden;
+    background: var(--_ground);
+  }
+  .firma2-public-project__featured img {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    transition: scale 900ms var(--_ease);
+  }
+  .firma2-public-project__featured figcaption {
+    position: absolute;
+    inset: auto 0 0;
+    padding: var(--spacing-900) var(--spacing-500) var(--spacing-400);
+    background: linear-gradient(to top, rgb(0 0 0 / 0.72), transparent);
+    color: #fff;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-public-project__featured:hover img {
+      scale: 1.04;
+    }
+  }
+
+  /* ---- The facts strip: the rail's facts, across the page ---- */
+  .firma2-public-project__strip {
+    border-block-end: 1px solid var(--color-border-subtle);
+    background: var(--color-background-elevation-raised);
+  }
+  .firma2-public-project__strip-inner {
+    box-sizing: border-box;
+    max-inline-size: 76rem;
+    margin-inline: auto;
+    padding: var(--spacing-500) var(--_gutter);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-400) var(--spacing-800);
+  }
+  .firma2-public-project__strip-fields {
+    display: contents;
+  }
+  .firma2-public-project__strip :global(dt),
+  .firma2-public-project__facts :global(dt) {
+    color: var(--color-content-default-secondary);
+    font-size: var(--font-size-150, 0.875rem);
+  }
+  .firma2-public-project__strip :global(dd) {
+    font-weight: var(--typography-font-weight-medium);
+  }
+  .firma2-public-project :global(.firma2-public-project__none) {
+    color: var(--color-content-default-secondary);
+    font-weight: normal;
+  }
+
+  /* ---- The sections: bands in the project type's order ---- */
+  .firma2-public-project__sections {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-900);
+    padding-block: var(--spacing-800) 0;
+  }
+  /* The map runs the window's width. Its section was built to bleed a step
+     past a padded pane (--firma2-pane-padding); here there is no pane, so no
+     bleed, and its floating plates line up with the page column. */
+  .firma2-public-project__band--bleed {
+    margin-block-start: var(--spacing-200);
+    --firma2-pane-padding: 0px;
+    --firma2-map-plate-inset-inline-start: max(var(--_gutter), calc((100vw - 76rem) / 2 + var(--_gutter)));
+  }
+
+  /* Details: the description reads; the type's own fields sit beside it. */
+  .firma2-public-project__about {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--spacing-500) var(--spacing-800);
+    align-items: start;
+  }
+  .firma2-public-project__description {
+    max-inline-size: 62ch;
+    text-wrap: pretty;
+  }
+  .firma2-public-project__facts {
+    display: grid;
+    gap: var(--spacing-300);
+  }
+  .firma2-public-project__facts:empty {
+    display: none;
+  }
+  .firma2-public-project__goals {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-public-project__goals a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-200);
+    padding: var(--spacing-200) var(--spacing-400) var(--spacing-200) var(--spacing-300);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 999px;
+    color: var(--color-content-default);
+    text-decoration: none;
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+  .firma2-public-project__goal-icon {
+    display: grid;
+    color: var(--color-content-brand);
+    transition: rotate 320ms var(--_ease), scale 320ms var(--_ease);
+  }
+  .firma2-public-project__goal-icon :global(svg) {
+    stroke-width: 1.5;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-public-project__goals a:hover {
+      background: var(--color-background-brand-subtle);
+      border-color: var(--color-border-brand);
+    }
+    .firma2-public-project__goals a:hover .firma2-public-project__goal-icon {
+      scale: 1.15;
+      rotate: -8deg;
+    }
+  }
+
+  /* Results: a figure, its share of plan, and its years. */
+  .firma2-public-project__results {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: var(--spacing-500);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-public-project__result {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-300);
+    padding: var(--spacing-500);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--color-background-elevation-raised);
+  }
+  .firma2-public-project__result > .stack {
+    flex: 1;
+  }
+  .firma2-public-project__figure {
+    font-family: var(--typography-font-family-display);
+    font-weight: var(--typography-font-weight-bold);
+    font-size: clamp(2rem, 3vw, 2.75rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-content-brand);
+  }
+  .firma2-public-project__share {
+    block-size: 6px;
+    border-radius: 999px;
+    background: var(--color-border-default-subtle);
+    overflow: hidden;
+  }
+  .firma2-public-project__share span {
+    display: block;
+    block-size: 100%;
+    background: var(--color-background-brand);
+    transform-origin: left;
+    scale: var(--share) 1;
+  }
+  /* The years: planned as a pale column, reported filling it. */
+  .firma2-public-project__years {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    block-size: 3.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-public-project__years li {
+    position: relative;
+    flex: 1;
+    block-size: 100%;
+  }
+  .firma2-public-project__planned,
+  .firma2-public-project__reported {
+    position: absolute;
+    inset: auto 0 0;
+    block-size: var(--h);
+    border-radius: 2px 2px 0 0;
+    transform-origin: bottom;
+  }
+  .firma2-public-project__planned {
+    background: var(--color-border-default-subtle);
+  }
+  .firma2-public-project__reported {
+    background: var(--color-background-brand);
+    transition: scale 520ms var(--_ease);
+  }
+  .firma2-public-project__year-span {
+    display: flex;
+    justify-content: space-between;
+    margin-block-start: calc(-1 * var(--spacing-200));
+    color: var(--color-content-default-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Hover: the reported columns grow up out of the baseline, year after year. */
+  @keyframes firma2-pp-rise {
+    from { scale: 1 0; }
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-public-project__result:hover .firma2-public-project__reported {
+      animation: firma2-pp-rise 600ms var(--_ease) both;
+    }
+    .firma2-public-project__result:hover li:nth-child(2) .firma2-public-project__reported { animation-delay: 40ms; }
+    .firma2-public-project__result:hover li:nth-child(3) .firma2-public-project__reported { animation-delay: 80ms; }
+    .firma2-public-project__result:hover li:nth-child(4) .firma2-public-project__reported { animation-delay: 120ms; }
+    .firma2-public-project__result:hover li:nth-child(5) .firma2-public-project__reported { animation-delay: 160ms; }
+    .firma2-public-project__result:hover li:nth-child(n + 6) .firma2-public-project__reported { animation-delay: 200ms; }
+  }
+
+  /* Funding: a treemap, area = dollars. */
+  .firma2-public-project__treemap {
+    position: relative;
+    aspect-ratio: var(--wide);
+    max-block-size: 26rem;
+    inline-size: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-public-project__treemap > li {
+    position: absolute;
+    inset-inline-start: var(--x);
+    inset-block-start: var(--y);
+    inline-size: var(--w);
+    block-size: var(--h);
+    padding: var(--spacing-100);
+    box-sizing: border-box;
+    transition: opacity 220ms ease;
+  }
+  .firma2-public-project__tile {
+    box-sizing: border-box;
+    block-size: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: var(--spacing-100);
+    padding: var(--pad);
+    border-radius: var(--radius-md);
+    background: var(--color-background-brand-muted);
+    overflow: hidden;
+    transition: background-color 220ms ease;
+  }
+  .firma2-public-project__tile-amount {
+    font-family: var(--typography-font-family-display);
+    font-weight: var(--typography-font-weight-bold);
+    font-size: clamp(1.5rem, 3vw, 2.75rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--color-content-brand);
+  }
+  .firma2-public-project__tile-name {
+    font-weight: var(--typography-font-weight-semibold, 600);
+    text-wrap: balance;
+  }
+  .firma2-public-project__tile-from {
+    font-size: var(--font-size-150, 0.875rem);
+    color: var(--color-content-default-secondary);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-public-project__treemap:hover > li:not(:hover) {
+      opacity: 0.45;
+    }
+    .firma2-public-project__treemap > li:hover .firma2-public-project__tile {
+      background: color-mix(in srgb, var(--color-background-brand) 30%, var(--color-background-brand-muted));
+    }
+  }
+  @media (max-width: 45rem) {
+    .firma2-public-project__treemap {
+      aspect-ratio: var(--tall);
+      max-block-size: none;
+    }
+    .firma2-public-project__treemap > li {
+      inset-inline-start: var(--tx);
+      inset-block-start: var(--ty);
+      inline-size: var(--tw);
+      block-size: var(--th);
+    }
+  }
+
+  /* Spending: the total, then a column per year. */
+  .firma2-public-project__spending {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) minmax(0, 3fr);
+    gap: var(--spacing-600) var(--spacing-800);
+    align-items: end;
+  }
+  .firma2-public-project__columns {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--spacing-300);
+    block-size: 14rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-public-project__columns li {
+    flex: 1;
+    max-inline-size: 6rem;
+    block-size: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--spacing-100);
+    transition: opacity 200ms ease;
+  }
+  .firma2-public-project__column {
+    inline-size: 100%;
+    block-size: var(--h);
+    min-block-size: 4px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    background: color-mix(in srgb, var(--color-background-brand) 55%, transparent);
+    transition: background-color 200ms ease;
+  }
+  .firma2-public-project__column-year {
+    color: var(--color-content-default-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .firma2-public-project__column-value {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-public-project__columns:hover li:not(:hover) {
+      opacity: 0.4;
+    }
+    .firma2-public-project__columns li:hover .firma2-public-project__column {
+      background: var(--color-background-brand);
+    }
+  }
+
+  /* Photos: before and after, then the gallery. */
+  .firma2-public-project__wipe {
+    position: relative;
+    aspect-ratio: 2 / 1;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--color-background-elevation-sunken);
+    touch-action: pan-y;
+    cursor: ew-resize;
+  }
+  .firma2-public-project__wipe img {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+  .firma2-public-project__compare[hidden] {
+    display: none;
+  }
+
+  .firma2-public-project__wipe img.firma2-public-project__wipe-before {
+    clip-path: inset(0 calc(100% - var(--split)) 0 0);
+  }
+  .firma2-public-project__wipe-line {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: var(--split);
+    inline-size: 2px;
+    margin-inline-start: -1px;
+    background: #fff;
+    pointer-events: none;
+  }
+  .firma2-public-project__wipe-line span {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
+    translate: -50% -50%;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.3);
+  }
+  .firma2-public-project__wipe-line span::before {
+    content: '‹ ›';
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: #1a1a1a;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+  .firma2-public-project__when {
+    position: absolute;
+    inset-block-start: var(--spacing-300);
+    padding: var(--spacing-100) var(--spacing-300);
+    border-radius: var(--radius-sm);
+    background: rgb(0 0 0 / 0.6);
+    color: #fff;
+    pointer-events: none;
+  }
+  .firma2-public-project__when--before {
+    inset-inline-start: var(--spacing-300);
+  }
+  .firma2-public-project__when--after {
+    inset-inline-end: var(--spacing-300);
+  }
+  /* The keyboard's way in: a native range over the photo, invisible, with a
+     ring on the handle when it has focus. */
+  .firma2-public-project__wipe-range {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: ew-resize;
+  }
+  .firma2-public-project__wipe:has(.firma2-public-project__wipe-range:focus-visible) .firma2-public-project__wipe-line span {
+    outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 64rem) {
+    .firma2-public-project__hero {
+      grid-template-columns: minmax(0, 1fr);
+      min-block-size: 0;
+    }
+    .firma2-public-project__hero-text {
+      padding-inline: var(--_gutter);
+      padding-block: var(--spacing-800);
+    }
+    .firma2-public-project__featured {
+      block-size: clamp(16rem, 50vw, 26rem);
+    }
+    .firma2-public-project__about,
+    .firma2-public-project__spending {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 45rem) {
+    .firma2-public-project__wipe {
+      aspect-ratio: 4 / 3;
+    }
+    .firma2-public-project__columns {
+      block-size: 10rem;
+      gap: var(--spacing-200);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-public-project__featured img,
+    .firma2-public-project__goal-icon {
+      transition: none;
+      scale: 1 !important;
+      rotate: 0deg !important;
+    }
+    .firma2-public-project__reported {
+      animation: none !important;
+    }
+  }
+</style>
+
+<script>
+  import { fieldRows, resolveSections } from '../../data/firma2-project-types';
+  import { allFields, isProjectTypeKey, withProjectTypeDraft } from '../../lib/project-type-draft';
+  import { applyBrand, readBrand, TENANT_BRAND_KEY } from '../../lib/tenant-brand';
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-public-project').forEach((root) => {
+    const slug = root.dataset.projectTypeSlug ?? '';
+    const project = JSON.parse(root.dataset.project ?? '{}');
+
+    /** Fold the project type's current state over the page — the studio's preview runs this too. */
+    const resolve = () => {
+      const projectType = withProjectTypeDraft(slug);
+      if (!projectType) return;
+      resolveSections(projectType.sections).forEach(({ section, visible }, index) => {
+        const el = root.querySelector<HTMLElement>(`[data-section="${section.key}"]`);
+        if (!el) return;
+        el.style.order = String(index);
+        el.hidden = !visible;
+      });
+      const defs = allFields();
+      (['rail', 'details'] as const).forEach((placement) => {
+        const dl = root.querySelector<HTMLElement>(`[data-fields="${placement}"]`);
+        if (!dl) return;
+        dl.innerHTML = fieldRows(projectType, project, defs, placement)
+          .map(
+            (r) =>
+              `<div><dt>${esc(r.label)}</dt><dd>${r.value ? esc(r.value) : '<span class="firma2-public-project__none">Not answered</span>'}</dd></div>`,
+          )
+          .join('');
+      });
+    };
+
+    resolve();
+    // The studio and the branding screen write in another window; this one follows.
+    window.addEventListener('storage', (event) => {
+      if (isProjectTypeKey(event.key)) resolve();
+      if (event.key === TENANT_BRAND_KEY) applyBrand(readBrand());
+    });
+  });
+</script>
+
+<script>
+  // THE FEATURED PHOTO AND THE PAIR, as this browser last edited them on the
+  // record: this browser's metadata laid over the seed the gallery carries.
+  import { PHOTO_META_EVENT, leadPair, leadPhoto, resolvePhotos, type ResolvedPhoto } from '../../lib/photo-meta';
+  import { FEATURED_EVENT } from '../../lib/featured-photo';
+
+  const apply = (): void => {
+    const seedEl = document.querySelector<HTMLScriptElement>('[data-photos-seed]');
+    const figure = document.querySelector<HTMLElement>('[data-featured-slug]');
+    const compare = document.querySelector<HTMLElement>('[data-compare]');
+    const slug = figure?.dataset.featuredSlug ?? document.querySelector<HTMLElement>('[data-gallery]')?.dataset.slug ?? '';
+    if (!seedEl || !slug) return;
+    const photos: ResolvedPhoto[] = resolvePhotos(slug, JSON.parse(seedEl.textContent ?? '[]'));
+
+    if (figure) {
+      const leads: { id: string; src: string; caption: string; date: string }[] = JSON.parse(figure.dataset.featuredPhotos ?? '[]');
+      const chosen = leadPhoto(photos);
+      const photo = leads.find((l) => l.id === chosen?.id);
+      const img = figure.querySelector<HTMLImageElement>('[data-featured-image]');
+      if (photo && img && img.getAttribute('src') !== photo.src) {
+        img.src = photo.src;
+        figure.querySelector('[data-featured-caption]')!.textContent = photo.caption;
+        figure.querySelector('[data-featured-date]')!.textContent = photo.date;
+      }
+    }
+
+    if (compare) {
+      const wide: Record<string, string> = JSON.parse(compare.dataset.wide ?? '{}');
+      const pair = leadPair(photos);
+      const usable = !!pair && !!wide[pair.before.id] && !!wide[pair.after.id];
+      compare.hidden = !usable;
+      if (usable && pair) {
+        const set = (hook: string, attr: 'src' | 'alt', value: string): void => {
+          const el = compare.querySelector<HTMLImageElement>(hook);
+          if (el && el[attr] !== value) el[attr] = value;
+        };
+        set('[data-compare-before]', 'src', wide[pair.before.id]);
+        set('[data-compare-after]', 'src', wide[pair.after.id]);
+        set('[data-compare-before]', 'alt', pair.before.alt || pair.before.caption);
+        set('[data-compare-after]', 'alt', pair.after.alt || pair.after.caption);
+        compare.querySelector('[data-compare-before-date]')!.textContent = pair.before.date;
+        compare.querySelector('[data-compare-after-date]')!.textContent = pair.after.date;
+        compare.querySelector('[data-compare-caption]')!.textContent =
+          `${pair.before.caption} (${pair.before.date}) · ${pair.after.caption} (${pair.after.date})`;
+      }
+    }
+  };
+
+  apply();
+  window.addEventListener(PHOTO_META_EVENT, apply);
+  window.addEventListener(FEATURED_EVENT, apply);
+</script>
+
+<script>
+  // BEFORE AND AFTER. The split follows a fine pointer across the photo 1:1,
+  // a finger dragging across it, and the arrow keys through the range input.
+  document.querySelectorAll<HTMLElement>('[data-wipe]').forEach((wipe) => {
+    const range = wipe.querySelector<HTMLInputElement>('[data-wipe-range]')!;
+    const set = (percent: number) => {
+      const p = Math.min(100, Math.max(0, percent));
+      wipe.style.setProperty('--split', `${p.toFixed(2)}%`);
+      range.value = String(Math.round(p));
+    };
+    const fromPointer = (e: PointerEvent) => {
+      const box = wipe.getBoundingClientRect();
+      set(((e.clientX - box.left) / box.width) * 100);
+    };
+    wipe.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse' || e.buttons) fromPointer(e);
+    });
+    wipe.addEventListener('pointerdown', fromPointer);
+    range.addEventListener('input', () => set(Number(range.value)));
+  });
+</script>
+
+<script>
+  // Figures count up from zero while the pointer is on them (src/lib/count-up).
+  import { countUpOnHover } from '../../lib/count-up';
+  countUpOnHover();
+</script>
+
+<script>
+  // A publish made in this browser brings the page up to the record: each
+  // value the publish covered swaps to its current text, and each row it
+  // added appears. Reverted changes never do — the public value IS the record.
+  import { readPublishing } from '../../lib/publish-store';
+
+  document.querySelectorAll<HTMLElement>('.firma2-public-project[data-publish-slug]').forEach((root) => {
+    const done = new Set(readPublishing().published[root.dataset.publishSlug!]?.keys ?? []);
+    if (!done.size) return;
+    root.querySelectorAll<HTMLElement>('[data-publish-key]').forEach((el) => {
+      if (!done.has(el.dataset.publishKey!)) return;
+      if (el.hasAttribute('data-reveal')) el.hidden = false;
+      else if (el.dataset.current !== undefined) el.textContent = el.dataset.current;
+    });
+  });
+</script>

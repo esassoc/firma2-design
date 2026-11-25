@@ -144,3 +144,55 @@ Two deliberate deviations, argued in the data module where they bite:
   aspects and suggested dimensions), with "start from scratch" as the escape.
 - The setup page is built on **claim → editable reporter form → answerability**
   (see the brief's "Author the artifact, not its settings").
+
+## Where a value comes from (added 2026-11-12)
+
+A measure's figure has one of four sources. The first three were already in
+the model; the fourth is new.
+
+1. **Reported** — a person types it, per period. The default, and the only
+   source the evidence catalogs knew.
+2. **Derived dimensions** — a breakdown answered by a map layer, the project
+   record, or entry history instead of by a person (see above).
+3. **Measured** — not a source a measure chooses, but a fact shown beside it:
+   a measure whose unit is a size (acres, square feet, miles, linear feet)
+   shows what the project's mapped work areas add up to, labelled "Measured
+   from the work areas". The reported figure, when there is one, wins; the
+   measured one stays visible as reference and is never divided into it.
+4. **Estimated** — `source: 'estimated'` on the measure. A **method** works the
+   figure out from what the record already holds, and nobody types it.
+
+### Estimated measures
+
+A method (`src/data/firma2-estimate-methods.ts`) is a coefficient table:
+
+```
+estimate = Σ over the project's mapped areas
+           acres(area) × coefficient(practice, region(area))
+```
+
+- **Practice** — the first of the project's classifications the table covers.
+- **Region** — the hydrologic region the area's centre falls in.
+- **Quantity** — acres; reaches and points carry none and are left out.
+
+The figure carries its provenance ("Estimated with <method> · <version>") and
+a "How this was estimated" disclosure listing method, version, practice, each
+area's inputs and coefficient, and the estimate. When an input is missing — no
+practice the method covers, no mapped area, no coefficient for the region — the
+project shows **what is missing**, never a number.
+
+Rules:
+
+- An estimated measure takes its method's unit, needs no reporter guidance,
+  and takes no entries, targets or Report-view fields.
+- The method's version is part of the value's provenance; a new version of a
+  table is a new method edition, not a silent change to old figures.
+- The one seeded method's coefficients are **invented** and labelled mock in
+  the data file.
+
+### Which measures a project is asked
+
+A catalog measure is asked of a project only when one of the project's
+classifications tracks it (the goal-side link, `src/lib/measure-goals.ts`).
+This narrows PM 2's "every published measure on every project". Rows with a
+target or filed figures are never hidden.

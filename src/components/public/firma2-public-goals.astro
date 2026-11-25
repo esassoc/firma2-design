@@ -1,0 +1,256 @@
+---
+// firma2-public-goals — what the program set out to do, and how far along it
+// is: each plan goal as a card with ONE measure against its target
+// (publicGoals).
+//
+// EACH GOAL WEARS ITS ICON AS A WATERMARK — large, faint, in the card's bottom
+// right corner behind the text (user, 2026-11-20: "towards the background of the
+// card… reduce opacity"). Was a 64px glyph on a tinted panel; before that, (2026-11-20, user:
+// icons "instead of cards with the horrible color borders") — one glyph says
+// fish, fire or water before the name is read. The per-goal colours are gone
+// from this page: seven hues on seven cards was noise.
+//
+// THE SHARE IS THE CARD'S FIGURE — "48%" at display size — because the reader
+// compares goals by how far along each is; the measure and "14.5 of 30 miles
+// by 2030" say of what. A goal with projects but no reported result says so
+// rather than showing 0%.
+//
+// CARDS (2026-11-20, user: "there's just links in the second part of the
+// page"). They wrap and GROW to fill their row, so seven goals sit 4 + 3 with
+// no ragged gap, and any other count fills too.
+//
+// The goal's name is the door; its hit area is the card.
+//
+// UNDER A FINE POINTER THE CARD TURNS OVER INTO THE HERO'S COLOURS (user,
+// 2026-11-20: a rotating icon was not "as flashy as you can get"). Four things
+// happen together, all started by the pointer and reversed when it leaves:
+//   - a dark wash sweeps the card from the icon's corner (clip-path circle);
+//   - the icon comes to full strength in the brand's colour and DRAWS ITSELF,
+//     stroke by stroke (pathLength=1 on each glyph path);
+//   - the share counts up from zero to its figure;
+//   - the bar fills again from empty.
+// The card lifts as it does. Reduced motion: the wash and colours cross-fade;
+// nothing sweeps, draws, counts or fills. Touch: none of it.
+//
+// bcn-lego-checked: esa-card is the box and esa-progress-bar the bar; the
+// icon is the registry's glyph drawn at 144px (esa-icon stops at 28px). The door to the
+// index is an EsaButton. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaCard from '@esa/ecology/esa-card.astro';
+import EsaProgressBar from '@esa/ecology/esa-progress-bar.astro';
+import type { PublicGoal } from '../../data/firma2-public-site';
+import { PUBLIC_NAV } from '../../data/firma2-public-site';
+import { iconSvg } from '@esa/ecology/icon-registry';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  goals: PublicGoal[];
+}
+
+const { goals } = Astro.props;
+const goalsHref = PUBLIC_NAV.find((item) => item.key === 'classifications')!.href;
+// Every stroke gets a path length of 1, so one dash offset draws any glyph.
+const drawable = (icon: string) => (iconSvg(icon, 144) ?? '').replace(/<(path|circle|rect|line|polyline|polygon|ellipse)\b/g, '<$1 pathLength="1"');
+const n = (value: number, decimals: number) => value.toLocaleString('en-US', { maximumFractionDigits: decimals });
+---
+{goals.length > 0 && (
+  <section class="firma2-public-goals stack" data-gap="lg" aria-labelledby="firma2-public-goals-title">
+    <div class="repel" data-align="center">
+      <h2 id="firma2-public-goals-title" class="typography-heading-lg">Goals</h2>
+      <EsaButton variant="ghost" href={withBase(goalsHref)} iconRight="arrow-right">All goals</EsaButton>
+    </div>
+    <ul class="firma2-public-goals__list">
+      {goals.map(({ goal, icon, href, projects, lead }) => (
+        <li class="firma2-public-goals__card" data-count-host data-goal={goal.slug}>
+          <EsaCard variant="outlined">
+            <div class="firma2-public-goals__body stack" data-gap="md">
+              <span class="firma2-public-goals__wash" aria-hidden="true"></span>
+              <span class="firma2-public-goals__icon" aria-hidden="true" set:html={drawable(icon)} />
+              <div class="stack" data-gap="2xs">
+                <h3 class="typography-title-sm-strong"><a href={withBase(href)}>{goal.name}</a></h3>
+                <span class="firma2-public-goals__quiet typography-body-sm">{projects} project{projects === 1 ? '' : 's'}</span>
+              </div>
+              {lead ? (
+                <div class="firma2-public-goals__result stack" data-gap="xs">
+                  <span class="firma2-public-goals__share typography-display-sm"><span data-count>{lead.percent}</span>%</span>
+                  <span class="typography-label-md">{lead.measure.name}</span>
+                  <EsaProgressBar value={lead.percent} size="md" showValue={false} label={`${n(lead.reported, lead.measure.decimalPlaces)} of ${n(lead.target, 0)} ${lead.measure.unit ?? ''} by ${lead.year}`} />
+                </div>
+              ) : (
+                <span class="firma2-public-goals__result firma2-public-goals__quiet typography-body-md">No results reported yet</span>
+              )}
+            </div>
+          </EsaCard>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}
+
+<style>
+  .firma2-public-goals h2,
+  .firma2-public-goals h3 {
+    margin: 0;
+    text-wrap: balance;
+  }
+  .firma2-public-goals__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-500);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .firma2-public-goals__card {
+    transition: translate 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms ease;
+  }
+  /* The wash: the hero's dark ground, opening from the icon's corner. Above
+     the card's surface, under the icon and the text: the body isolates, so
+     negative layers sit behind what is written on the card and the name's
+     full-card hit area stays on top. */
+  .firma2-public-goals__wash {
+    position: absolute;
+    z-index: -2;
+    inset: 0;
+    background: var(--color-background-inverse);
+    clip-path: circle(0% at 88% 88%);
+    transition: clip-path 520ms cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+  }
+  .firma2-public-goals__icon {
+    z-index: -1;
+    transform-origin: 70% 70%;
+    transition: opacity 260ms ease, color 260ms ease, scale 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .firma2-public-goals__body,
+  .firma2-public-goals__quiet {
+    transition: color 220ms ease;
+  }
+  .firma2-public-goals__share {
+    font-variant-numeric: tabular-nums;
+  }
+  @keyframes firma2-goal-draw {
+    from { stroke-dashoffset: 1; }
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes firma2-goal-fill {
+    from { scale: 0 1; }
+    to { scale: 1 1; }
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-public-goals__card:hover {
+      translate: 0 -6px;
+      box-shadow: var(--elevation-4, 0 12px 32px rgb(0 0 0 / 0.18));
+      /* The legos inside read these roles, so the whole card follows. */
+      --color-content-default: var(--color-content-inverse);
+      --color-content-default-secondary: var(--color-content-inverse);
+    }
+    .firma2-public-goals__card:hover .firma2-public-goals__wash {
+      clip-path: circle(150% at 88% 88%);
+    }
+    .firma2-public-goals__card:hover .firma2-public-goals__body {
+      color: var(--color-content-inverse);
+    }
+    .firma2-public-goals__card:hover .firma2-public-goals__quiet {
+      color: var(--color-content-inverse);
+      opacity: 0.72;
+    }
+    .firma2-public-goals__card:hover .firma2-public-goals__icon {
+      opacity: 1;
+      scale: 1.08;
+      color: var(--color-background-brand);
+    }
+    .firma2-public-goals__card:hover .firma2-public-goals__icon :global(svg > *) {
+      stroke-dasharray: 1;
+      animation: firma2-goal-draw 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    .firma2-public-goals__card:hover :global(.esa-progress-bar__fill) {
+      transform-origin: left;
+      animation: firma2-goal-fill 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+  }
+  .firma2-public-goals__card:active {
+    scale: 0.985;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-public-goals__card,
+    .firma2-public-goals__icon {
+      transition: opacity 200ms ease, color 200ms ease, box-shadow 200ms ease;
+      translate: 0 0 !important;
+      scale: 1 !important;
+    }
+    /* No sweep: the wash cross-fades. */
+    .firma2-public-goals__wash {
+      clip-path: none;
+      opacity: 0;
+      transition: opacity 200ms ease;
+    }
+    .firma2-public-goals__card:hover .firma2-public-goals__wash {
+      clip-path: none;
+      opacity: 1;
+    }
+    .firma2-public-goals__card:hover .firma2-public-goals__icon :global(svg > *),
+    .firma2-public-goals__card:hover :global(.esa-progress-bar__fill) {
+      animation: none;
+    }
+  }
+  .firma2-public-goals__card {
+    position: relative;
+    flex: 1 1 15rem;
+    display: grid;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  /* Anchored to the CARD's corner (the li), whatever the body's height. It
+     sits behind the text; the pointer passes through. */
+  .firma2-public-goals__icon {
+    position: absolute;
+    inset-block-end: calc(-1 * var(--spacing-300));
+    inset-inline-end: calc(-1 * var(--spacing-300));
+    color: var(--color-content-brand);
+    opacity: 0.14;
+    pointer-events: none;
+    user-select: none;
+  }
+  /* A 144px glyph wants a lighter line than the registry's 2px. */
+  .firma2-public-goals__icon :global(svg) {
+    display: block;
+    stroke-width: 1;
+  }
+  .firma2-public-goals__body {
+    isolation: isolate;
+    block-size: 100%;
+  }
+  .firma2-public-goals__result {
+    margin-block-start: auto;
+    /* THE BAR'S TRACK. esa-progress-bar paints it with the SUNKEN surface and
+       exposes no hook for it. On a raised card in the dark theme, sunken is
+       darker than the card, so the unfilled part read as a black slot cut
+       through the watermark (user, 2026-11-20). Re-pointed here to a step
+       that is lighter than the card in dark and darker than it in light. */
+    --color-background-elevation-sunken: var(--color-border-default-subtle);
+  }
+  .firma2-public-goals h3 a {
+    color: inherit;
+    text-decoration: none;
+  }
+  /* The name's hit area is the card. */
+  .firma2-public-goals h3 a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  @media (hover: hover) {
+    .firma2-public-goals__card:hover h3 a {
+      text-decoration: underline;
+    }
+  }
+  .firma2-public-goals__quiet {
+    color: var(--color-content-default-secondary);
+  }
+</style>
+
+<script>
+  import { countUpOnHover } from '../../lib/count-up';
+  countUpOnHover();
+</script>

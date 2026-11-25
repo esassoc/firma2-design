@@ -1,0 +1,140 @@
+---
+// firma2-dashboard-sheet — where one Progress Dashboard tile is edited. A
+// tile's Edit chart (on its grip) docks this beside the dashboard; the tile stays in view and
+// redraws as the fields change. ONE SHEET FOR THE DASHBOARD, pointed at
+// whichever tile was opened last ([[side-sheets-dock]]).
+//
+// THE FIELDS ARE THE INVENTORY, in the order a tile is decided:
+//   Data from   the inventory's section — performance measures, projects,
+//               money, work areas, reporting, custom fields
+//   Data        the figure itself, from that section
+//   Show as     one number, bars by group, by year, running total — only the
+//               forms this figure can take
+//   Split by    the figure's own breakdowns, then every dimension, custom
+//               fields included
+//   Width, Height   the same sizes the tile's corner drags to
+// Two fields for the figure, not one list of forty: a section first keeps
+// each list short enough to read.
+//
+// It does not ask whose projects — that is the dashboard's filter, once, for
+// every tile.
+//
+// bcn-lego-checked: bcn-side-sheet (the spoke's docked sheet), esa-select and
+// esa-button are the controls; layout is .stack. No bespoke CSS. Beacon is
+// not cloned.
+import EsaButton from '@esa/ecology/esa-button.astro';
+---
+<div>
+  <bcn-side-sheet heading="Edit chart" size="md" position="right" data-dashboard-sheet>
+    <div class="stack" data-gap="lg">
+      <esa-select label="Data from" size="md" data-field="group"></esa-select>
+      <esa-select label="Data" size="md" data-field="measure"></esa-select>
+      <esa-select label="Show as" size="md" data-field="show"></esa-select>
+      <div data-field-wrap="split">
+        <esa-select label="Split by" size="md" data-field="split"></esa-select>
+      </div>
+      <div class="stack" data-gap="lg" data-field-wrap="size">
+        <esa-select label="Width" size="md" data-field="span"></esa-select>
+        <esa-select label="Height" size="md" data-field="height"></esa-select>
+      </div>
+    </div>
+    <div slot="footer" class="repel">
+      <span></span>
+      <EsaButton variant="primary" size="md" data-sheet-done>Done</EsaButton>
+    </div>
+  </bcn-side-sheet>
+</div>
+
+<script>
+  import '../shared/bcn-side-sheet';
+  import '@esa/ecology/esa-select';
+  import { figureGroups, heightChoices, measureOf, showChoices, showOf, showPatch, splitChoices, widthChoices, type TileState } from '../../lib/dashboard-model';
+  import { ds, storeFor, type Store } from '../../lib/dashboard-store';
+  import { onRecordMode } from '../../lib/record-mode';
+
+  type Field = HTMLElement & { options: { value: string; label: string }[]; value: string | null };
+  type Sheet = HTMLElement & { show: () => void; close: () => void };
+
+  const sheet = document.querySelector<Sheet>('[data-dashboard-sheet]');
+  if (sheet) {
+    const fields = [...sheet.querySelectorAll<Field>('[data-field]')];
+    /** The tile the sheet is editing. */
+    let active: Store | null = null;
+
+    // "Data from" and "Show as" are fields over other parts of the state.
+    const valueOf = (s: TileState, key: string): string =>
+      key === 'group' ? measureOf(ds, s.measure).group : key === 'show' ? showOf(s) : String(s[key as keyof TileState]);
+    const wrap = (name: string, on: boolean) => {
+      const el = sheet.querySelector<HTMLElement>(`[data-field-wrap="${name}"]`);
+      if (el) el.style.display = on ? '' : 'none';
+    };
+
+    const fill = () => {
+      if (!active) return;
+      const s = active.get();
+      const m = measureOf(ds, s.measure);
+      const options: Record<string, { value: string; label: string }[]> = {
+        group: figureGroups(ds).map((g) => ({ value: g, label: g })),
+        measure: ds.measures.filter((x) => x.group === m.group).map((x) => ({ value: x.slug, label: x.name })),
+        show: showChoices(m),
+        split: splitChoices(ds, m),
+        span: widthChoices(s.span),
+        height: heightChoices(s.height),
+      };
+      fields.forEach((field) => {
+        const key = field.dataset.field!;
+        field.options = options[key].map(({ value, label }) => ({ value, label }));
+        if (field.value !== valueOf(s, key)) field.value = valueOf(s, key);
+      });
+      // One number has nothing to split and no size to set.
+      wrap('split', s.kind !== 'number');
+      wrap('size', s.kind !== 'number');
+    };
+
+    fields.forEach((field) => {
+      const key = field.dataset.field!;
+      field.addEventListener('change', () => {
+        if (!field.value || !active || field.value === valueOf(active.get(), key)) return;
+        const value = field.value;
+        // A new section starts on its first figure.
+        if (key === 'group') active.set({ measure: ds.measures.find((x) => x.group === value)?.slug ?? '' });
+        else if (key === 'show') active.set(showPatch(value));
+        else if (key === 'span' || key === 'height') active.set({ [key]: Number(value) } as Partial<TileState>);
+        else active.set({ [key]: value } as Partial<TileState>);
+        // What Update confirms (firma2-record-mode listens for this).
+        document.dispatchEvent(new CustomEvent('firma2:field-save', { detail: { field: 'dashboard', raw: '' } }));
+      });
+    });
+
+    const known = new Set<Store>();
+    const edit = (store: Store) => {
+      active = store;
+      // Follow the tile from now on: a filter or a drag can change it too.
+      if (!known.has(store)) {
+        known.add(store);
+        store.subscribe(() => {
+          if (store === active) fill();
+        });
+      }
+      fill();
+      sheet.show();
+    };
+
+    // Edit chart on a tile's grip, a chart just added, a chart just copied.
+    document.addEventListener('firma2:tile-edit', (e) => {
+      const tile = (e as CustomEvent<HTMLElement>).detail;
+      void Promise.all(['bcn-side-sheet', 'esa-select'].map((n) => customElements.whenDefined(n))).then(() => edit(storeFor(tile)));
+    });
+    document.addEventListener('firma2:tile-removed', (e) => {
+      if (active?.root === (e as CustomEvent<HTMLElement>).detail) {
+        active = null;
+        sheet.close();
+      }
+    });
+    sheet.querySelector('[data-sheet-done]')?.addEventListener('click', () => sheet.close());
+    // Update ends the edit; a sheet left open would still be editing.
+    onRecordMode((mode) => {
+      if (mode === 'view') sheet.close();
+    });
+  }
+</script>
