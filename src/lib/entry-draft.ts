@@ -6,7 +6,7 @@
 // one period, qualified by the reporter's answers to the measure's
 // breakdowns — at most one option per question, and none is legitimate.
 //
-// EVERY WRITE IS LOGGED (src/lib/measure-changes.ts, the PM 2 change log):
+// EVERY WRITE IS LOGGED (src/lib/changes.ts, the record's one change log):
 // filing an entry is a create, removing one a delete. A caller that rewrites
 // entries as one act — a corrected amount, a re-keyed answer — passes
 // `{ log: false }` and logs the act itself, once.
@@ -28,7 +28,8 @@ export interface EntryDraft {
 }
 
 import { periodName } from '../data/firma2-performance-measures';
-import { logChange } from './measure-changes';
+import { numberText, recordChange } from './changes';
+import { getMeasure } from '../data/firma2-performance-measures';
 
 /** `{ log: false }` when the caller logs the act itself. */
 interface WriteOptions {
@@ -107,21 +108,30 @@ export const removeEntry = (projectSlug: string, id: string, { log = true }: Wri
   }
 };
 
+/** A measure's name from an entry's key: a catalog slug, or `name:<display name>` for a seed row. */
+export const measureNameOf = (measureKey: string): string =>
+  measureKey.startsWith('name:') ? measureKey.slice(5) : getMeasure(measureKey)?.name ?? measureKey;
+
 /**
- * One EntryValue row in the change log. The measure is named by the entry's
- * key — a catalog slug, or `name:<display name>` for a seed row.
+ * One measure-entry change in the log: filed (no value before), removed (none
+ * after) or changed.
  */
 export const logEntry = (
   projectSlug: string,
   entry: Pick<EntryDraft, 'measureKey' | 'year'>,
   oldValue: number | null,
   newValue: number | null,
-): void =>
-  logChange({
-    projectSlug,
-    measureSlug: entry.measureKey,
-    periodName: periodName(entry.year),
-    field: 'EntryValue',
-    oldValue,
-    newValue,
+): void => {
+  const what = `${measureNameOf(entry.measureKey)}, ${periodName(entry.year)}`;
+  const from = numberText(oldValue);
+  const to = numberText(newValue);
+  if (from === to) return;
+  recordChange(projectSlug, {
+    subject: 'measure-entry',
+    key: `${entry.measureKey}:${periodName(entry.year)}`,
+    action: from === undefined ? 'add' : to === undefined ? 'remove' : 'set',
+    from,
+    to,
+    summary: from === undefined ? `Reported value filed: ${what}` : to === undefined ? `Reported value removed: ${what}` : `Reported value changed from ${from} to ${to}: ${what}`,
   });
+};

@@ -29,6 +29,7 @@
 // INVENTED CONTENT, deterministic: values come from a hash of the project
 // name, never from randomness.
 
+import { projects } from './firma2-projects';
 import type { Project, ProjectTypeName } from './firma2-projects';
 import { REAL } from './firma2-real-data';
 
@@ -408,11 +409,11 @@ export const projectTypeFor = (project: Pick<Project, 'projectType'>): ProjectTy
 const hash = (s: string): number => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
 /**
- * A project's answer to one field. Deterministic per project and field; a
- * field defined in the browser has no fixture answer, so it reads as blank —
- * which is the truth about a question nobody has been asked yet.
+ * The invented answer a project is seeded with for one field. Deterministic
+ * per project and field; a field defined in the browser has no fixture answer,
+ * so it reads as blank — the truth about a question nobody has been asked yet.
  */
-export const fieldValue = (
+const seededValue = (
   project: Pick<Project, 'projectName' | 'implementationStartYear'>,
   field: FieldDefinition,
 ): string => {
@@ -444,6 +445,42 @@ export const fieldValue = (
       return '';
   }
 };
+
+/**
+ * A custom field value: one project's answer to one custom field
+ * (docs/data-model.md, section 2 and decision 4). Part of the record, one row
+ * per answer; a field with no answer has no row.
+ */
+export interface CustomFieldValue {
+  /** The project's name: the key the seed projects are known by. */
+  project: string;
+  /** The custom field's id. */
+  field: string;
+  value: string;
+}
+
+/**
+ * Every answer on every project: the fields its type shows, answered. Built
+ * once, so every reader of a value (the project page, the public page, the
+ * dashboard, the intake's "used here" counts) reads the same stored row.
+ */
+export const customFieldValues: CustomFieldValue[] = projects.flatMap((project) =>
+  (projectTypeNamed(project.projectType)?.fields ?? []).flatMap(({ fieldId }): CustomFieldValue[] => {
+    const field = FIELD_DEFINITIONS.find((d) => d.id === fieldId);
+    const value = field ? seededValue(project, field) : '';
+    return value ? [{ project: project.projectName, field: fieldId, value }] : [];
+  }),
+);
+
+const valueIndex = new Map(customFieldValues.map((row) => [`${row.project}|${row.field}`, row.value]));
+
+/** A project's custom field values, in its type's order. */
+export const customValuesOf = (project: Pick<Project, 'projectName'>): CustomFieldValue[] =>
+  customFieldValues.filter((row) => row.project === project.projectName);
+
+/** A project's stored answer to one field, as it reads. Blank when it has none. */
+export const fieldValue = (project: Pick<Project, 'projectName'>, field: Pick<FieldDefinition, 'id'>): string =>
+  valueIndex.get(`${project.projectName}|${field.id}`) ?? '';
 
 export interface FieldRow {
   label: string;

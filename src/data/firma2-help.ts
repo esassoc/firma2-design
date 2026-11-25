@@ -35,7 +35,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     slug: 'performance-measures',
     title: 'Performance measures',
-    paths: ['/prototypes/performance-measures', '/prototypes/pm2', '/prototypes/workspace-settings/performance-measures', '/prototypes/workspace-settings/pm2'],
+    paths: ['/prototypes/performance-measures', '/prototypes/workspace-settings/performance-measures'],
     body: [
       'A performance measure is a question asked of every project, forever: how much of what did this project accomplish?',
       'Every project answers each measure on every report, for the life of the program. Add only what you’ll report on.',

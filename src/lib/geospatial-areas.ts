@@ -1,8 +1,13 @@
-// Which projects fall in which geospatial area — worked out, never stored.
-// A group's areas are its layer's shapes; a project is filed under every area
-// its work touches. Read from the browser's stores on each call, so a work
-// area redrawn on a project, or a layer changed on Map layers, is the filing
-// on the next paint.
+// Which projects fall in which geospatial area. A group's areas are its
+// layer's shapes; a project is filed under every area its work touches.
+//
+// STORED, AND RE-COUNTED ONLY WHEN SOMETHING IT RESTS ON CHANGES
+// (docs/data-model.md, decision 10): one row per project and area. The rows
+// are kept with a signature of what they were counted from, the group's layer,
+// its name field, its areas and every project's work areas. A work area
+// redrawn on a project, or a layer changed on Map layers, changes the
+// signature, and the next read counts again and stores the result. Nobody
+// edits a filing by hand.
 //
 // FAKED HERE, AND WHAT THE REAL THING DOES:
 //   The shapes. A real group asks its layer's service for them. This prototype
@@ -90,6 +95,51 @@ const areasOf = (layer: ReferenceLayer, field: string): Area[] => {
 
 const seeds = Object.fromEntries(projects.map((p) => [projectSlug(p), seedWorkAreas(p)]));
 
+// ---- the stored filing -------------------------------------------------------
+//
+// FAKED: the rows live in this browser's localStorage, one entry per group.
+// At build time there is no store, so the filing is counted and not kept.
+
+const FILING_KEY = 'firma2:area-filing:v1';
+
+/** One stored row: this project is filed under this area. */
+export interface AreaFiling {
+  project: string;
+  area: string;
+}
+
+interface StoredFiling {
+  /** What the rows were counted from. A different signature means count again. */
+  signature: string;
+  rows: AreaFiling[];
+}
+
+const readStored = (groupId: string): StoredFiling | null => {
+  try {
+    const all = JSON.parse(localStorage.getItem(FILING_KEY) ?? '{}');
+    return all && typeof all === 'object' ? (all[groupId] ?? null) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeStored = (groupId: string, stored: StoredFiling): void => {
+  try {
+    const all = JSON.parse(localStorage.getItem(FILING_KEY) ?? '{}');
+    localStorage.setItem(FILING_KEY, JSON.stringify({ ...(all && typeof all === 'object' ? all : {}), [groupId]: stored }));
+  } catch {
+    // No store (the build, or blocked storage): counted each time instead.
+  }
+};
+
+/** A short, stable fingerprint of a value. */
+const fingerprint = (value: unknown): string => {
+  const text = JSON.stringify(value);
+  let h = 5381;
+  for (let i = 0; i < text.length; i += 1) h = ((h << 5) + h + text.charCodeAt(i)) >>> 0;
+  return `${text.length}:${h.toString(36)}`;
+};
+
 export const filing = (group: AreaGroup): Filing => {
   const layer = readLayers().find((l) => l.id === group.layerId) ?? null;
   const areas = layer ? areasOf(layer, group.nameField) : [];
@@ -99,6 +149,12 @@ export const filing = (group: AreaGroup): Filing => {
   const outside: FiledProject[] = [];
   const unlocated: { slug: string; name: string }[] = [];
   let filed = 0;
+
+  const signature = fingerprint([group.layerId, group.nameField, areas.map((a) => [a.id, a.parts ?? a.ring]), projects.map((p) => (work[projectSlug(p)] ?? []).map((s) => s.path))]);
+  const stored = readStored(group.id);
+  const kept = stored?.signature === signature ? stored.rows : null;
+  const counted: AreaFiling[] = [];
+
   projects.forEach((p) => {
     const slug = projectSlug(p);
     const shapes = work[slug] ?? [];
@@ -106,13 +162,21 @@ export const filing = (group: AreaGroup): Filing => {
       unlocated.push({ slug, name: p.projectName });
       return;
     }
-    const points = shapes.flatMap((s) => [...s.path, centroid(s.path)]);
     const project = { slug, name: p.projectName, at: centroid(shapes.flatMap((s) => s.path)) };
-    const hits = rows.filter((row) => (row.area.parts ?? [row.area.ring]).some((ring) => points.some((point) => pointInRing(point, ring))));
+    let hits: typeof rows;
+    if (kept) {
+      const under = new Set(kept.filter((row) => row.project === slug).map((row) => row.area));
+      hits = rows.filter((row) => under.has(row.area.id));
+    } else {
+      const points = shapes.flatMap((s) => [...s.path, centroid(s.path)]);
+      hits = rows.filter((row) => (row.area.parts ?? [row.area.ring]).some((ring) => points.some((point) => pointInRing(point, ring))));
+      hits.forEach((row) => counted.push({ project: slug, area: row.area.id }));
+    }
     hits.forEach((row) => row.projects.push(project));
     if (hits.length) filed += 1;
     else outside.push(project);
   });
+  if (!kept) writeStored(group.id, { signature, rows: counted });
   return { status, layer, areas: rows, outside, unlocated, filed };
 };
 

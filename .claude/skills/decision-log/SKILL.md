@@ -27,3 +27,7 @@ A decision is a choice about what the product does that someone could have made 
 5. Tell the user in one line what you recorded, so a misheard decision is caught at once.
 
 Record only what the user settled. A proposal of yours they have not agreed to is not a decision.
+
+## When the decision changes what is stored
+
+If the decision adds, removes or reshapes something the product keeps (an entity, a field, a setting, a status), update `docs/data-model.md` in the same change: the row, its attributes, and the Settled or Open points entry. A settings screen with no row in the model is a gap, not a detail. Say in the one-line report that the model was updated.

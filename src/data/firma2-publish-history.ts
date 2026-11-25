@@ -24,6 +24,8 @@
 
 import type { Project, ProjectStage } from './firma2-projects';
 import type { AuditEntry, ProjectFunding, PerformanceMeasure } from './firma2-project-detail';
+import { PUBLISHED_SUMMARY, readSentence } from './firma2-changes';
+import type { Change } from './firma2-changes';
 import { REAL } from './firma2-real-data';
 
 /** The fixture's present — firma2-directory's TODAY, restated to keep this module import-free. */
@@ -52,7 +54,7 @@ const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD',
 const costChange = (from: number, to: number) => `Estimated total cost changed from ${usd.format(from)} to ${usd.format(to)}`;
 
 /** The log sentence a publish leaves. Read by an organization's Latest updates as its own kind. */
-export const PUBLISHED_CHANGE = 'Published to the public page';
+export const PUBLISHED_CHANGE = PUBLISHED_SUMMARY;
 
 // ---------------------------------------------------------------------------
 // Seeds
@@ -149,10 +151,6 @@ const SEEDS: Record<string, PublishSeed> = {
 // The diff
 // ---------------------------------------------------------------------------
 
-/** A funding row as the review reads it: the amount, where the request stands, and who offers it. */
-const fundingLine = (row: ProjectFunding): string =>
-  `${usd.format(row.amount)} ${row.status === 'secured' ? 'from' : row.status === 'requested' ? 'requested from' : 'not awarded by'} ${row.organization}`;
-
 export type ChangeGroup = 'Key facts' | 'Performance measures' | 'Funding sources' | 'Work areas';
 
 /** The editable field a change can be reverted through — firma2-editable-field's key and raw format. */
@@ -248,27 +246,30 @@ const realSeed = (project: Project, entries: { iso: string }[]): PublishSeed | u
  * Fold the seed into the record's log and derive the diff. Takes the log
  * newest first, as buildAudit returns it, and returns it the same way.
  */
-export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Context): { audit: AuditEntry[]; publishing: Publishing } => {
-  let entries = base.map((e) => ({ ...e, iso: isoOfLabel(e.date) }));
-  const seed: PublishSeed | undefined = REAL ? realSeed(project, entries) : SEEDS[project.projectName];
+export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Context): { audit: Change[]; publishing: Publishing } => {
+  // THE LOG IS CHANGES FROM HERE ON (src/data/firma2-changes.ts). The seeds
+  // stay authored as sentences; each is read once into a change's facts, and
+  // everything below reads the facts, never the sentence.
+  const made = (sentence: string, by: string, at: string): Change => ({ id: '', ...readSentence(sentence), by, at, source: { kind: 'hand' } });
+  let entries: Change[] = base.map((e) => made(e.change, e.user, isoOfLabel(e.date)));
+  const seed: PublishSeed | undefined = REAL ? realSeed(project, entries.map((e) => ({ iso: e.at }))) : SEEDS[project.projectName];
 
   for (const { startsWith, iso } of seed?.redate ?? []) {
-    const hit = entries.find((e) => e.change.startsWith(startsWith));
+    const hit = entries.find((e) => e.summary.startsWith(startsWith));
     if (!hit) throw new Error(`Publish seed for "${project.projectName}" re-dates a missing entry: ${startsWith}`);
-    hit.iso = iso;
+    hit.at = iso;
   }
   if (seed?.costWas !== undefined) {
-    const hit = entries.find((e) => e.change.startsWith('Estimated total cost changed'));
-    if (!hit) throw new Error(`Publish seed for "${project.projectName}" sets costWas with no cost entry`);
-    hit.change = hit.change.replace(/to \$[\d,]+$/, `to ${usd.format(seed.costWas)}`);
+    const at = entries.findIndex((e) => e.subject === 'field' && e.key === 'estimatedTotalCost');
+    if (at < 0) throw new Error(`Publish seed for "${project.projectName}" sets costWas with no cost entry`);
+    const hit = entries[at];
+    entries[at] = made(hit.summary.replace(/to \$[\d,]+$/, `to ${usd.format(seed.costWas)}`), hit.by, hit.at);
   }
-  for (const edit of seed?.edits ?? []) {
-    entries.push({ date: '', user: ctx.people[edit.who], change: edit.change, iso: edit.iso });
-  }
+  for (const edit of seed?.edits ?? []) entries.push(made(edit.change, ctx.people[edit.who], edit.iso));
 
   // Unseeded projects were published a few weeks after their last change —
   // the sweep caught up, and nothing has moved since.
-  const latest = entries.reduce((max, e) => (e.iso > max ? e.iso : max), '');
+  const latest = entries.reduce((max, e) => (e.at > max ? e.at : max), '');
   const hash = [...project.projectName].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
   const fallback = () => {
     const t = Math.min(Date.parse(`${latest}T00:00:00Z`) + (12 + (hash % 30)) * DAY_MS, Date.parse(`${TODAY_ISO}T00:00:00Z`) - DAY_MS);
@@ -276,22 +277,26 @@ export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Conte
   };
   const publishedIso = seed ? seed.published : fallback();
   const publishedBy = publishedIso ? seed?.by ?? PUBLISHERS[hash % PUBLISHERS.length] : null;
-  if (publishedIso) entries.push({ date: '', user: publishedBy!, change: PUBLISHED_CHANGE, iso: publishedIso });
+  if (publishedIso) entries.push(made(PUBLISHED_SUMMARY, publishedBy!, publishedIso));
 
-  // Chronological, stable: same-day entries keep the order they were authored in.
-  entries = entries.map((e, i) => ({ e, i })).sort((a, b) => a.e.iso.localeCompare(b.e.iso) || a.i - b.i).map(({ e }) => e);
-  const audit = entries.map(({ iso, user, change }) => ({ date: labelOfIso(iso), user, change })).reverse();
+  // Chronological, stable: same-day entries keep the order they were authored
+  // in. Ids follow that order, so a change's id is stable build to build.
+  entries = entries
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => a.e.at.localeCompare(b.e.at) || a.i - b.i)
+    .map(({ e }, i) => ({ ...e, id: `seed:${i + 1}` }));
+  const audit = [...entries].reverse();
 
-  const publishIndex = publishedIso ? entries.findIndex((e) => e.change === PUBLISHED_CHANGE) : -1;
-  const pending = entries.slice(publishIndex + 1).filter((e) => e.change !== PUBLISHED_CHANGE);
+  const publishIndex = publishedIso ? entries.findIndex((e) => e.subject === 'publish') : -1;
+  const pending = entries.slice(publishIndex + 1).filter((e) => e.subject !== 'publish');
 
   // --- fold the pending entries into one row per thing changed ---
   const rows = new Map<string, UnpublishedChange>();
-  const touch = (key: string, init: () => Omit<UnpublishedChange, 'editors' | 'edits' | 'lastIso'>, e: { user: string; iso: string }) => {
-    const row = rows.get(key) ?? { ...init(), editors: [], edits: 0, lastIso: e.iso };
-    if (!row.editors.includes(e.user)) row.editors.push(e.user);
+  const touch = (key: string, init: () => Omit<UnpublishedChange, 'editors' | 'edits' | 'lastIso'>, e: Change) => {
+    const row = rows.get(key) ?? { ...init(), editors: [], edits: 0, lastIso: e.at };
+    if (!row.editors.includes(e.by)) row.editors.push(e.by);
     row.edits += 1;
-    row.lastIso = e.iso;
+    row.lastIso = e.at;
     rows.set(key, row);
     return row;
   };
@@ -310,37 +315,39 @@ export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Conte
   };
 
   for (const e of pending) {
-    let m: RegExpMatchArray | null;
-    if ((m = e.change.match(/^Estimated total cost changed from (\$[\d,]+) to (\$[\d,]+)$/))) {
-      const row = touch('estimatedTotalCost', () => ({ key: 'estimatedTotalCost', group: 'Key facts', label: 'Estimated total cost', from: m![1], revert: { field: 'estimatedTotalCost', raw: String(parseUsd(m![1])) } }), e);
-      row.to = m[2];
-    } else if ((m = e.change.match(/^Timeline changed from (\d{4})–(\d{4}) to (\d{4})–(\d{4})$/))) {
-      const row = touch('timeline', () => ({ key: 'timeline', group: 'Key facts', label: 'Timeline', from: `${m![1]}–${m![2]}`, revert: { field: 'timeline', raw: `${m![1]},${m![2]}` } }), e);
-      row.to = `${m[3]}–${m[4]}`;
-    } else if ((m = e.change.match(/^County changed from (.+) to (.+)$/))) {
-      const row = touch('county', () => ({ key: 'county', group: 'Key facts', label: 'County', from: m![1], revert: { field: 'county', raw: m![1] } }), e);
-      row.to = m[2];
-    } else if ((m = e.change.match(/^Stage set to (.+)$/))) {
+    const field = e.subject === 'field' ? e.key : '';
+    if (field === 'estimatedTotalCost') {
+      const row = touch('estimatedTotalCost', () => ({ key: 'estimatedTotalCost', group: 'Key facts', label: 'Estimated total cost', from: e.from, revert: { field: 'estimatedTotalCost', raw: String(parseUsd(e.from!)) } }), e);
+      row.to = e.to;
+    } else if (field === 'timeline') {
+      const row = touch('timeline', () => ({ key: 'timeline', group: 'Key facts', label: 'Timeline', from: e.from, revert: { field: 'timeline', raw: e.from!.replace('–', ',') } }), e);
+      row.to = e.to;
+    } else if (field === 'county') {
+      const row = touch('county', () => ({ key: 'county', group: 'Key facts', label: 'County', from: e.from, revert: { field: 'county', raw: e.from! } }), e);
+      row.to = e.to;
+    } else if (field === 'stage') {
       const row = touch('stage', () => ({ key: 'stage', group: 'Key facts', label: 'Stage', from: seed?.stageWas }), e);
-      row.to = m[1];
-    } else if (/^Description (edited|updated)$/.test(e.change)) {
+      row.to = e.to;
+    } else if (field === 'description') {
       touch('description', () => ({ key: 'description', group: 'Key facts', label: 'Description', from: description.kept, to: ctx.description, added: description.added || undefined, revert: { field: 'projectDescription', raw: description.kept } }), e);
-    } else if ((m = e.change.match(/^Reported value filed: (.+), (\d{4})$/))) {
-      const [, measure, year] = m;
+    } else if (e.subject === 'measure-entry') {
+      const cut = e.key.lastIndexOf(':');
+      const measure = e.key.slice(0, cut);
+      const year = e.key.slice(cut + 1);
       const value = ctx.measures.find((x) => x.name === measure)?.series.find((p) => p.year === Number(year))?.value;
       const unit = ctx.measures.find((x) => x.name === measure)?.unit ?? '';
       touch(`report:${measure}:${year}`, () => ({ key: `report:${measure}:${year}`, group: 'Performance measures', label: `${measure}, ${year}`, to: value == null ? undefined : `${value.toLocaleString('en-US')} ${unit}`.trim() }), e);
       published.withheldReports.push({ measure, year: Number(year) });
-    } else if ((m = e.change.match(/^Funding source added: (.+)$/))) {
-      const source = ctx.funding.find((f) => f.name === m![1]);
-      touch(`funding:${m[1]}`, () => ({ key: `funding:${m![1]}`, group: 'Funding sources', label: m![1], to: source ? fundingLine(source) : undefined }), e);
-      published.withheldFunding.push(m[1]);
-    } else if ((m = e.change.match(/^Work area boundary revised: (.+)$/))) {
-      touch(`area:${m[1]}`, () => ({ key: `area:${m[1]}`, group: 'Work areas', label: m![1], to: 'Boundary redrawn' }), e);
-    } else if (e.change === 'Project created') {
+    } else if (e.subject === 'funding') {
+      const source = ctx.funding.find((f) => f.name === e.key);
+      touch(`funding:${e.key}`, () => ({ key: `funding:${e.key}`, group: 'Funding sources', label: e.key, to: source ? `${usd.format(source.amount)} from ${source.organization}` : undefined }), e);
+      published.withheldFunding.push(e.key);
+    } else if (e.subject === 'work-area') {
+      touch(`area:${e.key}`, () => ({ key: `area:${e.key}`, group: 'Work areas', label: e.key, to: 'Boundary redrawn' }), e);
+    } else if (e.subject === 'project') {
       // Folded into the first-publish rows below.
     } else {
-      throw new Error(`Publish diff cannot read log entry on "${project.projectName}": ${e.change}`);
+      throw new Error(`Publish diff cannot read log entry on "${project.projectName}": ${e.summary}`);
     }
   }
 
@@ -352,14 +359,14 @@ export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Conte
     rows.clear();
     const first = pending[0];
     const add = (key: string, label: string, to: string) =>
-      rows.set(key, { key, group: 'Key facts', label, to, editors: [first.user], edits: 1, lastIso: first.iso });
+      rows.set(key, { key, group: 'Key facts', label, to, editors: [first.by], edits: 1, lastIso: first.at });
     add('stage', 'Stage', project.stage);
     add('leadOrganization', 'Lead organization', project.leadOrganization);
     add('county', 'County', project.county);
     add('timeline', 'Timeline', years);
     add('estimatedTotalCost', 'Estimated total cost', usd.format(project.estimatedTotalCost));
     add('description', 'Description', ctx.description);
-    for (const f of ctx.funding) rows.set(`funding:${f.name}`, { key: `funding:${f.name}`, group: 'Funding sources', label: f.name, to: fundingLine(f), editors: [first.user], edits: 1, lastIso: first.iso });
+    for (const f of ctx.funding) rows.set(`funding:${f.name}`, { key: `funding:${f.name}`, group: 'Funding sources', label: f.name, to: `${usd.format(f.amount)} from ${f.organization}`, editors: [first.by], edits: 1, lastIso: first.at });
   }
 
   // What the public page still shows, for every row the diff kept.
@@ -392,7 +399,7 @@ export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Conte
       publishedBy,
       changes,
       edits: changes.length ? pending.length : 0,
-      waitingSinceIso: changes.length ? pending[0].iso : null,
+      waitingSinceIso: changes.length ? pending[0].at : null,
       published,
     },
   };

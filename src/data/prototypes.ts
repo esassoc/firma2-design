@@ -198,25 +198,6 @@ export const prototypes: Prototype[] = [
     createdAt: '2026-08-24',
     status: 'in-progress',
   },
-  // PM 2: projectfirma2's measures as built on branch
-  // features/0010_project_performance_measures (categories, targets, a change
-  // log), ported beside the original so the two can be compared.
-  {
-    slug: 'pm2-catalog',
-    title: 'Performance measures (PM 2)',
-    description: 'Measure catalog and setup, as ProjectFirma2 built it',
-    route: '/prototypes/workspace-settings/pm2',
-    createdAt: '2026-10-08',
-    status: 'in-progress',
-  },
-  {
-    slug: 'pm2-project',
-    title: 'Project measures (PM 2)',
-    description: 'A project’s measures by period, with targets',
-    route: `/prototypes/pm2/projects/${demoProjectSlug('deer-creek-riparian-corridor-enhancement')}`,
-    createdAt: '2026-10-08',
-    status: 'in-progress',
-  },
   {
     slug: 'performance-measures',
     title: 'Performance measure setup',

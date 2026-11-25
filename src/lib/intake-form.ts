@@ -24,6 +24,7 @@ import { PROJECT_TYPES } from '../data/firma2-project-types';
 import { CLASSIFICATIONS } from '../data/firma2-classifications';
 import { STAGE_ORDER } from '../data/firma2-projects';
 import { organizations, users } from '../data/firma2-directory';
+import { activeSolicitationNames } from './solicitations';
 
 // ---------------------------------------------------------------------------
 // Rules
@@ -278,6 +279,8 @@ export const removeScreen = (form: IntakeForm, id: string): IntakeForm => {
 
 
 export const BUILTIN_OPTIONS = {
+  // Active ones only: a closed solicitation is never offered.
+  solicitation: (): string[] => activeSolicitationNames(),
   projectType: (): string[] => PROJECT_TYPES.map((t) => t.name),
   stage: (): string[] => [...STAGE_ORDER],
   classifications: (): string[] => CLASSIFICATIONS.map((c) => c.name),
@@ -313,8 +316,10 @@ export { BUILTINS };
 // v2: the sample form was cleared to a blank start (2026-10-19).
 // v3 / v2: the form gained the locked Stage question and a status was renamed
 // (deferred to declined), so older stored copies are left behind.
-const FORM_KEY = 'firma2:intake-form:v3';
-const PROJECTS_KEY = 'firma2:intake-projects:v2';
+// v4 / v3: the sample form and entries gained the Solicitation question
+// (2026-11-24).
+const FORM_KEY = 'firma2:intake-form:v4';
+const PROJECTS_KEY = 'firma2:intake-projects:v3';
 
 interface FormStore {
   working: IntakeForm;
@@ -448,11 +453,25 @@ export const createDraft = (answers: Answers, createdBy: string): IntakeProject 
   return project;
 };
 
+/**
+ * NO PROJECT IS SUBMITTED UNDER A SOLICITATION THAT IS NO LONGER ACTIVE (user,
+ * 2026-11-24). A draft begun while one was active loses that answer once it
+ * closes, so a required Solicitation question holds the draft until another
+ * is chosen. Projects already submitted keep theirs.
+ */
+export const dropClosedSolicitation = (answers: Answers): Answers => {
+  const chosen = answers.solicitation;
+  if (typeof chosen !== 'string' || !chosen || activeSolicitationNames().includes(chosen)) return answers;
+  const { solicitation: _closed, ...rest } = answers;
+  return rest;
+};
+
 /** Submit, with hidden answers dropped. Refuses while anything required is missing. */
 export const submitProject = (id: string, form: IntakeForm): IntakeProject | undefined => {
   const p = getIntakeProject(id);
-  if (!p || !canSubmit(form, p.answers)) return undefined;
-  const next: IntakeProject = { ...p, answers: clearHidden(form, p.answers), status: 'submitted', submittedAt: new Date().toISOString(), returnComment: undefined };
+  const open = p ? dropClosedSolicitation(p.answers) : {};
+  if (!p || !canSubmit(form, open)) return undefined;
+  const next: IntakeProject = { ...p, answers: clearHidden(form, open), status: 'submitted', submittedAt: new Date().toISOString(), returnComment: undefined };
   saveIntakeProject(next);
   return next;
 };

@@ -1,21 +1,15 @@
 ---
 // firma2-funding-source-grid — the Funding sources index body: every funding
-// source as one row of a sortable, searchable table, with who offers it,
-// whether it takes requests, and what it adds up to across projects.
+// source as one row of a sortable, searchable table, with who offers it and
+// what it adds up to across projects.
 //
 // A FUNDING SOURCE IS AN ENTITY (docs/data-model.md, decision 1, user
 // 2026-11-24): money one organization offers that can fund many projects. This
 // is its list. A TABLE, because an index that can grow is one (the Performance
 // measures index made the same call, 2026-10-09).
 //
-// SECURED AND REQUESTED ARE TWO COLUMNS, NEVER ONE SUM. Secured is money
-// projects have; requested is money asked for and not decided. Adding them
-// would print a figure nobody holds (decision 7).
-//
-// REQUESTS says whether a project may ask this source for money today, and
-// until when (decision 16). An administrator changes it on the source's page;
-// that choice is kept in this browser (src/lib/funding-source-edits.ts) and
-// laid over the built value here.
+// A SOURCE ADDED IN THIS BROWSER (src/lib/added-funding-sources.ts) leads the
+// list. It has no page of its own, so its name is not a link.
 //
 // bcn-lego-checked: ecology has no table lego. AG Grid Community through
 // shared/grid-chrome + firma2-data-grid-chrome.css is this spoke's tabular
@@ -26,8 +20,7 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
 import { fundingSourceHref } from '../../data/firma2-funding-sources';
-import { acceptingLabel, fundingSourceRollups } from '../../data/firma2-funding-source-rollup';
-import { TODAY_ISO } from '../../data/firma2-publish-history';
+import { fundingSourceRollups } from '../../data/firma2-funding-source-rollup';
 import { withBase } from '../../lib/base';
 
 const rows = fundingSourceRollups().map((rollup) => ({
@@ -35,15 +28,11 @@ const rows = fundingSourceRollups().map((rollup) => ({
   name: rollup.source.name,
   href: withBase(fundingSourceHref(rollup.source.slug)),
   organization: rollup.source.organization,
-  requests: acceptingLabel(rollup),
-  accepting: rollup.source.accepting,
-  closes: rollup.source.closes ?? '',
   projects: rollup.projects,
-  secured: rollup.secured,
-  requested: rollup.requested,
+  amount: rollup.amount,
 }));
 ---
-<section class="firma2-funding-source-grid stack" data-gap="md" data-today={TODAY_ISO}>
+<section class="firma2-funding-source-grid stack" data-gap="md">
   <div class="firma2-data-grid__controls repel">
     <div class="firma2-data-grid__controls-filters cluster">
       <div class="firma2-data-grid__search">
@@ -79,29 +68,37 @@ const rows = fundingSourceRollups().map((rollup) => ({
 <script>
   import '@esa/ecology/esa-text-field';
   import { escGridHtml as esc, gridCurrencyFormatter as currency, wireDataGrid } from '../shared/grid-chrome';
-  import { acceptingState, openLabel } from '../../lib/funding-source-edits';
   import type { ColDef } from 'ag-grid-community';
+  import { announce } from '@esa/ecology/announcer';
+  import { readAddedFundingSources, takeJustAddedFundingSource } from '../../lib/added-funding-sources';
 
   type Row = {
     slug: string;
     name: string;
     href: string;
     organization: string;
-    requests: string;
-    accepting: boolean;
-    closes: string;
     projects: number;
-    secured: number;
-    requested: number;
+    amount: number;
   };
 
   function init(root: HTMLElement) {
     const emptyState = root.querySelector<HTMLElement>('[data-fs-empty] > *');
-    const today = root.dataset.today ?? '';
-    // This browser's choice for the source, over the built one.
-    const requestsOf = (row: Row): string =>
-      openLabel(acceptingState(row.slug, { accepting: row.accepting, closes: row.closes || undefined }), today);
     const money = (value: unknown): string => (Number(value) > 0 ? currency.format(Number(value)) : '—');
+
+    // Sources added in this browser go in before the grid reads its rows, so
+    // search, the count and the CSV all include them.
+    const dataEl = root.querySelector<HTMLScriptElement>('[data-fs-data]');
+    const added = readAddedFundingSources();
+    if (dataEl && added.length) {
+      const built = JSON.parse(dataEl.textContent ?? '[]') as Row[];
+      const have = new Set(built.map((row) => row.slug));
+      const fresh = added
+        .filter((source) => !have.has(source.slug))
+        .map((source): Row => ({ slug: source.slug, name: source.name, href: '', organization: source.organization, projects: 0, amount: 0 }));
+      dataEl.textContent = JSON.stringify([...fresh, ...built]);
+    }
+    const justAdded = takeJustAddedFundingSource();
+    if (justAdded) announce(`${justAdded} added.`);
 
     wireDataGrid<Row>({
       root,
@@ -120,13 +117,11 @@ const rows = fundingSourceRollups().map((rollup) => ({
           flex: 2, minWidth: 240, cellClass: 'firma2-grid-name', wrapText: true, autoHeight: true,
           getQuickFilterText: (p) => (p.data ? `${p.data.name} ${p.data.organization}` : ''),
           cellRenderer: (p: { data?: Row }) =>
-            p.data ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>` : '',
+            !p.data ? '' : p.data.href ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>` : esc(p.data.name),
         },
         { headerName: 'Offered by', field: 'organization', colId: 'organization', flex: 2, minWidth: 220, wrapText: true, autoHeight: true },
-        { headerName: 'Requests', colId: 'requests', width: 210, valueGetter: (p) => (p.data ? requestsOf(p.data) : '') },
         { headerName: 'Projects', field: 'projects', colId: 'projects', width: 110, type: 'numericColumn' },
-        { headerName: 'Secured', field: 'secured', colId: 'secured', width: 140, type: 'numericColumn', valueFormatter: (p) => money(p.value) },
-        { headerName: 'Requested', field: 'requested', colId: 'requested', width: 140, type: 'numericColumn', valueFormatter: (p) => money(p.value) },
+        { headerName: 'Funding', field: 'amount', colId: 'amount', width: 160, type: 'numericColumn', valueFormatter: (p) => money(p.value) },
       ] satisfies ColDef[],
       gridOptions: { overlayNoRowsTemplate: emptyState?.outerHTML },
     });

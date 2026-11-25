@@ -18,7 +18,11 @@ field that exists only in a component's markup is missing here.
 - Each entity carries a status:
   **Built** (a type and a screen exist), **Specified** (a spec decides it, no
   type yet), **Settled** (decided for this model, see [Settled](#settled); the
-  prototype's types do not have it yet).
+  prototype's types do not have it yet), **WIP** (work in progress: something
+  exists, but its shape is not settled — fields are missing, were proposed by
+  whoever built the screen, or wait on an open point. Do not build against a
+  WIP row as if it were decided; every one is listed in
+  [Work in progress](#work-in-progress) with what it is missing).
 - The prototype keys almost everything by `slug` or by display name. Every
   entity below needs a stable id that a rename does not change. That is assumed
   throughout and not repeated per table.
@@ -83,7 +87,9 @@ erDiagram
 | **Approved domain** | Built | domain, status (verified / pending), verifying email, date | Belongs to an organization. |
 | **Access request** | Built | kind (join / organization), requester name and email, organization (existing, or a name, type and website for a new one), asked (Contributor / Viewer), message, created, status (pending / approved / declined / withdrawn), granted, reason, answered by, answered on, raised from (welcome / project / intake), project | One entity, two kinds. |
 | **Permission setting** | Built | action (invite people, create projects, manage classifications, set project targets, publish projects, import, export, create API tokens), audience (admins / managers / editors) | Workspace-wide "who can". An organization has its own set (manage members). Roles themselves have no settings. |
-| **Personal settings** | Built (screens only) | profile, colour scheme, underline links, pointer cursors, notification choices | Per user. Only the interface preferences have types. |
+| **Personal settings** | WIP (screens only) | profile; colour scheme, underline links, pointer cursors; sign-in: password, two-step verification (on / off), sessions (device, place, last active) | Per user. Only the interface preferences have types. Password, two-step and sessions are Auth0's; the screens stand in for them. |
+| **Notification setting** | WIP (screens only; nothing is sent) | owner (a person, an organization, or the workspace's custom pages), event, on / off; custom pages also hold who is notified and how often | One row per owner and event. A person's events: stage changes, reports due, comments, weekly summary. An organization's (sent to its administrators): new projects, updates to review, reports due, new members, weekly summary. Custom pages': page published, page edited, page moved or deleted. Which events exist and who each reaches is an open point. |
+| **API token** | WIP (not built) | none yet | Only the permission to create one exists (Permission setting, "create API tokens"). An open point. |
 
 Rules that shape the schema:
 
@@ -129,19 +135,19 @@ erDiagram
 | Entity | Status | Attributes | Notes |
 |---|---|---|---|
 | **Project** | Built | name, description (rich text, files inline), type, lead organization, stage, county (until a county layer makes it an area group), implementation start year, completion year (optional), estimated total cost, estimated annual operating cost, map centre and zoom, source (app / subscribed) | `Project` + `ProjectDetail`. |
-| **Work area** | Built, two shapes; Settled as one | id, label, kind (area / reach / point), path, extent, unit (acres / miles), origin (record / drawn / coordinates / reference / upload), adopted from, description, colour | The `MapWorkArea` shape. Shape changes only from spatial data. |
-| **Funding source** | Built (list and record; adding and editing one are not) | name, funding organization, description, accepting requests (yes / no), closing date (optional), its custom field values | Money one organization offers that can fund many projects: a grant, an award, an appropriation, a call for proposals. Workspace-level, with its own list and record. While it accepts requests, a project can ask it for money; after the closing date it is no longer offered and existing requests stay. `src/data/firma2-funding-sources.ts`. |
-| **Project funding** `ProjectFunding` | Built; amounts by year Settled | project, funding source, status (requested / secured / not awarded); amount and share are derived | One row per funding source on a project, with one status for the whole row: a source is never part secured and part requested. A requested row is an application for that money. Every funding total counts secured rows only. The funder is read from the funding source, never typed again. |
+| **Work area** | Built; many per project | id, label, kind (area / reach / point), path, extent, unit (acres / miles), origin (record / drawn / coordinates / reference / upload), adopted from, description, colour | The `MapWorkArea` shape. Shape changes only from spatial data. |
+| **Funding source** | Built (list, record and add; editing one is not) | name, funding organization, description, its custom field values | Money one organization offers that can fund many projects: a grant, an award, an appropriation. Workspace-level, with its own list and record. `src/data/firma2-funding-sources.ts`. |
+| **Project funding** `ProjectFunding` | Built; amounts by year Settled | project, funding source; amount and share are derived | One row per funding source on a project. A row is money the project has; a request for funding is not recorded. The funder is read from the funding source, never typed again. |
 | **Funding year** | Settled | project funding, year, amount | What the funding source puts in that year. The row's amount is the sum of its years. Today the row carries one amount and no years. |
 | **Expenditure** `ExpenditureYear` | Built by year only; Settled by funding source and year | project, funding source, year, amount spent, status (complete / current / upcoming) | What was spent from one funding source in one year. The project's spend for a year is the sum across its funding sources. |
 | **Related organization** | Settled | project, organization | An organization named on the project that neither leads nor funds it. A plain list: no role, no permissions, no effect on who can edit. Lead and funder stay the only first-class relationships. |
 | **Milestone** | Built | date, title, status (complete / current / upcoming / halted) | |
-| **Project contact** | Built; user link Settled | name, role on the project, organization, email, user (optional) | Linked to a workspace user when the email matches. Otherwise a name and email with no account. |
+| **Project contact** | Built | name, role on the project, organization, email, user (optional) | Linked to a workspace user when the email matches. Otherwise a name and email with no account. |
 | **Comment** | Built | author, date, body | |
 | **Photo** | Built | file, caption, alt text, credit, stage (before / during / after), taken on, public (yes / no), featured (one per project), position in the order | `ProjectPhoto`, `ResolvedPhoto`. Stage is stored, never read from the date. |
-| **Photo point** | Built as a string; Settled as a row | project, name | A before and an after at one point make a pair (derived). |
-| **Collection** | Built as a string; Settled as a row | project, name, order of its photos | A photo is in at most one. |
-| **Custom field value** | Settled | owner (a project or a funding source), field, value | A first-class part of the record: every custom field answer is one row, typed by the field's kind. Today only the spreadsheet import stores them (`ImportedProject.custom`). A change to one is a Change like any other field. |
+| **Photo point** | Built | project, name | A before and an after at one point make a pair (derived). |
+| **Collection** | Built | project, name, order of its photos | A photo is in at most one. |
+| **Custom field value** | Built | owner (a project or a funding source), field, value | A first-class part of the record: every custom field answer is one row, typed by the field's kind. Today only the spreadsheet import stores them (`ImportedProject.custom`). A change to one is a Change like any other field. |
 
 ## 3. What an administrator sets up
 
@@ -166,6 +172,7 @@ erDiagram
 | **Classification** | Built | name, description, colour, icon, group | Always in a group. Carries the measures it tracks and their targets (section 4). |
 | **Intake form** | Built | title, after-submit message, accepting new projects (yes / no); screens (title, show-when condition); blocks (a built-in question, a placed custom field, or free text; each with label, help, placeholder, required) | One per workspace. With the switch off, only administrators add projects. |
 | **Admission** `IntakeProject` | Built: stage is asked at intake and the status is independent of it. Still a separate record in the prototype's storage | admission status (draft / submitted / returned / approved / declined), entered by and on, submitted on, decided by and on, return comment | Whether the record is in the inventory yet. Independent of stage: a project already in Implementation can be waiting for approval. Only an approved project counts in reports or shows on the public map. The noun "proposal" is not used for this. |
+| **Solicitation** | Built | name, active (yes / no) | A call new projects are entered under. A project names one through the intake form's Solicitation question, which offers the active ones. No amount, dates or funding status. Decision 22. |
 
 ## 4. Performance measures
 
@@ -269,13 +276,13 @@ erDiagram
 
 | Entity | Status | Attributes | Notes |
 |---|---|---|---|
-| **Change** | Settled; built as four shapes | id, project, subject (a field, a custom field value, a measure entry, a target, a funding row, a contact, a work area, a photo), action (set / add / remove), from, to, by, at, source (by hand / a named document / a named data source), the report import or data source it came from, and for a document its quote, passage and page; reverts (the change it undoes) | One row per write, whatever the subject and however it arrived. Replaces `AuditEntry`, `MeasureChange`, `Pm2Change` and `ImportedChange`. The change log, the review's net difference and the Updates feed all read this one table. |
+| **Change** | Built | id, project, subject (a field, a custom field value, a measure entry, a target, a funding row, a contact, a work area, a photo), action (set / add / remove), from, to, by, at, source (by hand / a named document / a named data source), the report import or data source it came from, and for a document its quote, passage and page; reverts (the change it undoes) | One row per write, whatever the subject and however it arrived. `src/data/firma2-changes.ts`; the browser's log is `src/lib/changes.ts`. It replaced the free-text history line and the measure-only log; an import still keeps its own record of what it added, and also writes each as a change. The change log, the review's net difference and the Updates feed all read this one table. |
 | **Report import** | Built | project, by, at, document name and kind (file / sample / text), note to the manager, the changes it added | The file itself is not kept. The name and the quoted words are. One Undo covers the whole import. |
 | **Publish event** | Built | project, kind (publish / undo), by, at, which changes it covered | `PublishEvent`, `LocalPublish`. |
 | **Published version** `PublishedSnapshot` | Built | the record as the public reads it: key facts, description, stage, and what is withheld (measure reports, funding rows) | The public site, reports and Viewers read this, never the live record. |
 | **Hold** `ReviewNote` | Built | change, note (required), by, at, who was told | A held value stays on the record and returns in the next review. A revert needs a reason too. |
 | **Review cadence** | Built | none / monthly / quarterly / twice-yearly / yearly | Per organization. |
-| **Data source** | GIS kind built; others specified | name, owner level (workspace / organization / project), kind, mapping of its fields to project fields, authoritative (yes / no), active, last success, last message | `Subscription` is the workspace-level GIS kind: layer, join field, feature id field, label field, default lead, type and stage for new projects. |
+| **Data source** | WIP (GIS kind built; others specified) | name, owner level (workspace / organization / project), kind, mapping of its fields to project fields, authoritative (yes / no), active, last success, last message | `Subscription` is the workspace-level GIS kind: layer, join field, feature id field, label field, default lead, type and stage for new projects. |
 | **Import batch** | Built | file name, at, projects created, projects updated, organizations added | The spreadsheet import of many projects. |
 
 Rules that shape the schema:
@@ -309,7 +316,7 @@ erDiagram
 | **Map layer** `ReferenceLayer` | Built | name, kind (feature / map / WMS / GeoJSON), URL, service layer, description, popup field, minimum zoom, on by default, active, stroke, fill, line style, labels, fields | An uploaded file becomes a layer too. |
 | **Area group** | Built | name, description, colour, layer, name field | One field of one layer names its areas. |
 | **Geospatial area** | Built | name, shape, acres, description, colour | One shape of the layer. |
-| **Area filing** | Settled | project, geospatial area | Computed, stored, never edited by hand. |
+| **Area filing** | Built | project, geospatial area | Computed, stored, never edited by hand. |
 | **Area measure** | Specified | area, measure, target value, target year | Geospatial-areas spec, decision 3: same shape as a classification measure. |
 
 A project is filed under a geospatial area **by where its work areas fall**.
@@ -321,14 +328,40 @@ recomputed when a work area's shape or the area's layer changes.
 | Entity | Status | Attributes | Notes |
 |---|---|---|---|
 | **Custom entry** | Built | kind (folder / page / document / dashboard), title, folder, order; a page has a body, a document has one file, a dashboard has a template | One tree. Folders do not nest. |
+| **Custom pages settings** | WIP (built; a page's own visibility and versions are not modelled) | on / off; who can create pages, edit any page, delete pages (admins / managers / editors); new pages are visible to (everyone in the workspace / only people who can edit pages / everyone, including the public site); review before publishing (on / off); keep earlier versions for (30 days / 1 year / forever) | One per workspace. Off removes the feature everywhere. Its notifications are Notification setting rows (section 1). A page's own visibility and its earlier versions are implied by these settings and not modelled yet: an open point. |
 | **Page file** | Built | page, kind (inline / attachment / document), name, type, size, added | Files show inline in the body only. |
 | **Dashboard** | Built | name, scope, tiles | The Progress Dashboard is the first one. |
 | **Tile** `TileState` | Built | measure or figure, split, scope, from year, attribution (full / share), view (year / cumulative), kind (chart / number / groups), span, height | |
-| **Saved view** | Built | name, filter, shared with (organization / only me), created by, organization | A stored filter over the project grid. |
+| **Support request** | WIP (built; statuses and kinds proposed, not decided) | subject, kind (Question / Problem / Correction / Other), message, requester (name, email, organization, has an account), page it was sent from, received, status (open / resolved), assigned to, resolved date, replies (author, date, body) | `src/data/firma2-support-requests.ts`. An organization's saved views were removed from the product on 2026-11-24. |
 | **Organization report** | Built | name, scope, year, format, owner | Coverage (due, reported, gaps) is derived. |
-| **Public site config** | Built | access (public, contacts shown), identity (name, logo, icon, share text and image), announcement, home sections and their order, navigation order, labels and links, theme (fonts, bar, hero, accent), footer; draft and published copies | One per workspace. Draft then publish. |
-| **Terminology** `Vocabulary` | Built | noun, the workspace's singular and plural | Renames the product's nouns. |
+| **Public site config** | Built for the home page; WIP for every other public page | access, identity, announcement, home, navigation, theme, footer; draft and published copies | One per workspace. Draft then publish. Theme, navigation, footer and the announcement apply to every public page; only the home has sections to arrange. The other public pages (projects, a project, organizations, performance measures, classifications, dashboard) have no settings of their own yet. Every field is in [The public site, field by field](#the-public-site-field-by-field). `PublicSiteConfig`. |
+| **Terminology** `Vocabulary` | Built | on / off for the workspace; per noun, the workspace's singular and plural | Renames the product's nouns. Off, every reader gets the product's words and the renamings are kept, not cleared. |
 | **Menu order**, **Grid defaults** | Built | order of navigation items per section; column order and hidden columns per grid | Workspace level. A person's own grid changes sit on top. |
+
+### The public site, field by field
+
+Everything an administrator sets on Workspace settings › Public site. Two
+copies are kept: the draft being edited and the published one the public reads.
+
+| Part | Fields | Notes |
+|---|---|---|
+| **Access** | public (yes / no), contacts shown (yes / no) | |
+| **Identity** | name, logo, icon, share text, share image | The share image is one featured project photo, or the first featured project's. |
+| **Announcement** | on / off, text, link label, link, shown from (date), shown until (date) | A band across the top of every public page. |
+| **Home: sections** | the order of the sections | A section is one of five built in (hero, map, goals, recent, partners) or a block the administrator added. |
+| **Home: hero** | headline, description, results (the measures whose totals it states), featured projects | |
+| **Home: map** | base map (terrain / plain), opening area (everything, or one county) | |
+| **Home: goals** | which classifications are shown | |
+| **Home: recent** | how many projects | |
+| **Home: partners** | funders shown, lead organizations shown, amounts shown (each yes / no) | |
+| **Home: added block** | kind (text / image and text / button / page), heading, body, image, image alt text, image side (start / end), button label, link, linked custom page | Any number, placed anywhere in the section order. |
+| **Navigation** | the order of destinations; a label per destination; added links (label, link); custom pages hidden from the Pages menu | Destinations: home, pages, projects, organizations, performance measures, classifications, dashboard. |
+| **Theme** | font pair, bar (neutral / brand / dark), hero (dark / brand / light), accent colour | |
+| **Footer** | contact shown, funders shown (each yes / no), links (label, link), social links (label, link) | |
+
+What decides whether a record reaches the public site is not here: a stage's
+"has a public page", an organization's visibility, a photo's public flag, and
+the published version (section 5).
 
 ## 8. Programs and connected organizations
 
@@ -364,7 +397,7 @@ erDiagram
 |---|---|
 | Classification and group totals, per-measure progress, funders (`ClassificationRollup`, `GroupRollup`, `KpiProgress`) | Projects filed beneath, each counted once; their entries, targets and funding |
 | Which measures a project is asked | Its classifications' measure links |
-| A project's funding gap | Estimated total cost, less its secured and requested funding |
+| A project's funding gap | Estimated total cost, less its funding |
 | A funding row's amount, a year's spend for the whole project | Funding years; expenditures across funding sources |
 | Review queue, backlog, waiting days, the net difference | Changes since the last publish event; the organization's cadence |
 | Area filing (stored once worked out) | Work area shapes against layer shapes |
@@ -381,7 +414,7 @@ Decided by the user on 2026-11-24, 7 to 14 by accepting this document's
 proposals. 18 to 21 and the second amendment to 7 came from reading a real
 workspace's export against this model. The prototype's types do not reflect these yet.
 
-**In the prototype as of 2026-11-24:** 1, 6, 7, 12, 14, 15 and 16, and the single role type from 13. **Not yet in the prototype:** 2 (ids on measures, options and entries; the PM 2 comparison pages still stand), 3 (one Change entity), 4 (custom field values on the record), 5 (the page saying when yearly plans do not add up), 8, 9, 10 and the single work area shape from 13.
+**In the prototype as of 2026-11-24:** 1, 3, 4, 6, 8, 9, 10, 12, 13, 14, 15, 17, 18, 19 and 21, and from 2 the single measure model with the PM 2 comparison pages removed. **Not yet in the prototype:** from 2, ids on measures, breakdown options and entries (options are still matched by their words); 5, because a project's yearly plan cannot be edited yet, so it can never disagree with the target; 7, money by year on a funding row and spend per funding source; 20, an optional completion year. Each of those four changes what several screens show or how they are built, and none has been designed on screen.
 
 | # | Decision |
 |---|---|
@@ -391,27 +424,66 @@ workspace's export against this model. The prototype's types do not reflect thes
 | 4 | **Custom field values are part of the record**: one row per answer, on a project or a funding source. |
 | 5 | **Lifetime target and yearly plans.** The lifetime target is the stored commitment. Yearly plans are optional. For a `sum` measure the page says when they do not add up to the target, and never blocks. A `no-sum` measure has yearly plans only, where a lifetime figure means nothing. |
 | 6 | **The unit list keeps all 25**, the four legacy hydrology units included: a missing unit is a measure the product cannot express. |
-| 7 | **A funding row says whether its money is requested, secured or not awarded**, and totals count secured only. *Amended 2026-11-24: the status returns so that a request for funding needs no entity of its own. Amended again 2026-11-24, from a real workspace's export: money is kept by year. A funding row holds an amount per year, and spend is recorded per funding source and year. The row still has one status; a source is not split into a secured part and a requested part.* |
+| 7 | **Money is kept by year.** A funding row holds an amount per year, and spend is recorded per funding source and year (2026-11-24, from a real workspace's export). **A funding row has no status**: it is money the project has. *A requested / secured / not awarded status was proposed by the assistant on 2026-11-24, written here and built without the user's agreement; the user had it taken out the same day.* |
 | 8 | **Photo points and collections are rows** owned by the project. A photo links to at most one of each; renaming one touches one row. |
 | 9 | **A project contact stays its own row**, with an optional link to a workspace user when the email matches. No account is created for a contact. |
 | 10 | **Area filing is stored**: one row per project and geospatial area, recomputed when a work area's shape or the area's layer changes. Nobody edits it. |
 | 11 | **County stays a plain field** on the project until a workspace has a county layer; then it is an area group and the field goes. |
 | 12 | **Stage and admission are two facts on one project.** Stage says where the work is (Proposal, Planning & Design, Implementation and so on). Admission status says whether the record is in the inventory: draft, submitted, returned, approved, declined. Entering a project never creates a separate "proposal" record, and a project is called a proposal only when its stage is Proposal. A project counts in reports and on the public map once it is approved, whatever its stage. Deferred stays a stage (work on hold); an entry that is turned down is declined, not deferred. Confirmed by the user 2026-11-24; replaces the earlier wording of this decision. |
-| 13 | **One work area shape** (`MapWorkArea`: id, point kind, origin) and **one role type**. |
+| 13 | **A project has many work areas** (areas, reaches and points), as it does today. In the code, work area is described by **one type definition** (`MapWorkArea`: id, point kind, origin) where there were two, and there is **one role type**. This is about how the code names things, not how many a project can have. |
 | 14 | **"Program" means only the workspace** other organizations report to. The fund name on a funding row is the funding source's name. |
 | 15 | **An administrator decides whether the workspace is accepting new projects**: one switch on the intake form. Off, only administrators add projects. |
-| 16 | **A funding source can accept requests until a closing date.** The date governs submitting, not starting a draft. This, with decision 7, is how a call for proposals is run. |
-| 17 | **No Solicitation, Application or Review entities.** One client runs scored calls for proposals; it is served by decisions 7, 15 and 16, a custom field for the outcome score and a saved view for the slate. Revisit when more clients need per-reviewer scoring or answers kept per application. |
+| 16 | *Withdrawn 2026-11-24.* A funding source accepting requests until a closing date was the assistant's proposal, not the user's decision, and was taken out with the status in decision 7. |
+| 17 | **Calls for proposals are not modelled.** No Solicitation, Application or Review entities, and no request tracking on funding rows or funding sources. One client runs scored calls; the user chose not to build for one client (2026-11-24). Revisit when more clients need it. *Amended the same day by decision 22: a Solicitation now exists. Application and Review entities, scoring, and request tracking on funding stay out.* |
+| 22 | **A solicitation is a name and an Active switch, and a project says which one it is for at intake** (user, 2026-11-24). Several can be active at once; only active ones are offered, so no project is submitted under one that is not. It carries no amount and no requested or secured funding. Detail: `.scratch/project-intake/spec.md`, Solicitations. |
 
 | 18 | **Related organizations are a plain list on the project.** Any organization can be named on a project as related. It carries no role and no permissions. Only lead and funder are first-class. A legacy "implementer" or "other partner" migrates as related. |
-| 19 | **The funding gap is derived**: estimated total cost less secured and requested funding. Funding rows no longer have to add up to the cost. |
+| 19 | **The funding gap is derived**: estimated total cost less funding. *(Read "secured and requested funding" until the status was taken out, 2026-11-24.)* Funding rows no longer have to add up to the cost. |
 | 20 | **Completion year is optional.** A deferred project may have none. |
 | 21 | **One target per measure on a project.** No target per breakdown option. A split that is a real commitment is two measures. Confirmed by the user 2026-11-24: this is the model as built. On migration, legacy split targets that repeat one value keep that value, differing ones are added, and both are flagged for a person to confirm. |
 
+## Work in progress
+
+The rows marked **WIP**, with what each is missing. A row leaves this list when
+its open point is decided and the row is rewritten to match.
+
+| Entity | What exists | What is missing | Open point |
+|---|---|---|---|
+| **Notification setting** | Switches per person, per organization and for custom pages | Which events exist, who each reaches, and anything being sent | 1 |
+| **Personal settings** | Profile, interface preferences, and stand-in sign-in screens | Types for anything but the interface preferences; what is the product's and what is Auth0's | 1 |
+| **API token** | The permission to create one | The token: its fields, who holds it, what it can reach | 2 |
+| **Custom pages settings** | The workspace's switches and defaults | A page's own visibility and its earlier versions | 3 |
+| **Public site config** | Every setting for the home page, and what applies site-wide | Settings for the other public pages. Which pages, and how much control each gets, is not decided | 7 |
+| **Support request** | The request, replies, status and assignee | A decision on its kinds and statuses, who besides administrators sees one, and how one is sent | 8 |
+| **Data source** | The workspace-level GIS kind | The other kinds, which are specified and have no type | none: build work, already decided |
+
 ## Open points
 
-None. Every point this document raised is in [Settled](#settled). The next
-ones will come from building against it.
+Raised 2026-11-24, reading the settings screens against this document. None is
+decided; each is carried by a screen that implies an answer.
+
+1. **Notifications.** The screens hold switches per person, per organization
+   and for custom pages, and nothing is sent. Which events exist, who each one
+   reaches, and what a support-request reply, an access decision or an overdue
+   review emails are not written down.
+2. **API tokens.** A permission to create one exists; the token does not.
+3. **A custom page's visibility and versions.** The workspace sets a default
+   visibility and how long earlier versions are kept; a page has neither field.
+4. **What removal does.** When an organization, a user, a funding source or a
+   classification is removed, what happens to the records that point at it.
+   Only an organization's removal is described (`docs/roles-and-permissions.md`).
+5. **Who sees which field.** The public reads a published version; no entity
+   here says which attributes of each record the public or a Viewer gets.
+6. **Files.** Photos, page files and report documents are entities; a logo, an
+   icon and a home-page image are stored inline in the public site config.
+   Where each kind of file lives, and its size limit, is not stated.
+7. **Customizing the other public pages.** Only the home has sections to
+   arrange (public-site-settings spec, decisions 13 and 14: the rest was put
+   off). Which public pages get settings, and whether that is the home's
+   section builder or something lighter, is not decided.
+8. **Support requests.** Kinds (Question / Problem / Correction / Other) and
+   statuses (open / resolved) are the builder's proposal. Who besides an
+   administrator sees a request, and where one is sent from, are not decided.
 
 ## Left out on purpose
 

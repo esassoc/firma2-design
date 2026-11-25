@@ -42,3 +42,11 @@ export const isMember = (name: string): boolean => bySlug.has(memberSlug(name));
  */
 export const roleIn = (member: WorkspaceUser, organization: string): string =>
   member.role === 'Contributor' && member.managerOf.includes(organization) ? 'Manager' : member.role;
+
+/**
+ * The member behind a project contact: the account with the contact's email
+ * (docs/data-model.md, decision 9). A contact is its own row on the project
+ * and most are not members; no account is ever created for one.
+ */
+export const memberForEmail = (email: string): WorkspaceUser | undefined =>
+  email ? members.find((m) => m.email.toLowerCase() === email.trim().toLowerCase()) : undefined;

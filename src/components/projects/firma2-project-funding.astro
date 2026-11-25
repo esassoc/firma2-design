@@ -3,12 +3,15 @@
 // detail page: every funding source behind the project, what each contributes,
 // and the sum, which is the project's estimated total cost.
 //
-// EACH ROW LINKS TO A FUNDING SOURCE AND SAYS WHERE THE REQUEST STANDS
-// (docs/data-model.md, decisions 1 and 7, user 2026-11-24): requested, secured
-// or not awarded. The source's name opens its page. A row that is not secured
-// is not money the project has, so while any row is requested or not awarded
-// the table adds one summed row, "Total secured", above the estimate. A
-// not-awarded row shows what was asked and no share: it is outside the plan.
+// EACH ROW LINKS TO A FUNDING SOURCE (docs/data-model.md, decision 1, user
+// 2026-11-24). The source's name opens its page; the organization offering it
+// reads beneath, because it comes with the source and is not a fact of the row.
+//
+// THE FUNDING GAP IS DERIVED AND SHOWN (docs/data-model.md, decision 19):
+// funding rows need not add up to the estimated total cost. Where they fall
+// short, the table adds "Total funding" above the estimate and "Funding gap"
+// below it. A fully funded project shows neither: the estimate row alone says
+// the funding covers it.
 //
 // THE AMOUNTS ARE GIVEN, NOT DERIVED. firma2-project-detail.ts builds funding so
 // the sources sum to estimatedTotalCost to the dollar (every source but the last
@@ -59,7 +62,7 @@ import '../shared/firma2-card-section.css';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import Firma2ProjectRowEditor from './firma2-project-row-editor.astro';
 import type { ProjectFunding } from '../../data/firma2-project-detail';
-import { FUNDING_STATUS_LABEL, fundingSourceHref, fundingSources, getFundingSource } from '../../data/firma2-funding-sources';
+import { fundingSourceHref, fundingSources, getFundingSource } from '../../data/firma2-funding-sources';
 import { withBase } from '../../lib/base';
 
 interface Props {
@@ -104,7 +107,10 @@ const percents = rawPercents.map(Math.floor);
 // hand out and the distribution loop would index an empty array and throw at
 // build time. The data module never authors an empty list, but a section that
 // takes down the build rather than rendering nothing is the wrong failure.
-const leftover = funding.length > 0 ? 100 - percents.reduce((sum, whole) => sum + whole, 0) : 0;
+// The points to hand out are the funded share of the cost: 100 on a fully
+// funded project, fewer where there is a funding gap (decision 19).
+const fundedPercent = Math.round(rawPercents.reduce((sum, percent) => sum + percent, 0));
+const leftover = funding.length > 0 ? fundedPercent - percents.reduce((sum, whole) => sum + whole, 0) : 0;
 // Sort is stable, so equal fractions keep the data module's authored order and
 // the same input always renders the same output.
 const byRemainder = rawPercents
@@ -141,9 +147,8 @@ for (let i = 0; i < leftover; i += 1) {
        header control renders at, and the card headers down this page have to
        agree exactly in height. Change it here only if it changes in all of them.
 
-       IT OPENS THE ROW SHEET EMPTY (2026-11-24): pick a funding source, say
-       where the request stands, give the amount. This is how a project asks a
-       source for money, so it starts on Requested.
+       IT OPENS THE ROW SHEET EMPTY (2026-11-24): pick a funding source and
+       give the amount.
 
        EACH ROW CAN BE CORRECTED OR REMOVED (story 81, user 2026-11-23): a pencil
        at the row's end opens firma2-project-row-editor, the docked sheet, with
@@ -179,12 +184,10 @@ for (let i = 0; i < leftover; i += 1) {
         name: source.name,
         organization: source.organization,
         amount: source.amount,
-        share: source.status === 'not-awarded' ? null : percents[index],
-        status: source.status,
+        share: percents[index],
         // Absent when the workspace's list does not hold the source.
         href: getFundingSource(source.source) ? withBase(fundingSourceHref(source.source)) : undefined,
       })),
-      statusLabels: FUNDING_STATUS_LABEL,
       // Every source in the workspace, so a row added or re-pointed here links too.
       sourceHrefs: Object.fromEntries(fundingSources.map((source) => [`${source.name}|${source.organization}`.toLowerCase(), withBase(fundingSourceHref(source.slug))])),
       estimatedTotalCost,
@@ -264,7 +267,6 @@ for (let i = 0; i < leftover; i += 1) {
   import type { ColDef, ICellRendererParams } from 'ag-grid-community';
   import { IMPORTS_EVENT, importedFunding, sourceLine } from '../../lib/report-imports';
   import { HAND_ROW, ROWS_EVENT, readRows, requestRowEdit } from '../../lib/project-rows';
-  import type { FundingStatus } from '../../data/firma2-funding-sources';
 
   interface FundingRow {
     /** Stable for the row: `seed:<index>` as built, or the import's change key. */
@@ -276,16 +278,13 @@ for (let i = 0; i < leftover; i += 1) {
     share: number | null;
     /** "From <document>", on a row an import added. */
     source?: string;
-    /** Absent on the summed rows. A row an import or an older edit left without one is secured. */
-    status?: FundingStatus;
     /** The funding source's page. Absent when the workspace's list does not hold it. */
     href?: string;
   }
 
   // THE SOURCE CELL IS THE SOURCE: its name, the door to its page, over the
-  // organization offering it. They were two columns until rows gained a
-  // status (2026-11-24); five columns did not fit the card beside the rail and
-  // the headers truncated. The organization is not a fact of the ROW, it comes
+  // organization offering it. They were two columns while a row typed both
+  // (until 2026-11-24). The organization is not a fact of the ROW, it comes
   // with the source, so it reads as the name's second line. A row an import
   // added keeps its third line, the document it came from.
   const sourceCell = (params: ICellRendererParams<FundingRow>): HTMLElement => {
@@ -320,10 +319,9 @@ for (let i = 0; i < leftover; i += 1) {
     const payload = root.querySelector<HTMLScriptElement>('[data-firma2-funding-rows]');
     if (!host || !payload) return;
 
-    const { rows, estimatedTotalCost, statusLabels, sourceHrefs } = JSON.parse(payload.textContent ?? '{}') as {
+    const { rows, estimatedTotalCost, sourceHrefs } = JSON.parse(payload.textContent ?? '{}') as {
       rows: FundingRow[];
       estimatedTotalCost: number;
-      statusLabels: Record<FundingStatus, string>;
       sourceHrefs: Record<string, string>;
     };
 
@@ -348,7 +346,7 @@ for (let i = 0; i < leftover; i += 1) {
           kind: 'funding',
           slug,
           id: row.id!,
-          values: { name: row.name, organization: row.organization, amount: row.amount, status: row.status ?? 'secured' },
+          values: { name: row.name, organization: row.organization, amount: row.amount },
           others: shown.filter((other) => other.id !== row.id),
           opener: control,
         });
@@ -366,15 +364,9 @@ for (let i = 0; i < leftover; i += 1) {
         flex: 1, minWidth: 200, wrapText: true, autoHeight: true,
         cellRenderer: sourceCell,
       },
-      // WORDS, NOT A BADGE: three rows that almost always all read "Secured" would
-      // be three coloured chips saying nothing. The word is the fact.
-      {
-        headerName: 'Status', field: 'status', colId: 'status', width: 130,
-        valueFormatter: (p) => (p.value ? statusLabels[p.value as FundingStatus] : ''),
-      },
       {
         headerName: 'Amount', field: 'amount', colId: 'amount',
-        width: 124, type: 'rightAligned',
+        width: 140, type: 'rightAligned',
         valueFormatter: (p) => (p.value == null ? '' : currency.format(Number(p.value))),
       },
       // "Share of total" rather than "Share" — it names the denominator, so the
@@ -415,30 +407,39 @@ for (let i = 0; i < leftover; i += 1) {
       const hrefOf = (row: { name: string; organization: string }): string | undefined => sourceHrefs[keyOf(row)];
       // THE TABLE IS THE AUTHORED ONE only while nothing was added, removed or
       // re-figured. A share is a slice of the estimate, and the estimate was
-      // built to equal the planned amounts; once an amount changes or a row
-      // leaves, that row's share is no longer a fact, so it is not shown.
+      // built to equal the authored amounts; once an amount changes or a row
+      // leaves, that row's share is no longer a fact, so it is not shown, and
+      // the summed row appears so the reader sees the funding beside the
+      // estimate instead of percentages that no longer add up.
       let altered = added.size > 0;
       const rowData = [...rows, ...added.values()].flatMap((row): FundingRow[] => {
-        if (!row.id || !(row.id in byHand)) return [{ ...row, status: row.status ?? 'secured' }];
+        if (!row.id || !(row.id in byHand)) return [row];
         const edit = byHand[row.id];
         altered = true;
         if (edit === null) return [];
         // An imported row edited by hand keeps the line naming its document.
-        return [{ ...row, ...edit, status: edit.status ?? 'secured', href: hrefOf(edit), share: edit.amount === row.amount && edit.status !== 'not-awarded' ? row.share : null }];
+        return [{ ...row, ...edit, href: hrefOf(edit), share: edit.amount === row.amount ? row.share : null }];
       });
       // Rows a person added here, after the built and imported ones.
       Object.entries(byHand).forEach(([id, edit]) => {
         if (!id.startsWith(HAND_ROW) || edit === null) return;
         altered = true;
-        rowData.push({ ...edit, id, status: edit.status ?? 'secured', href: hrefOf(edit), share: null });
+        rowData.push({ ...edit, id, href: hrefOf(edit), share: null });
       });
-      // ONE SUMMED ROW, ONLY WHEN IT SAYS SOMETHING THE ROWS DO NOT: money the
-      // project has, while some row is still a request, was turned down, or
-      // the rows no longer add up to the estimate.
-      const secured = rowData.filter((row) => row.status === 'secured');
-      if (!altered && secured.length === rowData.length) return { rowData, pinned: [estimate] };
-      const sum = secured.reduce((total, row) => total + row.amount, 0);
-      return { rowData, pinned: [{ name: 'Total secured', organization: '', amount: sum, share: null }, estimate] };
+      const sum = rowData.reduce((total, row) => total + row.amount, 0);
+      const gap = estimatedTotalCost - sum;
+      if (!altered && gap === 0) return { rowData, pinned: [estimate] };
+      // The summed row, then the estimate, then what is still unfunded. No gap
+      // row when the funding meets or passes the estimate.
+      const percentOf = (amount: number): number | null => (estimatedTotalCost > 0 && !altered ? Math.round((amount / estimatedTotalCost) * 100) : null);
+      return {
+        rowData,
+        pinned: [
+          { name: 'Total funding', organization: '', amount: sum, share: percentOf(sum) },
+          estimate,
+          ...(gap > 0 ? [{ name: 'Funding gap', organization: '', amount: gap, share: percentOf(gap) }] : []),
+        ],
+      };
     };
     const initial = current();
     shown = initial.rowData;
@@ -471,7 +472,7 @@ for (let i = 0; i < leftover; i += 1) {
       pinnedBottomRowData: initial.pinned,
     });
 
-    // ADD: the row sheet, empty, on Requested. `others` is every row on screen,
+    // ADD: the row sheet, empty. `others` is every row on screen,
     // for the one-row-per-source rule.
     const card = root.closest<HTMLElement>('.esa-card') ?? root.parentElement;
     card?.querySelector<HTMLElement>('[data-funding-add]')?.addEventListener('click', (event) => {
@@ -481,7 +482,7 @@ for (let i = 0; i < leftover; i += 1) {
         adding: true,
         slug,
         id: '',
-        values: { name: '', organization: '', amount: 0, status: 'requested' },
+        values: { name: '', organization: '', amount: 0 },
         others: shown,
         opener: event.currentTarget as HTMLElement,
       });

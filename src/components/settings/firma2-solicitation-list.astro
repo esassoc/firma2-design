@@ -1,0 +1,178 @@
+---
+// firma2-solicitation-list — the workspace's solicitations: name one, and say
+// whether it is active. Spec: .scratch/project-intake/spec.md (Solicitations).
+//
+// ACTIVE IS THE WHOLE SETTING. The intake form's Solicitation question offers
+// the active ones and nothing else, so turning one off is how an
+// administrator stops projects being submitted under it. It applies at once.
+//
+// ONLY A SOLICITATION WITH NO PROJECTS CAN BE DELETED. One that projects were
+// submitted under is turned off instead, so those projects keep saying which
+// solicitation they were for.
+//
+// FAKED: edits are kept in this browser (src/lib/solicitations.ts), and the
+// project counts are read from this browser's intake entries.
+import EsaButton from '@esa/ecology/esa-button.astro';
+---
+<!-- bcn-lego-checked: every control is a lego (esa-switch-toggle,
+     esa-text-field, esa-button); the classes only lay out the row list, which
+     no esa- component does. Beacon is not cloned on this machine. Same row
+     construction as firma2-stage-editor. -->
+<div class="firma2-solicitation-list stack" data-gap="lg">
+  <ul class="firma2-solicitation-list__rows" data-rows></ul>
+  <div class="firma2-solicitation-list__add">
+    <esa-text-field data-new-name aria-label="New solicitation name" placeholder="New solicitation" size="md" autocomplete="off"></esa-text-field>
+    <EsaButton variant="secondary" size="md" icon="plus" data-add>Add solicitation</EsaButton>
+  </div>
+  <template data-tpl-remove><EsaButton variant="chrome" size="md" iconOnly icon="trash-2" label="Delete solicitation" /></template>
+</div>
+
+<style>
+  .firma2-solicitation-list__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-solicitation-list__rows :global(li) {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding-block: var(--spacing-400);
+    border-block-end: 1px solid var(--color-border-default);
+  }
+
+  .firma2-solicitation-list__rows :global(.firma2-solicitation-list__name) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .firma2-solicitation-list :global(.firma2-solicitation-list__meta) {
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-solicitation-list__rows :global(.firma2-solicitation-list__spacer) {
+    flex: none;
+    visibility: hidden;
+  }
+
+  /* The field carries no visible label (the button names the row), so both
+     start on one line and an error under the field moves nothing. */
+  .firma2-solicitation-list__add {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-300);
+  }
+
+  .firma2-solicitation-list__add > :global(esa-text-field) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .firma2-solicitation-list__add > :global(:not(esa-text-field)) {
+    flex: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-text-field';
+  import { announce } from '@esa/ecology/announcer';
+  import { readIntakeProjects } from '../../lib/intake-form';
+  import { nameButton } from '../../lib/name-button';
+  import { readSolicitations, writeSolicitations } from '../../lib/solicitations';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+  type Toggle = HTMLElement & { checked: boolean };
+
+  document.querySelectorAll<HTMLElement>('.firma2-solicitation-list').forEach((root) => {
+    const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    let list = readSolicitations();
+
+    // Projects entered under each solicitation, drafts left out.
+    const counts = () => {
+      const by = new Map<string, number>();
+      for (const p of readIntakeProjects()) {
+        const name = p.status === 'draft' ? '' : String(p.answers.solicitation ?? '');
+        if (name) by.set(name, (by.get(name) ?? 0) + 1);
+      }
+      return by;
+    };
+    const countText = (n: number) => (n === 0 ? 'No projects' : n === 1 ? '1 project' : `${n} projects`);
+
+    const paint = () => {
+      const by = counts();
+      $('[data-rows]').replaceChildren(
+        ...list.map((s) => {
+          const li = document.createElement('li');
+          const n = by.get(s.name) ?? 0;
+
+          const name = document.createElement('div');
+          name.className = 'firma2-solicitation-list__name stack';
+          name.dataset.gap = '2xs';
+          const title = Object.assign(document.createElement('span'), { className: 'typography-label-lg', textContent: s.name });
+          const meta = Object.assign(document.createElement('span'), { className: 'firma2-solicitation-list__meta typography-body-sm', textContent: countText(n) });
+          name.append(title, meta);
+
+          const active = document.createElement('esa-switch-toggle') as Toggle;
+          active.setAttribute('label', 'Active');
+          active.setAttribute('label-position', 'before');
+          active.setAttribute('size', 'md');
+          active.setAttribute('aria-label', `${s.name} is active`);
+          if (s.active) active.setAttribute('checked', '');
+          active.addEventListener('change', (event) => {
+            s.active = (event as CustomEvent<{ checked: boolean }>).detail.checked;
+            writeSolicitations(list);
+            announce(s.active ? `${s.name} is active. The intake form offers it.` : `${s.name} is not active. No project can be submitted under it.`);
+          });
+
+          const tail = $<HTMLTemplateElement>('[data-tpl-remove]').content.firstElementChild!.cloneNode(true) as HTMLElement;
+          if (n === 0) {
+            const remove = tail.querySelector('button') ?? tail;
+            nameButton(remove, `Delete ${s.name}`);
+            remove.addEventListener('click', () => {
+              list = list.filter((x) => x.id !== s.id);
+              writeSolicitations(list);
+              paint();
+              announce(`${s.name} deleted.`);
+              $<Field>('[data-new-name]').focus();
+            });
+          } else {
+            // An inert copy holds the delete button's width, so every row's
+            // switch sits on the same line.
+            tail.classList.add('firma2-solicitation-list__spacer');
+            tail.setAttribute('aria-hidden', 'true');
+            tail.inert = true;
+          }
+
+          li.append(name, active, tail);
+          return li;
+        }),
+      );
+    };
+
+    const newName = $<Field>('[data-new-name]');
+    newName.addEventListener('input', () => {
+      if (newName.errorText) newName.errorText = '';
+    });
+    const add = () => {
+      const name = String(newName.value ?? '').trim();
+      const taken = list.some((s) => s.name.toLowerCase() === name.toLowerCase());
+      newName.errorText = !name ? 'Name the solicitation.' : taken ? 'A solicitation already has this name.' : '';
+      if (newName.errorText) return;
+      // A new solicitation starts active: it is added to be offered.
+      list = [...list, { id: `sol-${Date.now().toString(36)}`, name, active: true }];
+      writeSolicitations(list);
+      newName.value = '';
+      paint();
+      announce(`${name} added. The intake form offers it.`);
+    };
+    $('[data-add]').addEventListener('click', add);
+    // The field's input is in its shadow root, so Enter is handled here.
+    newName.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') add();
+    });
+
+    paint();
+  });
+</script>

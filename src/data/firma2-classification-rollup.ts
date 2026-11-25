@@ -30,7 +30,7 @@
 import { projects } from './firma2-projects';
 import type { ClassificationName, Project } from './firma2-projects';
 import { projectSlug } from './firma2-projects';
-import { getProjectDetail, isClosedPeriod, securedFunding } from './firma2-project-detail';
+import { getProjectDetail, isClosedPeriod } from './firma2-project-detail';
 import type { PerformanceMeasure } from './firma2-project-detail';
 import { measures as catalog } from './firma2-performance-measures';
 import { isSummable } from './firma2-performance-measures';
@@ -126,9 +126,7 @@ export interface FunderGrant {
 }
 
 /**
- * One funder's SECURED money across the projects carrying a classification.
- * Requested and not-awarded rows are not money the projects have, so they are
- * not counted (docs/data-model.md, decision 7).
+ * One funder's money across the projects carrying a classification.
  *
  * WHOLE-PROJECT DOLLARS, NOT MONEY FOR THIS GOAL. A funding source funds a
  * project, and a project can carry several classifications; nothing on the
@@ -258,8 +256,8 @@ export const rollupClassification = (classification: Classification): Classifica
     projects: carrying,
     estimatedTotalCost: carrying.reduce((sum, p) => sum + p.estimatedTotalCost, 0),
     spentToDate: details.reduce((sum, d) => sum + d.expenditures.reduce((s, y) => s + y.spent, 0), 0),
-    funders: new Set(details.flatMap((d) => securedFunding(d.funding).map((f) => f.organization))).size,
-    funding: funderTotals(details.flatMap((d) => securedFunding(d.funding).map((f) => ({ project: d.project, ...f })))),
+    funders: new Set(details.flatMap((d) => d.funding.map((f) => f.organization))).size,
+    funding: funderTotals(details.flatMap((d) => d.funding.map((f) => ({ project: d.project, ...f })))),
     kpis: linkedThenReported(kpisFor(name), carrying).map((m) => kpiProgress(name, m, classification.targets?.find((t) => t.measure === m.slug))),
   };
 };
@@ -359,8 +357,8 @@ export const rollupGroup = (group: ClassificationGroup): GroupRollup => {
     projects: carrying,
     estimatedTotalCost: carrying.reduce((sum, p) => sum + p.estimatedTotalCost, 0),
     spentToDate: details.reduce((sum, d) => sum + d.expenditures.reduce((s, y) => s + y.spent, 0), 0),
-    funders: new Set(details.flatMap((d) => securedFunding(d.funding).map((f) => f.organization))).size,
-    funding: funderTotals(details.flatMap((d) => securedFunding(d.funding).map((f) => ({ project: d.project, ...f })))),
+    funders: new Set(details.flatMap((d) => d.funding.map((f) => f.organization))).size,
+    funding: funderTotals(details.flatMap((d) => d.funding.map((f) => ({ project: d.project, ...f })))),
     kpis: groupMeasures(members, carrying).map((m) => progressOver(carrying, m)),
   };
 };
@@ -412,8 +410,8 @@ export const rollupOver = (over: Project[]): Omit<ClassificationRollup, 'classif
     projects: over,
     estimatedTotalCost: over.reduce((sum, p) => sum + p.estimatedTotalCost, 0),
     spentToDate: details.reduce((sum, d) => sum + d.expenditures.reduce((s, y) => s + y.spent, 0), 0),
-    funders: new Set(details.flatMap((d) => securedFunding(d.funding).map((f) => f.organization))).size,
-    funding: funderTotals(details.flatMap((d) => securedFunding(d.funding).map((f) => ({ project: d.project, ...f })))),
+    funders: new Set(details.flatMap((d) => d.funding.map((f) => f.organization))).size,
+    funding: funderTotals(details.flatMap((d) => d.funding.map((f) => ({ project: d.project, ...f })))),
   };
 };
 

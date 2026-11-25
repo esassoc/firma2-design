@@ -1,0 +1,136 @@
+---
+// firma2-funding-source-create-form — Funding sources › Add funding source:
+// name it, say which organization offers it, and describe it.
+//
+// A PAGE, LIKE EVERY OTHER ADD in this spoke (/organizations/new,
+// /performance-measures/new): the add has a URL of its own and returns to the
+// list when it is done.
+//
+// A FORM, NOT A RECORD (brief §4): every field draws its border at rest with
+// its label above — the legos as they ship.
+//
+// THE ORGANIZATION IS PICKED, NEVER TYPED. A funding source is offered by one
+// organization in the workspace; an organization is created in settings, by an
+// administrator, and nowhere else.
+//
+// TWO SOURCES MAY SHARE A NAME ONLY UNDER DIFFERENT ORGANIZATIONS: each lead
+// organization's own match carries the same name. The same name under the same
+// organization is refused.
+//
+// NOTHING REACHES A SERVER. Add writes the new funding source to this viewer's
+// browser (src/lib/added-funding-sources.ts) and returns to the list.
+//
+// bcn-lego-checked: esa-text-field, esa-combobox, esa-textarea and esa-button
+// are the controls — all existing, composed unchanged. `.stack` / `.cluster`
+// space them; no bespoke flex and no <style> block. Beacon is not cloned on
+// this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { organizations } from '../../data/firma2-directory';
+import { fundingSources } from '../../data/firma2-funding-sources';
+import { withBase } from '../../lib/base';
+
+const listHref = withBase('/prototypes/funding-sources');
+// A to Z: the list is found by typing, and alphabetical is the one order a
+// person can also scan.
+const organizationOptions = organizations
+  .map((organization) => organization.name)
+  .sort((a, b) => a.localeCompare(b))
+  .map((name) => ({ label: name, value: name }));
+const taken = fundingSources.map((source) => `${source.name}|${source.organization}`.toLowerCase());
+---
+<form
+  class="firma2-funding-source-create-form stack"
+  data-gap="2xl"
+  novalidate
+  data-list-href={listHref}
+  data-organizations={JSON.stringify(organizationOptions)}
+  data-taken={JSON.stringify(taken)}
+>
+  <div class="stack" data-gap="md">
+    <esa-text-field name="name" label="Name" size="md" maxlength="200" required data-source-name></esa-text-field>
+    <esa-combobox name="organization" label="Offered by" size="md" mode="autocomplete" required data-source-organization></esa-combobox>
+    <esa-textarea name="description" label="Description" size="md" rows="3" maxlength="160" data-source-description></esa-textarea>
+  </div>
+
+  <!-- House order: the primary first, then Cancel. -->
+  <div class="cluster" data-gap="xs">
+    <EsaButton variant="primary" size="md" type="submit">Add funding source</EsaButton>
+    <EsaButton variant="ghost" size="md" tag="a" href={listHref}>Cancel</EsaButton>
+  </div>
+</form>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-combobox';
+  import '@esa/ecology/esa-textarea';
+  import { fundingSourceSlug } from '../../data/firma2-funding-sources';
+  import { addFundingSource, readAddedFundingSources } from '../../lib/added-funding-sources';
+
+  type Field = HTMLElement & { value: string; errorText: string; options?: unknown };
+
+  document.querySelectorAll<HTMLFormElement>('.firma2-funding-source-create-form').forEach((form) => {
+    const name = form.querySelector<Field>('[data-source-name]')!;
+    const organization = form.querySelector<Field>('[data-source-organization]')!;
+    const description = form.querySelector<Field>('[data-source-description]')!;
+    const organizations = JSON.parse(form.dataset.organizations ?? '[]') as { label: string; value: string }[];
+    const keyOf = (n: string, o: string): string => `${n.trim()}|${o.trim()}`.toLowerCase();
+    // Sources already here, including ones added earlier in this browser.
+    const taken = new Set<string>([
+      ...(JSON.parse(form.dataset.taken ?? '[]') as string[]),
+      ...readAddedFundingSources().map((source) => keyOf(source.name, source.organization)),
+    ]);
+
+    // Assigned only after define — a property set on a not-yet-upgraded
+    // element shadows the lego's setter for good.
+    void customElements.whenDefined('esa-combobox').then(() => {
+      organization.options = organizations;
+    });
+    void customElements.whenDefined('esa-text-field').then(() => name.focus());
+
+    // Clear an error as soon as the reader starts fixing it.
+    [name, organization].forEach((field) => {
+      const clear = (): void => {
+        if (field.errorText) field.errorText = '';
+      };
+      field.addEventListener('input', clear);
+      field.addEventListener('change', clear);
+    });
+
+    // Enter in the name field submits: the lego's input sits in a shadow root,
+    // so implicit submission never fires.
+    name.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key === 'Enter') form.requestSubmit();
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const named = String(name.value ?? '').trim();
+      const offeredBy = String(organization.value ?? '').trim();
+      let first: Field | null = null;
+      if (!named) {
+        name.errorText = 'Enter the funding source’s name.';
+        first = name;
+      }
+      if (!organizations.some((option) => option.value === offeredBy)) {
+        organization.errorText = 'Choose an organization from the list.';
+        first ??= organization;
+      }
+      if (!first && taken.has(keyOf(named, offeredBy))) {
+        name.errorText = `${offeredBy} already offers a funding source with this name.`;
+        first = name;
+      }
+      if (first) {
+        first.focus();
+        return;
+      }
+      addFundingSource({
+        slug: fundingSourceSlug(named, offeredBy),
+        name: named,
+        organization: offeredBy,
+        description: String(description.value ?? '').trim(),
+        fields: {},
+      });
+      window.location.assign(form.dataset.listHref ?? '');
+    });
+  });
+</script>

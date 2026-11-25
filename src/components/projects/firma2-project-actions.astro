@@ -62,12 +62,13 @@
 // this machine. firma2-project-actions is the home because the table exists
 // only as this sheet's content.
 import Firma2IconAction from '../shared/firma2-icon-action.astro';
-import type { AuditEntry } from '../../data/firma2-project-detail';
+import type { Change } from '../../data/firma2-changes';
+import { labelOfIso } from '../../data/firma2-publish-history';
 import '../settings/firma2-settings-table.css';
 
 interface Props {
   /** The record's change log, newest first — the order buildAudit() emits. */
-  audit: AuditEntry[];
+  audit: Change[];
   /**
    * The project's review page, when its public page is behind the record.
    * Hidden by firma2-project-publish-state once this browser has published.
@@ -117,15 +118,17 @@ const { audit, reviewHref, importHref, publicHref, published = false, slug } = A
         <th scope="col" class="typography-label-sm-strong">Change</th>
       </tr>
     </thead>
-    {/* One row per import in this browser, filled by the script. Its own
+    {/* What this browser changed, filled by the script from the record's one
+        change log (src/lib/changes.ts): each change made by hand is a row, and
+        an import's changes fold into one row naming its document. Its own
         <tbody> so a repaint replaces these rows and never the seeded log. */}
     <tbody data-import-log></tbody>
     <tbody>
       {audit.map((entry) => (
         <tr>
-          <td class="firma2-project-actions__log-date typography-body-sm">{entry.date}</td>
-          <td class="typography-body-sm">{entry.user}</td>
-          <td class="typography-body-sm">{entry.change}</td>
+          <td class="firma2-project-actions__log-date typography-body-sm">{labelOfIso(entry.at)}</td>
+          <td class="typography-body-sm">{entry.by}</td>
+          <td class="typography-body-sm">{entry.summary}</td>
         </tr>
       ))}
     </tbody>
@@ -217,7 +220,7 @@ const { audit, reviewHref, importHref, publicHref, published = false, slug } = A
   import '../shared/bcn-side-sheet';
   import '@esa/ecology/esa-snackbar-container';
   import { shareRecord } from '../../lib/share-record';
-  import { IMPORTS_EVENT, readImports } from '../../lib/report-imports';
+  import { CHANGES_EVENT, readChanges, recordChange } from '../../lib/changes';
   import { readPublishing } from '../../lib/publish-store';
 
   type Dialog = HTMLElement & { show: () => void; close: () => void };
@@ -248,33 +251,74 @@ const { audit, reviewHref, importHref, publicHref, published = false, slug } = A
       ?.addEventListener('click', () => sheet.show());
   }
 
-  // WHAT THIS BROWSER IMPORTED, above the seeded log and newest first. The
-  // dates are the fixture's present, in the log's own "12 August 2026" form.
+  // WHAT THIS BROWSER CHANGED, above the seeded log and newest first: the
+  // record's one change log. A change made by hand is a row. Everything one
+  // import added folds into one row naming its document, because nine rows
+  // from one report read as one act. The dates are in the log's own
+  // "12 August 2026" form.
   const slug = sheet?.dataset.slug;
   const importLog = sheet?.querySelector<HTMLElement>('[data-import-log]');
   const importRow = sheet?.querySelector<HTMLTemplateElement>('template[data-import-log-row]');
   if (slug && importLog && importRow) {
     const day = (iso: string): string =>
-      new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
-    const paintImports = (): void => {
+      new Date(iso.length > 10 ? iso : `${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const paintLog = (): void => {
+      const rows: { at: string; by: string; text: string }[] = [];
+      const folded = new Map<string, { at: string; by: string; name: string; n: number }>();
+      readChanges(slug).forEach((change) => {
+        if (change.source.kind !== 'document') {
+          rows.push({ at: change.at, by: change.by, text: change.source.kind === 'data-source' ? `${change.summary} (from ${change.source.name})` : change.summary });
+          return;
+        }
+        // `import:<import id>:<proposal id>`: one import, one row.
+        const importId = change.id.split(':').slice(0, 2).join(':');
+        const fold = folded.get(importId) ?? { at: change.at, by: change.by, name: change.source.name, n: 0 };
+        fold.n += 1;
+        folded.set(importId, fold);
+      });
+      folded.forEach((fold) => rows.push({ at: fold.at, by: fold.by, text: `${fold.n} change${fold.n === 1 ? '' : 's'} from ${fold.name}` }));
+      rows.sort((a, b) => b.at.localeCompare(a.at));
       importLog.replaceChildren(
-        ...readImports(slug)
-          .reverse()
-          .map((record) => {
-            const row = importRow.content.firstElementChild!.cloneNode(true) as HTMLElement;
-            const [date, user, change] = row.querySelectorAll('td');
-            const n = record.changes.length;
-            date.textContent = day(record.iso);
-            user.textContent = record.by;
-            change.textContent = `${n} change${n === 1 ? '' : 's'} from ${
-              record.document.kind === 'text' ? 'pasted text' : record.document.name
-            }`;
-            return row;
-          }),
+        ...rows.map((entry) => {
+          const row = importRow.content.firstElementChild!.cloneNode(true) as HTMLElement;
+          const [date, user, change] = row.querySelectorAll('td');
+          date.textContent = day(entry.at);
+          user.textContent = entry.by;
+          change.textContent = entry.text;
+          return row;
+        }),
       );
     };
-    paintImports();
-    document.addEventListener(IMPORTS_EVENT, paintImports);
+    paintLog();
+    document.addEventListener(CHANGES_EVENT, paintLog);
+  }
+
+  // A KEY FACT EDITED BY HAND IS A CHANGE TOO. firma2-editable-field announces
+  // every commit as firma2:field-save; the row's own label names it.
+  let describedHere = false;
+  if (slug) {
+    document.addEventListener('firma2:field-save', (event) => {
+      const { field, value, fromSet } = (event as CustomEvent<{ field?: string; value?: string; fromSet?: boolean }>).detail ?? {};
+      // A value set from outside (a restored draft, an import) is not a hand
+      // edit; the import logs its own changes with their document.
+      if (!field || fromSet) return;
+      // The description announces every settled keystroke run; one row per
+      // page view says it was edited.
+      if (field === 'projectDescription') {
+        if (describedHere) return;
+        describedHere = true;
+      }
+      const row = (event.target as Element | null)?.closest?.('[data-editable-field]');
+      const label = row?.querySelector('.firma2-editable-field__label')?.textContent?.trim() || (field === 'projectDescription' ? 'Description' : field);
+      const long = field === 'projectDescription' || (value ?? '').length > 80;
+      recordChange(slug, {
+        subject: field.startsWith('field:') || field.startsWith('program:') ? 'custom-field' : 'field',
+        key: field,
+        action: 'set',
+        to: value,
+        summary: long || !value ? `${label} edited` : `${label} set to ${value}`,
+      });
+    });
   }
 
   // SHARE SHEET FIRST, CLIPBOARD SECOND. Where the platform offers a real

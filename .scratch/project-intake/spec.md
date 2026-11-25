@@ -185,3 +185,17 @@ A restoration workspace with three screens: **Basics** (name, type, lead organiz
 - **Rejected:** a separate Proposal record apart from the project; calling the admission state "proposal".
 - **Faked:** the switch is kept in this browser. Stored forms and entries from before this change are left behind (new storage keys), so the seeded form and the two seeded entries show again.
 - **Samples:** Mill Creek Culvert Replacement is entered at Proposal; Butte Meadows Wet Meadow Restoration is entered at Implementation, both waiting for approval.
+
+### 2026-11-24 — Solicitations
+
+From the user's account of how one client runs calls for projects. Replaces funding-sources decision 3 and `docs/data-model.md` decision 17 as far as the solicitation itself goes.
+
+- **A solicitation is a name and an Active switch.** Several can be active at once. It carries no amount, and no requested or secured funding: that framing is not what tracking a solicitation needs. (user)
+- **A project says which solicitation it is for on the first screen of the intake form.** (user) Built as a standard question, Solicitation, whose choices are the active solicitations. *(proposed)* It is a question the administrator places like any other standard one, not a locked one, so a workspace that runs no solicitations leaves it off; the sample form asks it first and requires it.
+- **No project is submitted under a solicitation that is not active.** (user) An inactive solicitation is not offered. *(proposed)* A draft that chose one before it was turned off loses that answer and, where the question is required, cannot be submitted until another is chosen. Projects already submitted keep theirs. With none active the question says "No solicitation is active."
+- **Administrators keep the list** on Workspace settings › Solicitations: add one (it starts active), turn one on or off (applies at once, not part of Publish), delete one that no project was submitted under. *(proposed)*
+- **Reviewers see the solicitation** first on each row of New projects in the Review inbox, and among the project's answers. *(proposed)*
+- **The completeness check is the existing admission step**: Return with a comment, or Approve. *(proposed)* The review committee's evaluation and its choice of which projects to fund are not modelled: no scores, no committee, no selected / not selected status.
+- **Not built:** renaming a solicitation; a description or dates on one; the solicitation on the project page and as a column or filter in the Projects table; filtering the Review inbox by solicitation.
+- **Faked:** the list and its switches are kept in this browser (`src/lib/solicitations.ts`); project counts come from this browser's entries. Stored forms and entries from before this change are left behind (new storage keys).
+- **Samples:** 2026 Watershed Restoration Grants and 2026 Fish Passage Small Grants are active, with one submitted project each (Butte Meadows Wet Meadow Restoration, Mill Creek Culvert Replacement); 2025 Watershed Restoration Grants is not active and has no projects, so it can be deleted.

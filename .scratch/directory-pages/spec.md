@@ -28,6 +28,7 @@ The brief's five questions are answered in each page's module header:
 | 4 | Access requests (people asking to join an organization, and requests for a new one) get the same inbox, on a page of their own. *(user, 2026-11-24: "why not have a similar thing for user requests")* |
 | 5 | A support request can be sent from a New request page, and an administrator can change who it is assigned to. *(user, 2026-11-24, on being told these were left out)* |
 | 6 | An organization's page opens on who the organization is: its description, its totals and its facts, then its projects, the funding sources it offers, its members and the map. The first version, the members' Home with an About tab added, was rejected. *(user, 2026-11-24: "abysmal")* |
+| 7 | A support request's properties (assigned to, type, sender, organization, email, the page it was sent from, dates) sit in a docked rail beside the request, not under the conversation. *(user, 2026-11-24)* |
 
 ## Proposed, not yet confirmed
 

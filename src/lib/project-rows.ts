@@ -21,7 +21,7 @@
 //
 // Browser-local, one versioned key, same honesty terms as every store here.
 
-import type { FundingStatus } from '../data/firma2-funding-sources';
+import { recordChange } from './changes';
 
 const KEY = 'firma2:project-rows:v1';
 
@@ -35,11 +35,6 @@ export interface FundingValues {
   organization: string;
   /** Whole dollars. */
   amount: number;
-  /**
-   * Where the request stands. Absent on a row saved before rows carried one,
-   * which reads as secured: that is what every row meant then.
-   */
-  status?: FundingStatus;
 }
 
 /** The id prefix of a funding row a person added on the project page. */
@@ -101,33 +96,47 @@ const update = (slug: string, change: (rows: ProjectRows) => void): void => {
   writeAll({ ...all, [slug]: rows }, slug);
 };
 
-export const saveFunding = (slug: string, id: string, values: FundingValues): void =>
+// EVERY WRITE HERE IS A CHANGE in the record's one log (src/lib/changes.ts).
+const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+export const saveFunding = (slug: string, id: string, values: FundingValues): void => {
   update(slug, (rows) => {
     rows.funding[id] = values;
   });
+  recordChange(slug, { subject: 'funding', key: values.name, action: 'set', to: dollars.format(values.amount), summary: `Funding source changed: ${values.name}, ${dollars.format(values.amount)}` });
+};
 
 /** Add a funding row by hand. Its id is new to the project and never reused. */
-export const addFunding = (slug: string, values: FundingValues): void =>
+export const addFunding = (slug: string, values: FundingValues): void => {
   update(slug, (rows) => {
     let n = Object.keys(rows.funding).filter((id) => id.startsWith(HAND_ROW)).length + 1;
     while (`${HAND_ROW}${n}` in rows.funding) n += 1;
     rows.funding[`${HAND_ROW}${n}`] = values;
   });
+  recordChange(slug, { subject: 'funding', key: values.name, action: 'add', to: dollars.format(values.amount), summary: `Funding source added: ${values.name}` });
+};
 
-export const removeFunding = (slug: string, id: string): void =>
+/** `was` names the row for the log: the store knows a removed row only by its id. */
+export const removeFunding = (slug: string, id: string, was?: FundingValues): void => {
   update(slug, (rows) => {
     rows.funding[id] = null;
   });
+  if (was) recordChange(slug, { subject: 'funding', key: was.name, action: 'remove', from: dollars.format(was.amount), summary: `Funding source removed: ${was.name}` });
+};
 
-export const saveContact = (slug: string, id: string, values: ContactValues): void =>
+export const saveContact = (slug: string, id: string, values: ContactValues): void => {
   update(slug, (rows) => {
     rows.contacts[id] = values;
   });
+  recordChange(slug, { subject: 'contact', key: values.name, action: 'set', to: values.role || values.name, summary: `Contact changed: ${values.name}` });
+};
 
-export const removeContact = (slug: string, id: string): void =>
+export const removeContact = (slug: string, id: string, was?: ContactValues): void => {
   update(slug, (rows) => {
     rows.contacts[id] = null;
   });
+  if (was) recordChange(slug, { subject: 'contact', key: was.name, action: 'remove', summary: `Contact removed: ${was.name}` });
+};
 
 // ---------------------------------------------------------------------------
 // Opening the editor

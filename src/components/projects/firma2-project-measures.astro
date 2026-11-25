@@ -11,7 +11,7 @@
 // project's life, never per period — is what commits the project; a row with
 // none reads "no target yet". Periods are shown by their NAME
 // (REPORTING_PERIODS), and every target and entry write lands in the change
-// log (src/lib/measure-changes.ts).
+// log (src/lib/changes.ts).
 //
 // ONE TABLE, MEASURES DOWN, YEARS ACROSS. Every measure on a project is built
 // from the same window — buildMeasures() walks
@@ -1074,7 +1074,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   // up; one that does not takes the latest entry, because entries here carry
   // no place to group by.
   //
-  // EVERY TARGET AND ENTRY WRITE IS LOGGED (src/lib/measure-changes.ts) —
+  // EVERY TARGET AND ENTRY WRITE IS LOGGED (src/lib/changes.ts) —
   // entries by the entry store itself, targets here, where the old value is
   // known. Nothing reads the log yet, as on the branch.
   // ---------------------------------------------------------------------------
@@ -1116,7 +1116,8 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
     setTargetOverride,
   } from '../../lib/project-measure-draft';
   import { addEntry, logEntry, readEntries, removeEntry } from '../../lib/entry-draft';
-  import { logChange } from '../../lib/measure-changes';
+  import { numberText, recordChange } from '../../lib/changes';
+  import { measureNameOf } from '../../lib/entry-draft';
   import { can } from '../../lib/workspace-permissions';
 
   type Control = HTMLElement & {
@@ -2135,13 +2136,16 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         const value = next !== null && next > 0 ? next : 0;
         setTargetOverride(slug, key, value === built ? null : value);
       }
-      logChange({
-        projectSlug: slug,
-        measureSlug: key,
-        periodName: null,
-        field: 'TargetValue',
-        oldValue: before > 0 ? before : null,
-        newValue: next !== null && next > 0 ? next : null,
+      const from = numberText(before > 0 ? before : null);
+      const to = numberText(next !== null && next > 0 ? next : null);
+      const measureName = measureNameOf(key);
+      recordChange(slug, {
+        subject: 'target',
+        key,
+        action: from === undefined ? 'add' : to === undefined ? 'remove' : 'set',
+        from,
+        to,
+        summary: from === undefined ? `Target set to ${to}: ${measureName}` : to === undefined ? `Target cleared: ${measureName}` : `Target changed from ${from} to ${to}: ${measureName}`,
       });
     };
 

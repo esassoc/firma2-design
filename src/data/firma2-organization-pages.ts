@@ -17,7 +17,8 @@
 import { projectHref, projectSlug } from './firma2-projects';
 import type { Project } from './firma2-projects';
 import { getProjectDetail, isClosedPeriod } from './firma2-project-detail';
-import { PUBLISHED_CHANGE } from './firma2-publish-history';
+import { labelOfIso } from './firma2-publish-history';
+import type { Change } from './firma2-changes';
 import { CURRENT_USER_ORGANIZATIONS, TODAY, getOrganization, membersOf, organizationSlug, projectsOf } from './firma2-directory';
 import type { Organization } from './firma2-directory';
 
@@ -130,12 +131,12 @@ const isoOf = (label: string): string => {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 };
 
-const kindOf = (change: string): UpdateKind =>
-  change.startsWith('Reported value filed')
+const kindOf = (change: Change): UpdateKind =>
+  change.subject === 'measure-entry'
     ? 'report'
-    : change.startsWith('Stage set to')
+    : change.subject === 'field' && change.key === 'stage'
       ? 'stage'
-      : change === PUBLISHED_CHANGE
+      : change.subject === 'publish'
         ? 'publish'
         : 'edit';
 
@@ -149,14 +150,14 @@ export const projectUpdates = (list: Project[]): OrganizationUpdate[] =>
       // The log is newest first, so a session's entries arrive newest first;
       // `lines` is reversed at the end to read in the order they were made.
       for (const entry of detail.audit) {
-        const kind = kindOf(entry.change);
-        const iso = isoOf(entry.date);
+        const kind = kindOf(entry);
+        const iso = entry.at;
         const last = log.at(-1);
-        if (kind === 'edit' && last?.kind === 'edit' && last.author === entry.user && last.iso === iso) {
-          last.lines = [...(last.lines ?? [last.text]), entry.change];
+        if (kind === 'edit' && last?.kind === 'edit' && last.author === entry.by && last.iso === iso) {
+          last.lines = [...(last.lines ?? [last.text]), entry.summary];
           continue;
         }
-        log.push({ kind, iso, date: entry.date, author: entry.user, text: entry.change, ...about });
+        log.push({ kind, iso, date: labelOfIso(iso), author: entry.by, text: entry.summary, ...about });
       }
       for (const u of log) {
         if (!u.lines) continue;

@@ -70,6 +70,10 @@ of the layer's fields. _Avoid:_ geospatial area type (ProjectFirma 1's term).
 Design, Implementation and so on. Says nothing about whether the record has been
 accepted.
 
+**Solicitation** — a call new projects are entered under. A project says which
+one it is for on the intake form; only active solicitations are offered. Not
+money: what funds a project is its funding sources.
+
 **Proposal** — a project whose stage is Proposal: work that is proposed and not
 yet committed. _Avoid:_ proposal for a project that is waiting to be approved
 into the workspace; that is its admission status, whatever its stage.

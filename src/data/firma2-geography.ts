@@ -26,33 +26,16 @@ import { REAL, realCenter, realRecords } from './firma2-real-data';
 import { AREA_FILES, areaFileLayerId } from './firma2-geospatial-areas';
 import { centroid, pointInRing, ringAcres, pathMiles } from '../lib/geo';
 import type { LatLng } from '../lib/geo';
+import type { WorkArea, WorkAreaKind } from './firma2-work-area';
 
 // ---------------------------------------------------------------------------
 // Work areas — the shape every map in this spoke draws
 // ---------------------------------------------------------------------------
 
-export type WorkAreaKind = 'area' | 'reach' | 'point';
-
-export interface MapWorkArea {
-  id: string;
-  label: string;
-  kind: WorkAreaKind;
-  /** [lat, lng]. A point is a path of one. */
-  path: LatLng[];
-  /** Acres for an area, miles for a reach, null for a point — never 0. */
-  extent: number | null;
-  unit: 'acres' | 'miles' | null;
-  /**
-   * Seeded shapes are templates whose authored extents were never measured off
-   * the template ring. Reshaping one rescales the new measurement by this
-   * ratio, so a 62-acre unit nudged by a vertex reads 63 acres, not 2,300.
-   */
-  extentScale?: number;
-  /** The subwatershed this shape was adopted from — provenance a table can say. */
-  adoptedFrom?: string;
-  /** How it arrived, for the Source column. */
-  origin: 'record' | 'drawn' | 'coordinates' | 'reference' | 'upload';
-}
+// One definition, in firma2-work-area.ts (docs/data-model.md, decision 13).
+// `MapWorkArea` is the name every map already imports it by.
+export type { WorkAreaKind } from './firma2-work-area';
+export type MapWorkArea = WorkArea;
 
 /**
  * PROPOSALS WITH NO LOCATION YET. A proposal is often a paragraph and a budget
@@ -78,15 +61,7 @@ export const seedWorkAreas = (project: Project): MapWorkArea[] => {
   // shape at all, the record's own coordinates are its one location.
   const record = realRecords.get(project.projectName);
   if (record) {
-    const shapes: MapWorkArea[] = detail.workAreas.map((area, i) => ({
-      id: `${slug}-${i}`,
-      label: area.label,
-      kind: area.kind,
-      path: area.path,
-      extent: area.extent,
-      unit: area.extentUnit,
-      origin: 'record',
-    }));
+    const shapes: MapWorkArea[] = detail.workAreas.map((area) => ({ ...area }));
     const points: LatLng[] = record.geometries.filter((g) => g.type === 'Point').map((g) => [g.coordinates[1], g.coordinates[0]]);
     if (!shapes.length && !points.length && record.latitude !== null && record.longitude !== null) {
       points.push([record.latitude, record.longitude]);
@@ -104,18 +79,9 @@ export const seedWorkAreas = (project: Project): MapWorkArea[] => {
       })),
     ];
   }
-  return detail.workAreas.map((area, i) => {
+  return detail.workAreas.map((area) => {
     const measured = area.kind === 'area' ? ringAcres(area.path) : pathMiles(area.path);
-    return {
-      id: `${slug}-${i}`,
-      label: area.label,
-      kind: area.kind,
-      path: area.path,
-      extent: area.extent,
-      unit: area.extentUnit,
-      extentScale: measured > 0 ? area.extent / measured : 1,
-      origin: 'record',
-    };
+    return { ...area, extentScale: measured > 0 && area.extent !== null ? area.extent / measured : 1 };
   });
 };
 

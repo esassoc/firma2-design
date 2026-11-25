@@ -4,18 +4,13 @@
 // AN ENTITY OF ITS OWN (docs/data-model.md, decision 1, user 2026-11-24). Until
 // then a funding source was a name typed on each project's funding row, so the
 // same grant on twelve projects was twelve strings. A project's funding row now
-// LINKS to one of these and carries only the amount and its status; the funder
+// LINKS to one of these and carries only the amount; the funder
 // is read from here and never typed again.
 //
 // THE CATALOGUE AND NOTHING ELSE. This module imports no project detail, so
 // firma2-project-detail.ts can build its funding rows from it without a cycle.
 // What a source adds up to across projects lives in
 // firma2-funding-source-rollup.ts.
-//
-// HOW A CALL FOR PROPOSALS IS RUN (decisions 7, 16 and 17): there is no
-// solicitation entity. A source says whether it is ACCEPTING REQUESTS and,
-// optionally, until when. A project asks it for money with a funding row whose
-// status is `requested`; the row becomes `secured` or `not-awarded`.
 //
 // INVENTED CONTENT. Every program, administering body, award number and officer
 // below is fabricated to read like California restoration funding without being
@@ -26,25 +21,6 @@
 import { projects } from './firma2-projects';
 import { REAL, realFund, realRecords, slugOf } from './firma2-real-data';
 
-/** Where one request for money stands. Totals count `secured` only. */
-export type FundingStatus = 'requested' | 'secured' | 'not-awarded';
-
-export const FUNDING_STATUSES: FundingStatus[] = ['requested', 'secured', 'not-awarded'];
-
-/** The word each status reads as, everywhere a row shows one. */
-export const FUNDING_STATUS_LABEL: Record<FundingStatus, string> = {
-  requested: 'Requested',
-  secured: 'Secured',
-  'not-awarded': 'Not awarded',
-};
-
-/** esa-badge tone per status. Secured is the settled state, so it is the quiet success. */
-export const FUNDING_STATUS_TONE: Record<FundingStatus, 'info' | 'success' | 'secondary'> = {
-  requested: 'info',
-  secured: 'success',
-  'not-awarded': 'secondary',
-};
-
 export interface FundingSource {
   slug: string;
   /** The grant, award or program the money comes through. */
@@ -52,10 +28,6 @@ export interface FundingSource {
   /** The organization offering it. One per source. */
   organization: string;
   description: string;
-  /** Whether a project may ask this source for money. */
-  accepting: boolean;
-  /** The last day a request may be submitted, `YYYY-MM-DD`. Absent: no closing date. */
-  closes?: string;
   /**
    * The workspace's funding source fields, answered: label to value
    * (Workspace settings › Funding source fields). Only what was answered.
@@ -72,74 +44,59 @@ export const fundingSourceSlug = (name: string, organization: string): string =>
 
 type Seed = Omit<FundingSource, 'slug'>;
 
-// A SAMPLE FOR EVERY STATE a source can be in: accepting with a closing date
-// ahead, accepting with none, accepting with the date already past (which
-// reads as closed), and not accepting.
 const SEEDS: Seed[] = [
   {
     name: 'Watershed Resilience Grant Program',
     organization: 'California Watershed Restoration Board',
     description: 'Multi-benefit watershed restoration on public and private land.',
-    accepting: true,
-    closes: '2027-02-26',
     fields: { 'Award number': 'WRB-2024-118', 'Match required': '25%', 'Award period': 'Jul 2024 to Jun 2028', 'Program officer': 'Imani Okafor', 'Restricted to': 'Implementation' },
   },
   {
     name: 'Anadromous Fisheries Recovery Fund',
     organization: 'Pacific Fisheries Trust',
     description: 'Fish passage and instream habitat for salmon and steelhead.',
-    accepting: true,
     fields: { 'Award number': 'PFT-AF-0471', 'Match required': '10%', 'Award period': 'Jan 2023 to Dec 2027', 'Program officer': 'Tomás Villanueva' },
   },
   {
     name: 'Wildfire Resilience Block Grant',
     organization: 'California Forest Health Authority',
     description: 'Fuels reduction, thinning and prescribed fire near communities.',
-    accepting: true,
-    closes: '2026-08-14',
     fields: { 'Award number': 'FHA-BG-22-309', 'Match required': '0%', 'Award period': 'Oct 2022 to Sep 2027', 'Program officer': 'Renee Castellanos', 'Restricted to': 'Fuels treatment' },
   },
   {
     name: 'Coastal Wetlands Conservation Fund',
     organization: 'Pacific Coast Wetlands Board',
     description: 'Tidal marsh and coastal wetland protection and restoration.',
-    accepting: false,
     fields: { 'Award number': 'CW-2021-0062', 'Match required': '50%', 'Award period': 'Jul 2021 to Jun 2026', 'Program officer': 'Daniel Whitcombe' },
   },
   {
     name: 'Regional Water Quality Improvement Fund',
     organization: 'Central Valley Water Alliance',
     description: 'Stormwater capture, erosion control and sediment reduction.',
-    accepting: false,
     fields: { 'Award number': 'RWQ-19-744', 'Match required': '20%', 'Award period': 'Jan 2020 to Dec 2026', 'Program officer': 'Priya Raman' },
   },
   {
     name: 'Sierra Meadows Restoration Initiative',
     organization: 'Sierra Headwaters Conservancy',
     description: 'Rewetting and reconnecting degraded mountain meadows.',
-    accepting: true,
-    closes: '2026-12-11',
     fields: { 'Award number': 'SMR-2025-031', 'Match required': '15%', 'Award period': 'Jul 2025 to Jun 2029', 'Program officer': 'Hannah Bergstrom', 'Restricted to': 'Planning and implementation' },
   },
   {
     name: 'Federal Habitat Partnership Program',
     organization: 'National Watershed Partnership',
     description: 'Federal cost-share for habitat work with local sponsors.',
-    accepting: false,
     fields: { 'Award number': 'NWP-HP-9-2203', 'Match required': '35%', 'Award period': 'Oct 2021 to Sep 2026', 'Program officer': 'Marcus Delgado' },
   },
   {
     name: 'Delta Ecosystem Restoration Fund',
     organization: 'Delta Conservancy Board',
     description: 'Floodplain, side channel and tidal habitat in the Delta.',
-    accepting: false,
     fields: { 'Award number': 'DCB-ER-2020-15', 'Match required': '0%', 'Award period': 'Jul 2020 to Jun 2027' },
   },
   {
     name: 'Urban Greening Program',
     organization: 'Southern California Rivers Authority',
     description: 'Green infrastructure and river access in built-up watersheds.',
-    accepting: false,
     fields: { 'Award number': 'UG-23-0880', 'Match required': '25%', 'Award period': 'Jan 2023 to Dec 2026', 'Program officer': 'Leilani Akana' },
   },
 ];
@@ -151,7 +108,6 @@ const localMatches = (): Seed[] =>
     name: LOCAL_MATCH_NAME,
     organization,
     description: 'The lead organization’s own contribution to its projects.',
-    accepting: false,
     fields: {},
   }));
 
@@ -160,7 +116,7 @@ const localMatches = (): Seed[] =>
 const realSeeds = (): Seed[] =>
   [...new Set([...realRecords.values()].flatMap((record) => record.funding.map((row) => row.fund)))]
     .sort()
-    .map((fund) => ({ ...realFund(fund), description: '', accepting: false, fields: {} }));
+    .map((fund) => ({ ...realFund(fund), description: '', fields: {} }));
 
 export const fundingSources: FundingSource[] = (REAL ? realSeeds() : [...SEEDS, ...localMatches()]).map((seed) => ({
   slug: fundingSourceSlug(seed.name, seed.organization),
@@ -176,11 +132,3 @@ export const findFundingSource = (name: string, organization: string): FundingSo
   bySlug.get(fundingSourceSlug(name, organization));
 
 export const fundingSourceHref = (slug: string): string => `/prototypes/funding-sources/${slug}`;
-
-/**
- * Whether a project may ask this source for money on `today` (`YYYY-MM-DD`).
- * The closing date is the last day a request may be SUBMITTED; a draft started
- * before it and submitted after it is late (decision 16).
- */
-export const isAcceptingRequests = (source: Pick<FundingSource, 'accepting' | 'closes'>, today: string): boolean =>
-  source.accepting && (source.closes === undefined || today <= source.closes);

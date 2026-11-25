@@ -27,6 +27,8 @@
 
 import type { ImportDocument } from '../data/firma2-report-import';
 import { removeEntry } from './entry-draft';
+import { forgetChanges, recordChange } from './changes';
+import type { ChangeSubject } from '../data/firma2-changes';
 import { deletePageFiles, listFiles, putFile } from './page-files';
 import { readPublishing } from './publish-store';
 import type { PageFile } from './page-files';
@@ -155,6 +157,33 @@ export const importFilesId = (slug: string, importId: string): string => `report
 export const addImport = async (record: ReportImport, file: File | null): Promise<void> => {
   if (file) await putFile(importFilesId(record.slug, record.id), 'document', file);
   writeAll([...readAll(), record], record.slug);
+  // EACH THING THE IMPORT ADDED IS A CHANGE in the record's one log
+  // (src/lib/changes.ts), with the document as its source and the words it was
+  // read from. Its id is the imported change's key, so Undo can find it.
+  const name = record.document.kind === 'text' ? 'pasted text' : record.document.name;
+  record.changes.forEach((c) => {
+    const subject: ChangeSubject = c.entryId
+      ? 'measure-entry'
+      : c.contact
+        ? 'contact'
+        : c.funding
+          ? 'funding'
+          : c.field?.key.startsWith('field:')
+            ? 'custom-field'
+            : 'field';
+    recordChange(
+      record.slug,
+      {
+        subject,
+        key: c.field?.key ?? c.funding?.name ?? c.contact?.name ?? c.label,
+        action: c.from === undefined ? 'add' : 'set',
+        from: c.from,
+        to: c.to,
+        summary: c.from === undefined ? `${c.label} set to ${c.to}` : `${c.label} changed from ${c.from} to ${c.to}`,
+      },
+      { id: c.key, source: { kind: 'document', name, quote: c.quote, passage: c.passage, page: c.page } },
+    );
+  });
 };
 
 /** The stored file behind an import, when it had one and this browser kept it. */
@@ -170,8 +199,11 @@ export const undoImport = async (slug: string, importId: string): Promise<Report
   const record = findImport(slug, importId);
   if (!record) return undefined;
   record.changes.forEach((c) => {
-    if (c.entryId) removeEntry(slug, c.entryId);
+    // Not logged as a removal: an import undone from its toast never happened,
+    // so its rows leave the log instead (below).
+    if (c.entryId) removeEntry(slug, c.entryId, { log: false });
   });
+  forgetChanges(slug, (change) => change.id.startsWith(`import:${importId}:`));
   await deletePageFiles(importFilesId(slug, importId));
   writeAll(
     readAll().filter((i) => !(i.slug === slug && i.id === importId)),

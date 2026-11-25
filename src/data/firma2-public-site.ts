@@ -19,7 +19,7 @@ import { organizations } from './firma2-directory';
 import { PAGES_GROUP, seedEntries } from './firma2-pages';
 import { measures } from './firma2-performance-measures';
 import type { PerformanceMeasureDefinition } from './firma2-performance-measures';
-import { getProjectDetail, securedFunding } from './firma2-project-detail';
+import { getProjectDetail } from './firma2-project-detail';
 import { demoProjectSlug, projects, projectSlug } from './firma2-projects';
 import { REAL } from './firma2-real-data';
 import { seededFeatured } from './firma2-featured-photos';
@@ -273,7 +273,7 @@ export const publicPartners = (): PublicPartners => {
   for (const p of shown) leads.set(p.project.leadOrganization, (leads.get(p.project.leadOrganization) ?? 0) + 1);
   const funders = new Map<string, { amount: number; projects: Set<string> }>();
   for (const p of shown) {
-    for (const source of securedFunding(getProjectDetail(p.project).funding)) {
+    for (const source of getProjectDetail(p.project).funding) {
       // A lead that part-funds its own project is credited once, as a lead.
       if (!isPublic(source.organization) || leads.has(source.organization)) continue;
       const entry = funders.get(source.organization) ?? { amount: 0, projects: new Set<string>() };

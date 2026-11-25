@@ -25,6 +25,7 @@
 
 /** The Project's own attributes the form can ask for. */
 export type BuiltinKey =
+  | 'solicitation'
   | 'projectName'
   | 'projectType'
   | 'stage'
@@ -65,6 +66,10 @@ export const BUILTINS: Builtin[] = [
   { key: 'stage', label: 'Stage', input: 'choice', locked: true, choicesFrom: { page: 'Stages', href: '/prototypes/workspace-settings/stages' } },
   { key: 'leadOrganization', label: 'Lead organization', input: 'choice', locked: true, choicesFrom: { page: 'Organizations', href: '/prototypes/workspace-settings/organizations' } },
   { key: 'classifications', label: 'Classifications', input: 'multi-choice', locked: true, choicesFrom: { page: 'Classifications', href: '/prototypes/workspace-settings/classifications' } },
+  // WHICH SOLICITATION THE PROJECT IS FOR (user, 2026-11-24). Its choices are
+  // the solicitations that are active now (src/lib/solicitations.ts). Not
+  // locked: a workspace that runs no solicitations leaves it off its form.
+  { key: 'solicitation', label: 'Solicitation', input: 'choice', locked: false, choicesFrom: { page: 'Solicitations', href: '/prototypes/workspace-settings/solicitations' } },
   { key: 'projectDescription', label: 'Description', input: 'long-text', locked: false },
   { key: 'location', label: 'Location', input: 'location', locked: false },
   { key: 'implementationStartYear', label: 'Start year', input: 'year', locked: false },
@@ -156,8 +161,8 @@ export const DEFAULT_AFTER_SUBMIT =
 export const DEFAULT_FORM_TITLE = 'New project';
 
 /**
- * A new workspace's form: one screen holding the five attributes no project
- * can exist without, and one example screen shown only to stormwater
+ * The sample workspace's form: one screen holding the solicitation and the
+ * five attributes no project can exist without, and one example screen shown only to stormwater
  * projects. Everything else is the administrator's to add.
  */
 export const SEED_FORM: IntakeForm = {
@@ -167,6 +172,9 @@ export const SEED_FORM: IntakeForm = {
       id: 's-first',
       title: '',
       blocks: [
+        // First, on the first screen: the sample workspace runs solicitations,
+        // and a project says which one it is for before anything else.
+        { id: 'q-solicitation', type: 'builtin', key: 'solicitation', label: 'Solicitation', required: true },
         { id: 'q-name', type: 'builtin', key: 'projectName', label: 'Project name', required: true },
         { id: 'q-type', type: 'builtin', key: 'projectType', label: 'Project type', required: true },
         { id: 'q-stage', type: 'builtin', key: 'stage', label: 'Stage', required: true },
@@ -231,6 +239,7 @@ export const SEED_PROPOSALS: IntakeProject[] = [
     createdAt: '2026-10-06T16:20:00Z',
     submittedAt: '2026-10-14T18:05:00Z',
     answers: {
+      solicitation: '2026 Fish Passage Small Grants',
       projectName: 'Mill Creek Culvert Replacement',
       projectType: 'Fish passage',
       stage: 'Proposal',
@@ -250,6 +259,7 @@ export const SEED_PROPOSALS: IntakeProject[] = [
     createdAt: '2026-10-11T15:00:00Z',
     submittedAt: '2026-10-17T21:40:00Z',
     answers: {
+      solicitation: '2026 Watershed Restoration Grants',
       projectName: 'Butte Meadows Wet Meadow Restoration',
       projectType: 'Meadow & wetland restoration',
       stage: 'Implementation',

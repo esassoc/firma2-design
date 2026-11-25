@@ -12,7 +12,7 @@
 // demo shows the same people in the same places every time.
 
 import { projects } from './firma2-projects';
-import { funderPrograms, getProjectDetail, securedFunding } from './firma2-project-detail';
+import { funderPrograms, getProjectDetail } from './firma2-project-detail';
 import { REAL } from './firma2-real-data';
 
 // ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ const leadType = (name: string): OrganizationType =>
 
 const fundedBy = (organization: string): number =>
   projects.filter((project) =>
-    securedFunding(getProjectDetail(project).funding).some(
+    getProjectDetail(project).funding.some(
       // A local match resolves to the lead organization itself; that is the
       // sponsor paying its own share, not funding someone else's project.
       (source) => source.organization === organization && source.organization !== project.leadOrganization,
@@ -371,6 +371,17 @@ export const users: WorkspaceUser[] = [
       lastActive: invited ? '' : daysAgo(hashOf(name) % 75 + (suspended ? 40 : 0)),
     };
   }),
+  // A PROJECT CONTACT WHO IS ALSO A MEMBER (docs/data-model.md, decision 9).
+  // Project contacts are an invented pool that otherwise shares no names with
+  // the accounts above, so the link between a contact and a workspace user
+  // would have no sample. The lead contact of the first three projects has an
+  // account: same name, same email, a Contributor in the lead organization.
+  ...projects.slice(0, 3).flatMap((project): WorkspaceUser[] => {
+    const contact = getProjectDetail(project).contacts[0];
+    return contact?.email
+      ? [{ name: contact.name, email: contact.email, role: 'Contributor', organizations: [project.leadOrganization], managerOf: [], status: 'Active', lastActive: daysAgo(3) }]
+      : [];
+  }),
 ];
 
 /** Manages this organization — flagged on it, or an Administrator of the
@@ -413,7 +424,7 @@ export const organizations: Organization[] = seeds
       projects: projects.filter(
         (p) =>
           p.leadOrganization === name ||
-          securedFunding(getProjectDetail(p).funding).some((source) => source.organization === name),
+          getProjectDetail(p).funding.some((source) => source.organization === name),
       ).length,
       // Most organizations are public — their projects are public record. A
       // contractor's drafts are the usual reason to close one; a few others
@@ -503,7 +514,7 @@ export const projectsOf = (organization: string) =>
     .map((project) => {
       const detail = getProjectDetail(project);
       const leads = project.leadOrganization === organization;
-      const amount = securedFunding(detail.funding)
+      const amount = detail.funding
         .filter((source) => source.organization === organization && !leads)
         .reduce((sum, source) => sum + source.amount, 0);
       return { project, leads, amount };

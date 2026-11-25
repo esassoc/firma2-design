@@ -980,30 +980,12 @@ Answer:
 
 ## funding-sources
 
-Raised while making funding source an entity, 2026-11-24. Each is built as proposed unless it says not built.
-
-**Q-240 [cut]. Who may change a funding row's status to secured or not awarded?**
-The prototype lets anyone who can edit the project change it in the row sheet. For a workspace running a call, the outcome is the funder's decision, not the applicant's.
-Blocks: whether a request's outcome goes through review; who sees the control.
-Proposed: Anyone who can edit the project sets Requested. Secured and Not awarded are set by an administrator or a manager of the organization offering the source, and the change shows in review like any other.
-Answer:
-
-**Q-241 [detail]. What does a sponsor see when a draft was started before a source's last day and is submitted after it?**
-Decision 4 says the day governs submitting. The prototype refuses the new request with "<source> isn’t accepting requests."
-Blocks: the row sheet's error; whether an administrator can add a late request.
-Proposed: The request is refused for everyone but an administrator, who can add it for them.
-Answer:
+Raised while making funding source an entity, 2026-11-24. Each is built as proposed unless it says not built. Q-240, Q-241 and Q-243 were about a funding row's status and requests to a source; both were taken out the same day, and the questions with them.
 
 **Q-242 [detail]. Is a lead organization's own match a funding source in the list?**
 Built as one source per organization, named Local Sponsor Match, so every row links to something. It makes the index long.
 Blocks: the index's default contents.
 Proposed: Yes, but the index hides them behind a filter that is off by default.
-Answer:
-
-**Q-243 [cut]. Can a project ask for funding while it is being entered, or only from its own page afterwards?**
-Not built at intake. The earlier discussion placed the call's deadline at intake.
-Blocks: the intake form; whether a call's extra questions sit on a screen shown only when its source is picked.
-Proposed: Intake gets one standard question, "Requesting funding from", listing only sources accepting requests today. Picking one adds the requested row on approval.
 Answer:
 
 **Q-244 [detail]. What does a contributor see where New project used to be, when the workspace is not accepting new projects?**

@@ -30,7 +30,7 @@ const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', 
 export const inputOf = (block: QuestionBlock, fields: FieldDefinition[]): Input => {
   if (block.type === 'builtin') {
     const input = builtin(block.key).input;
-    if (input === 'choice') return block.key === 'projectType' || block.key === 'stage' ? 'choice' : 'combo';
+    if (input === 'choice') return block.key === 'projectType' || block.key === 'stage' || block.key === 'solicitation' ? 'choice' : 'combo';
     if (input === 'multi-choice' || input === 'people') return 'combo-multi';
     return input;
   }
@@ -142,7 +142,7 @@ const rawControl = (block: QuestionBlock, fields: FieldDefinition[], name: strin
   }
 };
 
-type Control = HTMLElement & { options?: unknown; value?: unknown };
+type Control = HTMLElement & { options?: unknown; value?: unknown; helpText?: string };
 
 /** Assign option lists and values to every question control under `root`. */
 export const hydrateQuestions = async (root: HTMLElement, blocks: QuestionBlock[], answers: Answers, fields: FieldDefinition[], live: boolean): Promise<void> => {
@@ -160,7 +160,10 @@ export const hydrateQuestions = async (root: HTMLElement, blocks: QuestionBlock[
       continue;
     }
     if (['choice', 'yes-no', 'multi', 'combo', 'combo-multi'].includes(input)) {
-      el.options = choicesFor(block, fields).map((o) => ({ label: o, value: o }));
+      const options = choicesFor(block, fields);
+      el.options = options.map((o) => ({ label: o, value: o }));
+      // Every solicitation is closed: say so where the choices would be.
+      if (block.type === 'builtin' && block.key === 'solicitation' && !options.length) el.helpText = 'No solicitation is active.';
     }
     if (value != null) el.value = Array.isArray(value) ? [...value] : String(value);
   }

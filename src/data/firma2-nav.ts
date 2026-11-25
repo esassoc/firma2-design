@@ -178,14 +178,12 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   // projects and classifications are where a measure's results are read.
   // After Classifications because a goal carries its performance measures.
   { key: 'ws-performance-measures', label: 'Performance measures', href: '/prototypes/workspace-settings/performance-measures', icon: 'trending-up', group: 'Projects', aliasable: true },
-  // PM 2 (2026-10-08): projectfirma2's measure model as built on branch
-  // features/0010_project_performance_measures, beside the original until the
-  // team picks one. Not aliasable: "(PM 2)" is a prototype label, not a noun.
-  { key: 'ws-pm2', label: 'Performance measures (PM 2)', href: '/prototypes/workspace-settings/pm2', icon: 'trending-up', group: 'Projects' },
   { key: 'ws-stages', label: 'Stages', href: '/prototypes/workspace-settings/stages', icon: 'activity', group: 'Projects' },
   { key: 'ws-custom-fields', label: 'Custom fields', href: '/prototypes/workspace-settings/custom-fields', icon: 'pencil', group: 'Projects' },
   // How a new project starts: the form every proposal fills (2026-10-19).
   { key: 'ws-intake-form', label: 'Intake form', href: '/prototypes/workspace-settings/intake-form', icon: 'file-plus', group: 'Projects' },
+  // The calls new projects are entered under; the intake form offers the active ones (2026-11-24).
+  { key: 'ws-solicitations', label: 'Solicitations', href: '/prototypes/workspace-settings/solicitations', icon: 'file-text', group: 'Projects' },
 
   // MAPS: where projects come from, and what every map sits against. A
   // workspace's GIS arrangement, set once — hackathon team 2.

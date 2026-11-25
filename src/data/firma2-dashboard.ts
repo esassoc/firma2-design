@@ -27,7 +27,7 @@
 // about the project, not figures of it), and geography beyond county (regions
 // and subwatersheds are drawn on the map but not yet stored on a project).
 import { projects } from './firma2-projects';
-import { getProjectDetail, securedFunding } from './firma2-project-detail';
+import { getProjectDetail } from './firma2-project-detail';
 import { measures, isSummable, liveOptions, askedBreakdowns } from './firma2-performance-measures';
 import { measurePortfolio } from './firma2-classification-rollup';
 import { PRACTICE_GROUP, childGroups, classificationsUnderGroup, goalClassifications } from './firma2-classifications';
@@ -77,7 +77,7 @@ export const dashboardDataset = (): Dataset => {
   const dsProjects = all.map(({ p, detail }) => {
     const sum = (key: 'organization' | 'name') => {
       const out: Record<string, number> = {};
-      securedFunding(detail.funding).forEach((f) => (out[f[key]] = Number(((out[f[key]] ?? 0) + f.share).toFixed(6))));
+      detail.funding.forEach((f) => (out[f[key]] = Number(((out[f[key]] ?? 0) + f.share).toFixed(6))));
       return out;
     };
     const funder = sum('organization');
@@ -233,7 +233,7 @@ export const dashboardDataset = (): Dataset => {
         group: 'Money',
         timeless: true,
         shared: true,
-        rows: each(({ detail }) => securedFunding(detail.funding).reduce((a, f) => a + f.amount, 0)),
+        rows: each(({ detail }) => detail.funding.reduce((a, f) => a + f.amount, 0)),
       },
       {
         ...base,
@@ -269,7 +269,7 @@ export const dashboardDataset = (): Dataset => {
         unit: 'acres',
         group: 'Work areas',
         timeless: true,
-        rows: each(({ detail }) => detail.workAreas.filter((w) => w.extentUnit === 'acres').reduce((a, w) => a + w.extent, 0)),
+        rows: each(({ detail }) => detail.workAreas.filter((w) => w.unit === 'acres').reduce((a, w) => a + (w.extent ?? 0), 0)),
       },
       {
         ...base,
@@ -279,7 +279,7 @@ export const dashboardDataset = (): Dataset => {
         unit: 'miles',
         group: 'Work areas',
         timeless: true,
-        rows: each(({ detail }) => detail.workAreas.filter((w) => w.extentUnit === 'miles').reduce((a, w) => a + w.extent, 0)),
+        rows: each(({ detail }) => detail.workAreas.filter((w) => w.unit === 'miles').reduce((a, w) => a + (w.extent ?? 0), 0)),
       },
       {
         ...base,

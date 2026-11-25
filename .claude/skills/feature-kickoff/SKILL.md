@@ -23,6 +23,7 @@ These are the things later stages could not recover from a finished prototype.
 - **Say what is faked.** A comment where the prototype stands in for a real capability (local storage, a scripted response, a hard-coded user) saves the harvest from guessing.
 - **Use the glossary's words**, and add a term to it when the feature needs a new one.
 - **Keep the manifest's scope current** when files are added or renamed.
+- **Keep the data model current.** Every new thing the feature stores (an entity, a field, a setting, a status) gets its row or attribute in `docs/data-model.md` when it is built, marked with its status; anything removed comes out. If its shape is your proposal and not a decision, say so in the row.
 
 ## When the prototype is done
 

@@ -18,7 +18,7 @@
 // rail would leave with the rail when the sheet takes the rail's place.
 //
 // THE FIELDS CARRY THE COLUMN'S OWN WORDS. The sheet docks beside the row it
-// edits, so "Funding source", "Status" and "Amount" are the table's headers,
+// edits, so "Funding source" and "Amount" are the table's headers,
 // and a reader matches field to cell without translating.
 //
 // REMOVE IS IN THE SHEET, NOT ON THE ROW. A funding table of three rows with a
@@ -30,24 +30,19 @@
 // here.
 //
 // A FUNDING ROW PICKS A FUNDING SOURCE; IT DOES NOT TYPE ONE (docs/data-model.md,
-// decisions 1, 7 and 16, user 2026-11-24). The source is chosen from the
-// workspace's funding sources, and the organization offering it comes with it.
-// The row then says where the request stands: requested, secured or not
-// awarded. A REQUEST can only go to a source that is accepting requests today;
-// money already secured can be recorded against any source. The same sheet
-// ADDS a row ("Add source" on the card): it opens empty, on Requested, with
-// nothing to remove.
+// decision 1, user 2026-11-24). The source is chosen from the workspace's
+// funding sources, and the organization offering it comes with it. The same
+// sheet ADDS a row ("Add source" on the card): it opens empty, with nothing to
+// remove.
 //
 // Saved to src/lib/project-rows.ts, in this browser. The sections repaint from
 // that store's event, so this component never touches the table or the list.
 //
 // bcn-lego-checked: every control here IS a lego — bcn-side-sheet (the spoke's
-// docked esa-side-dialog), esa-text-field, esa-combobox, esa-select, esa-confirm-dialog,
+// docked esa-side-dialog), esa-text-field, esa-combobox, esa-confirm-dialog,
 // esa-button; `.stack`, `.repel` and `.cluster` are the only layout. No CSS.
 import EsaButton from '@esa/ecology/esa-button.astro';
-import { FUNDING_STATUSES, FUNDING_STATUS_LABEL } from '../../data/firma2-funding-sources';
 import { fundingSourceRollups } from '../../data/firma2-funding-source-rollup';
-import { TODAY_ISO } from '../../data/firma2-publish-history';
 
 // One option per funding source. Its label carries the organization, because
 // a lead organization's own match is the same name under every organization.
@@ -56,17 +51,11 @@ const sourceOptions = fundingSourceRollups().map((rollup) => ({
   value: rollup.source.slug,
   name: rollup.source.name,
   organization: rollup.source.organization,
-  accepting: rollup.source.accepting,
-  closes: rollup.source.closes ?? '',
 }));
-const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_LABEL[status], value: status }));
-
 ---
 <div
   class="firma2-project-row-editor"
   data-sources={JSON.stringify(sourceOptions)}
-  data-statuses={JSON.stringify(statusOptions)}
-  data-today={TODAY_ISO}
 >
   <!-- EACH DIALOG IN ITS OWN ELEMENT. Two sibling custom-element dialogs can
        come out nested in the parsed tree, and the inner one then never draws. -->
@@ -74,7 +63,6 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
   <bcn-side-sheet class="firma2-project-row-editor__sheet" heading="Edit funding source" size="md" position="right">
     <div class="stack" data-gap="lg" data-row-fields="funding">
       <esa-combobox data-funding-source label="Funding source" size="md" mode="autocomplete" required></esa-combobox>
-      <esa-select data-funding-status label="Status" size="md" required></esa-select>
       <esa-text-field data-funding-amount label="Amount" size="md" inputmode="numeric" prefix="$" required></esa-text-field>
     </div>
     <div class="stack" data-gap="lg" data-row-fields="contact">
@@ -102,7 +90,6 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
   import '../shared/bcn-side-sheet';
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-combobox';
-  import '@esa/ecology/esa-select';
   import '@esa/ecology/esa-confirm-dialog';
   import { announce } from '@esa/ecology/announcer';
   import { currencyFormatter as currency } from '../../lib/format';
@@ -116,17 +103,13 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
     saveFunding,
   } from '../../lib/project-rows';
   import type { EditRowRequest } from '../../lib/project-rows';
-  import type { FundingStatus } from '../../data/firma2-funding-sources';
-  import { acceptingState, isOpen } from '../../lib/funding-source-edits';
+  import { readAddedFundingSources } from '../../lib/added-funding-sources';
 
   interface SourceOption {
     label: string;
     value: string;
     name: string;
     organization: string;
-    /** As built. An administrator's later choice is in src/lib/funding-source-edits.ts. */
-    accepting: boolean;
-    closes: string;
   }
 
   type Field = HTMLElement & { value?: unknown; options?: unknown; errorText?: string };
@@ -145,24 +128,25 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
     const confirm = root.querySelector<Confirm>('.firma2-project-row-editor__confirm');
     const field = (name: string): Field | null => root.querySelector<Field>(`[data-${name}]`);
     const fundingSource = field('funding-source');
-    const fundingStatus = field('funding-status');
     const fundingAmount = field('funding-amount');
     const contactName = field('contact-name');
     const contactRole = field('contact-role');
     const contactOrganization = field('contact-organization');
     const contactEmail = field('contact-email');
     if (
-      !sheet || !confirm || !fundingSource || !fundingStatus || !fundingAmount ||
+      !sheet || !confirm || !fundingSource || !fundingAmount ||
       !contactName || !contactRole || !contactOrganization || !contactEmail
     ) return;
 
-    const sources = JSON.parse(root.dataset.sources ?? '[]') as SourceOption[];
-    const statuses = JSON.parse(root.dataset.statuses ?? '[]') as { label: string; value: FundingStatus }[];
+    // The workspace's funding sources, then any added in this browser.
+    const built = JSON.parse(root.dataset.sources ?? '[]') as SourceOption[];
+    const sources: SourceOption[] = [
+      ...built,
+      ...readAddedFundingSources()
+        .filter((source) => !built.some((option) => option.value === source.slug))
+        .map((source) => ({ label: `${source.name}, ${source.organization}`, value: source.slug, name: source.name, organization: source.organization })),
+    ];
     const removeButton = root.querySelector<HTMLElement>('[data-row-remove]');
-    const today = root.dataset.today ?? '';
-    /** Whether a project may ask this source for money today: this browser's choice over the built one. */
-    const takesRequests = (option: SourceOption): boolean =>
-      isOpen(acceptingState(option.value, { accepting: option.accepting, closes: option.closes || undefined }), today);
     /** The option for a row's source: by its two facts, since a row carries no slug. */
     const optionFor = (name: string, organization: string): SourceOption | undefined =>
       sources.find((option) => sameText(option.name, name) && sameText(option.organization, organization));
@@ -173,7 +157,7 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
     let request: EditRowRequest | null = null;
 
     const clearErrors = (): void => {
-      [fundingSource, fundingStatus, fundingAmount, contactName, contactEmail].forEach((control) => {
+      [fundingSource, fundingAmount, contactName, contactEmail].forEach((control) => {
         control.errorText = '';
       });
     };
@@ -198,7 +182,7 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
       // that has not been defined yet is shadowed by the class field its
       // constructor installs, and the control renders empty.
       const ready = Promise.all(
-        ['esa-text-field', 'esa-combobox', 'esa-select'].map((tag) => customElements.whenDefined(tag)),
+        ['esa-text-field', 'esa-combobox'].map((tag) => customElements.whenDefined(tag)),
       );
       void ready.then(() => {
         if (next.kind === 'funding') {
@@ -211,8 +195,6 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
             ? [{ label: `${next.values.name}, ${next.values.organization}`, value: UNLISTED }, ...sources]
             : sources;
           fundingSource.value = held?.value ?? (unlisted ? UNLISTED : '');
-          fundingStatus.options = statuses;
-          fundingStatus.value = next.values.status ?? 'secured';
           fundingAmount.value = next.adding ? '' : plainAmount.format(next.values.amount);
         } else {
           contactName.value = next.values.name;
@@ -259,26 +241,11 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
       const picked = text(fundingSource);
       const option = sources.find((candidate) => candidate.value === picked);
       // The row's own unlisted source stays as it is unless another is picked.
-      const source = option
-        ? { name: option.name, organization: option.organization, open: takesRequests(option) }
-        : picked === UNLISTED
-          ? { name: current.values.name, organization: current.values.organization, open: false }
-          : null;
-      const status = (statuses.find((candidate) => candidate.value === text(fundingStatus))?.value ?? 'secured') as FundingStatus;
+      const source = option ?? (picked === UNLISTED ? { name: current.values.name, organization: current.values.organization } : null);
       const amount = readAmount();
       let valid = true;
       if (!source) {
         fundingSource.errorText = 'Choose a funding source from the list.';
-        valid = false;
-      }
-      // A REQUEST NEEDS AN OPEN SOURCE (decision 16). A row that was already a
-      // request to this source keeps its standing: the date governs submitting,
-      // and that one was submitted.
-      const alreadyAsked =
-        !current.adding && current.values.status === 'requested' && source !== null &&
-        sameText(source.name, current.values.name) && sameText(source.organization, current.values.organization);
-      if (source && status === 'requested' && !source.open && !alreadyAsked) {
-        fundingStatus.errorText = `${source.name} isn’t accepting requests.`;
         valid = false;
       }
       if ('error' in amount) {
@@ -291,7 +258,7 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
         valid = false;
       }
       if (!valid || !source || 'error' in amount) return false;
-      const values = { name: source.name, organization: source.organization, amount: amount.amount, status };
+      const values = { name: source.name, organization: source.organization, amount: amount.amount };
       if (current.adding) {
         addFunding(current.slug, values);
         announce('Funding source added.');
@@ -355,10 +322,10 @@ const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_
         (event) => {
           if (!(event as CustomEvent<{ confirmed: boolean }>).detail.confirmed) return;
           if (current.kind === 'funding') {
-            removeFunding(current.slug, current.id);
+            removeFunding(current.slug, current.id, current.values);
             announce('Funding source removed.');
           } else {
-            removeContact(current.slug, current.id);
+            removeContact(current.slug, current.id, current.values);
             announce('Contact removed.');
           }
           close();
