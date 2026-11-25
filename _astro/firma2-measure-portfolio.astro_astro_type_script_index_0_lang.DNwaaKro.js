@@ -1,0 +1,1 @@
+import{w as r}from"./measure-draft.elrzzpog.js";import"./firma2-performance-measures.9ce70S1f.js";import"./firma2-projects.C39EMZfa.js";document.querySelectorAll(".firma2-measure-portfolio[data-measure-slug]").forEach(e=>{const t=e.querySelector("[data-retired-note]");t&&(t.hidden=r(e.dataset.measureSlug).status!=="Retired")});

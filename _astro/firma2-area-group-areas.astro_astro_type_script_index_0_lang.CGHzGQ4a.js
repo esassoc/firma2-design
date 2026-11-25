@@ -1,0 +1,11 @@
+import{a as u,f as h,c,b as g}from"./geospatial-areas.CE5csAVO.js";import{k as f}from"./taxonomy-edits.BS7DckRS.js";import{o as v}from"./work-areas.CGaAEOso.js";import"./firma2-projects.C39EMZfa.js";import"./geo.9W3-G_ti.js";import"./hugeicon-markup.Cuazc5Y8.js";import"./preload-helper.HzeAyyuh.js";import"./Shield01Icon.CmQ8VdvT.js";import"./WaterEnergyIcon.DVi2tih3.js";import"./firma2-project-types.CILPCDkd.js";import"./firma2-classifications.BJXdtQwv.js";import"./firma2-project-detail.D2I3k4ea.js";import"./firma2-publish-history.DXmpO5-w.js";import"./firma2-funding-sources.B1JcX38J.js";const i=o=>o.replace(/[&<>"]/g,d=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[d]);document.querySelectorAll(".firma2-area-group-areas").forEach(o=>{const d=new URLSearchParams(window.location.search).get("id")??"",r=t=>o.querySelector(`[data-${t}]`),l=r("rows"),m=()=>{const t=u(d);if(r("gone").hidden=!!t,r("section").hidden=!t,!t)return;const a=h(t);r("no-layer").hidden=a.status!=="no-layer",r("unread").hidden=a.status!=="unread",r("table").hidden=a.status!=="ok";const s=(e,n)=>n?`<tr data-unfiled><th scope="row">${e}</th><td class="firma2-settings-table__num">${n}</td><td></td><td></td></tr>`:"";l.innerHTML=a.areas.map(({area:e,projects:n})=>`<tr data-area="${i(e.id)}">
+              <th scope="row">
+                <a class="firma2-settings-table__name cluster" data-gap="xs" href="${i(`${o.dataset.areaHref}?slug=${encodeURIComponent(c(t.id,e.id))}`)}">
+                  <span class="firma2-area-group-areas__swatch" style="background:${i(g(t,a.layer,e.id))}" aria-hidden="true"></span>
+                  <span>${i(e.name)}</span>
+                </a>
+              </th>
+              <td class="firma2-settings-table__num">${n.length}</td>
+              <td class="firma2-settings-table__num">${f(c(t.id,e.id),[]).length}</td>
+              <td class="firma2-settings-table__num">${e.acres.toLocaleString("en-US")}</td>
+            </tr>`).join("")+s("Outside every area",a.outside.length)+s("No location",a.unlocated.length)};m(),v(m);const p=(t,a)=>{const s=t.target.closest("tr[data-area]");s&&document.dispatchEvent(new CustomEvent("firma2:area-hover",{detail:{id:s.dataset.area}}))};l.addEventListener("mouseover",t=>p(t)),l.addEventListener("mouseleave",()=>document.dispatchEvent(new CustomEvent("firma2:area-hover",{detail:{id:null}})))});

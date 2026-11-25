@@ -1,0 +1,1 @@
+const t="firma2:record-mode",d=()=>document.documentElement.dataset.recordMode==="view",n=e=>{document.documentElement.dataset.recordMode=e,document.dispatchEvent(new CustomEvent(t,{detail:{mode:e}}))},c=e=>{document.addEventListener(t,o=>e(o.detail.mode))};export{d as i,c as o,n as s};

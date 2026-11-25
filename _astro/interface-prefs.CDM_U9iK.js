@@ -1,0 +1,7 @@
+const c={underlineLinks:"firma2-underline-links",pointerCursors:"firma2-pointer-cursors"},l={underlineLinks:!1,pointerCursors:!0},h=e=>{try{const t=localStorage.getItem(c[e]);if(t==="on")return!0;if(t==="off")return!1}catch{}return l[e]},d=(e,t)=>{const o=document.documentElement;e==="underlineLinks"?o.toggleAttribute("data-underline-links",t):(t?o.removeAttribute("data-pointer-cursors"):o.setAttribute("data-pointer-cursors","off"),p())},y=(e,t)=>{try{localStorage.setItem(c[e],t?"on":"off")}catch{}d(e,t)},f=`
+  *:not(:disabled, [aria-disabled="true"], textarea, [contenteditable],
+        input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"],
+                  [type="submit"], [type="reset"], [type="color"], [type="file"])) {
+    cursor: default !important;
+  }
+`;let r=null,a=!1;const i=new WeakSet,s=e=>{!r||i.has(e)||(i.add(e),e.adoptedStyleSheets=[...e.adoptedStyleSheets,r],u(e),n(e))},n=e=>{e.querySelectorAll("*").forEach(t=>{t.shadowRoot?s(t.shadowRoot):t.localName.includes("-")&&!customElements.get(t.localName)&&customElements.whenDefined(t.localName).then(()=>{t.shadowRoot&&s(t.shadowRoot)})})},m=typeof MutationObserver>"u"?null:new MutationObserver(e=>{for(const t of e)t.addedNodes.forEach(o=>{o instanceof Element&&(o.shadowRoot&&s(o.shadowRoot),n(o))})}),u=e=>{m?.observe(e,{childList:!0,subtree:!0})},p=()=>{const e=document.documentElement.getAttribute("data-pointer-cursors")==="off";if(!r){if(!e)return;r=new CSSStyleSheet}r.replaceSync(e?f:""),a||(a=!0,u(document),n(document))};export{p as a,h as r,y as s};

@@ -1,0 +1,1 @@
+import"./firma2-settings-security.astro_astro_type_script_index_0_lang.CFoa9nkt.js";import{d as i,b as o,e as r,a as e}from"./public-site-form.xxPwhDku.js";import"./lit-element.D8DSg5zn.js";import"./typography.KBHeYOQc.js";import"./public-site-store.CiRM9-Yg.js";const t=document.querySelector('[data-site-part="footer"]');t&&i&&(o(t),r(t),e(t));

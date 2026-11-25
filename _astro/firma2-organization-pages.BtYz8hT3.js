@@ -1,0 +1,1 @@
+import"./firma2-projects.C39EMZfa.js";import"./firma2-project-detail.D2I3k4ea.js";import"./firma2-publish-history.DXmpO5-w.js";import{T as a}from"./firma2-directory.YmSCzgxL.js";const p=(o,t="home")=>t==="home"?`/prototypes/organizations/${o}`:`/prototypes/organizations/${o}/${t}`,s=(o,t)=>`org-${o}-${t}`;new Date(a).getUTCFullYear()-1;export{s as a,p as o};

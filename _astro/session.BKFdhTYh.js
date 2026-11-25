@@ -1,0 +1,1 @@
+const e="firma2:signed-in",t=()=>{try{return typeof localStorage>"u"?null:localStorage}catch{return null}},r=()=>{try{return t()?.getItem(e)==="1"}catch{return!1}},s=n=>{try{n?t()?.setItem(e,"1"):t()?.removeItem(e)}catch{}};export{r as i,s};

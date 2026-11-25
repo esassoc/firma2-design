@@ -1,0 +1,1 @@
+import{r as d}from"./publish-store.Bf5ydpRg.js";document.querySelectorAll(".firma2-public-unpublished").forEach(e=>{d().published[e.dataset.slug]&&(e.querySelector("[data-note]").hidden=!0,e.querySelector("[data-page]").hidden=!1,window.dispatchEvent(new Event("resize")))});

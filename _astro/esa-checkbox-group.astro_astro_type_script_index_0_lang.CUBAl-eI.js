@@ -1,0 +1,1 @@
+import"./esa-checkbox-group.CrHKcsqr.js";import"./lit-element.D8DSg5zn.js";import"./typography.KBHeYOQc.js";import"./a11y.sqk3bMt7.js";const t=document.getElementById("cbg-form");t?.addEventListener("submit",e=>{e.preventDefault();const m=new FormData(t);document.getElementById("cbg-out").textContent="media = "+JSON.stringify(m.getAll("media"))});

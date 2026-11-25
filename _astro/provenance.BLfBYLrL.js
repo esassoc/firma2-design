@@ -1,0 +1,1 @@
+const t=({source:e,detail:n})=>n?`${e} · ${n}`:e,o=e=>{const n=document.createElement(e.inline?"span":"p");return n.className="firma2-provenance typography-body-sm",e.inline&&(n.dataset.inline=""),n.textContent=t(e),n};export{o as p};

@@ -1,0 +1,1 @@
+const s="firma2:access-request-answered:v1",t=e=>{try{sessionStorage.setItem(s,e)}catch{}},r=()=>{try{const e=sessionStorage.getItem(s);return sessionStorage.removeItem(s),e}catch{return null}};export{t as n,r as t};

@@ -1,0 +1,1 @@
+import{s as r}from"./firma2-workspace-settings.CuK9D7Jb.js";const a="firma2:stages:v4",s=()=>{try{const t=localStorage.getItem(a);if(t)return JSON.parse(t)}catch{}return r.map(t=>({...t}))},o=t=>{try{localStorage.setItem(a,JSON.stringify(t))}catch{}};export{s as r,o as w};

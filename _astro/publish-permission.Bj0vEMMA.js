@@ -1,0 +1,1 @@
+import{b as o,v as e}from"./firma2-directory.YmSCzgxL.js";import{b as t,c as a}from"./workspace-permissions.CHq2_JQ0.js";const u=i=>{if(!t("perm-publish"))return"threshold";if(a().role==="Administrator")return null;const r=o.find(n=>n.name===i);return r&&e(r)?null:"unverified"};export{u as p};
