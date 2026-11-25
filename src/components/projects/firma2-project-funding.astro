@@ -3,6 +3,13 @@
 // detail page: every funding source behind the project, what each contributes,
 // and the sum, which is the project's estimated total cost.
 //
+// EACH ROW LINKS TO A FUNDING SOURCE AND SAYS WHERE THE REQUEST STANDS
+// (docs/data-model.md, decisions 1 and 7, user 2026-11-24): requested, secured
+// or not awarded. The source's name opens its page. A row that is not secured
+// is not money the project has, so while any row is requested or not awarded
+// the table adds one summed row, "Total secured", above the estimate. A
+// not-awarded row shows what was asked and no share: it is outside the plan.
+//
 // THE AMOUNTS ARE GIVEN, NOT DERIVED. firma2-project-detail.ts builds funding so
 // the sources sum to estimatedTotalCost to the dollar (every source but the last
 // rounds to $500; the last absorbs the remainder). So this component renders the
@@ -50,11 +57,14 @@ import '../shared/firma2-card-section.css';
 // forwards to exactly this and console.warn()s on every build. Going straight to
 // the button keeps the build quiet and matches where the hub landed.
 import EsaButton from '@esa/ecology/esa-button.astro';
-import type { FundingSource } from '../../data/firma2-project-detail';
+import Firma2ProjectRowEditor from './firma2-project-row-editor.astro';
+import type { ProjectFunding } from '../../data/firma2-project-detail';
+import { FUNDING_STATUS_LABEL, fundingSourceHref, fundingSources, getFundingSource } from '../../data/firma2-funding-sources';
+import { withBase } from '../../lib/base';
 
 interface Props {
   /** The project's funding sources, in the order the data module authored them. */
-  funding: FundingSource[];
+  funding: ProjectFunding[];
   /**
    * The project's estimated total cost. Equals the sum of `funding` amounts by
    * construction — passed in rather than re-added here (see the note above).
@@ -131,12 +141,14 @@ for (let i = 0; i < leftover; i += 1) {
        header control renders at, and the card headers down this page have to
        agree exactly in height. Change it here only if it changes in all of them.
 
-       Still inert: nothing is wired behind it yet. It is a real, enabled
-       <button> so the eventual handler has somewhere to land, and deliberately
-       not `disabled` — disabled claims the action is unavailable to THIS user,
-       which is a different and false statement. Per-row editing and removal
-       inside this section are not built yet. -->
-  <EsaButton slot="actions" variant="chrome" size="sm" icon="plus" data-edit-only>Add source</EsaButton>
+       IT OPENS THE ROW SHEET EMPTY (2026-11-24): pick a funding source, say
+       where the request stands, give the amount. This is how a project asks a
+       source for money, so it starts on Requested.
+
+       EACH ROW CAN BE CORRECTED OR REMOVED (story 81, user 2026-11-23): a pencil
+       at the row's end opens firma2-project-row-editor, the docked sheet, with
+       Remove at its foot. -->
+  <EsaButton slot="actions" variant="chrome" size="sm" icon="plus" data-edit-only data-funding-add>Add source</EsaButton>
 
   <!-- AN AG GRID, not the hand-rolled <table> this was. The earlier note here
        walked the Ecology catalog, found no esa-table, and concluded "a native
@@ -163,14 +175,30 @@ for (let i = 0; i < leftover; i += 1) {
       data-firma2-funding-rows
     set:html={JSON.stringify({
       rows: funding.map((source, index) => ({
+        id: `seed:${index}`,
         name: source.name,
         organization: source.organization,
         amount: source.amount,
-        share: percents[index],
+        share: source.status === 'not-awarded' ? null : percents[index],
+        status: source.status,
+        // Absent when the workspace's list does not hold the source.
+        href: getFundingSource(source.source) ? withBase(fundingSourceHref(source.source)) : undefined,
       })),
+      statusLabels: FUNDING_STATUS_LABEL,
+      // Every source in the workspace, so a row added or re-pointed here links too.
+      sourceHrefs: Object.fromEntries(fundingSources.map((source) => [`${source.name}|${source.organization}`.toLowerCase(), withBase(fundingSourceHref(source.slug))])),
       estimatedTotalCost,
       })}
     ></script>
+
+    <!-- The row's Edit control, cloned into the grid by the script: the same
+         lego-clone trick the expenditures log uses, so a script-built cell
+         carries a real esa-button and not a hand-rolled lookalike. -->
+    <div data-funding-edit-template hidden aria-hidden="true">
+      <EsaButton variant="chrome" iconOnly icon="pencil" size="sm" aria-label="Edit">Edit</EsaButton>
+    </div>
+
+    <Firma2ProjectRowEditor />
   </div>
 
   </EsaCard>
@@ -217,8 +245,9 @@ for (let i = 0; i < leftover; i += 1) {
      label weight against the same hairline the old <tfoot> drew. AG Grid renders
      a pinned bottom row into its own section; this is the only thing that
      section needs said about it. */
-  /* The document an added source came from, under its name. Built by the
-     grid at runtime, hence :global. A file name is one unbroken token. */
+  /* The organization offering a source, and the document an added source came
+     from, under its name. Built by the grid at runtime, hence :global. A file
+     name is one unbroken token. */
   .firma2-project-funding :global(.firma2-project-funding__source) {
     color: var(--color-content-default-secondary, #60655f);
     overflow-wrap: anywhere;
@@ -234,8 +263,12 @@ for (let i = 0; i < leftover; i += 1) {
   import { createCardGrid, gridCurrencyFormatter as currency } from '../shared/grid-chrome';
   import type { ColDef, ICellRendererParams } from 'ag-grid-community';
   import { IMPORTS_EVENT, importedFunding, sourceLine } from '../../lib/report-imports';
+  import { HAND_ROW, ROWS_EVENT, readRows, requestRowEdit } from '../../lib/project-rows';
+  import type { FundingStatus } from '../../data/firma2-funding-sources';
 
   interface FundingRow {
+    /** Stable for the row: `seed:<index>` as built, or the import's change key. */
+    id?: string;
     name: string;
     organization: string;
     amount: number;
@@ -243,19 +276,42 @@ for (let i = 0; i < leftover; i += 1) {
     share: number | null;
     /** "From <document>", on a row an import added. */
     source?: string;
+    /** Absent on the summed rows. A row an import or an older edit left without one is secured. */
+    status?: FundingStatus;
+    /** The funding source's page. Absent when the workspace's list does not hold it. */
+    href?: string;
   }
 
-  // A source an import added: its name, then the document it came from.
-  const namedWithSource = (params: ICellRendererParams<FundingRow>): HTMLElement => {
+  // THE SOURCE CELL IS THE SOURCE: its name, the door to its page, over the
+  // organization offering it. They were two columns until rows gained a
+  // status (2026-11-24); five columns did not fit the card beside the rail and
+  // the headers truncated. The organization is not a fact of the ROW, it comes
+  // with the source, so it reads as the name's second line. A row an import
+  // added keeps its third line, the document it came from.
+  const sourceCell = (params: ICellRendererParams<FundingRow>): HTMLElement => {
+    const row = params.data;
     const box = document.createElement('span');
+    if (!row) return box;
+    if (params.node.rowPinned) {
+      box.textContent = row.name;
+      return box;
+    }
     box.className = 'stack';
     box.dataset.gap = '2xs';
-    const name = document.createElement('span');
-    name.textContent = params.data?.name ?? '';
-    const source = document.createElement('span');
-    source.className = 'firma2-project-funding__source typography-body-xs';
-    source.textContent = params.data?.source ?? '';
-    box.append(name, source);
+    const name = document.createElement(row.href ? 'a' : 'span');
+    if (row.href) {
+      name.className = 'firma2-grid-link';
+      name.setAttribute('href', row.href);
+    }
+    name.textContent = row.name;
+    box.append(name);
+    [row.organization, row.source].forEach((line) => {
+      if (!line) return;
+      const el = document.createElement('span');
+      el.className = 'firma2-project-funding__source typography-body-xs';
+      el.textContent = line;
+      box.append(el);
+    });
     return box;
   };
 
@@ -264,37 +320,61 @@ for (let i = 0; i < leftover; i += 1) {
     const payload = root.querySelector<HTMLScriptElement>('[data-firma2-funding-rows]');
     if (!host || !payload) return;
 
-    const { rows, estimatedTotalCost } = JSON.parse(payload.textContent ?? '{}') as {
+    const { rows, estimatedTotalCost, statusLabels, sourceHrefs } = JSON.parse(payload.textContent ?? '{}') as {
       rows: FundingRow[];
       estimatedTotalCost: number;
+      statusLabels: Record<FundingStatus, string>;
+      sourceHrefs: Record<string, string>;
+    };
+
+    const slug = root.dataset.slug;
+    const editTemplate = root.querySelector<HTMLElement>('[data-funding-edit-template]');
+    /** The rows on screen, as last painted: what Edit hands the sheet. */
+    let shown: FundingRow[] = [];
+
+    // THE ROW'S OWN EDIT CONTROL. Named for the row it opens ("Edit Local
+    // Sponsor Match"), because three buttons all called "Edit" are one button
+    // to a screen reader. Absent on the pinned total rows: a sum is not a
+    // funding source and has nothing to correct.
+    const editCell = (params: ICellRendererParams<FundingRow>): HTMLElement => {
+      const cell = document.createElement('span');
+      const row = params.data;
+      const button = editTemplate?.firstElementChild?.cloneNode(true) as HTMLElement | undefined;
+      if (!row?.id || !slug || !button || params.node.rowPinned) return cell;
+      const control = button.querySelector<HTMLElement>('button') ?? button;
+      control.setAttribute('aria-label', `Edit ${row.name}`);
+      button.addEventListener('click', () => {
+        requestRowEdit({
+          kind: 'funding',
+          slug,
+          id: row.id!,
+          values: { name: row.name, organization: row.organization, amount: row.amount, status: row.status ?? 'secured' },
+          others: shown.filter((other) => other.id !== row.id),
+          opener: control,
+        });
+      });
+      cell.append(button);
+      return cell;
     };
 
     const columnDefs: ColDef<FundingRow>[] = [
-      // The funder names the row. `flex` on the two text columns, because grant
-      // programs and administering bodies are long and variable and the numbers
-      // beside them are not — the same division of space the old table's
-      // `table-layout: auto` plus `width: 1%` numeric columns achieved.
-      // WRAP, DO NOT TRUNCATE. The old table used `table-layout: auto` precisely
-      // so "Watershed Resilience Grant Program" and "California Watershed
-      // Restoration Board" could wrap instead of forcing a horizontal scroller,
-      // and an ellipsis in a funder's name is worse than a second line: it is
-      // the identifying field. `autoHeight` lets the row grow to fit.
+      // WRAP, DO NOT TRUNCATE: an ellipsis in a funder's name is worse than a
+      // second line, because it is the identifying field. `autoHeight` lets
+      // the row grow to fit.
       {
-        headerName: 'Source', field: 'name', colId: 'name',
-        flex: 2, minWidth: 160, wrapText: true, autoHeight: true,
-        cellRendererSelector: (p) => (p.data?.source ? { component: namedWithSource } : undefined),
+        headerName: 'Funding source', field: 'name', colId: 'name',
+        flex: 1, minWidth: 200, wrapText: true, autoHeight: true,
+        cellRenderer: sourceCell,
       },
-      // "Administered by", not "Agency" or "Organization": the funders are a mix
-      // of boards, trusts and alliances, and a Local Sponsor Match is
-      // administered by the project's own lead organization. The relationship is
-      // the fact worth naming; the entity type is not.
+      // WORDS, NOT A BADGE: three rows that almost always all read "Secured" would
+      // be three coloured chips saying nothing. The word is the fact.
       {
-        headerName: 'Administered by', field: 'organization', colId: 'organization',
-        flex: 2, minWidth: 160, wrapText: true, autoHeight: true,
+        headerName: 'Status', field: 'status', colId: 'status', width: 130,
+        valueFormatter: (p) => (p.value ? statusLabels[p.value as FundingStatus] : ''),
       },
       {
         headerName: 'Amount', field: 'amount', colId: 'amount',
-        width: 140, type: 'rightAligned',
+        width: 124, type: 'rightAligned',
         valueFormatter: (p) => (p.value == null ? '' : currency.format(Number(p.value))),
       },
       // "Share of total" rather than "Share" — it names the denominator, so the
@@ -304,28 +384,64 @@ for (let i = 0; i < leftover; i += 1) {
         width: 140, type: 'rightAligned',
         valueFormatter: (p) => (p.value == null ? '' : `${p.value}%`),
       },
+      // THE EDIT COLUMN EXISTS ONLY WHILE THE PAGE IS BEING EDITED. A hidden
+      // button in a column that stays would leave a blank 56px track at the
+      // table's end in reading mode, so the column itself comes and goes with
+      // the record mode (see `followMode` below). No header: the buttons name
+      // themselves, and a column titled "Actions" is text about the table.
+      {
+        headerName: '', colId: 'edit', width: 56, sortable: false, resizable: false,
+        suppressMovable: true, cellRenderer: editCell,
+        headerClass: 'firma2-project-funding__edit-head',
+      },
     ];
 
     // WHAT THE TABLE HOLDS NOW: the authored rows, then any an import added in
-    // this browser. The header comment argues the total's treatment.
-    const slug = root.dataset.slug;
+    // this browser, then what a person did to either by hand (story 81): a row
+    // edited here shows its new values, and a row removed here is gone.
     const estimate: FundingRow = { name: 'Estimated total cost', organization: '', amount: estimatedTotalCost, share: 100 };
     const keyOf = (row: { name: string; organization: string }): string =>
       `${row.name.trim()}|${row.organization.trim()}`.toLowerCase();
     const current = (): { rowData: FundingRow[]; pinned: FundingRow[] } => {
       const added = new Map<string, FundingRow>();
       const seeded = new Set(rows.map(keyOf));
-      (slug ? importedFunding(slug) : []).forEach(({ funding, from }) => {
+      (slug ? importedFunding(slug) : []).forEach(({ change, funding, from }) => {
         const key = keyOf(funding);
         // A later import of the same source replaces the earlier figure.
-        if (!seeded.has(key)) added.set(key, { ...funding, share: null, source: sourceLine(from) });
+        if (!seeded.has(key)) added.set(key, { ...funding, id: change.key, share: null, source: sourceLine(from) });
       });
-      const rowData = [...rows, ...added.values()];
-      if (added.size === 0) return { rowData, pinned: [estimate] };
-      const sum = rowData.reduce((total, row) => total + row.amount, 0);
-      return { rowData, pinned: [{ name: 'Total from all sources', organization: '', amount: sum, share: null }, estimate] };
+
+      const byHand = slug ? readRows(slug).funding : {};
+      const hrefOf = (row: { name: string; organization: string }): string | undefined => sourceHrefs[keyOf(row)];
+      // THE TABLE IS THE AUTHORED ONE only while nothing was added, removed or
+      // re-figured. A share is a slice of the estimate, and the estimate was
+      // built to equal the planned amounts; once an amount changes or a row
+      // leaves, that row's share is no longer a fact, so it is not shown.
+      let altered = added.size > 0;
+      const rowData = [...rows, ...added.values()].flatMap((row): FundingRow[] => {
+        if (!row.id || !(row.id in byHand)) return [{ ...row, status: row.status ?? 'secured' }];
+        const edit = byHand[row.id];
+        altered = true;
+        if (edit === null) return [];
+        // An imported row edited by hand keeps the line naming its document.
+        return [{ ...row, ...edit, status: edit.status ?? 'secured', href: hrefOf(edit), share: edit.amount === row.amount && edit.status !== 'not-awarded' ? row.share : null }];
+      });
+      // Rows a person added here, after the built and imported ones.
+      Object.entries(byHand).forEach(([id, edit]) => {
+        if (!id.startsWith(HAND_ROW) || edit === null) return;
+        altered = true;
+        rowData.push({ ...edit, id, status: edit.status ?? 'secured', href: hrefOf(edit), share: null });
+      });
+      // ONE SUMMED ROW, ONLY WHEN IT SAYS SOMETHING THE ROWS DO NOT: money the
+      // project has, while some row is still a request, was turned down, or
+      // the rows no longer add up to the estimate.
+      const secured = rowData.filter((row) => row.status === 'secured');
+      if (!altered && secured.length === rowData.length) return { rowData, pinned: [estimate] };
+      const sum = secured.reduce((total, row) => total + row.amount, 0);
+      return { rowData, pinned: [{ name: 'Total secured', organization: '', amount: sum, share: null }, estimate] };
     };
     const initial = current();
+    shown = initial.rowData;
 
     const api = createCardGrid<FundingRow>(host, {
       rowData: initial.rowData,
@@ -355,12 +471,43 @@ for (let i = 0; i < leftover; i += 1) {
       pinnedBottomRowData: initial.pinned,
     });
 
+    // ADD: the row sheet, empty, on Requested. `others` is every row on screen,
+    // for the one-row-per-source rule.
+    const card = root.closest<HTMLElement>('.esa-card') ?? root.parentElement;
+    card?.querySelector<HTMLElement>('[data-funding-add]')?.addEventListener('click', (event) => {
+      if (!slug) return;
+      requestRowEdit({
+        kind: 'funding',
+        adding: true,
+        slug,
+        id: '',
+        values: { name: '', organization: '', amount: 0, status: 'requested' },
+        others: shown,
+        opener: event.currentTarget as HTMLElement,
+      });
+    });
+
     if (slug) {
-      document.addEventListener(IMPORTS_EVENT, () => {
+      const repaint = (): void => {
         const next = current();
+        shown = next.rowData;
         api.setGridOption('rowData', next.rowData);
         api.setGridOption('pinnedBottomRowData', next.pinned);
-      });
+      };
+      document.addEventListener(IMPORTS_EVENT, repaint);
+      document.addEventListener(ROWS_EVENT, repaint);
     }
+
+    // THE EDIT COLUMN FOLLOWS THE RECORD MODE (firma2-record-mode sets
+    // `data-record-mode` on <html>). Reading: four columns, as the table always
+    // was. Editing: the pencils appear at the rows' ends.
+    const followMode = (): void => {
+      api.setColumnsVisible(['edit'], Boolean(slug) && document.documentElement.dataset.recordMode !== 'view');
+    };
+    followMode();
+    new MutationObserver(followMode).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-record-mode'],
+    });
   });
 </script>

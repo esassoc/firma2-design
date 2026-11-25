@@ -25,7 +25,6 @@ import { organizations } from '../data/firma2-directory';
 import { IMPORT_FIELDS, IMPORT_SUGGESTIONS } from '../data/firma2-project-import';
 import type { ImportField, ImportSheet, ImportVocabulary } from '../data/firma2-project-import';
 import { readAddedOrganizations } from './added-organizations';
-import { currentTags } from './project-tags';
 
 // ---------------------------------------------------------------------------
 // Reading a file
@@ -125,8 +124,6 @@ export const vocabularyValues = (vocabulary: ImportVocabulary): string[] => {
       return PROJECT_TYPES.map((t) => t.name);
     case 'classifications':
       return CLASSIFICATIONS.map((c) => c.name);
-    case 'tags':
-      return currentTags().map((t) => t.name);
     case 'leadOrganization':
       return [...new Set([...organizations.map((o) => o.name), ...readAddedOrganizations().map((o) => o.name)])].sort((a, b) => a.localeCompare(b));
   }
@@ -196,10 +193,9 @@ export const distinctValues = (sheet: ImportSheet, headerRow: number, mapping: s
 // ---------------------------------------------------------------------------
 
 /** A project as an import writes it: the record's fields plus custom-field answers. */
-export interface ImportedProject extends Omit<Project, 'projectType' | 'classifications' | 'tags'> {
+export interface ImportedProject extends Omit<Project, 'projectType' | 'classifications'> {
   projectType: string;
   classifications: string[];
-  tags: string[];
   description?: string;
   custom: Record<string, string>;
   /** Created by an import; has no static detail page in this prototype. */
@@ -473,7 +469,6 @@ export const commitImport = (fileName: string, rows: RowOutcome[], organizations
         projectName: r.name,
         projectType: '',
         classifications: [],
-        tags: [],
         leadOrganization: '',
         county: '',
         stage: 'Proposal',

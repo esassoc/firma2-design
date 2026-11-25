@@ -12,7 +12,7 @@
 // demo shows the same people in the same places every time.
 
 import { projects } from './firma2-projects';
-import { funderPrograms, getProjectDetail } from './firma2-project-detail';
+import { funderPrograms, getProjectDetail, securedFunding } from './firma2-project-detail';
 import { REAL } from './firma2-real-data';
 
 // ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ const leadType = (name: string): OrganizationType =>
 
 const fundedBy = (organization: string): number =>
   projects.filter((project) =>
-    getProjectDetail(project).funding.some(
+    securedFunding(getProjectDetail(project).funding).some(
       // A local match resolves to the lead organization itself; that is the
       // sponsor paying its own share, not funding someone else's project.
       (source) => source.organization === organization && source.organization !== project.leadOrganization,
@@ -413,7 +413,7 @@ export const organizations: Organization[] = seeds
       projects: projects.filter(
         (p) =>
           p.leadOrganization === name ||
-          getProjectDetail(p).funding.some((source) => source.organization === name),
+          securedFunding(getProjectDetail(p).funding).some((source) => source.organization === name),
       ).length,
       // Most organizations are public — their projects are public record. A
       // contractor's drafts are the usual reason to close one; a few others
@@ -503,7 +503,7 @@ export const projectsOf = (organization: string) =>
     .map((project) => {
       const detail = getProjectDetail(project);
       const leads = project.leadOrganization === organization;
-      const amount = detail.funding
+      const amount = securedFunding(detail.funding)
         .filter((source) => source.organization === organization && !leads)
         .reduce((sum, source) => sum + source.amount, 0);
       return { project, leads, amount };

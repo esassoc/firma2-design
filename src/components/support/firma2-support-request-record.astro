@@ -1,0 +1,339 @@
+---
+// firma2-support-request-record — one support request: what was asked, what was
+// said back, and the facts that place it.
+//
+// THE MESSAGE IS THE DOCUMENT, so it leads, in the sender's own words, under
+// who sent it and when. Replies follow in the order they were written, oldest
+// first — a thread is read as a conversation.
+//
+// THE DETAILS ARE NOT HERE (user, 2026-11-24). Who is answering, the type, the
+// sender's organization and email, the page it came from — properties a reader
+// glances at, not part of the conversation — sit in a docked rail beside this
+// (firma2-support-request-details), as the selected project's Key facts sit
+// beside Review. This component tells that rail which request it shows
+// (`firma2:support-load`, for one sent in this browser) and when its status
+// changes (`firma2:support-status`).
+//
+// TWO ACTS: reply, and mark resolved (or reopen). Resolving asks nothing — it
+// is one click back (Reopen), so a confirm would be friction wearing a safety
+// costume. WHERE THE STATUS AND ITS BUTTON SIT DEPENDS ON THE SURFACE:
+//   in the inbox (`inbox`)  this component draws its own head — subject,
+//                           sender, status, the button — pinned above the
+//                           thread (firma2-inbox's head), and resolving moves
+//                           to the next request ("Resolve and next");
+//   on its own page         the page renders them into the top bar and this
+//                           component flips them.
+// Either way it announces `firma2:support-status` so a list beside it follows.
+//
+// A REPLY IS POSTED WITH ITS BUTTON, NOT ON BLUR. Every other field in this
+// product saves as you leave it; a reply is a message to a person, and sending
+// half of one because the reader clicked away would be the one save here that
+// cannot be taken back. An empty reply is not sent and says so on the field.
+//
+// A REQUEST SENT IN THIS BROWSER has no page a static site could build, so it
+// opens on the `draft` route with its slug in the query and this component,
+// rendered blank, fills itself from the browser's store — the same page as a
+// seeded request, not a second one. A slug the store does not hold says so.
+//
+// WHAT IS FAKED: a reply and the status are kept in this browser
+// and nobody is emailed (src/lib/support-request-edits.ts). The reply's author
+// is whoever the prototype is being read as.
+//
+// A SENDER WITH NO ACCOUNT has no member page and no organization: their name
+// is plain text and the Organization row is left out, rather than a row saying
+// "None".
+//
+// bcn-lego-checked: esa-textarea + esa-button the reply; esa-badge the status
+// in the inbox head;
+// esa-empty-state the missing request; esa-snackbar-container the receipt. The
+// thread is an <ol> of who, when and what — firma2-project-comments'
+// construction, which is bound to project contacts and their hover card, so
+// its list is repeated here over plain names. The only CSS removes the list
+// marker and sets the two inks, as there. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { isMember, memberHref } from '../../data/firma2-members';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import { SUPPORT_REQUEST_STATUS_LABEL, SUPPORT_REQUEST_STATUS_TONE } from '../../data/firma2-support-requests';
+import type { SupportRequest } from '../../data/firma2-support-requests';
+import { dateFormatter } from '../../lib/format';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  /** Omitted where the request is one sent in this browser: the draft route (`?id=` names it) or the inbox's shared pane. */
+  request?: SupportRequest;
+  /** A pane of the Support requests inbox: draws its own head and waits to be told which request to show. */
+  inbox?: boolean;
+}
+
+const draft = !Astro.props.request;
+const inbox = Astro.props.inbox ?? false;
+const BLANK: SupportRequest = {
+  id: '', subject: '', kind: 'Question', message: '', received: '', status: 'open', assignedTo: '', replies: [],
+  requester: { name: '', email: '', organization: '', member: false },
+};
+const r = Astro.props.request ?? BLANK;
+// Parsed as a local date: a bare ISO date reads as UTC midnight.
+const day = (iso: string) => (iso ? dateFormatter.format(new Date(`${iso}T00:00:00`)) : '');
+// The rail's details for this request answer to the same key.
+const key = r.id || 'draft';
+const personHref = (name: string) => (isMember(name) ? withBase(memberHref(name)) : undefined);
+const fromHref = r.requester.member ? personHref(r.requester.name) : undefined;
+// One string after the name, so no stray space lands before the comma.
+// In the inbox the organization is on the list row and in the rail, so the head says who and when.
+const byline = draft ? '' : `${!inbox && r.requester.organization ? `, ${r.requester.organization}` : ''} · ${day(r.received)}`;
+---
+{!inbox && (
+  <div data-support-missing hidden>
+    <EsaEmptyState title="This request isn’t in this browser" description="A request sent from another browser can’t be opened here.">
+      <EsaButton variant="secondary" size="md" tag="a" href={withBase('/prototypes/support-requests')}>All support requests</EsaButton>
+    </EsaEmptyState>
+  </div>
+)}
+<div
+  class="firma2-support-request stack"
+  data-gap={inbox ? 'lg' : '2xl'}
+  data-request-id={r.id}
+  data-field-key={key}
+  data-status={r.status}
+  data-draft={draft ? '' : undefined}
+  data-in-inbox={inbox ? '' : undefined}
+>
+  {inbox && (
+    <div class="repel firma2-inbox__head" data-gap="md" data-support-head>
+      <div class="stack" data-gap="2xs">
+        <div class="cluster" data-gap="xs">
+          <h2 class="typography-title-md-strong" data-subject>{r.subject}</h2>
+          <span data-support-status="open" hidden={r.status !== 'open'}>
+            <EsaBadge value={SUPPORT_REQUEST_STATUS_LABEL.open} variant={SUPPORT_REQUEST_STATUS_TONE.open} size="sm" />
+          </span>
+          <span data-support-status="resolved" hidden={r.status !== 'resolved'}>
+            <EsaBadge value={SUPPORT_REQUEST_STATUS_LABEL.resolved} variant={SUPPORT_REQUEST_STATUS_TONE.resolved} size="sm" />
+          </span>
+        </div>
+        <p class="firma2-support-request__byline typography-body-sm" data-byline>
+          {fromHref ? <a href={fromHref}>{r.requester.name}</a> : r.requester.name}{byline}
+        </p>
+      </div>
+      <span class="cluster" data-gap="xs">
+        <span data-support-act="resolved" hidden={r.status === 'resolved'}>
+          <EsaButton variant="primary" size="md">Resolve and next</EsaButton>
+        </span>
+        <span data-support-act="open" hidden={r.status === 'open'}>
+          <EsaButton variant="secondary" appearance="outline" size="md">Reopen</EsaButton>
+        </span>
+      </span>
+    </div>
+  )}
+
+  {/* THE MESSAGE NEEDS NO HEADING: it is what the subject above it introduces. */}
+  <div class="stack" data-gap="sm">
+    {!inbox && (
+      <p class="firma2-support-request__byline typography-body-sm" data-byline>
+        {fromHref ? <a href={fromHref}>{r.requester.name}</a> : r.requester.name}{byline}
+      </p>
+    )}
+    <p class="firma2-support-request__body typography-body-md" data-message>{r.message}</p>
+  </div>
+
+  {/* REPLIES APPEAR WHEN THERE ARE SOME. An empty thread is not announced: the
+      reply field below is the whole of what there is to say about it. */}
+  <section class="stack" data-gap="md" data-thread-section hidden={r.replies.length === 0} aria-label="Replies">
+    <h3 class="typography-title-sm-strong">Replies</h3>
+    <ol class="firma2-support-request__thread stack" data-gap="lg" data-thread>
+      {r.replies.map((reply) => (
+        <li class="stack" data-gap="2xs">
+          <p class="firma2-support-request__byline typography-body-sm">
+            <span class="typography-label-sm-strong">{reply.author}</span>
+            {` · ${day(reply.date)}`}
+          </p>
+          <p class="firma2-support-request__body typography-body-md">{reply.body}</p>
+        </li>
+      ))}
+    </ol>
+  </section>
+  {/* The row a reply typed here is cloned from, so it is the same markup. */}
+  <template data-reply-template>
+    <li class="stack" data-gap="2xs" data-local-reply>
+      <p class="firma2-support-request__byline typography-body-sm">
+        <span class="typography-label-sm-strong" data-reply-author></span>
+        <span data-reply-date></span>
+      </p>
+      <p class="firma2-support-request__body typography-body-md" data-reply-body></p>
+    </li>
+  </template>
+
+  <div class="stack" data-gap="sm">
+    <esa-textarea label="Reply" size="md" rows="4" data-reply-field></esa-textarea>
+    <div><EsaButton variant="primary" size="md" data-reply-send>Send reply</EsaButton></div>
+  </div>
+</div>
+
+{!inbox && <esa-snackbar-container class="firma2-support-request__toasts"></esa-snackbar-container>}
+
+<style>
+  /* An <ol>: the order is real, the ordinals carry nothing (a reply is who and
+     when, not its number) — firma2-project-comments' rule. */
+  .firma2-support-request__thread {
+    list-style: none;
+    padding-inline-start: 0;
+    margin: 0;
+  }
+
+  .firma2-support-request :global([hidden]) {
+    display: none !important;
+  }
+
+  .firma2-support-request__byline {
+    margin: 0;
+    color: var(--color-content-default-secondary, #646464);
+  }
+
+  /* Primary ink and the sender's own line breaks: the message is the content,
+     the byline above it its metadata. */
+  .firma2-support-request__body {
+    margin: 0;
+    color: var(--color-content-default, #202020);
+    white-space: pre-line;
+    max-inline-size: 70ch;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-snackbar-container';
+  import {
+    addSupportReply,
+    getAddedSupportRequest,
+    setSupportStatus,
+    statusOf,
+    supportEdit,
+  } from '../../lib/support-request-edits';
+  import { currentPerson } from '../../lib/workspace-permissions';
+  import { dateFormatter } from '../../lib/format';
+  import type { SupportReply, SupportRequest, SupportRequestStatus } from '../../data/firma2-support-requests';
+
+  type Field = HTMLElement & { value: string; errorText: string };
+  type Toasts = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
+
+  const day = (iso: string) => dateFormatter.format(new Date(`${iso}T00:00:00`));
+
+  document.querySelectorAll<HTMLElement>('.firma2-support-request').forEach((root) => {
+    const inInbox = 'inInbox' in root.dataset;
+    const isDraft = 'draft' in root.dataset;
+    const fieldKey = root.dataset.fieldKey ?? '';
+    // In the inbox the status and its button are this pane's own; on a request's
+    // page they are the page header's.
+    const scope: ParentNode = inInbox ? root : document;
+    const toasts = (inInbox ? root.closest('[data-support-inbox]') ?? document : document).querySelector<Toasts>('.firma2-support-request__toasts');
+
+    const thread = root.querySelector<HTMLElement>('[data-thread]')!;
+    const threadSection = root.querySelector<HTMLElement>('[data-thread-section]')!;
+    const template = root.querySelector<HTMLTemplateElement>('[data-reply-template]')!;
+    const field = root.querySelector<Field>('[data-reply-field]')!;
+
+    // Which request this is. Fixed for a seeded one; set by load() for one sent here.
+    const state = {
+      id: root.dataset.requestId ?? '',
+      status: (root.dataset.status ?? 'open') as SupportRequestStatus,
+    };
+
+    const paintStatus = () => {
+      const status = statusOf(state.id, state.status);
+      scope.querySelectorAll<HTMLElement>('[data-support-status]').forEach((el) => (el.hidden = el.dataset.supportStatus !== status));
+      scope.querySelectorAll<HTMLElement>('[data-support-act]').forEach((el) => (el.hidden = el.dataset.supportAct === status));
+    };
+
+    const append = (reply: SupportReply) => {
+      const li = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      li.querySelector('[data-reply-author]')!.textContent = reply.author;
+      li.querySelector('[data-reply-date]')!.textContent = ` · ${day(reply.date)}`;
+      li.querySelector('[data-reply-body]')!.textContent = reply.body;
+      thread.append(li);
+      threadSection.hidden = false;
+    };
+
+    /** Everything this browser holds about the current request, over what the build drew. */
+    const paintStored = () => {
+      thread.querySelectorAll('[data-local-reply]').forEach((li) => li.remove());
+      threadSection.hidden = thread.children.length === 0;
+      (supportEdit(state.id).replies ?? []).forEach(append);
+      paintStatus();
+    };
+
+    /** Fill a blank pane from a request sent in this browser. */
+    const load = (sent: SupportRequest) => {
+      Object.assign(state, { id: sent.id, status: sent.status });
+      const who = inInbox || !sent.requester.organization ? sent.requester.name : `${sent.requester.name}, ${sent.requester.organization}`;
+      root.querySelectorAll('[data-byline]').forEach((el) => (el.textContent = `${who} · ${day(sent.received)}`));
+      root.querySelector('[data-message]')!.textContent = sent.message;
+      const subject = root.querySelector('[data-subject]');
+      if (subject) subject.textContent = sent.subject;
+      // The rail's blank details fill themselves from this.
+      document.dispatchEvent(new CustomEvent('firma2:support-load', { detail: { key: fieldKey, request: sent } }));
+      field.value = '';
+      field.errorText = '';
+      paintStored();
+    };
+
+    if (isDraft && inInbox) {
+      // The inbox's shared pane: told which request to show each time one is picked.
+      root.closest('[data-inbox]')?.addEventListener('firma2:inbox-select', (event) => {
+        const sent = getAddedSupportRequest((event as CustomEvent<{ key: string }>).detail.key);
+        if (sent) load(sent);
+      });
+    } else if (isDraft) {
+      const sent = getAddedSupportRequest(new URLSearchParams(window.location.search).get('id') ?? '');
+      if (!sent) {
+        root.hidden = true;
+        document.querySelector<HTMLElement>('[data-support-missing]')!.hidden = false;
+        return;
+      }
+      // The h1, the trail's last crumb and the tab.
+      const h1 = document.querySelector('.esa-page-header__title');
+      const crumb = document.querySelector('.esa-breadcrumbs__current');
+      if (h1) h1.textContent = sent.subject;
+      if (crumb) crumb.textContent = sent.id;
+      document.title = `${sent.subject} — Support requests — ProjectFirma 2.0`;
+      load(sent);
+    } else {
+      paintStored();
+    }
+
+    // ---- resolve / reopen ----
+    scope.querySelectorAll<HTMLElement>('[data-support-act]').forEach((wrap) => {
+      wrap.addEventListener('click', () => {
+        const next = wrap.dataset.supportAct as SupportRequestStatus;
+        if (!state.id) return;
+        if (!setSupportStatus(state.id, next)) {
+          toasts?.show({ message: 'Couldn’t save in this browser', variant: 'error' });
+          return;
+        }
+        paintStatus();
+        toasts?.show({ message: next === 'resolved' ? 'Marked resolved' : 'Reopened', variant: 'success' });
+        root.dispatchEvent(new CustomEvent('firma2:support-status', { bubbles: true, detail: { id: state.id, status: next } }));
+      });
+    });
+
+    // ---- reply ----
+    field.addEventListener('input', () => {
+      if (field.errorText) field.errorText = '';
+    });
+    root.querySelector<HTMLElement>('[data-reply-send]')?.addEventListener('click', () => {
+      const body = (field.value ?? '').trim();
+      if (!body) {
+        field.errorText = 'Write a reply to send.';
+        field.focus();
+        return;
+      }
+      const reply = state.id ? addSupportReply(state.id, currentPerson().name, body) : null;
+      if (!reply) {
+        toasts?.show({ message: 'Couldn’t save in this browser', variant: 'error' });
+        return;
+      }
+      append(reply);
+      field.value = '';
+      toasts?.show({ message: 'Reply sent', variant: 'success' });
+    });
+  });
+</script>

@@ -66,6 +66,7 @@ import { projectSize } from '../../lib/geo';
 import { asDate, relativeDays } from '../../lib/format';
 import { TODAY } from '../../data/firma2-directory';
 import { stageSettings } from '../../data/firma2-workspace-settings';
+import '../shared/firma2-map-page.css';
 
 // "Updated 3 days ago" within 90 days of the fixture's today, the date itself
 // as MM/DD/YY past that — recent work reads as recent, old work as a date.
@@ -116,7 +117,7 @@ const geometry = { regions: HYDROLOGIC_REGIONS, subwatersheds: SUBWATERSHEDS };
 const bodyId = 'firma2-map-list';
 ---
 <div
-  class="firma2-my-projects-map"
+  class="firma2-my-projects-map firma2-map-page"
   data-list="shown"
   data-stage-options={JSON.stringify(stageOptions)}
   data-geometry={JSON.stringify(geometry)}
@@ -132,12 +133,12 @@ const bodyId = 'firma2-map-list';
     })();
   </script>
 
-  <div class="firma2-my-projects-map__surface">
-    <div class="firma2-my-projects-map__canvas" role="application" aria-label={mapLabel} data-canvas></div>
+  <div class="firma2-my-projects-map__surface firma2-map-page__surface">
+    <div class="firma2-my-projects-map__canvas firma2-map-page__canvas" role="application" aria-label={mapLabel} data-canvas></div>
   </div>
 
-  <div class="firma2-my-projects-map__panel">
-    <div class="firma2-my-projects-map__head">
+  <div class="firma2-my-projects-map__panel firma2-map-page__panel">
+    <div class="firma2-my-projects-map__head firma2-map-page__head">
       <div class="stack" data-gap="sm">
         <slot name="title" />
         <esa-text-field
@@ -150,7 +151,7 @@ const bodyId = 'firma2-map-list';
           placeholder="Name, lead organization, or place"
           autocomplete="off"
         ></esa-text-field>
-        <div class="firma2-my-projects-map__controls">
+        <div class="firma2-my-projects-map__controls firma2-map-page__controls">
           <esa-select class="firma2-my-projects-map__stage" data-stage size="md" aria-label="Stage"></esa-select>
           <p class="visually-hidden" aria-live="polite" data-count>{cards.length} {cards.length === 1 ? 'project' : 'projects'}</p>
           <EsaButton
@@ -165,7 +166,7 @@ const bodyId = 'firma2-map-list';
       </div>
     </div>
 
-    <div class="firma2-my-projects-map__body" id={bodyId} data-body>
+    <div class="firma2-my-projects-map__body firma2-map-page__body" id={bodyId} data-body>
       <ul class="firma2-my-projects-map__grid" role="list" data-grid>
         {cards.map((c) => (
           <li
@@ -249,144 +250,9 @@ const bodyId = 'firma2-map-list';
 </div>
 
 <style>
-  .firma2-my-projects-map [hidden] {
-    display: none !important;
-  }
-
-  /* THE MAP IS THE PAGE, EDGE TO EDGE. The view fills the sheet under the top
-     bar: it reaches through the pane's padding on three sides (--_bleed) and
-     over the gap the top bar leaves under itself on the fourth, and is exactly
-     as tall as what is left of the fold. Nothing on the page scrolls; only the
-     cards do, inside their column. */
-  .firma2-my-projects-map {
-    --_bleed: var(--firma2-pane-padding, var(--spacing-500, 1.5rem));
-    --_inset: var(--spacing-300, 0.75rem);
-    --_list-width: 34rem;
-    /* THE SEE-THROUGH SURFACE. Ecology's one translucent background role is
-       overlay-scrim — white at 80%, with no dark counterpart, so dark mode
-       takes the matching black primitive. */
-    --_glass: var(--color-background-overlay-scrim, rgba(255, 255, 255, 0.8));
-    position: relative;
-    isolation: isolate;
-    block-size: calc(var(--firma2-fold, 100dvh) - var(--firma2-band-height, 48px));
-    margin: calc(var(--_bleed) * -1);
-    overflow: hidden;
-  }
-
-  :global(:root[data-scheme='dark']) .firma2-my-projects-map {
-    --_glass: var(--color-black-a-9, rgba(0, 0, 0, 0.7));
-  }
-
-  /* The docked project panel sits at the sheet's trailing edge; while it is
-     open the map stops at the panel instead of bleeding under it. Global
-     whole: Astro ships a :global() nested inside :has() as an invalid
-     selector. */
-  :global(.firma2-project-peek-layout:has(> .firma2-project-peek:not([hidden])) .firma2-my-projects-map) {
-    margin-inline-end: 0;
-  }
-
-  .firma2-my-projects-map__surface {
-    position: absolute;
-    inset: 0;
-    /* Leaflet's panes bid z-index up to 1000; this keeps them in this box,
-       under the floating column. */
-    z-index: 0;
-    isolation: isolate;
-  }
-
-  .firma2-my-projects-map__canvas {
-    position: absolute;
-    inset: 0;
-    background: var(--color-background-elevation-sunken, #f0f0f0);
-    font-family: var(--typography-body-sm-font-family);
-    font-size: var(--typography-body-sm-font-size);
-    line-height: var(--typography-body-sm-line-height);
-  }
-
-  /* THE COLUMN: a static head and the cards under it, floating over the
-     map's leading side. It is only as tall as its content, so with the list
-     hidden the map is clickable right up under the head. */
-  .firma2-my-projects-map__panel {
-    position: absolute;
-    z-index: 1;
-    inset-block-start: var(--_inset);
-    inset-inline-start: var(--_inset);
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-200, 0.5rem);
-    /* Room for the map's own controls at the trailing edge, always. */
-    inline-size: min(var(--_list-width), calc(100% - 2 * var(--_inset) - 40px - var(--spacing-400, 1rem)));
-    max-block-size: calc(100% - 2 * var(--_inset));
-    min-inline-size: 0;
-  }
-
-  /* THE HEAD FLOATS BARE. Search, stage and the list toggle sit straight on
-     the map with no card behind them (2026-11-12): each control is opaque on
-     its own, and the count that needed a backing now lives in the toggle's
-     label. It is lifted above the card list, a later positioned sibling, so
-     the stage select's dropdown spills over the cards instead of under them. */
-  .firma2-my-projects-map__head {
-    position: relative;
-    z-index: 3;
-    flex: none;
-    /* The fields' own fill hook: floating surface, as the map's zoom bar. */
-    --color-background-field: var(--color-background-elevation-floating, #fcfcfc);
-  }
-
-  /* Over the map the controls wear the map controls' chrome (src/styles/
-     map.css): floating surface and elevation-2, so they read as one family
-     with zoom and layers. The button's fill sits on its wrapper — the native
-     button stays transparent, so its hover tint still paints on top. */
-  .firma2-my-projects-map__head :is(esa-text-field, esa-select),
-  .firma2-my-projects-map__head :global([data-list-toggle]) {
-    border-radius: var(--radius-md, 0.5rem);
-    box-shadow: var(--elevation-2, 0 2px 12px rgb(0 0 0 / 0.08));
-  }
-
-  .firma2-my-projects-map__head :global([data-list-toggle]) {
-    background: var(--color-background-elevation-floating, #fcfcfc);
-  }
-
-  /* The page's h1 rides in the head: no band of its own here. */
-  .firma2-my-projects-map__head :global(.esa-page-header) {
-    margin: 0;
-    padding: 0;
-  }
-
-  /* Stage leading, the list toggle trailing, one row. */
-  .firma2-my-projects-map__controls {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-300);
-  }
-
-  .firma2-my-projects-map__stage {
-    flex: 0 1 13rem;
-    min-inline-size: 9rem;
-  }
-
-  .firma2-my-projects-map__controls :global([data-list-toggle]) {
-    flex: none;
-    margin-inline-start: auto;
-    /* "Hide 24 projects" ↔ "Hide 3 projects" as you type: equal-width digits
-       keep the button from twitching. */
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* THE CARDS SCROLL, THE HEAD DOES NOT. The gaps between cards are the
-     column's too, so a wheel anywhere over it scrolls the cards and only the
-     open map zooms. A few pixels of padding keep the focus ring and the hover
-     border clear of the scroller's clip. */
-  .firma2-my-projects-map__body {
-    position: relative;
-    flex: 0 1 auto;
-    min-block-size: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 4px;
-    margin: -4px;
-    scrollbar-width: thin;
-  }
+  /* THE FRAME — the edge-to-edge map, the floating column, its bare head and
+     its scrolling body — is shared with Geospatial areas:
+     ../shared/firma2-map-page.css. What follows is the project cards. */
 
   /* HIDE LIST: the column folds to its head. A card the map picked still
      shows under it, alone, with its close button. */
@@ -400,70 +266,6 @@ const bodyId = 'firma2-map-list';
     z-index: 2;
     inset-block-start: calc(4px + var(--spacing-300, 0.75rem));
     inset-inline-end: calc(4px + var(--spacing-300, 0.75rem));
-  }
-
-  /* See-through cards and head: esa-card's own background hook, frosted. The
-     blur keeps the text readable over a busy map. OFF-SYSTEM: Ecology has no
-     blur scale; its one frost is esa-side-dialog's opt-in
-     --side-dialog-backdrop-filter, so the amount is a literal here. */
-  .firma2-my-projects-map :global(.esa-card) {
-    --card-bg: var(--_glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-  }
-
-  /* NARROW WINDOWS: no room to float a column over a map. Head, then the map
-     at a fixed height, then the cards, in the page's own flow and opaque. */
-  @media (max-width: 64rem) {
-    .firma2-my-projects-map {
-      display: flex;
-      flex-direction: column;
-      gap: var(--spacing-400, 1rem);
-      block-size: auto;
-      margin: 0;
-      overflow: visible;
-    }
-
-    .firma2-my-projects-map__panel {
-      display: contents;
-    }
-
-    .firma2-my-projects-map__head {
-      order: 0;
-    }
-
-    /* In the page's flow the controls are ordinary fields again. */
-    .firma2-my-projects-map__head :is(esa-text-field, esa-select),
-    .firma2-my-projects-map__head :global([data-list-toggle]) {
-      box-shadow: none;
-    }
-
-    .firma2-my-projects-map__surface {
-      position: relative;
-      order: 1;
-      block-size: 22rem;
-      flex: none;
-      overflow: hidden;
-      border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #d9d9d9);
-      border-radius: var(--radius-md, 0.5rem);
-    }
-
-    .firma2-my-projects-map__body {
-      order: 2;
-      overflow: visible;
-    }
-
-    .firma2-my-projects-map :global(.esa-card) {
-      --card-bg: initial;
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-    }
-  }
-
-  @media (max-width: 30rem) {
-    .firma2-my-projects-map__controls {
-      flex-wrap: wrap;
-    }
   }
 
   .firma2-my-projects-map__grid {
@@ -682,7 +484,7 @@ const bodyId = 'firma2-map-list';
   import '@esa/ecology/esa-select';
   import type { MapWorkArea, Region, Subwatershed } from '../../data/firma2-geography';
   import { centroid, projectSize } from '../../lib/geo';
-  import { addBasemaps, addReferenceLayers, createMap, glyph, kindColor, loadLeaflet, markerStyle, shapeStyle } from '../../lib/leaflet';
+  import { addBasemaps, addColorKey, addReferenceLayers, createMap, glyph, loadLeaflet, markerStyle, projectColor, projectShapeStyle } from '../../lib/leaflet';
   import type { Leaflet } from '../../lib/leaflet';
   import { onGeoChange, readLayers, readWorkAreas } from '../../lib/work-areas';
   import { label } from '../../lib/vocabulary';
@@ -738,7 +540,9 @@ const bodyId = 'firma2-map-list';
     // A BASIN IS TOO BIG FOR A TREATMENT UNIT: zoomed out, a 60-acre polygon is
     // a speck, so each project also gets a dot at its work's centre.
     const DOT_ZOOM = 11;
-    const dotStyle = (on: boolean) => markerStyle(kindColor('area'), on);
+    const dotStyle = (slug: string, on: boolean) => markerStyle(projectColor(slug), on);
+    // What the colours mean, for the projects now drawn.
+    let drawKey: (slugs: string[]) => void = () => {};
 
     // One project lit (the hovered one, else the selected), the rest set back.
     const paint = () => {
@@ -748,7 +552,7 @@ const bodyId = 'firma2-map-list';
         const dim = Boolean(lit) && !on;
         group.eachLayer((layer: Leaflet) => {
           const kind = kinds.get(layer)!;
-          const base = shapeStyle(kind);
+          const base = projectShapeStyle(slug, kind);
           if (kind === 'point') return layer.setStyle({ ...base, opacity: dim ? 0.35 : 1, fillOpacity: dim ? 0.35 : 1 });
           layer.setStyle({
             ...base,
@@ -757,7 +561,7 @@ const bodyId = 'firma2-map-list';
             ...('fillOpacity' in base ? { fillOpacity: on ? 0.5 : dim ? 0.08 : base.fillOpacity } : {}),
           });
         });
-        dot.setStyle({ ...dotStyle(on), fillOpacity: dim ? 0.35 : 1 });
+        dot.setStyle({ ...dotStyle(slug, on), fillOpacity: dim ? 0.35 : 1 });
         if (on) {
           group.bringToFront();
           dot.bringToFront();
@@ -854,7 +658,7 @@ const bodyId = 'firma2-map-list';
         const kinds = new Map<Leaflet, MapWorkArea['kind']>();
         const group = L.featureGroup(
           areas.map((area) => {
-            const style = shapeStyle(area.kind);
+            const style = projectShapeStyle(slug, area.kind);
             const shape =
               area.kind === 'point'
                 ? L.circleMarker(area.path[0], { ...style, radius: 6 })
@@ -865,7 +669,7 @@ const bodyId = 'firma2-map-list';
             return shape.on('mouseover', aim).bindTooltip(esc(name), { ...tip, sticky: true });
           }),
         );
-        const dot = L.circleMarker(centroid(areas.flatMap((a) => a.path)), dotStyle(false)).on('mouseover', aim).bindTooltip(esc(name), tip);
+        const dot = L.circleMarker(centroid(areas.flatMap((a) => a.path)), dotStyle(slug, false)).on('mouseover', aim).bindTooltip(esc(name), tip);
         [group, dot].forEach((layer) =>
           layer
             .on('mouseover', () => setActive(slug, 'map'))
@@ -893,6 +697,7 @@ const bodyId = 'firma2-map-list';
         if (visible && !dots.layer.hasLayer(dot)) dots.layer.addLayer(dot);
         if (!visible && dots.layer.hasLayer(dot)) dots.layer.removeLayer(dot);
       });
+      drawKey([...drawn.keys()].filter((slug) => !cellOf.get(slug)?.hidden));
       syncDots();
     };
 
@@ -1002,7 +807,11 @@ const bodyId = 'firma2-map-list';
       .then((leaflet) => {
         L = leaflet;
         // Repainting on a scheme change picks up the dark ramp's colours.
-        map = createMap(L, $('[data-canvas]'), { zoomControl: false, zoomSnap: 0.5 }, paint);
+        map = createMap(L, $('[data-canvas]'), { zoomControl: false, zoomSnap: 0.5 }, () => {
+          paint();
+          show();
+        });
+        drawKey = addColorKey(L, map);
         $('[data-canvas]').style.removeProperty('position');
         // Zoom, Zoom to fit, then layers: one group on the trailing side.
         L.control.zoom({ position: 'topright' }).addTo(map);

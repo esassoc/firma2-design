@@ -38,7 +38,7 @@ export interface ImportWorkbook {
 }
 
 /** The workspace's closed lists a column can be matched against. */
-export type ImportVocabulary = 'projectType' | 'classifications' | 'tags' | 'leadOrganization' | 'stage';
+export type ImportVocabulary = 'projectType' | 'classifications' | 'leadOrganization' | 'stage';
 
 export type ImportFieldKind = 'text' | 'long-text' | 'year' | 'money' | 'number' | 'choice' | 'multi';
 
@@ -64,7 +64,6 @@ export const IMPORT_FIELDS: ImportField[] = [
   { key: 'projectName', label: 'Project name', kind: 'text', required: true, synonyms: ['project name', 'project', 'name', 'project title', 'title'] },
   { key: 'projectType', label: 'Project type', kind: 'choice', vocabulary: 'projectType', synonyms: ['project type', 'type', 'type of work', 'work type', 'category'] },
   { key: 'classifications', label: 'Classifications', kind: 'multi', vocabulary: 'classifications', synonyms: ['classifications', 'classification', 'goals', 'goal', 'program goals', 'priorities'] },
-  { key: 'tags', label: 'Tags', kind: 'multi', vocabulary: 'tags', synonyms: ['tags', 'tag', 'labels', 'keywords'] },
   { key: 'leadOrganization', label: 'Lead organization', kind: 'choice', vocabulary: 'leadOrganization', required: true, synonyms: ['lead organization', 'lead org', 'lead agency', 'lead', 'sponsor', 'organization', 'grantee', 'applicant'] },
   { key: 'county', label: 'County', kind: 'text', synonyms: ['county', 'counties'] },
   { key: 'stage', label: 'Stage', kind: 'choice', vocabulary: 'stage', required: true, synonyms: ['stage', 'status', 'phase', 'project stage', 'project status'] },
@@ -114,7 +113,6 @@ export const IMPORT_SUGGESTIONS: Record<ImportVocabulary, Record<string, string>
     recreation: 'Public access & recreation',
     groundwater: 'Groundwater recharge',
   },
-  tags: {},
   leadOrganization: {
     'scott valley rcd': 'Scott Valley Resource District',
     'upper butte fire safe council': 'Upper Butte Fire Safe Alliance',

@@ -34,7 +34,8 @@ interface Props {
   /** The classification — or the group — being summed. */
   classification: { slug: string; description: string };
   rollup: Pick<ClassificationRollup, 'projects' | 'estimatedTotalCost' | 'spentToDate' | 'funders'>;
-  kind?: 'classification' | 'classificationGroup';
+  /** `area`: a geospatial area, whose description is kept in the browser (its settings page). */
+  kind?: 'classification' | 'classificationGroup' | 'area';
 }
 
 const { classification, rollup, kind = 'classification' } = Astro.props;
@@ -44,7 +45,7 @@ const spentShare = rollup.estimatedTotalCost > 0 ? Math.round((rollup.spentToDat
   <div data-removed hidden>
     <EsaAlertBox variant="warning" title="Removed">Removed in Workspace settings.</EsaAlertBox>
   </div>
-  <p class="firma2-classification-summary__description typography-body-lg" data-description>{classification.description}</p>
+  <p class="firma2-classification-summary__description typography-body-lg" data-description hidden={!classification.description}>{classification.description}</p>
   <div class="firma2-classification-summary__figures grid" data-gap="md">
     <EsaStat value={rollup.projects.length} label="Projects" sub={`of ${portfolio.length} in the portfolio`} />
     <EsaStat value={currency.format(rollup.estimatedTotalCost)} label="Estimated cost" sub="Total across all years" />
@@ -54,6 +55,10 @@ const spentShare = rollup.estimatedTotalCost > 0 ? Math.round((rollup.spentToDat
 </section>
 
 <style>
+  .firma2-classification-summary__description[hidden] {
+    display: none;
+  }
+
   .firma2-classification-summary__description {
     margin: 0;
     max-inline-size: 60ch;
@@ -71,9 +76,20 @@ const spentShare = rollup.estimatedTotalCost > 0 ? Math.round((rollup.spentToDat
   // Renames and descriptions edited in Workspace settings show here too.
   import { getEntry, isRemoved } from '../../lib/taxonomy-edits';
   import { retitle } from '../../lib/taxonomy-record';
+  import { readAreaDetails } from '../../lib/work-areas';
 
   document.querySelectorAll<HTMLElement>('.firma2-classification-summary').forEach((root) => {
     const slug = root.dataset.slug ?? '';
+    if (root.dataset.kind === 'area') {
+      // An area's name is its layer's; only the description is a person's.
+      const text = readAreaDetails(slug).description ?? '';
+      const p = root.querySelector<HTMLElement>('[data-description]');
+      if (p) {
+        p.textContent = text;
+        p.hidden = !text;
+      }
+      return;
+    }
     const kind = root.dataset.kind === 'classificationGroup' ? 'classificationGroup' : 'classification';
     const removed = root.querySelector<HTMLElement>('[data-removed]');
     if (isRemoved(kind, slug)) {

@@ -56,7 +56,7 @@ Newcomers **join** organizations; only **administrators create** them.
 | 26 | One pending request per organization; any number of organizations at once. |
 | 27 | *Request edit access* on a project fills in its lead organization and *Edit its projects*, and names where it goes. If a request is already pending there, it says so instead. |
 | 28 | Intake's lead organization offers *Not listed — request it*. The proposal stays a draft and cannot be submitted until the organization is approved. If declined, the draft stays with its author to re-point. |
-| 29 | At the plan's organization limit, requests still arrive. The administrator sees the limit and upgrade prompt on the request and cannot approve until there is room. The requester sees only "pending". |
+| 29 | At the plan's organization limit, requests still arrive. The administrator sees the limit and upgrade prompt on the request and cannot approve until there is room. The requester sees only "pending". *(replaced by tiers #13, 2026-11-24: there are no plans or limits)* *(replaced by tiers #13, 2026-11-24: there are no plans or limits)* |
 | 30 | An approved organization starts Public with *Approval required*; its manager can change both. Connected organizations (ADR 0002) are out of scope. |
 
 Assumptions accepted with the decisions: notifications go by email and in-app; an administrator can correct a requested organization's name or type before approving; *Added by* shows the approving administrator, and the record names the requester.

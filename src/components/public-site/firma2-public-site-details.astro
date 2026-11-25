@@ -1,0 +1,120 @@
+---
+// firma2-public-site-details — Public site › Site details: whether the site is
+// open at all, what it is called, its logo and browser-tab icon, and how a
+// link to it looks when someone shares it.
+//
+// PUBLIC ACCESS AND CONTACT DETAILS MOVED HERE from Custom pages (decision 7):
+// they govern projects and the map as much as pages, and this is now the one
+// place a workspace decides what its public site is.
+//
+// THE LINK PREVIEW IS SHOWN, NOT DESCRIBED. The card under the two fields is
+// what a chat or a social post will draw: the picture, the name, the sentence.
+// The picture is one of the workspace's own project photos, chosen, not
+// uploaded — the site has no stock art.
+//
+// FAKED: Public access and Contact details are stored with the draft but
+// change nothing on the public pages yet.
+//
+// bcn-lego-checked: esa-switch-toggle in firma2-switch-list rows,
+// esa-text-field, esa-textarea, esa-select, firma2-site-image, and esa-card
+// (outlined, no padding) as the link preview's frame, in firma2-rail-section.
+// The classes lay out the card's picture and three lines. Beacon is not cloned
+// on this machine.
+import EsaCard from '@esa/ecology/esa-card.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import '../shared/firma2-switch-list.css';
+import Firma2SiteImage from './firma2-site-image.astro';
+import { publicSiteDefaults } from '../../data/firma2-public-site';
+import { PUBLIC_SITE } from '../../data/firma2-workspace-settings';
+import { SHARE_TEXT_MAX } from '../../lib/public-site-config';
+
+const defaults = publicSiteDefaults();
+const ACCESS_PATH: Record<string, string> = { 'public-pages': 'access.public', 'public-contacts': 'access.contacts' };
+const images = [{ value: 'featured', label: 'First featured project' }, ...defaults.projects.map((p) => ({ value: p.value, label: p.label }))];
+---
+<div class="firma2-public-site-details stack" data-gap="2xl" data-site-part="details">
+  <Firma2RailSection title="Access">
+    <div class="firma2-switch-list">
+      {PUBLIC_SITE.map((s) => (
+        <div class="firma2-switch-list__row">
+          <esa-switch-toggle name={s.key} label={s.label} label-position="before" data-bind={ACCESS_PATH[s.key]} data-hint={s.hint}></esa-switch-toggle>
+          {s.hint && <p class="firma2-switch-list__hint typography-body-sm">{s.hint}</p>}
+        </div>
+      ))}
+    </div>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Name and logo">
+    <div class="stack" data-gap="lg">
+      <esa-text-field label="Site name" size="md" data-bind="identity.name"></esa-text-field>
+      <Firma2SiteImage path="identity.logo" label="Logo" alt="The logo in use" max={320} type="png" />
+      <Firma2SiteImage path="identity.icon" label="Browser tab icon" alt="The browser tab icon in use" max={96} type="png" />
+    </div>
+  </Firma2RailSection>
+
+  <Firma2RailSection title="Link preview">
+    <div class="stack" data-gap="lg">
+      <esa-textarea label="Description" size="md" rows="3" maxlength={SHARE_TEXT_MAX} help-text={`Up to ${SHARE_TEXT_MAX} characters.`} data-bind="identity.shareText"></esa-textarea>
+      <esa-select label="Image" size="md" options={JSON.stringify(images)} data-bind="identity.shareImage"></esa-select>
+      <EsaCard variant="outlined" padding="none">
+        <div class="firma2-public-site-details__share" data-share-card>
+          <img alt="" hidden data-share-image />
+          <div class="firma2-public-site-details__share-text stack" data-gap="2xs">
+            <span class="typography-label-md-strong" data-share-name></span>
+            <span class="typography-body-sm" data-share-text></span>
+          </div>
+        </div>
+      </EsaCard>
+    </div>
+  </Firma2RailSection>
+</div>
+
+<style>
+  .firma2-public-site-details [hidden] {
+    display: none !important;
+  }
+  .firma2-public-site-details__share {
+    overflow: hidden;
+    border-radius: inherit;
+  }
+  .firma2-public-site-details__share img {
+    display: block;
+    inline-size: 100%;
+    aspect-ratio: 1.91 / 1;
+    object-fit: cover;
+    background: var(--color-background-elevation-sunken);
+  }
+  .firma2-public-site-details__share-text {
+    padding: var(--spacing-300) var(--spacing-400);
+  }
+  .firma2-public-site-details__share-text :last-child {
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-switch-toggle';
+  import { bind, config, defaults, describeSwitches } from '../../lib/public-site-form';
+  import { PUBLIC_SITE_EVENT } from '../../lib/public-site-store';
+
+  const root = document.querySelector<HTMLElement>('[data-site-part="details"]');
+  if (root && defaults) {
+    const card = root.querySelector<HTMLElement>('[data-share-card]')!;
+    const image = card.querySelector<HTMLImageElement>('[data-share-image]')!;
+    const paint = (): void => {
+      const { identity } = config;
+      const shown = defaults.projects.find((p) => p.value === identity.shareImage) ?? defaults.projects.find((p) => p.value === config.home.hero.featured[0]);
+      image.hidden = !shown;
+      if (shown && image.getAttribute('src') !== shown.photo) image.src = shown.photo;
+      card.querySelector('[data-share-name]')!.textContent = identity.name.trim() || defaults.config.identity.name;
+      card.querySelector('[data-share-text]')!.textContent = identity.shareText.trim();
+    };
+    document.addEventListener(PUBLIC_SITE_EVENT, paint);
+    paint();
+    bind(root);
+    describeSwitches(root);
+  }
+</script>

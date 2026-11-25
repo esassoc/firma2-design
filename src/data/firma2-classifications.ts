@@ -27,9 +27,17 @@
 // the classifications under it, so no project sits "in the group but in none
 // of its children". A group has no measures or targets of its own.
 //
+// THE TREE IS FREE (user, 2026-11-23). A group may hold groups and
+// classifications together, groups may be nested and moved without limit
+// (never inside themselves), and a classification may sit in a group or in
+// none. Projects are still filed on classifications only. Declared levels, a
+// uniform depth and a groups-or-classifications rule were each built and
+// withdrawn the same day: each stopped a move a person arranging a taxonomy
+// expected to make.
+//
 // NOT HERE, on purpose: how a project's page is built (its PROJECT TYPE —
-// src/data/firma2-project-types.ts, optional for a workspace) and functional
-// labels with no KPIs (TAGS — src/data/firma2-tags.ts).
+// src/data/firma2-project-types.ts, optional for a workspace). Functional
+// labels with no KPIs were Tags, removed from the product 2026-11-24.
 
 import type { ClassificationName, Project } from './firma2-projects';
 import { REAL, realRecords, realSystems, slugOf } from './firma2-real-data';
@@ -48,19 +56,16 @@ export interface ClassificationGroup {
   parent?: string;
 }
 
-// Invented sample, one of each shape a group can take: a top-level group of
-// classifications only (Plan goal); a top-level group of groups only
-// (Practice area); groups one level down holding classifications; a group
-// holding BOTH a classification and a group (Forests & fuels); and a group
-// three levels down (Fire management). An empty group is not seeded — adding
-// one in Workspace settings shows that state.
+// Invented sample: a top-level group of classifications (Plan goal), and a
+// top-level group of groups, each holding classifications (Practice area).
+// An empty group is not seeded — adding one in Workspace settings shows that
+// state.
 const MOCK_GROUPS: ClassificationGroup[] = [
   { slug: 'plan-goal', name: 'Plan goal', color: '#3c5fa8', description: 'The plan outcomes a project works toward.' },
   { slug: 'practice-area', name: 'Practice area', color: '#646464', description: 'The kinds of work a project does on the ground.' },
   { slug: 'channels-and-fish-passage', parent: 'practice-area', name: 'Channels & fish passage', color: '#b4432f', description: 'Work in the stream channel: opening passage, adding habitat, giving high flows room.' },
   { slug: 'vegetation-and-wetlands', parent: 'practice-area', name: 'Vegetation & wetlands', color: '#2f8f6b', description: 'Planting and weeding along streams, and rewetting meadows and marshes.' },
   { slug: 'forests-and-fuels', parent: 'practice-area', name: 'Forests & fuels', color: '#5f7a3a', description: 'Thinning, fuel breaks and burning that change how fire moves through a forest.' },
-  { slug: 'fire-management', parent: 'forests-and-fuels', name: 'Fire management', color: '#d08a1e', description: 'Lines that hold a fire, and planned burns.' },
   { slug: 'runoff-and-groundwater', parent: 'practice-area', name: 'Runoff & groundwater', color: '#3c5fa8', description: 'Holding soil in place, catching storm runoff, and putting water back underground.' },
 ];
 
@@ -134,7 +139,7 @@ export interface GoalTarget {
 export interface Classification {
   slug: string;
   name: ClassificationName;
-  /** A CLASSIFICATION_GROUPS slug. */
+  /** A CLASSIFICATION_GROUPS slug, or '' for a classification in no group. */
   group: string;
   /** The swatch that tells two classifications apart at a glance. */
   color: string;
@@ -208,8 +213,8 @@ const MOCK_CLASSIFICATIONS: Classification[] = [
       ['Invasive plant removal', 'vegetation-and-wetlands', '#7a8a2a', 'Arundo, broom and other invaders cleared and retreated.'],
       ['Meadow & marsh rewetting', 'vegetation-and-wetlands', '#2b88b8', 'Water returned to meadows, springs and tidal marsh.'],
       ['Forest thinning', 'forests-and-fuels', '#5f7a3a', 'Small trees and brush cut by hand or machine.'],
-      ['Fuel breaks', 'fire-management', '#d08a1e', 'Strips cleared so crews can hold a fire.'],
-      ['Prescribed fire', 'fire-management', '#c4473a', 'Planned burns that clear ground fuel under set conditions.'],
+      ['Fuel breaks', 'forests-and-fuels', '#d08a1e', 'Strips cleared so crews can hold a fire.'],
+      ['Prescribed fire', 'forests-and-fuels', '#c4473a', 'Planned burns that clear ground fuel under set conditions.'],
       ['Erosion & sediment control', 'runoff-and-groundwater', '#8c6d4f', 'Banks, roads and slopes kept from washing into streams.'],
       ['Stormwater capture', 'runoff-and-groundwater', '#3c5fa8', 'Runoff held, slowed or cleaned before it reaches a stream.'],
       ['Groundwater recharge', 'runoff-and-groundwater', '#167a7a', 'Water spread or held so it soaks back into the aquifer.'],
@@ -239,6 +244,15 @@ const REAL_CLASSIFICATIONS: Classification[] = [
 export const CLASSIFICATIONS: Classification[] = REAL ? REAL_CLASSIFICATIONS : MOCK_CLASSIFICATIONS;
 
 export const getClassification = (slug: string): Classification | undefined => CLASSIFICATIONS.find((c) => c.slug === slug);
+
+/**
+ * The colour a classification wears wherever it is LISTED under, or tagged
+ * with, its group — the index's two views, a group's cards, the side panel:
+ * its direct parent group's colour, so a branch reads as one thing (user,
+ * 2026-11-23). Its own `color` is kept for the places that must tell the
+ * classifications of one group apart: the map's colour-by, and charts.
+ */
+export const listColorOf = (c: Pick<Classification, 'group' | 'color'>): string => getClassificationGroup(c.group)?.color ?? c.color;
 
 export const classificationNamed = (name: string): Classification | undefined => CLASSIFICATIONS.find((c) => c.name === name);
 

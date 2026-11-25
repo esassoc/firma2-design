@@ -16,12 +16,14 @@
 // Browser-local, one versioned key, same honesty terms as every store here.
 
 import { CURRENT_USER, CURRENT_USER_ORGANIZATIONS, users } from '../data/firma2-directory';
+import type { UserRole } from '../data/firma2-directory';
 import { NEWCOMER } from '../data/firma2-access-requests';
 import { readRequests } from './access-requests';
 import { SECURITY_PERMISSIONS } from '../data/firma2-workspace-settings';
 
 export type Audience = 'admins' | 'managers' | 'editors';
-export type Role = 'Administrator' | 'Contributor' | 'Viewer';
+/** The workspace role. One type for it: the directory's (docs/data-model.md, decision 13). */
+export type Role = UserRole;
 
 const KEY = 'firma2:workspace-permissions:v1';
 const AS_KEY = 'firma2:acting-as';

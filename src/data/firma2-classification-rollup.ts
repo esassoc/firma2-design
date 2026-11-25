@@ -30,7 +30,7 @@
 import { projects } from './firma2-projects';
 import type { ClassificationName, Project } from './firma2-projects';
 import { projectSlug } from './firma2-projects';
-import { getProjectDetail, isClosedPeriod } from './firma2-project-detail';
+import { getProjectDetail, isClosedPeriod, securedFunding } from './firma2-project-detail';
 import type { PerformanceMeasure } from './firma2-project-detail';
 import { measures as catalog } from './firma2-performance-measures';
 import { isSummable } from './firma2-performance-measures';
@@ -118,13 +118,17 @@ export interface ClassificationRollup {
 /** One funding source on one project carrying the classification. */
 export interface FunderGrant {
   project: Project;
-  /** The grant or program the money comes through. */
-  program: string;
+  /** The funding source the money comes through. */
+  fundingSource: string;
+  /** That funding source's slug. */
+  source: string;
   amount: number;
 }
 
 /**
- * One funder's money across the projects carrying a classification.
+ * One funder's SECURED money across the projects carrying a classification.
+ * Requested and not-awarded rows are not money the projects have, so they are
+ * not counted (docs/data-model.md, decision 7).
  *
  * WHOLE-PROJECT DOLLARS, NOT MONEY FOR THIS GOAL. A funding source funds a
  * project, and a project can carry several classifications; nothing on the
@@ -147,12 +151,28 @@ const round = (n: number) => Number(n.toFixed(4));
 export const kpisFor = (name: ClassificationName): PerformanceMeasureDefinition[] =>
   catalog.filter((m) => m.status !== 'Retired' && m.classifications.includes(name));
 
+/**
+ * Every live measure any of these projects reports toward — linked to the
+ * classification or not (Q-234: a roll-up shows what the work reported, and
+ * linking only sets a goal). Catalog order.
+ */
+export const reportedMeasures = (over: Project[]): PerformanceMeasureDefinition[] => {
+  const slugs = new Set(over.flatMap((p) => getProjectDetail(p).measures.map((r) => r.kpi).filter(Boolean)));
+  return catalog.filter((m) => m.status !== 'Retired' && slugs.has(m.slug));
+};
+
+/** Linked measures first, in catalog order, then the ones only projects report. */
+const linkedThenReported = (linked: PerformanceMeasureDefinition[], over: Project[]): PerformanceMeasureDefinition[] => {
+  const have = new Set(linked.map((m) => m.slug));
+  return [...linked, ...reportedMeasures(over).filter((m) => !have.has(m.slug))];
+};
+
 // Ties break on name so the order is stable build to build.
-const funderTotals = (sources: { project: Project; organization: string; name: string; amount: number }[]): FunderTotal[] => {
+const funderTotals = (sources: { project: Project; organization: string; name: string; source: string; amount: number }[]): FunderTotal[] => {
   const byFunder = new Map<string, FunderGrant[]>();
   for (const s of sources) {
     const grants = byFunder.get(s.organization) ?? [];
-    grants.push({ project: s.project, program: s.name, amount: s.amount });
+    grants.push({ project: s.project, fundingSource: s.name, source: s.source, amount: s.amount });
     byFunder.set(s.organization, grants);
   }
   return Array.from(byFunder, ([organization, grants]) => ({
@@ -238,9 +258,9 @@ export const rollupClassification = (classification: Classification): Classifica
     projects: carrying,
     estimatedTotalCost: carrying.reduce((sum, p) => sum + p.estimatedTotalCost, 0),
     spentToDate: details.reduce((sum, d) => sum + d.expenditures.reduce((s, y) => s + y.spent, 0), 0),
-    funders: new Set(details.flatMap((d) => d.funding.map((f) => f.organization))).size,
-    funding: funderTotals(details.flatMap((d) => d.funding.map((f) => ({ project: d.project, ...f })))),
-    kpis: kpisFor(name).map((m) => kpiProgress(name, m, classification.targets?.find((t) => t.measure === m.slug))),
+    funders: new Set(details.flatMap((d) => securedFunding(d.funding).map((f) => f.organization))).size,
+    funding: funderTotals(details.flatMap((d) => securedFunding(d.funding).map((f) => ({ project: d.project, ...f })))),
+    kpis: linkedThenReported(kpisFor(name), carrying).map((m) => kpiProgress(name, m, classification.targets?.find((t) => t.measure === m.slug))),
   };
 };
 
@@ -262,12 +282,13 @@ export interface KpiFigures {
 
 export const kpiFigureTable = (
   hrefOf: (p: Project) => string,
-): Record<string, { kpis: string[]; targets: GoalTarget[]; figures: Record<string, KpiFigures> }> =>
+): Record<string, { kpis: string[]; reported: string[]; targets: GoalTarget[]; figures: Record<string, KpiFigures> }> =>
   Object.fromEntries(
     CLASSIFICATIONS.map((c) => [
       c.slug,
       {
         kpis: kpisFor(c.name).map((m) => m.slug),
+        reported: reportedMeasures(projects.filter((p) => p.classifications.includes(c.name))).map((m) => m.slug),
         targets: c.targets ?? [],
         figures: Object.fromEntries(
           catalog
@@ -321,13 +342,11 @@ export interface GroupRollup extends Omit<ClassificationRollup, 'classification'
   classifications: Classification[];
 }
 
-const groupMeasures = (members: Classification[]): PerformanceMeasureDefinition[] =>
-  catalog.filter((m) => m.status !== 'Retired' && members.some((c) => m.classifications.includes(c.name)));
-
-const groupProgress = (members: Classification[], measure: PerformanceMeasureDefinition): KpiProgress => {
-  const tracked = members.filter((c) => measure.classifications.includes(c.name)).map((c) => c.name);
-  return progressOver(projects.filter((p) => p.classifications.some((n) => tracked.includes(n))), measure);
-};
+const groupMeasures = (members: Classification[], carrying: Project[]): PerformanceMeasureDefinition[] =>
+  linkedThenReported(
+    catalog.filter((m) => m.status !== 'Retired' && members.some((c) => m.classifications.includes(c.name))),
+    carrying,
+  );
 
 export const rollupGroup = (group: ClassificationGroup): GroupRollup => {
   const members = classificationsUnderGroup(group.slug);
@@ -340,9 +359,9 @@ export const rollupGroup = (group: ClassificationGroup): GroupRollup => {
     projects: carrying,
     estimatedTotalCost: carrying.reduce((sum, p) => sum + p.estimatedTotalCost, 0),
     spentToDate: details.reduce((sum, d) => sum + d.expenditures.reduce((s, y) => s + y.spent, 0), 0),
-    funders: new Set(details.flatMap((d) => d.funding.map((f) => f.organization))).size,
-    funding: funderTotals(details.flatMap((d) => d.funding.map((f) => ({ project: d.project, ...f })))),
-    kpis: groupMeasures(members).map((m) => groupProgress(members, m)),
+    funders: new Set(details.flatMap((d) => securedFunding(d.funding).map((f) => f.organization))).size,
+    funding: funderTotals(details.flatMap((d) => securedFunding(d.funding).map((f) => ({ project: d.project, ...f })))),
+    kpis: groupMeasures(members, carrying).map((m) => progressOver(carrying, m)),
   };
 };
 
@@ -350,8 +369,9 @@ export const rollupGroup = (group: ClassificationGroup): GroupRollup => {
 export const groupFigures = (
   rollup: GroupRollup,
   hrefOf: (p: Project) => string,
-): { kpis: string[]; targets: GoalTarget[]; figures: Record<string, KpiFigures> } => ({
+): { kpis: string[]; reported: string[]; targets: GoalTarget[]; figures: Record<string, KpiFigures> } => ({
   kpis: rollup.kpis.map((k) => k.measure.slug),
+  reported: [],
   targets: [],
   figures: Object.fromEntries(
     rollup.kpis.map((k) => [
@@ -373,6 +393,66 @@ export const groupFigures = (
         })),
       },
     ]),
+  ),
+});
+
+// ---------------------------------------------------------------------------
+// Any set of projects — a geospatial area's page
+// ---------------------------------------------------------------------------
+//
+// A geospatial area is used like a classification (.scratch/geospatial-areas,
+// decision 1), so its page is drawn by the same sections from the same
+// arithmetic: only how the projects are chosen differs (where their work is,
+// not what they are filed under), and that is the caller's.
+
+/** The summary totals and funders for any set of projects. */
+export const rollupOver = (over: Project[]): Omit<ClassificationRollup, 'classification' | 'kpis'> => {
+  const details = over.map(getProjectDetail);
+  return {
+    projects: over,
+    estimatedTotalCost: over.reduce((sum, p) => sum + p.estimatedTotalCost, 0),
+    spentToDate: details.reduce((sum, d) => sum + d.expenditures.reduce((s, y) => s + y.spent, 0), 0),
+    funders: new Set(details.flatMap((d) => securedFunding(d.funding).map((f) => f.organization))).size,
+    funding: funderTotals(details.flatMap((d) => securedFunding(d.funding).map((f) => ({ project: d.project, ...f })))),
+  };
+};
+
+/**
+ * Every catalog measure's figures over any set of projects, with no measure
+ * linked: which ones track the set, and their targets, are set in the browser
+ * (Workspace settings) and joined to these figures there.
+ */
+export const figuresOver = (
+  over: Project[],
+  hrefOf: (p: Project) => string,
+): { kpis: string[]; targets: GoalTarget[]; figures: Record<string, KpiFigures> } => ({
+  kpis: [],
+  targets: [],
+  figures: Object.fromEntries(
+    catalog
+      .filter((m) => m.status !== 'Retired' && m.name.trim())
+      .map((m) => {
+        const k = progressOver(over, m);
+        return [
+          m.slug,
+          {
+            name: m.name,
+            unit: k.unit,
+            decimals: m.decimalPlaces,
+            additive: k.additive,
+            reported: k.reported,
+            committed: k.committed,
+            from: k.contributions.map((x) => ({
+              name: x.project.projectName,
+              slug: projectSlug(x.project),
+              href: hrefOf(x.project),
+              reported: x.reported,
+              committed: x.committed,
+              series: x.series,
+            })),
+          },
+        ];
+      }),
   ),
 });
 

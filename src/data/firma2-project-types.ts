@@ -1,8 +1,8 @@
 // Project types — what kind of work a project is, and so how its page is
 // built. ONE per project (settled 2026-10-03: option 2 of "where does the
 // page layout live once work types become tags" — a single field, because a
-// project can carry many tags and "which tag builds the page?" has no good
-// answer).
+// project could carry many tags and "which tag builds the page?" had no good
+// answer; Tags themselves were removed 2026-11-24).
 //
 // These were the Work type classifications. They moved out because
 // classifications are goals with KPIs, and a kind of work is not a goal.

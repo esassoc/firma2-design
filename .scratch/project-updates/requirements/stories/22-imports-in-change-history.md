@@ -3,16 +3,17 @@
 Type: story
 Epic: A — Import a report
 Release: first
-Status: needs-info
+Status: needs-triage
+Built on proposals awaiting validation: Q-37, Q-44, Q-45, Q-46, Q-50, Q-53, Q-76, Q-84, Q-86, Q-94, Q-101, Q-130, Q-136, Q-141
 Revision: 1
 Blocked by: 01
-Covers: SCR-4, STA-31, RUL-3, RUL-50, RUL-55, RUL-182, OBJ-1, OBJ-4, RUL-76, RUL-88, RUL-89, RUL-90
-Sources: `/prototypes/projects/deer-creek-riparian-corridor-enhancement` (History, in the project page's header); spec #5, #18, #19
+Covers: SCR-4, STA-31, RUL-3, RUL-50, RUL-55, RUL-182, OBJ-1, OBJ-4, RUL-76, RUL-88, RUL-89, RUL-90, RUL-345, RUL-346, RUL-347, RUL-348, RUL-349, RUL-350, RUL-351, RUL-352, RUL-353, RUL-354, RUL-355, RUL-25, RUL-454
+Sources: `/prototypes/projects/deer-creek-riparian-corridor-enhancement` (History, in the project page's header); spec #5, #18, #42
 Snapshot: not yet captured
 Read with: `../epics/E-A-import-a-report.md` · `../standing-requirements.md` · `../terms.md` · `../fixtures.md`
 Look up IDs in: `../inventory.md` (OBJ, SCR, STA, RUL) · `../../../open-questions.md` (Q-n) · `../../spec.md` (spec #n)
 
-Can start: R1 to R7, on story 01's page once it saves entries (its check step, "Add N changes" and the return to the project page are used here, not built here); like story 01, only against the recorded crew log reading in `../fixtures.md` until enabler 02 is built. Waiting: the day in R1, R4 and R5 on Q-53 and Q-86; the parts marked "Not decided", each on the question named beside it; where an import's row sits among the other rows, in R6, on Q-94; what a publish does to the row, in R6, on Q-76; who is shown the document's name, in R7, on Q-136; the count of six on Q-82.
+Can start: R1 to R7, on story 01's page once it saves entries (its check step, "Add N changes" and the return to the project page are used here, not built here), against the recorded samples `deer-creek-crew-log-2025.xlsx` and `deer-creek-treatments-2025.pdf`. Waiting: R8 on the performance measures' change log showing a source on a row (`performance-measures`; the log exists, the source on it is not built). Built here, not showable until story 24: what each change records (R2), first seen on a row of the review.
 
 ## Story
 
@@ -20,124 +21,170 @@ As a Contributor, I want each import listed in the project's change history with
 
 ## Description
 
-Story 01 ends with the person back on the project page and the entries on the record. This story adds what that act leaves behind: the import, which is the record of who added what from which document. It is also the first screen that shows that record: one row for the import in the project's change history, which `project-record` owns and which opens from History in the project page's header. The row says how many changes were added, from which document, by whom and on what day. It is also where this feature's wider rule is stated: wherever an imported change is shown, its document is named. See it at `/prototypes/projects/deer-creek-riparian-corridor-enhancement`, under History, after adding the sample crew log. The record of the import (R1, R2, S1, S2) came on 2026-11-23 from a story whose number is retired (`../story-map.md`, Retired numbers); this story's own requirements moved down by two.
+Story 01 ends with the person back on the project page and the entries on the record. This story adds what that act leaves behind: the import, which is the record of who added what from which document. The file itself is not kept (spec #42): the import holds the document's name and, for each change, the words it was read from. This story is also the first screen that shows that record: one row for the import in the project's change history, which `project-record` owns and which opens from History in the project page's header. It states the feature's wider rule too: wherever an imported change is shown, its document is named, to the people allowed to read the name. See it at `/prototypes/projects/deer-creek-riparian-corridor-enhancement`, under History, after adding the sample crew log. The prototype still keeps the file and puts import rows above every other row; neither is a requirement.
 
 ## Requirements
 
-R1. Each press of "Add N changes" that adds changes records one import: the project, the person who added it, the day it was added, the document's name, that the document was a file, and each change it added. The document's name is the file's name as chosen, ending included. Nothing is merged: a second import from a file of the same name is a second import. An import with no change is never recorded. Not decided: whether an import is recorded, and with which changes, when an entry fails to save or the button is pressed twice (Q-44, Q-84). (open: Q-53, Q-86)
+R1. Each press of "Add N changes" that adds changes records one import: the project, the person who added it, the exact time it was added, the document's name, that the document was a file, each change it added, and whether the report named another project, with that name as the report writes it (story 20 decides when it does). The document's name is the file's name as chosen, ending included. No file is recorded and none is kept. Nothing is merged: a second import from a file of the same name is a second import. An import with no change is never recorded. An import is all or nothing, and one press makes one import: a repeated request for the same press is ignored. When the save fails, nothing is on the record and no import exists; the person is still on the check step with their ticks, edits and note as they left them, and a message beside the commit action says "Nothing was added. Try again."
 
-R2. Each change of an import records the section of the project page it belongs to ("Performance measures"), its label "`<Measure>` · `<reporting period>`", its value, the quote, where in the document it was read when the reading said, and which entry on the record it is. The label names the reporting period the entry was saved under. The value is the amount saved and the measure's unit, written with thousands separators and at most two decimals: "1,850 plants", "5.5 acres".
+R2. Each change of an import records the section of the project page it belongs to, the parts it is made of, its quote, the place in the document it was read from when the reading gave one, and which thing on the record it is. For a performance measure entry the parts are the measure, the reporting period the entry was saved under and the amount saved; the parts of the other kinds are stated by stories 15, 17 and 18. A change that replaces a value the record held also records the value it replaced: a Key facts field (story 15), and the amount of a funding source row the record already held (story 86, R6, which puts it back on "Undo"). The import records parts, not a finished label: each screen words the change itself. Nothing else of the reading is recorded: not the changes left out, and not the "Not used" and "Skipped" lists.
 
 R3. The project's change history has one row for each import, not one for each change. The row is there as soon as the import is added, before anything is published. Every import has its own row: two imports read from the same document are two rows. A project with no import has no such row.
 
-R4. An import's row fills the change history's three columns, "Date", "User" and "Change": the day the import was added, who added it, and "`<N>` changes from `<document name>`", where `<N>` is the number of changes the import added: "1 change from `<document name>`" for one, and "`<N>` changes from pasted text" when the document was pasted. The count is the one the toast gave (story 01, R12) and does not change afterwards. The day is written without a time, as the rest of the log writes it: "30 September 2026". The row is text: in the first release nothing on it can be pressed. (open: Q-86)
+R4. An import's row fills the change history's three columns, "Date", "User" and "Change": the day the import was added, who added it, and "`<N>` changes from `<document name>`", where `<N>` is the number of changes the import wrote; "1 change from `<document name>`" for one. The count is the one the toast gave (story 01, R12) and does not change afterwards. The day is written without a time, as the rest of the log writes it: "30 September 2026". The row is text: nothing on it can be pressed, and nothing opens.
 
-R5. The person and the day on the row are the import's own: who added it and the day it was added, whoever opens the change history and whenever. (open: Q-53)
+R5. The person and the time on the row are the import's own: who added it and when, whoever opens the change history and whenever. Screens show the day alone, in the time zone of the person reading.
 
-R6. Imports' rows are in the order they were added, the latest first, two imports of one day included. Not decided: whether an import's row sits among the log's other rows by its day, or above them all as in the prototype (Q-94); whether the row changes or goes when the import's changes are published (Q-76).
+R6. An import's row sits among the change history's other rows by its time, latest first: a hand edit made after an import shows above it, and two imports of one day are in the order they were added. A publish changes nothing on the row and does not remove it.
 
-R7. Wherever an imported change is shown, the document it came from is named. In this story that is the import's row in the change history. (open: Q-37) Not decided: whether the row names the document to someone who can open the change history but can neither edit nor publish the project (Q-136).
+R7. Wherever an imported change is shown, the document it came from is named. In this story that is the import's row. Only a change from a document or a data source names a source: a hand edit's row shows who and when, and no source. To someone who can open the change history but can neither edit nor publish the project, the import's row reads "`<N>` changes from a document", for a file and for pasted text alike, and the document's name is not sent to them.
+
+R8. Each entry an import added is a row in the performance measures' change log, as an entry recorded by hand is. The row shows "From `<document name>`" and the import's person and day. Who is shown the name follows R7.
 
 Standing requirements apply: see `../standing-requirements.md`.
 
 ## Out of scope
 
-- Opening the document from the row — story 29 (`later`).
-- The toast — story 01.
-- The row removed by "Undo" — story 23.
-- The document named on a row of the review — story 24. On a funding source — story 17. On a contact — story 18.
-- The note for the reviewer — story 21. Keeping the document itself — enabler 03.
-- Pasted text as the document — story 40.
+- The toast — story 01. The button that reads "Adding…" and cannot be pressed while the import is saved — story 01 (R10).
+- The row and the change log rows removed by "Undo" — story 23.
+- The document named on a row of the review, with the quote — story 24. On a funding source — story 17. On a contact — story 18.
+- The note for the reviewer — story 21.
+- Pasted text as the document, and its row "`<N>` changes from pasted text" — story 40.
+- Opening the document: not in the product (spec #42).
 - The "`<N>` unpublished changes" badge — `publish-review`.
 - The change history itself, History in the header, and every row that is not an import's — `project-record`.
 
 ## Needs to know from elsewhere
 
-- "Add N changes" saves the entries and then returns the person to the project page — owned by story 01 (R10, R11). The import is recorded after the entries are saved and before the person is returned.
-- How an amount is shown on the check step (plain digits, 1850) — owned by story 01 (R8). The value in R2 is the import's own text for the change, read later by stories 24 and 41.
+- "Add N changes" saves the entries and then returns the person to the project page — owned by story 01 (R10, R11). The import is recorded with the entries, in the same all-or-nothing save, before the person is returned.
+- When the record changed underneath so that a ticked change no longer stands, the import stops once, the changes are re-marked and the person presses again — owned by story 32. That is not a failed save.
 - The change history, its columns, how it is opened and who can open it — owned by `project-record`. This story needs a place in it for a row that is not a hand edit.
-- Nobody who can neither edit nor publish the project receives the document's name — enabler 03, R5. That enabler is not in `Blocked by`: this story shows a name the import records (R1), not the kept document.
+- The performance measures' change log, and who can open it — owned by `performance-measures`. This story needs its rows to carry a source line.
 - Added entries are on the record at once and unpublished until a Manager publishes — owned by `publish-review`.
+- Adding an import notifies nobody. The Updates feed shows one item for an import, not one per change, and names the document only to people allowed to read the name — owned by `updates-feed` (proposed, Q-49).
 
 ## Scenarios
 
-All run against the recorded crew log reading in `../fixtures.md`. No fixture gives a second import or an import of one change; S6 describes the second import by kind, and the one-change wording of R4 has no scenario. S1 and S2 are confirmed by a developer reading the import's record; S4 is the tester's proof of R1.
+All start from Deer Creek's starting state in `../fixtures.md`. The second import is the treatments sample. No sample fails to save or names another project; S9 and S10 describe those by kind. S1, S2 and S10 are confirmed by a developer reading the import's record.
 
 **S1 — One import is recorded** (proves R1)
 - Given the check step lists the crew log's six changes for Deer Creek, which has no import
 - When the Contributor presses "Add 6 changes"
-- Then Deer Creek has one import, with the Contributor as the person who added it, today as its day, the document `deer-creek-crew-log-2025.xlsx` as a file, and six changes
+- Then Deer Creek has one import, with the Contributor as the person who added it, the time of the press, the document's name `deer-creek-crew-log-2025.xlsx` as a file, six changes, and no stored file
 
 **S2 — Each change keeps where it came from** (proves R2)
 - Given the crew log's six changes were added to Deer Creek
 - When the import's change for row C2 is read
-- Then it holds the section "Performance measures", the label "Native trees and shrubs planted · 2025", the value "1,850 plants" (the check step showed 1850), the quote "Row 7 — “Plants in ground: 1,850 (willow 1,200 / cottonwood 400 / valley oak 250)”", and the entry of 1,850 it saved
+- Then it holds the section "Performance measures", the measure Native trees and shrubs planted, the reporting period 2025, the amount 1,850, the quote "Row 7 — “Plants in ground: 1,850 (willow 1,200 / cottonwood 400 / valley oak 250)”", the place row 7, and the entry it saved; and the import holds none of the crew log's "Not used" or "Skipped" lines
 
 **S3 — One row for one import** (proves R3)
 - Given the crew log's six changes were added to Deer Creek a moment ago and nothing has been published since
 - When the Contributor opens the change history
 - Then the import has one row, not six
 
-**S4 — What the row says** (proves R1, R4, R7)
+**S4 — What the row says** (proves R4, R7)
 - Given a Contributor added the crew log's six changes to Deer Creek today
 - When they open the change history
-- Then the import's row shows today's date written as day, month and year, the Contributor's name, and "6 changes from deer-creek-crew-log-2025.xlsx"
+- Then the import's row shows today's date written as day, month and year, the Contributor's name, and "6 changes from deer-creek-crew-log-2025.xlsx", and nothing on the row can be pressed
 
 **S5 — Who and when are the import's own** (proves R5)
 - Given a Contributor added the crew log's six changes to Deer Creek
 - When an Administrator opens Deer Creek's change history on a later day
 - Then the row still shows the Contributor's name and the day the import was added
 
-**S6 — The latest import first** (proves R3, R6)
-- Given the crew log's six changes were added to Deer Creek, and then a second import was added from another spreadsheet
+**S6 — The row sits by its time** (proves R6)
+- Given the crew log's six changes were added to Deer Creek, then the description was edited by hand, then the treatments sample's two changes were added
 - When the Contributor opens the change history
-- Then there are two rows for imports, and the second import's row is above the row "6 changes from deer-creek-crew-log-2025.xlsx"
+- Then, from the top: "2 changes from deer-creek-treatments-2025.pdf", the hand edit of the description, "6 changes from deer-creek-crew-log-2025.xlsx"
+
+**S7 — A publish leaves the row** (proves R6)
+- Given the crew log's six changes were added to Deer Creek and a Manager has since published the project
+- When the Contributor opens the change history
+- Then the row "6 changes from deer-creek-crew-log-2025.xlsx" is still there, with the same person and day
+
+**S8 — A hand edit names no source** (proves R7)
+- Given the crew log's six changes were added to Deer Creek, then the description was edited by hand
+- When the Contributor reads the hand edit's row in the change history
+- Then it shows who made the edit and the day, and no document
+
+**S9 — The name is withheld from someone who can neither edit nor publish** (proves R7)
+- Given the crew log's six changes were added to Deer Creek
+- When a person who can open Deer Creek's change history but can neither edit nor publish the project opens it
+- Then the import's row reads "6 changes from a document", and nothing sent to that person holds the file's name
+
+**S10 — A failed save leaves nothing** (proves R1)
+- Given the check step lists the crew log's six changes, one is unticked, a note is typed, and the save cannot complete (the connection is lost)
+- When the Contributor presses "Add 5 changes"
+- Then they are still on the check step with the same ticks and the note, a message reads "Nothing was added. Try again.", Deer Creek's figures are the fixture's "Before" column, and Deer Creek has no import
+
+**S11 — One press, one import** (proves R1)
+- Given the check step lists the crew log's six changes
+- When the request of one press of "Add 6 changes" reaches the product twice
+- Then Deer Creek has one import of six changes, and each figure is the fixture's "After C1–C6" column
+
+**S12 — Each entry is a row in the performance measures' change log** (proves R8)
+- Given a Contributor added the crew log's six changes to Deer Creek today
+- When they open the performance measures' change log for Native trees and shrubs planted
+- Then the entry of 1,850 plants is a row that shows "From deer-creek-crew-log-2025.xlsx", the Contributor's name and today's date
 
 ## UAT script
 
-R2 (each change's label, value and quote) is first seen on a row of the review, story 24; R1 is seen here as the row.
+R2 (what each change records) is first seen on a row of the review, story 24. Step 9 can be run only once `performance-measures` shows a source on its change log rows.
 
-Preconditions: story 01's UAT script has been run to its end, so the crew log's six changes were added to Deer Creek today by the person signed in. A second account that can edit Deer Creek exists for step 4.
-Test data: `../fixtures.md`: the crew log; The person. The count of six waits on Q-82.
-Reset: not known (Q-88). The script itself changes nothing; the import it reads was left by story 01's script.
+Preconditions: the test environment serves the recorded samples `deer-creek-crew-log-2025.xlsx` and `deer-creek-treatments-2025.pdf`. Deer Creek is in its starting state. Signed in as someone who can edit Deer Creek. Two more accounts exist: a second one that can edit Deer Creek (step 10), and one that can open its change history but can neither edit nor publish it (step 11).
+Test data: `../fixtures.md`: the crew log (rows C1 to C6); the treatments sample (rows T1, T2); The person. The two narrow samples are to be made.
+Reset: reset the sample project in the test environment.
 
 | # | Do this | You should see |
 |---|---|---|
-| 1 | Open the Deer Creek project page and press History in the header | The change history |
-| 2 | Find the row for the import | Under "Date", today's date as day, month and year; under "User", your name; under "Change", "6 changes from deer-creek-crew-log-2025.xlsx" |
-| 3 | Count the rows that name the crew log | One, though six changes were added |
-| 4 | Sign in with the second account and open Deer Creek's change history | The same row, with the first person's name and the same date |
+| 1 | Open the Deer Creek project page, press "Import a report" on the Performance measures card, choose `deer-creek-crew-log-2025.xlsx`, press "Read it" and wait | The check step, with the button "Add 6 changes" |
+| 2 | Press "Add 6 changes" | The Deer Creek project page, with the message "6 changes added from deer-creek-crew-log-2025.xlsx" |
+| 3 | Press History in the header | The change history |
+| 4 | Read the top row | Under "Date", today's date as day, month and year; under "User", your name; under "Change", "6 changes from deer-creek-crew-log-2025.xlsx" |
+| 5 | Count the rows that name the crew log, and try to press the one there is | One, though six changes were added. Nothing happens when it is pressed |
+| 6 | Close the change history and change the project's description by hand | The description as you changed it |
+| 7 | Import `deer-creek-treatments-2025.pdf` as in steps 1 and 2, pressing "Add 2 changes" | The message "2 changes added from deer-creek-treatments-2025.pdf" |
+| 8 | Press History in the header and read the top three rows | "2 changes from deer-creek-treatments-2025.pdf"; then your edit of the description, with your name and no document; then "6 changes from deer-creek-crew-log-2025.xlsx" |
+| 9 | Open the performance measures' change log for Native trees and shrubs planted | Two new rows, each with your name and today's date: 1,850 plants "From deer-creek-crew-log-2025.xlsx" and 1,850 plants "From deer-creek-treatments-2025.pdf" |
+| 10 | Sign in with the second account that can edit and open Deer Creek's change history | The same rows, with the first person's name and the same date |
+| 11 | Sign in with the account that can neither edit nor publish and open Deer Creek's change history | "6 changes from a document" and "2 changes from a document"; neither file's name |
 
-On the prototype: every import shows Dana Whitfield and 30 September 2026, whoever added it and whenever; see `../fixtures.md`, The person.
+On the prototype: only the crew log can be added (press "Sample crew log"); every import shows Dana Whitfield and 30 September 2026; see `../fixtures.md`, On the prototype.
 
 ## Open questions
 
-- Q-37 — R7: if every row of the log names a source, R7 covers hand edits too and gains a scenario.
-- Q-44, Q-84 — R1: whether a failed save or a second press leaves an import, and with which changes; no scenario covers either yet.
-- Q-53 — R1, S1, R5 and S5: confirming that an import records the person and the day.
-- Q-76 — R6: whether the row stays as it is after a publish; no scenario covers it yet.
-- Q-82 — S1 to S6 and steps 2 and 3: the count of six.
-- Q-86 — R1, S1, R4, S4 and step 2: which clock decides the day, and whether the time is kept as well; R6 and S6: two imports on one day can be ordered only if the time is kept.
-- Q-88 — the Reset line.
-- Q-94 — R6 and S6's Then: where an import's row sits among the other rows of the change history.
-- Q-136 — would change R7 and step 4: whether someone who cannot edit or publish the project is shown the document's name on the row.
+None open. This story rests on these proposed answers:
+
+- Q-37 (proposed) — R7 and S8: a hand edit's row names no source. It amends spec #5.
+- Q-44, Q-84 (proposed) — R1, S10 and S11: all or nothing, the failed save, one press one import.
+- Q-45 (proposed) — R1, R2 and S1, S2: the document's name and each change's quote are what stay of a document. That no file is kept is decided (spec #42).
+- Q-46 (proposed) — R2: the changes left out and the two lists are not recorded.
+- Q-50 (proposed) — R2: a change to a funding source row the record already held records the amount it replaced (story 86).
+- Q-53, Q-86 (proposed) — R1, R4, R5: the person and the exact time are recorded; screens show the day in the reader's time zone.
+- Q-76 (proposed) — R6 and S7: a publish leaves the row.
+- Q-94 (proposed) — R6, S6 and step 8: the row sits by its time.
+- Q-101 (proposed) — R8, S12 and step 9: the row in the performance measures' change log.
+- Q-130 (proposed) — R1: the import records that the report named another project.
+- Q-136 (proposed) — R7, R8, S9 and step 11: who is shown the document's name.
+- Q-141 (proposed) — R2 and S2: the import records parts, not a label.
 
 <details>
 <summary>Notes for whoever builds it</summary>
 
 | Requirement | Tag | Inventory IDs |
 |---|---|---|
-| R1 | decided; shown | OBJ-1; RUL-76, RUL-88, RUL-89 |
-| R2 | shown | OBJ-4, RUL-76, RUL-90 |
+| R1 | decided; shown; decided (spec #42); proposed (Q-45); proposed (Q-44, Q-84); proposed (Q-53, Q-86); proposed (Q-130) | OBJ-1; RUL-76, RUL-88, RUL-89; RUL-345; RUL-346; RUL-347; RUL-348; RUL-349 |
+| R2 | shown; proposed (Q-141); proposed (Q-45); proposed (Q-46); proposed (Q-50) | OBJ-4, RUL-76; RUL-90; RUL-346; RUL-350; RUL-454 |
 | R3 | decided; shown | RUL-50, SCR-4; RUL-182 |
-| R4 | decided; shown | STA-31; RUL-182 |
-| R5 | inferred | RUL-55 |
-| R6 | decided | STA-31 |
-| R7 | decided | RUL-3 |
-
+| R4 | decided; shown; decided (spec #42) | STA-31; RUL-182; RUL-351 |
+| R5 | proposed (Q-53, Q-86) | RUL-55 |
+| R6 | decided; proposed (Q-94); proposed (Q-76) | STA-31; RUL-352; RUL-353 |
+| R7 | decided; proposed (Q-37); proposed (Q-136) | RUL-3; RUL-354; RUL-25 |
+| R8 | proposed (Q-101), not yet prototyped | RUL-355 |
+- Wording provisional: "Nothing was added. Try again."
 - Prototype files: `src/lib/report-imports.ts` (the import as the prototype models it; imports in the order added, 129-130); `src/components/projects/firma2-project-report-import.astro` (where the import is recorded on Add); `src/components/projects/firma2-project-actions.astro` (the three columns, 113-119; the import rows above the seeded log, 120-122; one row per import, latest first, its day, person, count and document, 251-277).
-- Data shapes, as the prototype models them: an import holds an id unique within the project, the project, the day with no time of day, the person's name, the document (name; kind: file or pasted text), a note (empty until story 21) and its changes. An imported change holds a key unique within the project, its section, label, value, quote, passage, page and the id of the entry it saved. The row is drawn from the import (person, day, document, number of changes), not from its changes.
-- What the prototype does where nothing is decided (not requirements): import rows sit above every other row of the log; a publish leaves the row as it is (Q-76); an entry that could not be saved is passed over without a word and its change is still recorded and counted (Q-44); the person's name is stored as text, not as a link to the person (Q-53).
-- Do not copy: the hard-coded person (Dana Whitfield) and fixed day (30 September 2026) on every import; imports kept in the browser's localStorage, and import rows read from it and laid over a seeded log; the document kind "sample"; import ids that are reused after an import is undone ("import-1", "import-2").
+- Data shapes, as the prototype models them: an import holds an id unique within the project, the project, the day with no time of day, the person's name, the document (name; kind: file or pasted text), a note (empty until story 21) and its changes. An imported change holds a key unique within the project, its section, a finished label and value, quote, passage, page and the id of the entry it saved. The row is drawn from the import (person, day, document, number of changes), not from its changes.
+- Where the prototype differs from the requirements: import rows sit above every other row of the log (R6); an entry that could not be saved is passed over without a word and its change is still recorded and counted (R1); the day is stored with no time and the person's name as text (R1, R5); a change stores a finished label and value (R2); nothing withholds the name (R7); the performance measures' change log shows no source (R8).
+- Do not copy: the kept file; the hard-coded person (Dana Whitfield) and fixed day (30 September 2026) on every import; imports kept in the browser's localStorage, and import rows read from it and laid over a seeded log; the document kind "sample"; import ids that are reused after an import is undone ("import-1", "import-2").
 
 </details>

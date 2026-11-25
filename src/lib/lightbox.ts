@@ -9,6 +9,10 @@ export interface LightboxImage {
   caption?: string;
   /** Read beside the caption, quieter. */
   date?: string;
+  /** What the picture shows, for a screen reader, when it differs from the caption. */
+  alt?: string;
+  /** Where in the work it was taken, read before the date: "Before · Culvert, looking upstream". */
+  tag?: string;
 }
 
 export interface LightboxOpen {

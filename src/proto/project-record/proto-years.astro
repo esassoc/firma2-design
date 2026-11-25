@@ -1,0 +1,163 @@
+---
+// PROTOTYPE — the "Years" page's spine: one table with the project's years
+// across the top, and under them what was reported, funded and spent. Replaces
+// the Performance measures, Expenditures and Funding sources sections.
+// Throwaway.
+//
+// bcn-lego-checked: prototype harness; no esa- table lego exists, the scroll region is a plain focusable div
+import EsaCard from '@esa/ecology/esa-card.astro';
+import './proto-funding.css';
+import { currencyFormatter as usd } from '../../lib/format';
+import type { ProjectDetail } from '../../data/firma2-project-detail';
+import type { FundingPlan } from './model';
+
+interface Props {
+  detail: ProjectDetail;
+  plan: FundingPlan;
+}
+const { detail, plan } = Astro.props;
+const num = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+const dash = '–';
+
+const measureYears = detail.measures.flatMap((m) => m.series.map((period) => period.year));
+const years = [...new Set([...measureYears, ...plan.years, ...plan.spendYears])].sort((a, b) => a - b);
+const anyUnsecured = plan.rows.some((row) => row.status !== 'secured');
+
+interface Row {
+  label: string;
+  href?: string;
+  note?: string;
+  cells: Record<number, string>;
+  total: string;
+  strong?: boolean;
+}
+const money = (byYear: Record<number, number>) => Object.fromEntries(Object.entries(byYear).filter(([, v]) => v > 0).map(([y, v]) => [y, usd.format(v)]));
+const groups: { title: string; rows: Row[]; empty: string }[] = [
+  {
+    title: 'Performance measures',
+    empty: 'No performance measures yet.',
+    rows: detail.measures.map((m) => ({
+      label: m.name,
+      note: m.unit,
+      cells: Object.fromEntries(m.series.filter((period) => period.value !== null).map((period) => [period.year, num(period.value!)])),
+      total: `${num(m.reported)} of ${num(m.expected)}`,
+    })),
+  },
+  {
+    title: 'Funding',
+    empty: 'No funding sources yet.',
+    rows: [
+      ...plan.rows.map((row) => ({ label: row.name, href: row.href, note: row.status === 'secured' ? row.organization : `${row.statusLabel} · ${row.organization}`, cells: money(row.byYear), total: usd.format(row.total) })),
+      ...(plan.rows.length && anyUnsecured ? [{ label: 'Total secured', cells: money(plan.securedByYear), total: usd.format(plan.secured), strong: true }] : []),
+      ...(plan.rows.length && plan.gap > 0 ? [{ label: 'Funding gap', cells: {}, total: usd.format(plan.gap) }] : []),
+      ...(plan.rows.length ? [{ label: 'Estimated total cost', cells: {}, total: usd.format(plan.cost), strong: true }] : []),
+    ],
+  },
+  {
+    title: 'Spending',
+    empty: 'Nothing spent yet.',
+    rows: [
+      ...plan.rows.filter((row) => row.spent > 0).map((row) => ({ label: row.name, href: row.href, note: row.organization, cells: money(row.spentByYear), total: usd.format(row.spent) })),
+      ...(plan.spent > 0 ? [{ label: 'Total spent', cells: money(plan.spentTotalByYear), total: usd.format(plan.spent), strong: true }] : []),
+    ],
+  },
+];
+---
+<EsaCard title="By year">
+  <div class="proto-funding proto-years">
+    <div class="proto-years__scroll" tabindex="0" role="region" aria-label="Reported, funded and spent by year">
+      <table>
+        <thead>
+          <tr>
+            <td class="proto-years__pin"></td>
+            {years.map((year) => <th scope="col" class="proto-funding__num typography-label-md-strong">{year}</th>)}
+            <th scope="col" class="proto-funding__num proto-years__total typography-label-md-strong">Total</th>
+          </tr>
+        </thead>
+        {groups.map((group) => (
+          <tbody>
+            <tr class="proto-years__group">
+              <th scope="colgroup" class="proto-years__pin typography-label-md-strong">{group.title}</th>
+              <td colspan={years.length}></td>
+              <td class="proto-years__total"></td>
+            </tr>
+            {group.rows.length === 0 && (
+              <tr>
+                <td class="proto-years__pin proto-funding__none typography-body-md">{group.empty}</td>
+                <td colspan={years.length}></td>
+                <td class="proto-years__total"></td>
+              </tr>
+            )}
+            {group.rows.map((row) => (
+              <tr class={row.strong ? 'proto-funding__strong' : undefined}>
+                <th scope="row" class="proto-years__pin">
+                  {row.href ? <a class="proto-funding__source typography-body-md" href={row.href}>{row.label}</a> : <span class="proto-funding__source typography-body-md">{row.label}</span>}
+                  {row.note && <span class="proto-funding__org typography-body-sm">{row.note}</span>}
+                </th>
+                {years.map((year) => (
+                  <td class="proto-funding__num typography-body-md">{row.cells[year] ?? <span class="proto-funding__none" aria-hidden="true">{dash}</span>}</td>
+                ))}
+                <td class="proto-funding__num proto-years__total typography-body-md">{row.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  </div>
+</EsaCard>
+
+<style>
+  /* The scroll box is positioned so the pinned columns stick to IT. */
+  .proto-years__scroll {
+    position: relative;
+    overflow-x: auto;
+  }
+  .proto-years__scroll:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
+  .proto-years table {
+    min-width: max-content;
+  }
+  .proto-years__pin {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    width: 14rem;
+    min-width: 14rem;
+    max-width: 14rem;
+    background: var(--card-bg, var(--color-background-elevation-raised));
+    border-inline-end: var(--border-width-default) solid var(--color-border-default-subtle);
+    padding-inline-end: var(--spacing-300);
+  }
+  .proto-years .proto-years__total {
+    position: sticky;
+    inset-inline-end: 0;
+    background: var(--card-bg, var(--color-background-elevation-raised));
+    border-inline-start: var(--border-width-default) solid var(--color-border-default-subtle);
+    padding-inline-start: var(--spacing-300);
+  }
+  /* A group's name row: room above it, a full rule below. */
+  .proto-years__group :is(th, td) {
+    padding-block-start: var(--spacing-700);
+    border-bottom-color: var(--color-border-default);
+    color: var(--color-content-default);
+  }
+  .proto-years tbody .proto-years__group th {
+    font-weight: var(--font-weight-semibold);
+  }
+  .proto-years tbody:first-of-type .proto-years__group :is(th, td) {
+    padding-block-start: var(--spacing-300);
+  }
+  @media (max-width: 45rem) {
+    .proto-years__pin {
+      width: 9.5rem;
+      min-width: 9.5rem;
+      max-width: 9.5rem;
+    }
+    .proto-years .proto-years__total {
+      position: static;
+    }
+  }
+</style>

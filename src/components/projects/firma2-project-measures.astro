@@ -250,6 +250,12 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         <EsaButton variant="secondary" size="md" data-pm-due-report>Report</EsaButton>
       </div>
 
+      <!-- WHY THE IMPORT BUTTON IS MISSING, when it is (story 83; spec decision
+           41). Reading a report sends it to an outside AI service, and that is
+           the workspace's setting: while it is off or unavailable the button is
+           absent, not disabled, and this line says why, where the button would
+           have been found. It names the role and never a person. -->
+      {canImport && <p class="typography-body-sm" data-ai-reading-off hidden></p>}
       <div data-pm-empty hidden>
         <EsaEmptyState size="sm" headingLevel={4} title="No performance measures to report yet" />
       </div>
@@ -1073,6 +1079,7 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
   // known. Nothing reads the log yet, as on the branch.
   // ---------------------------------------------------------------------------
   import '../shared/bcn-side-sheet';
+  import { AI_READING_EVENT, aiReadingOn, aiReadingReason } from '../../lib/ai-reading';
   import '@esa/ecology/esa-select';
   import '@esa/ecology/esa-text-field';
   import '@esa/ecology/esa-combobox';
@@ -1421,9 +1428,19 @@ const placeholderMeasure: PerformanceMeasure = { name: '', unit: '', expected: 0
         .querySelectorAll<HTMLElement>('[data-firma2-pm-record-work], [data-report-import-link], [data-firma2-measure-view]')
         .forEach((el) => {
           const host = (el.closest('.esa-button') as HTMLElement | null) ?? el;
-          host.style.display = empty ? 'none' : '';
+          // The import door is also absent while the workspace's setting for
+          // reading by an outside AI service is off or unavailable.
+          const withheld = el.matches('[data-report-import-link]') && !aiReadingOn();
+          host.style.display = empty || withheld ? 'none' : '';
         });
+      const reason = root.querySelector<HTMLElement>('[data-ai-reading-off]');
+      if (reason) {
+        const line = empty ? null : aiReadingReason();
+        reason.textContent = line ?? '';
+        reason.hidden = line === null;
+      }
     };
+    document.addEventListener(AI_READING_EVENT, () => syncEmpty());
 
     // ---- report: one period, in place (team 6) ----------------------------
     // ONE SHAPE FOR ENTERING AND CORRECTING. Each block is one combination of

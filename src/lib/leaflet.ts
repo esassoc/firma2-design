@@ -7,9 +7,11 @@
 // Leaflet is a CDN global (1.9.4 from cdnjs, the vetted precedent in
 // cb-fish-design), not an npm dependency, so `any` is the honest type.
 
-import { dashOf, lineStyleOf } from '../data/firma2-geography';
+import { HABITAT_AREAS, dashOf, lineStyleOf } from '../data/firma2-geography';
+import { areaFileOf } from '../data/firma2-geospatial-areas';
 import type { ReferenceLayer, Region, Subwatershed } from '../data/firma2-geography';
 import { BASEMAPS, readMapStyle } from './work-areas';
+import { colorKey, projectTint } from './map-color';
 import { ICON_PATHS } from '@esa/ecology/icon-registry';
 import '../styles/map.css';
 import '@esa/ecology/esa-popover';
@@ -153,7 +155,8 @@ export const createMap = (L: Leaflet, canvas: HTMLElement, options: Record<strin
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      map.invalidateSize();
+      // A map taken down (the settings preview rebuilds its own) has no panes left to measure.
+      if (map._mapPane) map.invalidateSize();
     });
   }).observe(canvas);
   return map;
@@ -204,6 +207,68 @@ export const shapeStyle = (kind: 'area' | 'reach' | 'point', color = kindColor(k
     : kind === 'point'
       ? { ...markerStyle(color), radius: 6 }
       : { color, weight: 2, opacity: 1, lineJoin: 'round', fillColor: color, fillOpacity: readMapStyle().areaFillOpacity, className: 'firma2-map-area' };
+
+// ---- a project's colour ---------------------------------------------------------
+
+const rgbOf = (hex: string): [number, number, number] | null => {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+};
+
+/**
+ * A stage's or a classification's colour was picked dark enough to read as an
+ * icon on a white page; on the dark canvas it sinks. There it is lifted toward
+ * white — the same hue, derived, never a second colour to keep in step.
+ */
+export const onCanvas = (color: string): string => {
+  const rgb = scheme() === 'Dark' ? rgbOf(color) : null;
+  return rgb ? `rgb(${rgb.map((v) => Math.round(v + (255 - v) * 0.45)).join(' ')})` : color;
+};
+
+/**
+ * The colour of one project's work: what the workspace colours its maps by
+ * (stage unless Map layers says otherwise — src/lib/map-color.ts), else the
+ * fixed colour for the kind.
+ */
+export const projectColor = (slug: string, kind: 'area' | 'reach' | 'point' = 'area'): string => {
+  const tint = projectTint(slug);
+  return tint ? onCanvas(tint.color) : kindColor(kind);
+};
+
+/** shapeStyle, in the project's colour. */
+export const projectShapeStyle = (slug: string, kind: 'area' | 'reach' | 'point') => shapeStyle(kind, projectColor(slug, kind));
+
+const escKey = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+/** A key's rows — one swatch and name per value present. Shared by the on-map key and a page's own. */
+export const colorKeyHTML = (slugs: string[]): { title: string; rows: string } | null => {
+  const key = colorKey(slugs);
+  if (!key || key.items.length === 0) return null;
+  return {
+    title: key.title,
+    rows: key.items.map((i) => `<li><span class="firma2-map-key__swatch" style="background:${escKey(onCanvas(i.color))}"></span>${escKey(i.label)}</li>`).join(''),
+  };
+};
+
+/**
+ * THE KEY — what the colours on a map of several projects mean. A quiet panel
+ * in the map's bottom trailing corner, listing only the values on the map.
+ * Returns the function that redraws it for the projects now drawn; it hides
+ * itself under fixed colours, where there is nothing to decode.
+ */
+export const addColorKey = (L: Leaflet, map: Leaflet): ((slugs: string[]) => void) => {
+  const el = L.DomUtil.create('div', 'firma2-map-key typography-body-sm');
+  L.DomEvent.disableClickPropagation(el);
+  const Control = L.Control.extend({ options: { position: 'bottomright' }, onAdd: () => el });
+  new Control().addTo(map);
+  return (slugs) => {
+    const key = colorKeyHTML(slugs);
+    el.hidden = !key;
+    el.innerHTML = key ? `<p class="firma2-map-key__title typography-label-sm-strong">${escKey(key.title)}</p><ul aria-label="${escKey(key.title)}">${key.rows}</ul>` : '';
+  };
+};
 
 /**
  * THE LAYERS CONTROL — the map's base maps and the workspace's reference
@@ -376,8 +441,24 @@ export const addReferenceLayers = (
   // The geometry this file holds for a layer — the prototype's stand-in, and
   // the fallback when a live service cannot be reached.
   const drawStored = (entry: LayerEntry) => {
-    const rings = entry.layer.draws === 'regions' ? geometry.regions : entry.layer.draws === 'subwatersheds' ? geometry.subwatersheds : [];
+    const rings =
+      entry.layer.draws === 'regions'
+        ? geometry.regions
+        : entry.layer.draws === 'subwatersheds'
+          ? geometry.subwatersheds
+          : entry.layer.draws === 'habitat'
+            ? // An uploaded area-group file's shapes: one sample set, held here for every map.
+              HABITAT_AREAS
+            : [];
     entry.group.clearLayers();
+    // An area file on disk (dev only): its own shapes, each named by the layer's pop-up field.
+    areaFileOf(entry.layer.id)?.shapes.forEach((s) =>
+      labelled(
+        entry.layer,
+        L.polygon(s.parts.map((part) => [part]), { ...styleOf(entry.layer), pane: 'reference', interactive: Boolean(entry.layer.popupField) }),
+        s.fields[entry.layer.popupField] ?? '',
+      ).addTo(entry.group),
+    );
     rings.forEach((r) =>
       labelled(entry.layer, L.polygon(r.ring, { ...styleOf(entry.layer), pane: 'reference', interactive: Boolean(entry.layer.popupField) }), r.name).addTo(
         entry.group,

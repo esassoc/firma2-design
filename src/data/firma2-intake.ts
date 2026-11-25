@@ -27,6 +27,7 @@
 export type BuiltinKey =
   | 'projectName'
   | 'projectType'
+  | 'stage'
   | 'leadOrganization'
   | 'classifications'
   | 'projectDescription'
@@ -34,7 +35,6 @@ export type BuiltinKey =
   | 'implementationStartYear'
   | 'completionYear'
   | 'estimatedTotalCost'
-  | 'tags'
   | 'contacts';
 
 /** How a built-in is answered — which control the intake page draws. */
@@ -59,6 +59,10 @@ export interface Builtin {
 export const BUILTINS: Builtin[] = [
   { key: 'projectName', label: 'Project name', input: 'text', locked: true },
   { key: 'projectType', label: 'Project type', input: 'choice', locked: true, choicesFrom: { page: 'Project types', href: '/prototypes/workspace-settings/project-types' } },
+  // STAGE IS ASKED, NEVER ASSUMED (docs/data-model.md, decision 12, user
+  // 2026-11-24). Entering a project does not make it a proposal: work already
+  // under way is entered at Implementation and waits for approval there.
+  { key: 'stage', label: 'Stage', input: 'choice', locked: true, choicesFrom: { page: 'Stages', href: '/prototypes/workspace-settings/stages' } },
   { key: 'leadOrganization', label: 'Lead organization', input: 'choice', locked: true, choicesFrom: { page: 'Organizations', href: '/prototypes/workspace-settings/organizations' } },
   { key: 'classifications', label: 'Classifications', input: 'multi-choice', locked: true, choicesFrom: { page: 'Classifications', href: '/prototypes/workspace-settings/classifications' } },
   { key: 'projectDescription', label: 'Description', input: 'long-text', locked: false },
@@ -66,7 +70,6 @@ export const BUILTINS: Builtin[] = [
   { key: 'implementationStartYear', label: 'Start year', input: 'year', locked: false },
   { key: 'completionYear', label: 'Completion year', input: 'year', locked: false },
   { key: 'estimatedTotalCost', label: 'Estimated total cost', input: 'money', locked: false },
-  { key: 'tags', label: 'Tags', input: 'multi-choice', locked: false, choicesFrom: { page: 'Tags', href: '/prototypes/workspace-settings/tags' } },
   { key: 'contacts', label: 'Contacts', input: 'people', locked: false, choicesFrom: { page: 'Users', href: '/prototypes/workspace-settings/users' } },
 ];
 
@@ -143,17 +146,17 @@ export interface IntakeForm {
   /** The form's name — the title of every page a member fills it on. */
   title: string;
   screens: Screen[];
-  /** Shown once a proposal is submitted. Rich text. */
+  /** Shown once a project is submitted. Rich text. */
   afterSubmit: string;
 }
 
 export const DEFAULT_AFTER_SUBMIT =
-  '<p class="typography-body-md">Your proposal is with the lead organization’s manager. You’ll get a notification when they approve it or send it back.</p>';
+  '<p class="typography-body-md">Your project is with the lead organization’s manager. You’ll get a notification when they approve it or send it back.</p>';
 
-export const DEFAULT_FORM_TITLE = 'Project proposal';
+export const DEFAULT_FORM_TITLE = 'New project';
 
 /**
- * A new workspace's form: one screen holding the four attributes no project
+ * A new workspace's form: one screen holding the five attributes no project
  * can exist without, and one example screen shown only to stormwater
  * projects. Everything else is the administrator's to add.
  */
@@ -166,6 +169,7 @@ export const SEED_FORM: IntakeForm = {
       blocks: [
         { id: 'q-name', type: 'builtin', key: 'projectName', label: 'Project name', required: true },
         { id: 'q-type', type: 'builtin', key: 'projectType', label: 'Project type', required: true },
+        { id: 'q-stage', type: 'builtin', key: 'stage', label: 'Stage', required: true },
         { id: 'q-lead', type: 'builtin', key: 'leadOrganization', label: 'Lead organization', required: true },
         { id: 'q-classifications', type: 'builtin', key: 'classifications', label: 'Classifications', required: true },
       ],
@@ -188,37 +192,19 @@ export const SEED_FORM: IntakeForm = {
   afterSubmit: DEFAULT_AFTER_SUBMIT,
 };
 
-/**
- * The form a free workspace's members fill: fixed, because customizing it is a
- * paid feature (.scratch/form-canvas/spec.md, decisions 18 and 22). The four a
- * project can't exist without, plus Description — what a manager reviews —
- * and Location, which puts the proposal on the map.
- */
-export const STANDARD_FORM: IntakeForm = {
-  title: DEFAULT_FORM_TITLE,
-  screens: [
-    {
-      id: 's-standard',
-      title: '',
-      blocks: [
-        ...SEED_FORM.screens[0].blocks,
-        { id: 'q-description', type: 'builtin', key: 'projectDescription', label: 'Description', required: false },
-        { id: 'q-location', type: 'builtin', key: 'location', label: 'Location', required: false },
-      ],
-    },
-  ],
-  afterSubmit: DEFAULT_AFTER_SUBMIT,
-};
-
 // ---------------------------------------------------------------------------
-// Intake projects — a proposal from its first screen to its approval
+// Intake projects — an entered project from its first screen to its approval
 // ---------------------------------------------------------------------------
 
 /**
- * Where a proposal stands. Every status sits in the Proposal stage except
- * approved (Planning & Design) and deferred (Deferred) — no new stage.
+ * A project's ADMISSION STATUS: whether its record is in the inventory yet
+ * (GLOSSARY.md; docs/data-model.md, decision 12). Independent of stage. The
+ * stage is one of the form's answers and says where the work is; this says
+ * whether a manager has accepted the record. A project counts in reports and
+ * on the public map once approved, whatever its stage. An entry that is turned
+ * down is `declined`; Deferred is a stage, for work on hold.
  */
-export type IntakeStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'deferred';
+export type IntakeStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'declined';
 
 /** Answers keyed by built-in key, or `field:<fieldId>` for a custom field. */
 export type Answers = Record<string, unknown>;
@@ -236,7 +222,7 @@ export interface IntakeProject {
   returnComment?: string;
 }
 
-/** Invented proposals so the manager's queue has something in it. */
+/** Invented entries so the manager's queue has something in it: one for work still proposed, one for work already under way. */
 export const SEED_PROPOSALS: IntakeProject[] = [
   {
     id: 'p-mill-creek',
@@ -247,6 +233,7 @@ export const SEED_PROPOSALS: IntakeProject[] = [
     answers: {
       projectName: 'Mill Creek Culvert Replacement',
       projectType: 'Fish passage',
+      stage: 'Proposal',
       leadOrganization: 'Feather Headwaters Trust',
       classifications: ['Salmon & steelhead recovery', 'Barrier removal & fish screens'],
       projectDescription: 'Replace two undersized culverts under Forest Road 24N08 with a bottomless arch, reopening 4 miles of spawning habitat.',
@@ -265,11 +252,12 @@ export const SEED_PROPOSALS: IntakeProject[] = [
     answers: {
       projectName: 'Butte Meadows Wet Meadow Restoration',
       projectType: 'Meadow & wetland restoration',
+      stage: 'Implementation',
       leadOrganization: 'Feather Headwaters Trust',
       classifications: ['Water supply reliability', 'Meadow & marsh rewetting'],
       projectDescription: 'Plug a 1,200-foot incised gully with beaver dam analogs to raise the water table across 40 acres of meadow.',
       location: [40.08, -121.56],
-      implementationStartYear: 2027,
+      implementationStartYear: 2025,
       estimatedTotalCost: 215000,
     },
   },

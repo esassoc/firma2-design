@@ -32,6 +32,15 @@
 // its requester added to an existing organization). They have no record page
 // yet, so their name is plain text, not a link.
 //
+// TWO MODES, ONE GRID (2026-11-24). `settings` is the administrator's list
+// above. `directory` is the same grid on the app's Organizations page
+// (/prototypes/organizations), where anyone signed in looks an organization
+// up: the name opens the organization's own page instead of its settings
+// record, the administrator's columns (Visibility, Added by, Created) and the
+// add receipts are gone, Type is a column because a reader places an
+// organization by it, and a private organization the reader is not in is not
+// listed (its settings say who can see it).
+//
 // bcn-lego-checked: ecology has NO table/grid lego — esa-grid is a
 // documentation-only page with nothing to import; checked the full
 // node_modules/@esa/ecology/src/components catalog. Beacon is not cloned on
@@ -44,8 +53,20 @@ import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import '../shared/firma2-data-grid-chrome.css';
-import { organizations, organizationTypes, verifiedDomain } from '../../data/firma2-directory';
+import { CURRENT_USER_ORGANIZATIONS, organizations as everyOrganization, organizationTypes, verifiedDomain } from '../../data/firma2-directory';
+import { organizationPageHref } from '../../data/firma2-organization-pages';
 import { withBase } from '../../lib/base';
+
+interface Props {
+  /** `settings`: the administrator's list. `directory`: the app's reading list. */
+  mode?: 'settings' | 'directory';
+}
+
+const { mode = 'settings' } = Astro.props;
+const directory = mode === 'directory';
+const organizations = directory
+  ? everyOrganization.filter((o) => o.visibility !== 'private' || CURRENT_USER_ORGANIZATIONS.includes(o.name))
+  : everyOrganization;
 
 // Only types that have members are offered, so the filter never returns nothing.
 const typeOptions = organizationTypes
@@ -56,10 +77,10 @@ const typeOptions = organizationTypes
 const rows = organizations.map((o) => ({
   ...o,
   verified: verifiedDomain(o) ?? '',
-  href: withBase(`/prototypes/workspace-settings/organizations/${o.slug}`),
+  href: withBase(directory ? organizationPageHref(o.slug) : `/prototypes/workspace-settings/organizations/${o.slug}`),
 }));
 ---
-<section class="firma2-organization-grid stack" data-gap="md">
+<section class="firma2-organization-grid stack" data-gap="md" data-mode={mode}>
   <div class="firma2-data-grid__controls repel">
     <div class="firma2-data-grid__controls-filters cluster">
       <div class="firma2-data-grid__search">
@@ -128,6 +149,10 @@ const rows = organizations.map((o) => ({
     // exist are the ones a reader is scanning for.
     const count = (p: { value?: number }) => (p.value ? String(p.value) : '');
 
+    const directory = root.dataset.mode === 'directory';
+    // The administrator's columns; a reader looking an organization up has no use for them.
+    const SETTINGS_ONLY = ['visibility', 'addedBy', 'created'];
+
     const handle = wireDataGrid<Row>({
       root,
       gridSelector: '[data-orgs-grid]',
@@ -148,6 +173,7 @@ const rows = organizations.map((o) => ({
               ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>`
               : esc(p.data.name),
         },
+        { headerName: 'Type', field: 'type', colId: 'type', width: 220, tooltipField: 'type', hide: !directory },
         {
           headerName: 'Verified domain', field: 'verified', colId: 'verified',
           width: 160, tooltipField: 'verified',
@@ -177,7 +203,7 @@ const rows = organizations.map((o) => ({
           valueGetter: (p) => (p.data?.created ? new Date(`${p.data.created}T00:00:00`) : null),
           valueFormatter: (p: { value?: Date | null }) => (p.value ? dateFormatter.format(p.value) : ''),
         },
-      ] satisfies ColDef[],
+      ].filter((c) => !directory || !SETTINGS_ONLY.includes(c.colId)) satisfies ColDef[],
       gridOptions: {
         overlayNoRowsTemplate: emptyState?.outerHTML,
         isExternalFilterPresent: () => typeValues.length > 0,
@@ -185,6 +211,16 @@ const rows = organizations.map((o) => ({
       },
     });
     if (!handle) return;
+
+    // The directory lists organizations that have a page; one added in this
+    // browser has none yet, and its receipt belongs to the settings list.
+    if (directory) {
+      typeFilter?.addEventListener('selection-change', (event) => {
+        typeValues = (event as CustomEvent<{ value?: string[] }>).detail?.value ?? [];
+        handle.gridApi.onFilterChanged();
+      });
+      return;
+    }
 
     // Added here, so never verified yet: a domain is verified on the record.
     const added: Row[] = readAddedOrganizations().map((o) => ({ ...o, verified: '', href: '' }));

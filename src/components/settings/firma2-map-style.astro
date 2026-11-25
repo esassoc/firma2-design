@@ -2,7 +2,13 @@
 // firma2-map-style — how every map in the workspace opens and how its own
 // shapes are painted: the base map, and the work areas' colours.
 //
-// TWO COLOURS, NOT THREE. A map draws three kinds of work area, and areas and
+// COLOURED BY SOMETHING THE PROJECT ALREADY HAS A COLOUR FOR. Every map paints
+// a project's work areas, pins and dot in one colour: its stage's by default,
+// or its project type's, or a classification group's (src/lib/map-color.ts).
+// "Fixed colors" is the one choice with colours of its own, so the two pickers
+// show only under it.
+//
+// TWO FIXED COLOURS, NOT THREE. A map draws three kinds of work area, and areas and
 // points have always shared one colour (a point is an area too small to
 // outline) with reaches in a second, because a line crossing a polygon has to
 // read apart from it. The settings keep that pairing, so a workspace cannot
@@ -15,9 +21,6 @@
 //
 // Saves as it changes, like editing a layer below it; every map follows on its
 // next paint (the storage event carries it to other windows).
-//
-// Maps that colour by something else — a portfolio coloured by stage — keep
-// their own ramp; these are the colours of a map that is not encoding anything.
 //
 // bcn-lego-checked: firma2-rail-section (each section), esa-select,
 // esa-color-picker, esa-range-slider, esa-button. Layout is .stack and .grid.
@@ -35,11 +38,14 @@ const config = { basemaps: BASEMAPS, swatches: MAP_SWATCHES };
   </Firma2RailSection>
 
   <Firma2RailSection title="Work areas">
-    <span slot="actions" data-reset-wrap hidden><EsaButton variant="ghost" size="md" data-reset>Reset colors</EsaButton></span>
+    <span slot="actions" data-reset-wrap hidden><EsaButton variant="ghost" size="md" data-reset>Reset</EsaButton></span>
     <div class="stack" data-gap="md">
-      <div class="grid firma2-map-style__pair" data-gap="md">
-        <esa-color-picker data-area-color label="Area and point color" size="md"></esa-color-picker>
-        <esa-color-picker data-reach-color label="Reach color" size="md"></esa-color-picker>
+      <esa-select data-color-by label="Color work areas by" size="md"></esa-select>
+      <div data-fixed hidden>
+        <div class="grid firma2-map-style__pair" data-gap="md">
+          <esa-color-picker data-area-color label="Area and point color" size="md"></esa-color-picker>
+          <esa-color-picker data-reach-color label="Reach color" size="md"></esa-color-picker>
+        </div>
       </div>
       <esa-range-slider data-area-opacity label="Area fill opacity (%)" size="md" min="0" max="60" step="1"></esa-range-slider>
     </div>
@@ -57,6 +63,7 @@ const config = { basemaps: BASEMAPS, swatches: MAP_SWATCHES };
   import '@esa/ecology/esa-color-picker';
   import '@esa/ecology/esa-range-slider';
   import { houseKindColor } from '../../lib/leaflet';
+  import { colorByOptions, resolvedColorBy } from '../../lib/map-color';
   import { DEFAULT_MAP_STYLE, onGeoChange, readMapStyle, writeMapStyle } from '../../lib/work-areas';
   import type { BasemapId } from '../../lib/work-areas';
 
@@ -75,6 +82,7 @@ const config = { basemaps: BASEMAPS, swatches: MAP_SWATCHES };
     const $ = <T extends HTMLElement = Control>(sel: string) => root.querySelector<T>(sel)!;
     const config = JSON.parse(root.dataset.config ?? '{}');
     const basemap = $('[data-basemap]');
+    const colorBy = $('[data-color-by]');
     const area = $('[data-area-color]');
     const reach = $('[data-reach-color]');
     const opacity = $('[data-area-opacity]');
@@ -82,11 +90,16 @@ const config = { basemaps: BASEMAPS, swatches: MAP_SWATCHES };
     const paint = () => {
       const style = readMapStyle();
       basemap.value = style.basemap;
+      // Read on each paint: a group added or renamed in another window shows up.
+      const by = resolvedColorBy();
+      colorBy.options = colorByOptions();
+      colorBy.value = by;
+      $<HTMLElement>('[data-fixed]').hidden = by !== 'none';
       area.value = style.areaColor ?? toHex(houseKindColor('area'));
       reach.value = style.reachColor ?? toHex(houseKindColor('reach'));
       opacity.value = Math.round(style.areaFillOpacity * 100);
       $<HTMLElement>('[data-reset-wrap]').hidden =
-        style.areaColor == null && style.reachColor == null && style.areaFillOpacity === DEFAULT_MAP_STYLE.areaFillOpacity;
+        by === DEFAULT_MAP_STYLE.colorBy && style.areaColor == null && style.reachColor == null && style.areaFillOpacity === DEFAULT_MAP_STYLE.areaFillOpacity;
     };
 
     // Values only after the elements upgrade: set earlier, they would shadow
@@ -102,11 +115,12 @@ const config = { basemaps: BASEMAPS, swatches: MAP_SWATCHES };
 
       const set = (patch: Partial<ReturnType<typeof readMapStyle>>) => writeMapStyle({ ...readMapStyle(), ...patch });
       basemap.addEventListener('change', () => set({ basemap: String(basemap.value || 'map') as BasemapId }));
+      colorBy.addEventListener('change', () => set({ colorBy: String(colorBy.value || DEFAULT_MAP_STYLE.colorBy) }));
       area.addEventListener('change', () => set({ areaColor: String(area.value) }));
       reach.addEventListener('change', () => set({ reachColor: String(reach.value) }));
       opacity.addEventListener('change', () => set({ areaFillOpacity: Number(opacity.value) / 100 }));
       $<HTMLElement>('[data-reset]').addEventListener('click', () =>
-        set({ areaColor: null, reachColor: null, areaFillOpacity: DEFAULT_MAP_STYLE.areaFillOpacity }),
+        set({ areaColor: null, reachColor: null, areaFillOpacity: DEFAULT_MAP_STYLE.areaFillOpacity, colorBy: DEFAULT_MAP_STYLE.colorBy }),
       );
     });
   });

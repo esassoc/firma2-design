@@ -1,26 +1,19 @@
 ---
 // firma2-workspace-security — Administration › Security: how people get into
-// the workspace, how they sign in, and who may take the workspace-wide acts.
+// the workspace, and who may take the workspace-wide acts.
 //
-// LINEAR'S SECURITY PAGE, RE-CUT FOR A GRANT PROGRAM. Kept: sign-in methods
-// and the "who can…" threshold per act. Moved to each organization: approved
+// LINEAR'S SECURITY PAGE, RE-CUT FOR A GRANT PROGRAM. Kept: the "who can…"
+// threshold per act. Moved to each organization: approved
 // email domains (Access, user call) and the invite link (Members,
 // .scratch/access-requests/spec.md decision 13) — someone let in by either
 // belongs to that organization, and a workspace-wide link named none, so it
 // could only admit Viewers nobody answered for. No door is left here; Joining
-// keeps one line that says where the doors went. Sign-in is Microsoft first
-// because agency staff sign in with agency accounts. Cut: AI and compliance, and Linear's
-// plan-gated rows ("Available on Enterprise") — advanced customizations will
-// likely sit behind a higher tier, but which ones, and how a locked row
-// looks, is not decided yet.
+// keeps one line that says where the doors went. Cut: AI and compliance, and
+// Linear's plan-gated rows.
 //
-// ONLY WHAT AUTH0 DOES PER WORKSPACE OUT OF THE BOX (2026-11-12). Each
-// workspace is an Auth0 Organization; its sign-in switches are that
-// Organization's enabled connections (Microsoft = Entra ID, Google =
-// google-oauth2, Email = the database connection). Cut because Auth0 sets
-// them once for every workspace, or only through custom Actions: two-step
-// verification, sign out after inactivity, and "administrators can always
-// sign in with email and password". What the
+// NO SIGN-IN METHODS (user, 2026-11-24: "not needed at this point"). The
+// section offered each workspace's Auth0 Organization connections (Microsoft,
+// Google, Email) as switches; it went, with its at-least-one rule. What the
 // public site shows lives on Custom pages › Public site (user call): it sits
 // beside the setting that publishes a page there.
 //
@@ -29,8 +22,7 @@
 // the acts that touch the whole workspace (invite, import, export, tokens).
 // Adding an organization is not one: only administrators do it (decision 11).
 //
-// SAME CONTROLS AS THE REST OF SETTINGS. Switches are firma2-switch-list rows
-// (Notifications' construction, track pinned right); every threshold is a
+// SAME CONTROLS AS THE REST OF SETTINGS. Every threshold is a
 // labelled esa-select with its help line under it (Organization settings ›
 // Access) — not Linear's inline right-hand selects, because a stacked label is
 // this spoke's settings form. Each control commits on change; no Save.
@@ -41,16 +33,14 @@
 // (src/lib/workspace-permissions.ts), because screens read them — setting a
 // project's targets is the first (2026-10-09). Nothing else persists.
 //
-// bcn-lego-checked: firma2-rail-section is each section; esa-switch-toggle,
-// esa-select is the threshold control; esa-snackbar-container the receipts;
+// bcn-lego-checked: firma2-rail-section is each section; esa-select is the
+// threshold control;
 // firma2-help-link the "Learn about roles" door to the Help sheet —
 // all composed unchanged. No <style> block. Beacon is not cloned on this
 // machine.
 import Firma2RailSection from '../shared/firma2-rail-section.astro';
 import Firma2HelpLink from '../shared/firma2-help-link.astro';
-import '../shared/firma2-switch-list.css';
 import {
-  SIGN_IN_METHODS,
   PERMISSION_AUDIENCES,
   SECURITY_PERMISSIONS,
 } from '../../data/firma2-workspace-settings';
@@ -60,19 +50,6 @@ const json = (v: unknown) => JSON.stringify(v);
 <div class="stack" data-gap="2xl">
   <Firma2RailSection title="Joining">
     <p class="typography-body-md">Each organization sets its own invite link, email domains and how people join.</p>
-  </Firma2RailSection>
-
-  <Firma2RailSection title="Sign-in methods">
-    <div class="firma2-switch-list" data-sign-in-methods>
-      {SIGN_IN_METHODS.map((s) => (
-        <div class="firma2-switch-list__row">
-          <esa-switch-toggle name={s.key} label={s.label} label-position="before" checked={s.on ? true : undefined} data-hint={s.hint}></esa-switch-toggle>
-          {s.hint && <p class="firma2-switch-list__hint typography-body-sm">{s.hint}</p>}
-        </div>
-      ))}
-    </div>
-    {/* THE LIMIT, BEFORE IT IS HIT: the last switch flips back (script below). */}
-    <p class="typography-body-sm firma2-switch-list__hint">At least one method stays on.</p>
   </Firma2RailSection>
 
   <Firma2RailSection title="Workspace permissions">
@@ -93,22 +70,12 @@ const json = (v: unknown) => JSON.stringify(v);
       ))}
     </div>
   </Firma2RailSection>
-
 </div>
 
-<esa-snackbar-container class="firma2-workspace-security__toasts"></esa-snackbar-container>
-
 <script>
-  import '@esa/ecology/esa-switch-toggle';
   import '@esa/ecology/esa-select';
-  import '@esa/ecology/esa-snackbar-container';
   import { readPermission, writePermission } from '../../lib/workspace-permissions';
   import type { Audience } from '../../lib/workspace-permissions';
-
-  type SwitchEl = HTMLElement & { checked: boolean; updateComplete: Promise<unknown> };
-  type Toasts = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
-
-  const toasts = document.querySelector<Toasts>('.firma2-workspace-security__toasts');
 
   // Seeds, assigned only after define — a `.value` set on a not-yet-upgraded
   // element becomes an own property that shadows the lego's setter for good.
@@ -123,25 +90,5 @@ const json = (v: unknown) => JSON.stringify(v);
   // whether to offer the act.
   document.querySelectorAll<HTMLElement & { value: string }>('esa-select[data-permission]').forEach((el) => {
     el.addEventListener('change', () => writePermission(el.dataset.permission!, el.value as Audience));
-  });
-
-  // Each switch's description, handed to its inner button as aria-description —
-  // the lego has no description prop (esassoc/ecology#40); same as Notifications.
-  customElements.whenDefined('esa-switch-toggle').then(() => {
-    document.querySelectorAll<SwitchEl>('.firma2-switch-list esa-switch-toggle[data-hint]').forEach(async (el) => {
-      await el.updateComplete;
-      el.shadowRoot?.querySelector('[role="switch"]')?.setAttribute('aria-description', el.dataset.hint ?? '');
-    });
-  });
-
-  // AT LEAST ONE SIGN-IN METHOD. Turning off the last one would lock out
-  // everyone, administrators included, so the switch flips back and says why.
-  const methods = Array.from(document.querySelectorAll<SwitchEl>('[data-sign-in-methods] esa-switch-toggle'));
-  methods.forEach((el) => {
-    el.addEventListener('change', () => {
-      if (methods.some((m) => m.checked)) return;
-      el.checked = true;
-      toasts?.show({ message: 'Keep at least one sign-in method on', variant: 'warning' });
-    });
   });
 </script>

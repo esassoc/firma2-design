@@ -3,7 +3,8 @@
 // (firma2-public-review-notice).
 //
 // THE PROTOTYPE HAS NO ACCOUNTS, so "signed in" is a flag: every workspace
-// page sets it (AppLayout), and Sign out in the account menu clears it. A real
+// page sets it (AppLayout), and Sign out clears it — in the workspace's
+// account menu or the public header's. A real
 // tenant reads the session instead; this module is that seam.
 
 // Also read, by its literal, in firma2-public-header's inline script. Change one, change the other.

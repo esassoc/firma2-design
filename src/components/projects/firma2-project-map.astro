@@ -92,6 +92,7 @@
 import EsaButton from '@esa/ecology/esa-button.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
 import type { ProjectDetail, WorkArea } from '../../data/firma2-project-detail';
+import { projectSlug } from '../../data/firma2-projects';
 
 interface Props {
   /** The project whose work areas are drawn. Only mapCenter, mapZoom and
@@ -134,6 +135,7 @@ const extentLabel = (area: WorkArea) => `${area.extent} ${area.extentUnit}`;
 // travels verbatim; Leaflet reads [lat, lng] pairs, which is exactly what
 // WorkArea.path already is.
 const mapConfig = {
+  slug: projectSlug(detail.project),
   center: mapCenter,
   zoom: mapZoom,
   areas: workAreas.map((area) => ({
@@ -258,6 +260,8 @@ const mapConfig = {
   }
 
   interface MapConfig {
+    /** The project, for its colour (src/lib/map-color.ts). */
+    slug: string;
     center: LatLng;
     zoom: number;
     areas: MapArea[];
@@ -274,7 +278,7 @@ const mapConfig = {
 
   // Loader, basemap, scheme-following, resize-following and every visual
   // treatment are shared with the other maps (src/lib/leaflet.ts, map.css).
-  import { createMap, loadLeaflet, shapeStyle } from '../../lib/leaflet';
+  import { createMap, loadLeaflet, projectShapeStyle } from '../../lib/leaflet';
   import type { Leaflet } from '../../lib/leaflet';
 
   async function initProjectMap(root: HTMLElement) {
@@ -299,14 +303,14 @@ const mapConfig = {
     // callback repaints the shapes when the scheme flips, because their colours
     // are read from tokens the scheme just changed.
     const map = createMap(L, canvas, {}, () =>
-      config.areas.forEach((area, i) => shapes[i].setStyle(shapeStyle(area.kind))),
+      config.areas.forEach((area, i) => shapes[i].setStyle(projectShapeStyle(config.slug, area.kind))),
     ).setView(config.center, config.zoom);
 
     const shapes: Leaflet[] = config.areas.map((area) => {
       const shape =
         area.kind === 'area'
-          ? L.polygon(area.path, shapeStyle('area'))
-          : L.polyline(area.path, shapeStyle('reach'));
+          ? L.polygon(area.path, projectShapeStyle(config.slug, 'area'))
+          : L.polyline(area.path, projectShapeStyle(config.slug, 'reach'));
 
       // Sticky so the label tracks the cursor across a large polygon instead of
       // pinning to a centroid that may be off screen at this zoom.

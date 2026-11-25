@@ -30,7 +30,7 @@ const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', 
 export const inputOf = (block: QuestionBlock, fields: FieldDefinition[]): Input => {
   if (block.type === 'builtin') {
     const input = builtin(block.key).input;
-    if (input === 'choice') return block.key === 'projectType' ? 'choice' : 'combo';
+    if (input === 'choice') return block.key === 'projectType' || block.key === 'stage' ? 'choice' : 'combo';
     if (input === 'multi-choice' || input === 'people') return 'combo-multi';
     return input;
   }

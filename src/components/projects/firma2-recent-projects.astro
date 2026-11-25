@@ -1,161 +1,194 @@
 ---
-// firma2-recent-projects — the row of cards above the Projects table: the
-// handful of projects this user opened most recently, newest first, so getting
-// back to yesterday's work does not mean re-running yesterday's search.
+// firma2-recent-projects — the projects you opened most recently, under the
+// Projects table's search box. Focus the search while it is empty and they
+// drop under it; typing hides them and the table filters as it always does.
 //
-// Composed from legos and layout primitives: `.grid` (auto-fit, wraps
-// 4 -> 3 -> 2 -> 1 on its own) is the row, esa-card is the card, esa-pill is the
-// stage marker, and the typography composites carry the heading. Deliberately no
-// `--grid-min` override — the primitive's 16rem default already lands four cards
-// across the content region at desktop width, and a narrower floor would only
-// squeeze the long project names into more wrapped lines.
+// IN SEARCH, NOT A ROW OF CARDS (user, 2026-11-24, picked from four in
+// /proto/recent-projects — .scratch/projects-index/spec.md #1). The card row
+// cost ~220px above the table on every visit, including the visits made to
+// search; the search box is where a person already goes to find a project.
 //
-// SUBTRACTIVE by design. A card carries four facts and no more: which project,
-// whose project, where it is in its lifecycle, and when you last had it open.
-// County, timeline, and cost all live one section down in the table; repeating
-// them here would make the row a second, worse table rather than a way back in.
+// WHERE THE LIST COMES FROM. This browser's history of app pages
+// (src/lib/recent-pages.ts, recorded by AppLayout) — the same one the global
+// search shows as Recent — kept to the projects in this table, newest first,
+// with when you last opened each. A browser with no project in its history
+// shows the seeded row (recentlyViewed) instead, so a first visit to the
+// prototype still demonstrates the list.
 //
-// THE WHOLE CARD IS THE LINK, not just the title. This row exists to be clicked
-// — it is a shortcut back into work in progress — and a shortcut whose target is
-// a 30px line of text inside a 250px box is a worse shortcut than the search it
-// replaces. One <a> per card is also one tab stop per card, so keyboard users
-// cross the row in four presses rather than four times whatever the card holds.
+// HOW IT IS BUILT. Every project in the table is rendered here once, hidden;
+// the script shows the recent ones in history order. Server-rendered rows
+// keep esa-pill a real lego rather than a string rebuilt in JS. The grid
+// mounts this inside its search wrapper (firma2-project-grid, `recents`).
 //
-// The href points at /prototypes/projects/<slug>, WHICH THIS SPOKE HAS NOT BUILT
-// YET — the detail page is the next screen. Until it lands these four links 404,
-// which is a deliberate, accepted state and NOT the precedent the sidenav sets
-// (it renders unbuilt routes inert precisely to avoid dead links). Build the
-// route and this section needs no change: projectHref and the route's
-// getStaticPaths read the same projectSlug.
-import EsaCard from '@esa/ecology/esa-card.astro';
+// KEYBOARD: ↓ from the search moves into the list, ↑/↓ walk it, ↑ from the
+// first row returns to the search, Esc closes and returns, Tab leaves.
+//
+// bcn-lego-checked: esa-combobox clears its typed text on blur and reports "no results" while you type — both wrong for a field whose text is the table's filter; esa-popover opens on click or hover, not on focus of a field it does not own; esa-entity-search is a modal omnibox. A list of links under the grid's own esa-text-field, with esa-pill for stage, is the reusable home. Beacon is not cloned here.
 import EsaPill from '@esa/ecology/esa-pill.astro';
-import Firma2ProjectPeekButton from './firma2-project-peek-button.astro';
-import { recentlyViewed as defaultRecents, projectHref, projectSlug, STAGE_TONE } from '../../data/firma2-projects';
-import type { RecentlyViewedProject } from '../../data/firma2-projects';
+import { projects as defaultProjects, recentlyViewed, projectHref, STAGE_TONE } from '../../data/firma2-projects';
+import type { Project } from '../../data/firma2-projects';
 import { withBase } from '../../lib/base';
 
 interface Props {
-  /** Most recent first. Defaults to the mock session's row. */
-  items?: RecentlyViewedProject[];
+  /** The table's projects — only these can be listed. */
+  projects?: Project[];
 }
 
-const { items = defaultRecents } = Astro.props;
-
-// The section is a landmark, so it needs an accessible name — pointed at the
-// heading that is already on screen rather than an aria-label duplicating it.
-const headingId = 'firma2-recent-projects-heading';
+const { projects = defaultProjects } = Astro.props;
+const seed = recentlyViewed.map(({ project, viewedAt }) => ({ href: withBase(projectHref(project)), viewedAt }));
 ---
-{items.length > 0 && (
-  <section class="firma2-recent-projects stack" data-gap="sm" aria-labelledby={headingId}>
-    <h2 id={headingId} class="typography-title-strong">Recently viewed</h2>
-
-    <!-- A <ul>, not a row of <div>s: this is a countable set of peers, and the
-         list role is what tells a screen-reader user there are four of these
-         before they start arrowing through them. -->
-    <ul class="firma2-recent-projects__row grid" data-gap="md">
-      {items.map(({ project, viewedAt }) => (
-        <li class="firma2-recent-projects__item" data-peek-row>
-          <!-- aria-label carries the project NAME alone. Without it the link's
-               accessible name is every string in the card concatenated —
-               "Yuba Headwaters Fuels Reduction Yuba Headwaters Partnership
-               Implementation Today" — which is accurate but useless in a
-               rotor's list of links. The label still contains the visible title
-               verbatim, so SC 2.5.3 (Label in Name) holds and voice control
-               can still say "click Yuba Headwaters Fuels Reduction". -->
-          <a
-            class="firma2-recent-projects__link"
-            href={withBase(projectHref(project))}
-            aria-label={project.projectName}
-          >
-            <EsaCard
-              title={project.projectName}
-              subtitle={project.leadOrganization}
-              padding="compact"
-            >
-              <EsaPill
-                label={project.stage}
-                variant={STAGE_TONE[project.stage]}
-                size="sm"
-                removable={false}
-              />
-              <!-- The heading above already says these were VIEWED, so each card
-                   spends its footer on the one thing that differs: how long ago.
-                   Repeating the verb four times would be the row narrating
-                   itself. A screen reader lands on a card without that heading
-                   in earshot, though, so the verb is carried silently for the
-                   name to make sense on its own. -->
-              <span slot="footer"><span class="visually-hidden">Viewed </span>{viewedAt}</span>
-            </EsaCard>
-          </a>
-          <!-- The side-panel door, beside the card's link (never inside it),
-               docked in the card's top corner. -->
-          <span class="firma2-recent-projects__peek">
-            <Firma2ProjectPeekButton slug={projectSlug(project)} name={project.projectName} />
+<div class="firma2-recent-projects" data-recent-projects data-seed={JSON.stringify(seed)} hidden>
+  <p class="typography-body-sm firma2-recent-projects__head" id="firma2-recent-projects-head">Recently viewed</p>
+  <ul class="firma2-recent-projects__list" role="list" aria-labelledby="firma2-recent-projects-head">
+    {projects.map((project) => (
+      <li data-href={withBase(projectHref(project))} hidden>
+        <a class="firma2-recent-projects__item" href={withBase(projectHref(project))}>
+          <span class="stack" data-gap="3xs">
+            <span class="typography-label-md-strong firma2-recent-projects__name">{project.projectName}</span>
+            <span class="typography-body-sm firma2-recent-projects__quiet">{project.leadOrganization}</span>
           </span>
-        </li>
-      ))}
-    </ul>
-  </section>
-)}
+          <EsaPill label={project.stage} variant={STAGE_TONE[project.stage]} size="sm" removable={false} />
+          <span class="typography-body-sm firma2-recent-projects__quiet firma2-recent-projects__when"><span class="visually-hidden">Viewed </span><span data-when></span></span>
+        </a>
+      </li>
+    ))}
+  </ul>
+</div>
 
 <style>
-  /* The typography composites set type ONLY — family, size, weight, line-height —
-     and there is no heading reset anywhere in tokens.css or BaseLayout's global
-     block. So the UA's own `margin: 0.83em 0` is still on this h2, and inside a
-     .stack it stacks on top of the primitive's gap: the heading would sit
-     ~13px further from the cards than `data-gap="sm"` says. Zeroing it is not a
-     visual choice, it is the composite's missing half — the spine owns spacing. */
-  .firma2-recent-projects > h2 { margin: 0; }
-
-  /* .grid is the layout engine; this only strips the list chrome that comes with
-     choosing <ul> for its semantics. No spacing here — data-gap owns that. */
-  .firma2-recent-projects__row {
-    list-style: none;
+  .firma2-recent-projects {
+    position: absolute;
+    inset-block-start: calc(100% + var(--spacing-100));
+    inset-inline-start: 0;
+    z-index: 20;
+    inline-size: min(34rem, calc(100vw - 2rem));
+    padding: var(--spacing-200);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--color-background-elevation-floating);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+    transform-origin: top left;
+    animation: firma2-recent-projects-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  /* Author display rules beat the UA [hidden]; say it outright. */
+  .firma2-recent-projects[hidden],
+  .firma2-recent-projects li[hidden] {
+    display: none;
+  }
+  @keyframes firma2-recent-projects-in {
+    from { opacity: 0; scale: 0.97; }
+  }
+  .firma2-recent-projects__head {
+    margin: 0;
+    padding: var(--spacing-100) var(--spacing-200) var(--spacing-200);
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-recent-projects__list {
     margin: 0;
     padding: 0;
+    list-style: none;
   }
-
-  /* The <a> is the card's box, not a phrase inside it. `display: block` (never
-     `display: contents`) so it has a box of its own for the focus ring to trace,
-     and `height: 100%` so a short card in a row of tall ones is still clickable
-     edge to edge. */
-  .firma2-recent-projects__link {
-    display: block;
-    height: 100%;
-    /* BaseLayout sets `a { color: var(--color-content-link) }` globally, which
-       would paint the card's title and subtitle link-blue. The card is the link;
-       its text is content. */
-    color: inherit;
-    /* Matches esa-card's own `--_card-radius: var(--radius-md)` so the focus ring
-       traces the card's corners instead of squaring them off. */
-    border-radius: var(--radius-md, 0.5rem);
-  }
-
-  /* Hover/focus affordance via esa-card's PUBLIC theming hook, so this never
-     reaches into the lego's internals. One quiet step on the border — the house
-     keeps containers neutral, and a lift or a tint on four cards at once would
-     turn a shortcut row into the loudest thing on the page. */
-  /* The peek sits over the card's top-right corner, a sibling of the card's
-     link so the two stay separate controls. */
   .firma2-recent-projects__item {
-    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 5.5rem;
+    align-items: center;
+    gap: var(--spacing-300);
+    padding: var(--spacing-200);
+    border-radius: var(--radius-sm);
+    color: var(--color-content-default);
+    text-decoration: none;
   }
-
-  .firma2-recent-projects__peek {
-    position: absolute;
-    inset-block-start: var(--spacing-200, 0.5rem);
-    inset-inline-end: var(--spacing-200, 0.5rem);
-  }
-
-  .firma2-recent-projects__link:focus-visible {
-    --card-border-color: var(--color-border-default-strong, #8f8f8f);
+  .firma2-recent-projects__item:focus-visible {
+    background: var(--color-background-default-hover);
+    outline: 2px solid var(--color-border-brand);
+    outline-offset: -2px;
   }
   @media (hover: hover) and (pointer: fine) {
-    .firma2-recent-projects__link:hover {
-      --card-border-color: var(--color-border-default-strong, #8f8f8f);
+    .firma2-recent-projects__item:hover {
+      background: var(--color-background-default-hover);
     }
   }
-  .firma2-recent-projects__link:active {
-    --card-border-color: var(--color-border-default-strong, #8f8f8f);
+  .firma2-recent-projects__item:active {
+    background: var(--color-background-default-hover);
+  }
+  .firma2-recent-projects__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .firma2-recent-projects__quiet {
+    color: var(--color-content-default-secondary);
+  }
+  .firma2-recent-projects__when {
+    text-align: end;
+  }
+  /* A phone keeps the name and when; the stage is one tap away. */
+  @media (max-width: 45rem) {
+    .firma2-recent-projects__item {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .firma2-recent-projects__item > :nth-child(2) {
+      display: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-recent-projects {
+      animation: none;
+    }
   }
 </style>
+
+<script>
+  import { readRecentVisits, viewedLabel } from '../../lib/recent-pages';
+
+  const LIMIT = 5;
+
+  document.querySelectorAll<HTMLElement>('[data-recent-projects]').forEach((pop) => {
+    const anchor = pop.parentElement;
+    const field = anchor?.querySelector<HTMLElement & { value?: string }>('[data-projects-search]');
+    if (!anchor || !field) return;
+
+    // Which rows, in what order: this browser's history, else the seed.
+    const rows = new Map(Array.from(pop.querySelectorAll<HTMLElement>('li[data-href]')).map((li) => [li.dataset.href!, li]));
+    const pathOf = (href: string) => href.split('?')[0].replace(/\/$/, '');
+    const fromHistory = readRecentVisits()
+      .map((v) => ({ href: pathOf(v.href), viewedAt: viewedLabel(v.at) }))
+      .filter((v) => rows.has(v.href));
+    const seed: { href: string; viewedAt: string }[] = JSON.parse(pop.dataset.seed ?? '[]');
+    const shown = (fromHistory.length ? fromHistory : seed).filter((v) => rows.has(v.href)).slice(0, LIMIT);
+    if (!shown.length) return;
+    const list = pop.querySelector('ul')!;
+    for (const { href, viewedAt } of shown) {
+      const li = rows.get(href)!;
+      li.querySelector('[data-when]')!.textContent = viewedAt;
+      li.hidden = false;
+      list.append(li); // history order
+    }
+
+    const items = () => Array.from(pop.querySelectorAll<HTMLElement>('li:not([hidden]) a'));
+    const empty = () => !(field.value ?? '').trim();
+    // Focus handed back by Esc or ↑ must not reopen what was just closed.
+    let quiet = false;
+    const open = () => { if (quiet) { quiet = false; return; } pop.hidden = !empty(); };
+    const refocus = () => { quiet = true; field.focus(); };
+    const close = () => { pop.hidden = true; };
+
+    field.addEventListener('focusin', open);
+    field.addEventListener('input', open);
+    field.addEventListener('keydown', (e) => {
+      if (pop.hidden) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); items()[0]?.focus(); }
+      else if (e.key === 'Escape') close();
+    });
+    pop.addEventListener('keydown', (e) => {
+      const all = items();
+      const i = all.indexOf(document.activeElement as HTMLElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); all[Math.min(i + 1, all.length - 1)]?.focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (i <= 0) field.focus(); else all[i - 1].focus(); }
+      else if (e.key === 'Escape') { close(); refocus(); }
+    });
+    // Closes once focus or a press lands outside the search and the list.
+    document.addEventListener('focusin', (e) => { if (!anchor.contains(e.target as Node)) close(); });
+    document.addEventListener('pointerdown', (e) => { if (!anchor.contains(e.target as Node)) close(); });
+  });
+</script>

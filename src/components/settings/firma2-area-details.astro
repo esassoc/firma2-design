@@ -1,0 +1,124 @@
+---
+// firma2-area-details — what a person adds to one geospatial area, and the
+// projects it holds. The layer gives the area its shape, its name and its
+// acreage, so none of those is edited here; a description and a colour are
+// kept beside it, and each saves as it is changed.
+//
+// THE COLOUR IS THE GROUP'S UNTIL IT IS CHANGED, the way a classification
+// wears its group's colour: most groups want one colour, and the few areas
+// that matter most can be picked out.
+//
+// THE PROJECTS ARE A LIST, NOT A COUNT, because this is the page where "which
+// ones?" is asked. Nobody adds or removes one here: a project is in the area
+// because of where its work is.
+//
+// It also names the page: the title, the crumbs and the tab are filled from
+// the store, since areas are known only in the browser.
+//
+// bcn-lego-checked: esa-textarea, esa-color-picker, esa-empty-state,
+// firma2-rail-section; the projects are a plain list of links in a .stack (no
+// esa- list lego exists; firma2-settings-link-list is server-rendered rows of
+// settings pages). Beacon is not cloned.
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { withBase } from '../../lib/base';
+const listHref = withBase('/prototypes/workspace-settings/geospatial-areas');
+---
+<div class="firma2-area-details stack" data-gap="2xl" data-list-href={listHref} data-project-href={withBase('/prototypes/projects')}>
+  <div data-gone hidden>
+    <div class="stack" data-gap="md">
+      <EsaEmptyState title="This area is no longer in its layer" />
+      <div class="cluster" data-gap="xs" style="justify-content: center">
+        <EsaButton variant="secondary" size="md" tag="a" href={listHref}>Back to geospatial areas</EsaButton>
+      </div>
+    </div>
+  </div>
+  <div class="stack" data-gap="xl" data-fields>
+    <p class="typography-body-md firma2-area-details__facts" data-facts></p>
+    <esa-textarea data-description label="Description" size="md" rows="3"></esa-textarea>
+    <esa-color-picker data-color label="Color" size="md"></esa-color-picker>
+  </div>
+  <!-- The page's measures editor sits here: what the area is aiming for, before the long list. -->
+  <div data-area-measures><slot /></div>
+  <div data-projects-section>
+    <Firma2RailSection title="Projects">
+      <ul class="firma2-area-details__projects stack" data-gap="xs" data-projects></ul>
+      <div data-no-projects hidden>
+        <EsaEmptyState size="sm" title="No projects in this area" />
+      </div>
+    </Firma2RailSection>
+  </div>
+</div>
+
+<style>
+  .firma2-area-details [hidden] {
+    display: none !important;
+  }
+
+  .firma2-area-details__facts {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .firma2-area-details__projects {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-color-picker';
+  import { MAP_SWATCHES } from '../../data/firma2-geography';
+  import { areaColor, areaGroup, filing, parseAreaKey } from '../../lib/geospatial-areas';
+  import { retitle } from '../../lib/taxonomy-record';
+  import { label } from '../../lib/vocabulary';
+  import { readAreaDetails, writeAreaDetails } from '../../lib/work-areas';
+
+  type Field = HTMLElement & { value: string; swatches?: unknown };
+  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-area-details').forEach(async (root) => {
+    const key = new URLSearchParams(window.location.search).get('slug') ?? '';
+    const { groupId, areaId } = parseAreaKey(key);
+    const part = <T extends HTMLElement = HTMLElement>(name: string) => root.querySelector<T>(`[data-${name}]`)!;
+    const group = areaGroup(groupId);
+    const f = group ? filing(group) : null;
+    const row = f?.areas.find((a) => a.area.id === areaId);
+    if (!group || !f || !row) {
+      part('gone').hidden = false;
+      part('fields').hidden = true;
+      part('projects-section').hidden = true;
+      // The measures editor beside this one has nothing to attach to either.
+      part('area-measures').hidden = true;
+      return;
+    }
+
+    // The page's name, and the group's crumb: both are known only here.
+    retitle(row.area.name);
+    const crumb = Array.from(document.querySelectorAll<HTMLAnchorElement>('a.esa-breadcrumbs__link')).find((a) => a.textContent?.trim() === 'Area group');
+    if (crumb) {
+      crumb.textContent = group.name;
+      crumb.href = `${root.dataset.listHref}/group?id=${encodeURIComponent(group.id)}`;
+    }
+
+    const n = row.projects.length;
+    part('facts').textContent = `${row.area.acres.toLocaleString('en-US')} acres · ${n} ${label(n === 1 ? 'project' : 'projects')}`;
+    part('projects').innerHTML = row.projects
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((p) => `<li><a href="${esc(`${root.dataset.projectHref}/${p.slug}`)}">${esc(p.name)}</a></li>`)
+      .join('');
+    part('no-projects').hidden = n > 0;
+
+    const description = part<Field>('description');
+    const color = part<Field>('color');
+    await Promise.all(['esa-textarea', 'esa-color-picker'].map((tag) => customElements.whenDefined(tag)));
+    description.value = readAreaDetails(key).description ?? '';
+    color.swatches = MAP_SWATCHES;
+    color.value = areaColor(group, f.layer, areaId);
+    description.addEventListener('change', () => writeAreaDetails(key, { ...readAreaDetails(key), description: description.value ?? '' }));
+    color.addEventListener('change', () => writeAreaDetails(key, { ...readAreaDetails(key), color: color.value }));
+  });
+</script>

@@ -1,0 +1,62 @@
+---
+// firma2-org-members — an organization's members, on its page: each a door to
+// that person's page, with the role they hold there.
+//
+// WHO RUNS IT LEADS. Managers first, then by role: a reader looking for the
+// person to ask reads down from the top.
+//
+// ACTIVE MEMBERS ONLY (src/data/firma2-members.ts): an invitation nobody has
+// accepted and a suspended account are not people a reader can reach; the
+// organization's Members settings lists them.
+//
+// AN ADMINISTRATOR GETS ONE DOOR to the organization's settings record, where
+// members and the facts above are changed. Nobody else is shown a button that
+// would turn them away.
+//
+// bcn-lego-checked: firma2-settings-table, as the organization's other lists;
+// esa-button the door; esa-empty-state for none. `.repel` holds the heading
+// and the door. No <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SettingsTable from '../settings/firma2-settings-table.astro';
+import type { Organization } from '../../data/firma2-directory';
+import { memberHref, members, roleIn } from '../../data/firma2-members';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  organization: Organization;
+}
+
+const { organization: org } = Astro.props;
+const rank = (role: string) => ['Administrator', 'Manager', 'Contributor', 'Viewer'].indexOf(role);
+const rows = members
+  .filter((m) => m.organizations.includes(org.name))
+  .map((m) => ({ name: m.name, href: withBase(memberHref(m.name)), cells: { role: roleIn(m, org.name), email: m.email } }))
+  .sort((a, b) => rank(a.cells.role) - rank(b.cells.role) || a.name.localeCompare(b.name));
+---
+<section class="stack" data-gap="md" aria-labelledby="firma2-org-members-title">
+  <div class="repel">
+    <h2 id="firma2-org-members-title" class="typography-title-sm-strong">Members</h2>
+    <span data-org-settings-door hidden>
+      <EsaButton variant="chrome" size="sm" tag="a" href={withBase(`/prototypes/workspace-settings/organizations/${org.slug}`)}>Edit in settings</EsaButton>
+    </span>
+  </div>
+  {rows.length === 0 ? (
+    <EsaEmptyState size="sm" title="No members yet" />
+  ) : (
+    <Firma2SettingsTable
+      label={`Members of ${org.name}`}
+      nameLabel="Name"
+      columns={[{ key: 'role', label: 'Role' }, { key: 'email', label: 'Email' }]}
+      rows={rows}
+    />
+  )}
+</section>
+
+<script>
+  import { currentActor } from '../../lib/workspace-permissions';
+
+  if (currentActor().role === 'Administrator') {
+    document.querySelectorAll<HTMLElement>('[data-org-settings-door]').forEach((el) => (el.hidden = false));
+  }
+</script>

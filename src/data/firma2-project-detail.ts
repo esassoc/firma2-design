@@ -52,6 +52,7 @@ import {
   type ProjectStage,
 } from './firma2-projects';
 import { applyPublishing, type Publishing } from './firma2-publish-history';
+import { LOCAL_MATCH_NAME, fundingSourceSlug, fundingSources, type FundingStatus } from './firma2-funding-sources';
 import { workAreaShape } from './firma2-shapes';
 import { REAL, realCenter, realFund, realMeasureFor, realRecords, realUnit, slugOf, type RealProject } from './firma2-real-data';
 import { centroid, pathMiles, ringAcres } from '../lib/geo';
@@ -182,17 +183,33 @@ export const latestReport = (series: MeasureYear[]): MeasureYear | undefined =>
 export const isClosedPeriod = (period: Pick<MeasureYear, 'year' | 'status'>): boolean =>
   period.status !== 'upcoming' && period.year < PRESENT_YEAR;
 
-/** One funder's contribution to a project's estimated total cost. */
-export interface FundingSource {
-  /** The grant or program the money comes through. */
+/**
+ * One funding source's money on one project (docs/data-model.md, "Project
+ * funding"). The row LINKS to a funding source (src/data/firma2-funding-sources.ts)
+ * and carries the amount and where the request stands; `name` and
+ * `organization` are read from that source and repeated here only so the many
+ * readers of a row need no lookup.
+ */
+export interface ProjectFunding {
+  /** The funding source's slug. */
+  source: string;
+  /** The funding source's name: the grant or program the money comes through. */
   name: string;
-  /** The body administering it. */
+  /** The organization offering it. */
   organization: string;
-  /** Whole dollars. Always sums, across a project's sources, to its estimated total cost. */
+  /**
+   * Whole dollars. A project's `requested` and `secured` rows together sum to
+   * its estimated total cost; a `not-awarded` row sits outside that sum.
+   */
   amount: number;
-  /** Share of the estimated total cost, 0–1. */
+  /** Share of the estimated total cost, 0–1. Zero on a `not-awarded` row. */
   share: number;
+  /** Requested, secured or not awarded. Every funding TOTAL counts secured only. */
+  status: FundingStatus;
 }
+
+/** The rows that count as money the project has (decision 7). */
+export const securedFunding = (rows: ProjectFunding[]): ProjectFunding[] => rows.filter((row) => row.status === 'secured');
 
 /**
  * Where one step of a project's life sits relative to today.
@@ -217,7 +234,7 @@ export interface Milestone {
 
 /**
  * One reporting year of the project's spend — the accrual half of the funding
- * commitment `FundingSource` records the promise of.
+ * commitment `ProjectFunding` records the promise of.
  *
  * ONE FIGURE, NOT TWO, and dropping the second is the point of this shape. It
  * used to carry a `budgeted` sibling: this year's slice of
@@ -315,7 +332,37 @@ export interface ProjectPhoto {
   src?: string;
   /** Who took it, when the record says. */
   credit?: string;
+  /**
+   * Where in the work it was taken: the site as found, while the crew worked,
+   * or the finished result. Stored, never inferred from the date: a project
+   * can open on a "during" photo and the public page must not call it "before".
+   */
+  stage: PhotoStage;
+  /**
+   * The vantage point this photo was taken from, by name ("Culvert, looking
+   * upstream"). Two or more photos sharing a point are one view over time:
+   * a Before and an After at one point are a before-and-after pair, three or
+   * more are a timeline. Monitoring protocols revisit named photo points, so
+   * this is how a tenant already thinks.
+   */
+  point?: string;
+  /**
+   * A named, ordered set the photo belongs to ("Planting day"). Optional;
+   * a photo is in at most one. The public page shows a collection as a strip.
+   */
+  collection?: string;
+  /** Whether the public page may show it. A photo of people, or of a sensitive site, is not. */
+  public: boolean;
+  /** The ISO day it was taken (a real tenant's EXIF date); `date` is its label. */
+  takenOn: string;
+  /** The work area in frame, by its label, when the photo is of one. */
+  workArea?: string;
+  /** What a screen reader says in place of the picture. The caption says what the work is; this says what is visible. */
+  alt: string;
 }
+
+/** Where in the work a photo was taken. */
+export type PhotoStage = 'before' | 'during' | 'after';
 
 /**
  * One logged change to the project record — who touched it, when, and what
@@ -347,7 +394,7 @@ export interface ProjectDetail {
   mapZoom: number;
   workAreas: WorkArea[];
   measures: PerformanceMeasure[];
-  funding: FundingSource[];
+  funding: ProjectFunding[];
   expenditures: ExpenditureYear[];
   milestones: Milestone[];
   /** Who to call about this project. Always three; see buildContacts. */
@@ -784,50 +831,41 @@ const buildMeasures = (
 // Funding
 // ---------------------------------------------------------------------------
 
-// Invented grant programs and administering bodies. Named to read like
-// California restoration funding without being any real program or agency.
-// `LOCAL_MATCH` resolves its organization to the project's own lead org, which
-// is how a local sponsor match actually appears on a funding table.
-const LOCAL_MATCH = '__local__';
+// The programs and the bodies offering them are the funding source catalogue
+// (firma2-funding-sources.ts). `LOCAL_MATCH_NAME` resolves its organization to
+// the project's own lead org, which is how a local sponsor match actually
+// appears on a funding table.
+const offeredBy = (name: string, project: Project): string | undefined =>
+  name === LOCAL_MATCH_NAME ? project.leadOrganization : fundingSources.find((source) => source.name === name)?.organization;
 
-const FUNDERS: Record<string, string> = {
-  'Watershed Resilience Grant Program': 'California Watershed Restoration Board',
-  'Anadromous Fisheries Recovery Fund': 'Pacific Fisheries Trust',
-  'Wildfire Resilience Block Grant': 'California Forest Health Authority',
-  'Coastal Wetlands Conservation Fund': 'Pacific Coast Wetlands Board',
-  'Regional Water Quality Improvement Fund': 'Central Valley Water Alliance',
-  'Sierra Meadows Restoration Initiative': 'Sierra Headwaters Conservancy',
-  'Federal Habitat Partnership Program': 'National Watershed Partnership',
-  'Delta Ecosystem Restoration Fund': 'Delta Conservancy Board',
-  'Urban Greening Program': 'Southern California Rivers Authority',
-  'Local Sponsor Match': LOCAL_MATCH,
-};
-
-/** Each outside funder and the grant programs it administers, for the
- *  organization registry — the same table the funding sources are built from,
- *  so a funder's page and a project's funding table can never disagree. */
-export const funderPrograms: Map<string, string[]> = REAL
-  ? // A real workspace's funds, each under the organization behind it.
-    [...new Set([...realRecords.values()].flatMap((record) => record.funding.map((row) => row.fund)))]
-      .sort()
-      .map(realFund)
-      .reduce((acc, { name, organization }) => acc.set(organization, [...(acc.get(organization) ?? []), name]), new Map<string, string[]>())
-  : Object.entries(FUNDERS).reduce((acc, [program, organization]) => {
-      if (organization !== LOCAL_MATCH) acc.set(organization, [...(acc.get(organization) ?? []), program]);
-      return acc;
-    }, new Map<string, string[]>());
+/** Each outside funder and the funding sources it offers, for the
+ *  organization registry — read off the same catalogue the funding rows link
+ *  to, so a funder's page and a project's funding table can never disagree. */
+export const funderPrograms: Map<string, string[]> = fundingSources
+  .filter((source) => source.name !== LOCAL_MATCH_NAME)
+  .reduce((acc, { name, organization }) => acc.set(organization, [...(acc.get(organization) ?? []), name]), new Map<string, string[]>());
 
 const buildFunding = (
   project: Project,
   authored: [name: string, share: number][],
-): FundingSource[] => {
+  notAwarded: [name: string, amount: number][] = [],
+): ProjectFunding[] => {
   const total = project.estimatedTotalCost;
   let allocated = 0;
-  return authored.map(([name, share], i) => {
-    const organization = FUNDERS[name];
+  const sourceOf = (name: string): { source: string; name: string; organization: string } => {
+    const organization = offeredBy(name, project);
     if (organization === undefined) {
       throw new Error(`Unknown funder "${name}" on "${project.projectName}"`);
     }
+    return { source: fundingSourceSlug(name, organization), name, organization };
+  };
+  // WHERE EACH REQUEST STANDS follows the stage: work that is still a proposal
+  // has asked its outside funders and holds only its own match; anything
+  // further along has its money. A request that was turned down is authored
+  // per project and sits outside the estimate.
+  const statusOf = (name: string): FundingStatus =>
+    project.stage === 'Proposal' && name !== LOCAL_MATCH_NAME ? 'requested' : 'secured';
+  const planned = authored.map(([name, share], i): ProjectFunding => {
     // Every source but the last rounds to the nearest $500; the last takes the
     // remainder, so the column sums to estimatedTotalCost to the dollar.
     const last = i === authored.length - 1;
@@ -835,13 +873,9 @@ const buildFunding = (
       ? total - allocated
       : Math.round((total * share) / 500) * 500;
     allocated += amount;
-    return {
-      name,
-      organization: organization === LOCAL_MATCH ? project.leadOrganization : organization,
-      amount,
-      share: amount / total,
-    };
+    return { ...sourceOf(name), amount, share: amount / total, status: statusOf(name) };
   });
+  return [...planned, ...notAwarded.map(([name, amount]): ProjectFunding => ({ ...sourceOf(name), amount, share: 0, status: 'not-awarded' }))];
 };
 
 // ---------------------------------------------------------------------------
@@ -905,6 +939,8 @@ interface AuthoredDetail {
   measures: [string, string, number, string?][];
   /** [funder name, share of estimated total cost]. Shares should sum to ~1. */
   funders: [string, number][];
+  /** [funder name, whole dollars asked]: requests that were turned down. */
+  notAwarded?: [string, number][];
   /** How far along the work is, 0–1. Only read for Implementation and Deferred. */
   progress: number;
 }
@@ -954,6 +990,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       ['Federal Habitat Partnership Program', 0.37],
       ['Local Sponsor Match', 0.15],
     ],
+    notAwarded: [['Watershed Resilience Grant Program', 310000]],
     progress: 0,
   },
 
@@ -979,6 +1016,7 @@ const AUTHORED: Record<string, AuthoredDetail> = {
       ['Delta Ecosystem Restoration Fund', 0.4],
       ['Local Sponsor Match', 0.16],
     ],
+    notAwarded: [['Regional Water Quality Improvement Fund', 150000]],
     progress: 0.72,
   },
 
@@ -1517,7 +1555,7 @@ const emailFor = (name: string, organization: string): string => {
   return `${parts[0][0]}.${parts[parts.length - 1]}@${domain}.org`;
 };
 
-const buildContacts = (project: Project, funding: FundingSource[]): ProjectContact[] => {
+const buildContacts = (project: Project, funding: ProjectFunding[]): ProjectContact[] => {
   // The first funder that is NOT the sponsor itself. Every project's last
   // funding source is its own local match, whose organization resolves to the
   // lead org — so taking funding[0] blindly would give a project whose only
@@ -1658,6 +1696,15 @@ const PHOTO_POOLS: Record<string, { scene: ProjectPhoto['scene']; captions: stri
 // seasonal as its milestones, and six photos all dated January read as
 // placeholder data.
 const PHOTO_MONTHS = ['April', 'July', 'September', 'June', 'October', 'May'];
+const PHOTO_MONTHS_NUMBER = [4, 7, 9, 6, 10, 5];
+// What a stand-in photograph actually shows, for its alt text: the stock image
+// will never literally show the caption, so the description is of the ground.
+const SCENE_ALT: Record<ProjectPhoto['scene'], string> = {
+  stream: 'A stream corridor with open water and vegetated banks.',
+  meadow: 'A grassland meadow under open sky.',
+  forest: 'A conifer forest stand with a trail or clearing.',
+  channel: 'A constructed channel and basin, with water.',
+};
 
 // How many photos a record at each stage carries, and how far into the pool's
 // arc it may reach. `limit` is the honesty bound (see PHOTO_POOLS); `count` is
@@ -1701,14 +1748,34 @@ const buildPhotos = (project: Project): ProjectPhoto[] => {
   const firstYear = Math.min(PRESENT_YEAR, start - 2);
   const lastYear = Math.min(PRESENT_YEAR, end);
 
+  // The arc of a record's photography, by position: the first frame is the
+  // site as found; the last is the result only once the work is finished
+  // (an Implementation project's newest frame is still "during"); the rest
+  // are the work itself. A proposal's single photo is, honestly, a before.
+  const finished = project.stage === 'Completed' || project.stage === 'Post-Implementation';
   return Array.from({ length: taken }, (_, i) => {
     const t = taken === 1 ? 0 : i / (taken - 1);
     const year = Math.round(firstYear + t * (lastYear - firstYear));
+    const month = PHOTO_MONTHS[i % PHOTO_MONTHS.length];
+    const stage: PhotoStage = i === 0 ? 'before' : i === taken - 1 && finished ? 'after' : 'during';
+    const caption = pool.captions[i];
+    // A frame with people in it stays internal: consent for a public page is
+    // a different thing from permission to file the photo.
+    const people = /\b(crew|volunteer|relocating)\b/i.test(caption);
     return {
-      caption: pool.captions[i],
-      date: `${PHOTO_MONTHS[i % PHOTO_MONTHS.length]} ${year}`,
+      caption,
+      date: `${month} ${year}`,
       scene: pool.scene,
       seed: seed + i * 11,
+      stage,
+      // The first and last frames are one view over time where there is a
+      // pair; a mid-project record keeps its site view alone.
+      point: stage === 'before' || stage === 'after' ? 'Main site, looking upstream' : undefined,
+      // Three or more working frames read as a story: they form the carousel.
+      collection: stage === 'during' && taken >= 5 ? 'Construction' : undefined,
+      public: !people,
+      takenOn: `${year}-${String(PHOTO_MONTHS_NUMBER[i % PHOTO_MONTHS_NUMBER.length]).padStart(2, '0')}-${String(8 + ((seed + i) % 17)).padStart(2, '0')}`,
+      alt: `${caption}. ${SCENE_ALT[pool.scene]}`,
     };
   });
 };
@@ -1765,7 +1832,7 @@ const stageSetYear = (project: Project): number => {
 const buildAudit = (
   project: Project,
   contacts: ProjectContact[],
-  funding: FundingSource[],
+  funding: ProjectFunding[],
   measures: PerformanceMeasure[],
   firstAreaLabel: string,
 ): AuditEntry[] => {
@@ -1922,9 +1989,22 @@ const realProjectMeasures = (project: Project, record: RealProject): Performance
   });
 };
 
-const realFunding = (project: Project, record: RealProject): FundingSource[] => {
+// ProjectFirma 1 keeps a secured and a targeted amount on one row. A row here
+// has one amount and one status, and a project has one row per source, so a
+// row with money secured reads as secured for that amount, and one with only a
+// targeted amount reads as requested.
+const realFunding = (project: Project, record: RealProject): ProjectFunding[] => {
   const rows = record.funding
-    .map((row) => ({ ...realFund(row.fund), amount: Math.round(row.secured + row.targeted) }))
+    .map((row) => {
+      const fund = realFund(row.fund);
+      const secured = Math.round(row.secured);
+      return {
+        ...fund,
+        source: fundingSourceSlug(fund.name, fund.organization),
+        amount: secured > 0 ? secured : Math.round(row.targeted),
+        status: (secured > 0 ? 'secured' : 'requested') as FundingStatus,
+      };
+    })
     .filter((row) => row.amount > 0);
   const total = project.estimatedTotalCost || rows.reduce((sum, row) => sum + row.amount, 0) || 1;
   return rows.map((row) => ({ ...row, share: row.amount / total }));
@@ -1997,11 +2077,17 @@ const buildRealDetail = (project: Project, record: RealProject): ProjectDetail =
     })),
     photos: record.photos.map((photo, i) => ({
       caption: photo.caption,
-      date: photo.timing === 'Unknown' ? '' : photo.timing,
+      // The tenant's timing is now the photo's stage; it has no date of its own.
+      date: '',
       scene: 'stream' as const,
       seed: i,
       src: photo.url,
       credit: photo.credit,
+      // The tenant's own Before / During / After; Unknown is read as During.
+      stage: (photo.timing === 'Before' ? 'before' : photo.timing === 'After' ? 'after' : 'during') as PhotoStage,
+      public: true,
+      takenOn: '',
+      alt: photo.caption,
     })),
     ...applyPublishing(project, buildAudit(project, contacts, funding, measures, workAreas[0]?.label ?? ''), {
       description: record.description.trim(),
@@ -2024,7 +2110,7 @@ const buildDetail = (project: Project): ProjectDetail => {
   // contacts to find who is talking, and the change log reads all of it — its
   // entries name the funders, measures and work areas the page renders, which
   // is what keeps the log unable to contradict the record it accounts for.
-  const funding = buildFunding(project, authored.funders);
+  const funding = buildFunding(project, authored.funders, authored.notAwarded);
   const contacts = buildContacts(project, funding);
   const measures = buildMeasures(project, authored.measures, authored.progress);
 

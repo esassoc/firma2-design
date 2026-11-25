@@ -57,6 +57,7 @@ truth.**
 | 10 | Support: Free gets docs; Agency gets email support plus paid migration as an add-on; Program gets a named contact, onboarding, migration and workspace consolidation. |
 | 11 | Agency's 3 partner organizations are in-workspace only. Accepting connected organizations is Program only; any plan can connect outward. |
 | 12 | The field-and-measure crosswalk (answer once) is Agency and above. Type mapping is free. |
+| 13 | Plan and usage is removed, and plans with it: no Free, Agency or Program, no plan locks, no limits, no Upgrade. Every feature is available to every workspace. The user asked for Plan and usage to go; removing the locks and limits that led to it is the builder's reading, to be confirmed. *(2026-11-24; replaces 1–12, form-canvas 18–25 where they gate by plan, and access-requests 29)* |
 
 ## Limits
 

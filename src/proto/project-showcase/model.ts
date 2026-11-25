@@ -47,7 +47,7 @@ export const showcase = (project: Project) => {
     };
   });
 
-  const funding = [...detail.funding]
+  const funding = detail.funding.filter((row) => row.status === 'secured')
     .filter((f) => !published?.withheldFunding?.includes(f.name))
     .sort((a, b) => b.amount - a.amount);
   const fundingTotal = funding.reduce((s, f) => s + f.amount, 0);

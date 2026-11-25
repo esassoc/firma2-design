@@ -30,7 +30,6 @@ import { REVIEW_CADENCES, type ReviewCadence } from './firma2-review-cadence';
 // ---------------------------------------------------------------------------
 
 export const WORKSPACE_REVIEW_HREF = '/prototypes/review';
-export const WORKSPACE_UPDATES_HREF = '/prototypes/updates';
 export const reviewHref = (project: Project): string => `${WORKSPACE_REVIEW_HREF}/${projectSlug(project)}`;
 export const publicHref = (project: Project): string => `/prototypes/public/${projectSlug(project)}`;
 

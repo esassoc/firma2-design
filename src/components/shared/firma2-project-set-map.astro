@@ -6,16 +6,18 @@
 // page needed the same picture.
 //
 // WHY NOT THE PORTFOLIO MAP. firma2-portfolio-map is a page — color-by,
-// tags, coverage, charts, export — and it reads every project in the
+// coverage, charts, export — and it reads every project in the
 // workspace. A page about one organization or one measure needs one picture
 // of its own projects, so this is the same canvas (src/lib/leaflet), the same
 // shapes, the same dots-when-zoomed-out rule and the same popup doors, scoped
 // by a prop.
 //
-// COLOUR IS OPTIONAL. A page that splits its set (an organization's led vs
-// funded) passes `groups`, each project names its group, and the categorical
-// slots follow the groups' order; a key appears only when two or more groups
-// do. With no groups, every project wears slot 1 and there is no key.
+// COLOUR FOLLOWS THE WORKSPACE (src/lib/map-color.ts): each project's work
+// wears its stage's colour, or whatever Map layers says maps are coloured by,
+// and the key under the map names the values present. A page that splits its
+// set its own way (an organization's led vs funded) passes `groups` instead:
+// each project names its group, the categorical slots follow the groups'
+// order, and the key appears only when two or more groups do.
 //
 // THE GAP IS NAMED, because a map cannot show it: a project with no work area
 // is invisible here by construction, so the ones missing are listed under the
@@ -88,7 +90,7 @@ const shownGroups = groups.filter((g) => items.some((i) => i.group === g.key));
 const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 ---
 {items.length > 0 && (
-  <section class:list={['firma2-project-set-map', 'stack', bleed && 'firma2-project-set-map--bleed']} data-gap="md" aria-labelledby={headingId} data-config={JSON.stringify(config)} data-audience={audience} data-terrain={terrain ? '' : undefined} data-inset-start={insetStart} style={height ? `--firma2-project-set-map-height: ${height}` : undefined}>
+  <section class:list={['firma2-project-set-map', 'stack', bleed && 'firma2-project-set-map--bleed']} data-gap="md" aria-labelledby={headingId} data-config={JSON.stringify(config)} data-audience={audience} data-split={groups.length > 0 ? '' : undefined} data-terrain={terrain ? '' : undefined} data-inset-start={insetStart} style={height ? `--firma2-project-set-map-height: ${height}` : undefined}>
     <h2 id={headingId} class:list={[hideTitle ? 'visually-hidden' : 'typography-title-sm-strong']}>{title}</h2>
     <div class="firma2-project-set-map__canvas" role="application" aria-label={label} data-canvas></div>
     {shownGroups.length > 1 && (
@@ -101,6 +103,7 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
         ))}
       </ul>
     )}
+    {groups.length === 0 && !bleed && <div class="firma2-map-key firma2-project-set-map__auto-key typography-body-sm" data-key hidden></div>}
     <p class="typography-body-md" data-unmapped hidden></p>
     <slot name="popups" />
   </section>
@@ -121,8 +124,22 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
     border-radius: 0;
   }
 
-  .firma2-project-set-map [data-unmapped][hidden] {
+  .firma2-project-set-map [data-unmapped][hidden],
+  .firma2-project-set-map [data-key][hidden] {
     display: none;
+  }
+
+  /* The workspace's key (map.css, firma2-map-key), laid out as this map's own
+     key is: one wrapping row under the canvas, the dimension's name leading. */
+  .firma2-project-set-map__auto-key,
+  .firma2-project-set-map__auto-key :global(ul) {
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
+    gap: var(--spacing-200) var(--spacing-400);
+  }
+  .firma2-project-set-map__auto-key :global(.firma2-map-key__title) {
+    margin: 0;
   }
 
   .firma2-project-set-map__key {
@@ -193,7 +210,7 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
 <script>
   import type { MapWorkArea } from '../../data/firma2-geography';
   import { centroid, formatExtent } from '../../lib/geo';
-  import { createMap, loadLeaflet, markerStyle, shapeStyle, token } from '../../lib/leaflet';
+  import { addColorKey, colorKeyHTML, createMap, loadLeaflet, markerStyle, projectColor, shapeStyle, token } from '../../lib/leaflet';
   import type { Leaflet } from '../../lib/leaflet';
   import { onGeoChange, readWorkAreas } from '../../lib/work-areas';
   import { label as vocab } from '../../lib/vocabulary';
@@ -215,7 +232,11 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
       return;
     }
 
-    const colorOf = (row: Row) => token(`--color-background-dataviz-categorical-${row.slot}`, '#3e9b4f');
+    // The page's own split, else the workspace's colouring (stage by default).
+    const split = root.dataset.split !== undefined;
+    const key = root.querySelector<HTMLElement>('[data-key]');
+    const colorOf = (row: Row, kind: MapWorkArea['kind'] = 'area') =>
+      split ? token(`--color-background-dataviz-categorical-${row.slot}`, '#3e9b4f') : projectColor(row.slug, kind);
 
     const shapes = L.featureGroup();
     const dots = L.featureGroup();
@@ -225,23 +246,27 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
     });
     map.setView([39.05, -120.07], 10);
     shapes.addTo(map);
+    // A full-bleed map has no margin under it to set a key in: its key rides on the map.
+    const mapKey = !split && !key ? addColorKey(L, map) : null;
 
     // Esri's topographic map in place of the grey canvas: relief, water and
     // its own place names, so ours hide (as addBasemaps does for Topographic).
     // LIGHT THEME ONLY — the topo sheet is a bright page with no dark edition,
     // so the dark theme keeps the house dark canvas and its names.
-    const topo =
-      root.dataset.terrain !== undefined
-        ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Tiles &copy; Esri, USGS, NOAA and contributors',
-            maxZoom: window.devicePixelRatio > 1 ? 17 : 16,
-            maxNativeZoom: 16,
-            detectRetina: window.devicePixelRatio > 1,
-          })
-        : null;
+    // Built on first use, so a map that never shows terrain never asks for it.
+    let topoLayer: Leaflet | null = null;
+    const topoOf = () =>
+      (topoLayer ??= L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri, USGS, NOAA and contributors',
+        maxZoom: window.devicePixelRatio > 1 ? 17 : 16,
+        maxNativeZoom: 16,
+        detectRetina: window.devicePixelRatio > 1,
+      }));
     const syncBase = () => {
-      if (!topo) return;
-      const dark = document.documentElement.getAttribute('data-scheme') === 'dark';
+      const terrain = root.dataset.terrain !== undefined;
+      if (!terrain && !topoLayer) return;
+      const topo = topoOf();
+      const dark = !terrain || document.documentElement.getAttribute('data-scheme') === 'dark';
       if (dark) {
         map.removeLayer(topo);
         map.firma2Base.addTo(map);
@@ -299,7 +324,7 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
         const meta = row.meta ? `${esc(row.meta)}<br>` : '';
 
         areas.forEach((area) => {
-          const style = shapeStyle(area.kind, color);
+          const style = shapeStyle(area.kind, colorOf(row, area.kind));
           const shape =
             area.kind === 'point'
               ? L.circleMarker(area.path[0], { ...style, radius: 6 })
@@ -328,6 +353,12 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
       });
 
       syncDots();
+      if (key) {
+        const html = colorKeyHTML([...drawn.keys()]);
+        key.hidden = !html;
+        key.innerHTML = html ? `<p class="firma2-map-key__title typography-label-sm-strong">${esc(html.title)}</p><ul aria-label="${esc(html.title)}">${html.rows}</ul>` : '';
+      }
+      mapKey?.([...drawn.keys()]);
       if (frame && all.length) map.fitBounds(L.latLngBounds(all), { ...framing(32), maxZoom: 12 });
 
       unmapped.hidden = missing.length === 0;
@@ -358,6 +389,25 @@ const headingId = `firma2-project-set-map-${title.toLowerCase().replace(/[^a-z0-
           if (key === slug) layer.bringToFront?.();
         });
       });
+    });
+    // The base map, switched from outside (the public site's settings): the
+    // attribute is the state, so a switch made before this map existed holds.
+    root.addEventListener('firma2:set-map-base', (e) => {
+      root.toggleAttribute('data-terrain', (e as CustomEvent<{ terrain: boolean }>).detail.terrain);
+      syncBase();
+    });
+    // Open on some of the projects without hiding the rest. `data-frame` holds
+    // the slugs for the same reason the base map is an attribute.
+    const frameTo = (slugs: string[]) => {
+      const path = slugs.flatMap((slug) => drawn.get(slug)?.path ?? []);
+      const all = path.length ? path : [...drawn.values()].flatMap((entry) => entry.path);
+      if (all.length) map.fitBounds(L.latLngBounds(all), { ...framing(32), maxZoom: 12 });
+    };
+    const framed = () => (root.dataset.frame ?? '').split(' ').filter(Boolean);
+    if (framed().length) frameTo(framed());
+    root.addEventListener('firma2:set-map-frame', (e) => {
+      root.dataset.frame = ((e as CustomEvent<{ slugs: string[] }>).detail.slugs ?? []).join(' ');
+      frameTo(framed());
     });
     root.addEventListener('firma2:set-map-focus', (e) => {
       const entry = drawn.get((e as CustomEvent<{ slug: string }>).detail.slug);

@@ -12,6 +12,10 @@ Read by the `prototype-to-stories`, `decision-log` and `story-export` skills. It
 - How to run it: `npm run dev` serves at `/` (port varies). `npm run build && npx astro preview` serves under `/firma2-design/`.
 - Usual prototype artifacts: browser-local stores in `src/lib/*-store.ts` and `localStorage`; invented seed data in `src/data/`; scripted readings and assistants (no model is called); a hard-coded current user and role switchers; `?flow=` guided walkthroughs.
 
+## Unfinished screens
+- The prototype is not complete everywhere. The project detail page (`project-record`) is one screen the user has named as unfinished (2026-11-23); features marked `exploring` in the system map may be too.
+- Something missing from an unfinished screen is unfinished work, not a decision and not a bug. Propose the obvious completion, tag it `proposed`, and say it is not yet prototyped.
+
 ## Context documents
 - Glossary: `GLOSSARY.md`
 - Decision records: `docs/adr/`

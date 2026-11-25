@@ -1,0 +1,333 @@
+---
+// firma2-access-request-inbox — the Access requests page: the people waiting
+// to get in on the left, the selected request on the right, and Approve and
+// next moving down the list without leaving the page.
+//
+// AN INBOX, AS REVIEW'S AND SUPPORT REQUESTS' ARE (user, 2026-11-24: "why not
+// have a similar thing for user requests"). The requests were only bands above
+// three settings tables (firma2-access-request-list: Users, Organizations, an
+// organization's Members). A band is right where the request is a detail of
+// the page it sits on; an administrator answering a week of them needs the
+// whole queue in one place and each request's evidence beside its buttons.
+//
+// TWO VIEWS, BECAUSE THE DECISION DIFFERS (the reason Proposals is its own view
+// on Review). JOIN: should this person be in that organization — Approve or
+// Decline, here. NEW ORGANIZATION: should this organization exist — that is
+// decided on its review page, where its name, type and near-duplicates are
+// settled before anything is created, so this pane states the request and
+// opens that page.
+//
+// THE SAME RULES AS THE BANDS, not a second copy of the decision
+// (.scratch/access-requests/spec.md): longest-waiting first; the evidence is
+// whether the email is at the organization's own domain, flagged and never
+// blocking (decision 18); approving as asked is one click unless it raises a
+// Viewer to Contributor, which changes their role everywhere and asks first
+// (decision 4); a request to edit can be approved to follow only; Decline
+// takes an optional reason that is sent with it. Every answer goes through
+// src/lib/access-requests.ts, so the bands and this page agree without reload.
+//
+// BUILT IN THE BROWSER. Requests live in this browser's store and change while
+// the page is open, so the rows are cloned from a template and ONE pane is
+// filled for whichever is picked (firma2-inbox's `*` pane), as Review's
+// Proposals view is.
+//
+// WHAT IS NOT HERE: answered requests (approved, declined, withdrawn) — a
+// history nobody asked for yet.
+//
+// bcn-lego-checked: firma2-inbox is the shell; esa-button the acts; esa-badge
+// the evidence and Overdue; esa-confirm-dialog the role change; esa-dialog +
+// esa-textarea the decline; esa-empty-state the empty views;
+// esa-snackbar-container the receipts. The facts are a <dl> on the two-column
+// grid Review's proposal answers use. Beacon is not cloned on this machine.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2Inbox from '../shared/firma2-inbox.astro';
+import { CURRENT_USER, CURRENT_USER_ORGANIZATIONS, organizations, users } from '../../data/firma2-directory';
+import { organizationPageHref } from '../../data/firma2-organization-pages';
+import { withBase } from '../../lib/base';
+
+// What the client needs to judge evidence and role changes, without importing
+// the whole directory into the browser (firma2-access-request-list's maps).
+const websites = Object.fromEntries(organizations.map((o) => [o.name, o.website]));
+const roles = Object.fromEntries(users.map((u) => [u.email, u.role]));
+const orgHrefs = Object.fromEntries(
+  organizations
+    .filter((o) => o.visibility !== 'private' || CURRENT_USER_ORGANIZATIONS.includes(o.name))
+    .map((o) => [o.name, withBase(organizationPageHref(o.slug))]),
+);
+---
+<div
+  class="firma2-access-request-inbox"
+  data-access-inbox
+  data-websites={JSON.stringify(websites)}
+  data-roles={JSON.stringify(roles)}
+  data-org-hrefs={JSON.stringify(orgHrefs)}
+  data-answerer={CURRENT_USER.name}
+  data-review-base={withBase('/prototypes/workspace-settings/organizations/requests')}
+>
+  <Firma2Inbox label="Access requests" views={[{ key: 'join', label: 'Join' }, { key: 'organization', label: 'New organization' }]}>
+    <section class="stack" data-gap="lg" data-inbox-pane="*" hidden aria-labelledby="firma2-access-inbox-title">
+      <div class="repel firma2-inbox__head" data-gap="md">
+        <div class="stack" data-gap="2xs">
+          <div class="cluster" data-gap="xs">
+            <h2 class="typography-title-md-strong" id="firma2-access-inbox-title" data-pane-title></h2>
+            <span data-pane-overdue hidden><EsaBadge value="Overdue" variant="warning" size="sm" /></span>
+          </div>
+          <p class="typography-body-sm firma2-inbox__muted" data-pane-byline></p>
+        </div>
+        <span class="cluster" data-gap="xs">
+          <span data-act="approve"><EsaButton variant="primary" size="md">Approve and next</EsaButton></span>
+          <span data-act="approve-viewer"><EsaButton variant="secondary" appearance="outline" size="md">Approve to follow only</EsaButton></span>
+          <span data-act="decline"><EsaButton variant="secondary" appearance="outline" size="md">Decline</EsaButton></span>
+          <span data-act="review"><EsaButton variant="primary" size="md" tag="a" href="#" data-review-link>Review request</EsaButton></span>
+        </span>
+      </div>
+      <dl class="firma2-access-request-inbox__facts" data-pane-facts></dl>
+    </section>
+
+    <div slot="empty" data-inbox-empty="join" hidden>
+      <EsaEmptyState size="sm" title="No one is waiting to join" />
+    </div>
+    <div slot="empty" data-inbox-empty="organization" hidden>
+      <EsaEmptyState size="sm" title="No new organizations requested" />
+    </div>
+  </Firma2Inbox>
+
+  {/* The row every request is cloned from, and the evidence badges a fact shows. */}
+  <template data-row-template>
+    <li data-inbox-item="" data-inbox-view="">
+      <button type="button" class="firma2-inbox__item" data-inbox-pick>
+        <span class="typography-label-md-strong" data-row-name></span>
+        <span class="typography-body-sm firma2-inbox__muted" data-row-ask></span>
+        <span class="typography-body-sm firma2-inbox__muted cluster" data-gap="xs">
+          <span data-row-waiting></span>
+          <span data-row-overdue hidden><EsaBadge value="Overdue" variant="warning" size="sm" /></span>
+        </span>
+      </button>
+    </li>
+  </template>
+  <template data-badge="match"><EsaBadge value="Matches the organization’s domain" variant="success" size="sm" /></template>
+  <template data-badge="personal"><EsaBadge value="Personal email" variant="warning" size="sm" /></template>
+  <template data-badge="other"><EsaBadge value="Different domain" variant="secondary" size="sm" /></template>
+
+  <esa-snackbar-container data-access-toasts></esa-snackbar-container>
+  {/* Each dialog in its own wrapper: two sibling dialogs can come out nested. */}
+  <div><esa-confirm-dialog data-access-confirm></esa-confirm-dialog></div>
+  <div>
+    <esa-dialog heading="Decline request" size="sm" show-close-button data-access-decline>
+      <esa-textarea label="Reason (optional)" help-text="Sent to them with the decline." size="md" rows="3" data-decline-reason></esa-textarea>
+      <div class="cluster" data-gap="xs" slot="footer">
+        <EsaButton variant="danger" size="md" data-decline-submit>Decline request</EsaButton>
+        <EsaButton variant="ghost" size="md" data-decline-cancel>Cancel</EsaButton>
+      </div>
+    </esa-dialog>
+  </div>
+</div>
+
+<style>
+  /* Label beside value, as Review's proposal answers read. */
+  .firma2-access-request-inbox__facts {
+    display: grid;
+    grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr);
+    gap: var(--spacing-200) var(--spacing-600);
+    margin: 0;
+  }
+
+  .firma2-access-request-inbox__facts :global(dt) {
+    color: var(--color-content-default-secondary);
+  }
+
+  .firma2-access-request-inbox__facts :global(dd) {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .firma2-access-request-inbox :global([hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-confirm-dialog';
+  import '@esa/ecology/esa-dialog';
+  import '@esa/ecology/esa-textarea';
+  import '@esa/ecology/esa-snackbar-container';
+  import { CHANGED, approveRequest, declineRequest, readRequests } from '../../lib/access-requests';
+  import { OVERDUE_DAYS, askedLabel, daysSince, domainOfEmail, evidenceFor, similarOrganizations } from '../../data/firma2-access-requests';
+  import type { AccessRequest, AskedAccess } from '../../data/firma2-access-requests';
+  import { dateFormatter } from '../../lib/format';
+
+  type Confirm = HTMLElement & { heading: string; message: string; confirmLabel: string; cancelLabel: string; show(): void };
+  type Dialog = HTMLElement & { heading: string; show(): void; close(): void };
+  type Textarea = HTMLElement & { value: string };
+  type Toasts = HTMLElement & { show(config: { message: string; variant?: string }): void };
+
+  const waitingText = (days: number) => (days === 0 ? 'Asked today' : days === 1 ? 'Waiting 1 day' : `Waiting ${days} days`);
+
+  document.querySelectorAll<HTMLElement>('[data-access-inbox]').forEach((root) => {
+    const shell = root.querySelector<HTMLElement>('[data-inbox]')!;
+    const list = root.querySelector<HTMLElement>('[data-inbox-list]')!;
+    const rowTemplate = root.querySelector<HTMLTemplateElement>('[data-row-template]')!;
+    const websites: Record<string, string> = JSON.parse(root.dataset.websites ?? '{}');
+    const roles: Record<string, string> = JSON.parse(root.dataset.roles ?? '{}');
+    const orgHrefs: Record<string, string> = JSON.parse(root.dataset.orgHrefs ?? '{}');
+    const answerer = root.dataset.answerer ?? '';
+    const reviewBase = root.dataset.reviewBase ?? '';
+    const confirm = root.querySelector<Confirm>('[data-access-confirm]')!;
+    const decline = root.querySelector<Dialog>('[data-access-decline]')!;
+    const reason = root.querySelector<Textarea>('[data-decline-reason]')!;
+    const toasts = root.querySelector<Toasts>('[data-access-toasts]');
+    const facts = root.querySelector<HTMLElement>('[data-pane-facts]')!;
+    const $ = (sel: string) => root.querySelector<HTMLElement>(sel)!;
+
+    let byId = new Map<string, AccessRequest>();
+    let selected = '';
+
+    // ---- the list: every pending request, longest-waiting first ----
+    const paintList = () => {
+      const pending = readRequests()
+        .filter((r) => r.status === 'pending')
+        .sort((a, b) => a.created.localeCompare(b.created));
+      byId = new Map(pending.map((r) => [r.id, r]));
+      list.replaceChildren(
+        ...pending.map((r) => {
+          const li = rowTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement;
+          const days = daysSince(r.created);
+          li.dataset.inboxItem = r.id;
+          li.dataset.inboxView = r.kind;
+          li.querySelector('[data-row-name]')!.textContent = r.kind === 'organization' ? r.organization : r.name;
+          li.querySelector('[data-row-ask]')!.textContent = r.kind === 'organization' ? `Requested by ${r.name}` : r.organization;
+          li.querySelector('[data-row-waiting]')!.textContent = waitingText(days);
+          li.querySelector<HTMLElement>('[data-row-overdue]')!.hidden = days < OVERDUE_DAYS;
+          return li;
+        }),
+      );
+      shell.dispatchEvent(new CustomEvent('firma2:inbox-refresh'));
+    };
+
+    // ---- the pane: the selected request, stated ----
+    const fact = (label: string, ...value: (Node | string)[]) => {
+      const dt = document.createElement('dt');
+      dt.className = 'typography-body-md';
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.className = 'typography-body-md cluster';
+      dd.dataset.gap = 'xs';
+      dd.append(...value);
+      return [dt, dd];
+    };
+    const link = (text: string, href: string) => {
+      const a = document.createElement('a');
+      a.href = href;
+      a.textContent = text;
+      return a;
+    };
+    const badge = (name: string) => root.querySelector<HTMLTemplateElement>(`[data-badge="${name}"]`)!.content.cloneNode(true);
+
+    const paintPane = (r: AccessRequest) => {
+      const days = daysSince(r.created);
+      const join = r.kind === 'join';
+      $('[data-pane-title]').textContent = join ? r.name : r.organization;
+      $('[data-pane-byline]').textContent = join
+        ? `Asks to join ${r.organization} · ${waitingText(days)}`
+        : `${r.name} asks for a new organization · ${waitingText(days)}`;
+      $('[data-pane-overdue]').hidden = days < OVERDUE_DAYS;
+      $('[data-act="approve"]').hidden = !join;
+      $('[data-act="approve-viewer"]').hidden = !join || r.asked !== 'Contributor';
+      $('[data-act="decline"]').hidden = !join;
+      $('[data-act="review"]').hidden = join;
+      root.querySelector<HTMLAnchorElement>('[data-review-link]')?.setAttribute('href', `${reviewBase}/${r.id}`);
+
+      const website = join ? websites[r.organization] : r.website;
+      const evidence = evidenceFor(r.email, website);
+      const mark = badge(evidence) as DocumentFragment;
+      if (evidence === 'match') mark.querySelector('.esa-badge__text')!.textContent = `Matches ${domainOfEmail(r.email)}`;
+      const asked = new Date(`${r.created}T00:00:00`);
+      const similar = join ? [] : similarOrganizations(r.organization, r.website);
+      facts.replaceChildren(
+        ...(join ? [] : fact('Requested by', r.name)),
+        ...fact('Email', r.email, mark),
+        ...(join ? fact('Organization', orgHrefs[r.organization] ? link(r.organization, orgHrefs[r.organization]) : r.organization) : []),
+        ...(join ? fact('Asks to', askedLabel[r.asked]) : []),
+        ...(!join && r.orgType ? fact('Type', r.orgType) : []),
+        ...(!join && r.website ? fact('Website', r.website) : []),
+        ...(similar.length
+          ? fact('Similar organizations', ...similar.flatMap((name, i) => [i ? ', ' : '', orgHrefs[name] ? link(name, orgHrefs[name]) : name]))
+          : []),
+        ...(r.message ? fact('Message', `“${r.message}”`) : []),
+        ...(r.project ? fact('Sent from', r.project) : []),
+        ...fact('Requested', dateFormatter.format(asked)),
+      );
+    };
+
+    shell.addEventListener('firma2:inbox-select', (event) => {
+      selected = (event as CustomEvent<{ key: string }>).detail.key;
+      const r = byId.get(selected);
+      if (r) paintPane(r);
+    });
+
+    // ---- approve: one click unless it raises a Viewer to Contributor ----
+    let pendingApproval: { id: string; granted: AskedAccess } | null = null;
+    const finishApprove = (id: string, granted: AskedAccess) => {
+      const r = byId.get(id);
+      if (!r) return;
+      // An administrator keeps their role; everyone else holds what was granted.
+      const role = (roles[r.email] ?? 'Viewer') === 'Administrator' ? 'an Administrator' : `a ${granted}`;
+      approveRequest(id, granted, answerer);
+      toasts?.show({ message: `${r.name} joined ${r.organization} as ${role}.`, variant: 'success' });
+    };
+    const approve = (granted: AskedAccess) => {
+      const r = byId.get(selected);
+      if (!r) return;
+      if (granted === 'Contributor' && (roles[r.email] ?? 'Viewer') === 'Viewer') {
+        pendingApproval = { id: r.id, granted };
+        Object.assign(confirm, {
+          heading: `Approve ${r.name} as a Contributor?`,
+          message: `They’ll edit ${r.organization}’s projects, and their workspace role changes from Viewer to Contributor.`,
+          confirmLabel: 'Approve',
+          cancelLabel: 'Cancel',
+        });
+        confirm.show();
+        return;
+      }
+      finishApprove(r.id, granted);
+    };
+    $('[data-act="approve"]').addEventListener('click', () => {
+      const r = byId.get(selected);
+      if (r) approve(r.asked);
+    });
+    $('[data-act="approve-viewer"]').addEventListener('click', () => approve('Viewer'));
+    confirm.addEventListener('confirm', () => {
+      if (pendingApproval) finishApprove(pendingApproval.id, pendingApproval.granted);
+      pendingApproval = null;
+    });
+
+    // ---- decline: an optional reason, sent with it ----
+    let declining = '';
+    $('[data-act="decline"]').addEventListener('click', async () => {
+      const r = byId.get(selected);
+      if (!r) return;
+      declining = r.id;
+      await customElements.whenDefined('esa-dialog');
+      decline.heading = `Decline ${r.name}’s request?`;
+      reason.value = '';
+      decline.show();
+    });
+    root.querySelector('[data-decline-cancel]')?.addEventListener('click', () => decline.close());
+    root.querySelector('[data-decline-submit]')?.addEventListener('click', () => {
+      const r = byId.get(declining);
+      declining = '';
+      decline.close();
+      if (!r) return;
+      declineRequest(r.id, answerer, reason.value);
+      toasts?.show({ message: `Request from ${r.name} declined.`, variant: 'success' });
+    });
+
+    // Every answer writes the store, which repaints the list; the shell then
+    // selects the next request.
+    window.addEventListener(CHANGED, paintList);
+    window.addEventListener('storage', paintList);
+    paintList();
+  });
+</script>

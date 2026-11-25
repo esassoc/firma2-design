@@ -63,6 +63,7 @@ const canImport = Boolean(IMPORT_FIXTURES[slug]);
   import '@esa/ecology/esa-snackbar-container';
   import { readPublishing } from '../../lib/publish-store';
   import { findImport, importedChanges, stashHandoff, undoImport } from '../../lib/report-imports';
+  import { AI_READING_EVENT, aiReadingOn, aiReadingReason } from '../../lib/ai-reading';
   import type { ReportImport } from '../../lib/report-imports';
 
   type Toasts = HTMLElement & {
@@ -140,6 +141,19 @@ const canImport = Boolean(IMPORT_FIXTURES[slug]);
       if (record) void announce(record);
     }
 
+    // ---- the header's door follows the workspace's setting --------------------
+    // "Import a report" in the record bar is absent, not disabled, while reading
+    // by an outside AI service is off or unavailable (story 83). The Performance
+    // measures card carries the line that says why.
+    const followSetting = (): void => {
+      document.querySelectorAll<HTMLElement>('[data-project-import]').forEach((el) => {
+        const host = el.closest<HTMLElement>('bcn-tooltip, esa-tooltip, .esa-button') ?? el;
+        host.style.display = aiReadingOn() ? '' : 'none';
+      });
+    };
+    followSetting();
+    document.addEventListener(AI_READING_EVENT, followSetting);
+
     // ---- 3. drop a file anywhere on the project -------------------------------
     const READABLE_NAME = /\.(pdf|docx?|xlsx?|csv)$/i;
     const READABLE_TYPE = /pdf|sheet|excel|csv|msword|wordprocessing/;
@@ -164,6 +178,16 @@ const canImport = Boolean(IMPORT_FIXTURES[slug]);
       event.preventDefault();
       const dropped = [...(event.dataTransfer?.files ?? [])].find((f) => READABLE_NAME.test(f.name));
       if (!dropped) return;
+      // THE SETTING IS TESTED AT THE DROP (story 83). While reading by an
+      // outside AI service is off or unavailable, the page has already taken
+      // the file, so the browser does not open it; nothing starts, and a toast
+      // says why.
+      const reason = aiReadingReason();
+      if (reason) {
+        await customElements.whenDefined('esa-snackbar-container');
+        root.show({ message: reason });
+        return;
+      }
       // A browser that could not keep the file still opens the page; the
       // person picks the file there.
       const kept = await stashHandoff(slug, dropped).catch(() => false);

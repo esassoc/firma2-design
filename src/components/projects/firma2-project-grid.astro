@@ -30,19 +30,21 @@ import EsaIcon from '@esa/ecology/esa-icon.astro';
 import EsaPill from '@esa/ecology/esa-pill.astro';
 import EsaFilterContainer from '@esa/ecology/esa-filter-container.astro';
 import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2RecentProjects from './firma2-recent-projects.astro';
 import '../shared/firma2-data-grid-chrome.css';
 import { projects as defaultProjects, STAGE_ORDER, STAGE_TONE } from '../../data/firma2-projects';
 import { CLASSIFICATIONS } from '../../data/firma2-classifications';
 import { PROJECT_TYPES } from '../../data/firma2-project-types';
-import { TAGS } from '../../data/firma2-tags';
 import { stageSettings } from '../../data/firma2-workspace-settings';
 import type { Project } from '../../data/firma2-projects';
 
 interface Props {
   projects?: Project[];
+  /** The search box lists your recently opened projects while it is empty (the Projects index). */
+  recents?: boolean;
 }
 
-const { projects = defaultProjects } = Astro.props;
+const { projects = defaultProjects, recents = false } = Astro.props;
 
 // The dot colour each esa-pill variant paints, so a stage option in the panel
 // reads as the same thing as its pill in the Stage column. All five are the
@@ -67,7 +69,7 @@ const stageOptions = STAGE_ORDER.filter((s) => projects.some((p) => p.stage === 
   color: TONE_DOT[STAGE_TONE[s]],
 }));
 
-// Project type, classification and tag options — same convention, derived
+// Project type and classification options — same convention, derived
 // from the data, in vocabulary order. No dots: these are vocabulary, not
 // status, and nothing else on the screen colours them. A project matches a
 // set filter if it carries ANY selected value.
@@ -75,7 +77,6 @@ const present = <T extends { name: string }>(list: T[], has: (p: Project, name: 
   list.filter((x) => projects.some((p) => has(p, x.name))).map((x) => ({ value: x.name, label: x.name }));
 const typeOptions = present(PROJECT_TYPES, (p, n) => p.projectType === n);
 const classificationOptions = present(CLASSIFICATIONS, (p, n) => p.classifications.includes(n as Project['classifications'][number]));
-const tagOptions = present(TAGS, (p, n) => p.tags.includes(n as Project['tags'][number]));
 
 // panel-right is not in the icon registry, so the path rides in explicitly —
 // same glyph, same technique as the measure table's peek.
@@ -117,6 +118,7 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
           size="md"
           data-projects-search
         ></esa-text-field>
+        {recents && <Firma2RecentProjects projects={projects} />}
       </div>
 
       <EsaFilterContainer>
@@ -147,15 +149,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
           multiple
           placeholder="Search classifications"
           options={JSON.stringify(classificationOptions)}
-        ></esa-filter-dropdown>
-        <esa-filter-dropdown
-          data-projects-tag-filter
-          name="tag"
-          label="Tags"
-          size="md"
-          multiple
-          placeholder="Search tags"
-          options={JSON.stringify(tagOptions)}
         ></esa-filter-dropdown>
       </EsaFilterContainer>
     </div>
@@ -283,7 +276,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
 
 <script>
   import '@esa/ecology/esa-text-field';
-  import { currentTags, tagsOfProject } from '../../lib/project-tags';
   import '@esa/ecology/esa-filter-dropdown';
   import { escGridHtml as esc, gridCurrencyFormatter as money, wireDataGrid } from '../shared/grid-chrome';
   // Column headers name renameable nouns; resolved once, at grid build.
@@ -310,7 +302,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     const stageFilter = root.querySelector<HTMLElement>('[data-projects-stage-filter]');
     const classificationFilter = root.querySelector<HTMLElement>('[data-projects-classification-filter]');
     const typeFilter = root.querySelector<HTMLElement>('[data-projects-type-filter]');
-    const tagFilter = root.querySelector<HTMLElement>('[data-projects-tag-filter]');
 
     // Pre-clone the real esa-pill markup per stage (server-rendered with the
     // design-system scope hash) so grid cells reuse the lego verbatim.
@@ -336,7 +327,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     let stageValues: string[] = [];
     let classificationValues: string[] = [];
     let typeValues: string[] = [];
-    let tagValues: string[] = [];
 
     // Only name/organization/county feed quick search — stage and classification have
     // their own dropdowns. defaultColDef opts every column out; these three opt in.
@@ -434,13 +424,12 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
         // re-authoring the lego's markup by hand.
         overlayNoRowsTemplate: emptyState?.outerHTML,
         isExternalFilterPresent: () =>
-          stageValues.length > 0 || classificationValues.length > 0 || typeValues.length > 0 || tagValues.length > 0,
+          stageValues.length > 0 || classificationValues.length > 0 || typeValues.length > 0,
         doesExternalFilterPass: (node) =>
           (stageValues.length === 0 || stageValues.includes(node.data?.stage ?? '')) &&
           (typeValues.length === 0 || typeValues.includes(node.data?.projectType ?? '')) &&
           (classificationValues.length === 0 ||
-            (node.data?.classifications ?? []).some((c) => classificationValues.includes(c))) &&
-          (tagValues.length === 0 || tagsOfProject(projectSlug(node.data!)).some((t) => tagValues.includes(t.name))),
+            (node.data?.classifications ?? []).some((c) => classificationValues.includes(c))),
       },
     });
     if (!handle) return;
@@ -474,14 +463,6 @@ const PANEL_RIGHT = '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M
     stageFilter?.addEventListener('selection-change', onSelection((v) => { stageValues = v; }));
     classificationFilter?.addEventListener('selection-change', onSelection((v) => { classificationValues = v; }));
     typeFilter?.addEventListener('selection-change', onSelection((v) => { typeValues = v; }));
-    tagFilter?.addEventListener('selection-change', onSelection((v) => { tagValues = v; }));
-    // Tags as Workspace settings has them now — added and renamed ones too —
-    // and matched against each project's saved tags (src/lib/project-tags.ts).
-    if (tagFilter) {
-      customElements.whenDefined('esa-filter-dropdown').then(() => {
-        (tagFilter as HTMLElement & { options: unknown }).options = currentTags().map((t) => ({ value: t.name, label: t.name }));
-      });
-    }
   }
 
   document.querySelectorAll<HTMLElement>('.firma2-project-grid').forEach(initProjectGrid);

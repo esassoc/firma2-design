@@ -1,7 +1,9 @@
 ---
 // firma2-utility-bar — the thin strip under the inset sheet, on the frame's
-// own surface: workspace utilities that belong to no page (Recent, Help,
-// Shortcuts) trailing, the product credit leading. Modelled on Linear's frame
+// own surface: workspace utilities that belong to no page (Help, Shortcuts)
+// trailing, the product credit leading. Recent left on 2026-11-24 (user): the
+// global search and the Projects table's search both show your recent pages
+// now (src/lib/recent-pages.ts). Modelled on Linear's frame
 // foot (user, 2026-10-21): the sheet stops a strip short of the window and
 // these sit below it, quieter than anything on the page.
 //
@@ -14,7 +16,7 @@
 // bcn-lego-checked: no esa- lego is a frame foot — esa-app-bar is a page-top
 // bar with a 72px minimum and esa-app-shell has no footer slot (same gap the
 // account strip documents). Every control inside is a lego: EsaButton chrome,
-// esa-dropdown-menu for Recent, the docked firma2-help-sheet for Help, esa-dialog + EsaKbd for Shortcuts.
+// the docked firma2-help-sheet for Help, esa-dialog + EsaKbd for Shortcuts.
 // Beacon is not cloned in this checkout. The strip adds placement only.
 //
 // ECOLOGY DEVIATION: the buttons are the top bar's compact md (32px) — the
@@ -67,9 +69,6 @@ const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] 
       <EsaBadge value="" variant="warning" size="sm" />
       <EsaButton variant="chrome" size="md" data-utility-acting-reset>Back to Administrator</EsaButton>
     </span>
-    <esa-dropdown-menu position="above-end" data-utility-recent>
-      <EsaButton variant="chrome" size="md" icon="history">Recent</EsaButton>
-    </esa-dropdown-menu>
     {/* Help opens the docked Help sheet (firma2-help-sheet), at this page's
         article when it has one. */}
     <EsaButton variant="chrome" size="md" icon="circle-question-mark" data-utility-help>Help</EsaButton>
@@ -110,62 +109,19 @@ const SHORTCUTS: { group: string; rows: { label: string; keys: string[] }[] }[] 
 </script>
 
 <script>
-  import '@esa/ecology/esa-dropdown-menu';
   import '@esa/ecology/esa-dialog';
-  import type { EsaMenuItem } from '@esa/ecology/esa-dropdown-menu';
   import { actingLabel, clearActingAs } from '../../lib/workspace-permissions';
 
-  type Menu = HTMLElement & { items: EsaMenuItem[] };
   type Dialog = HTMLElement & { show(): void; close(): void; open: boolean };
-
-  // RECENT IS THIS BROWSER'S HISTORY OF APP PAGES — the last eight, newest
-  // first, the current page left out (you are on it). Per browser, like the
-  // rail's own arrangement: the prototype has no account to store it on.
-  const STORE = 'firma2:recent-pages';
-  const LIMIT = 8;
-  type Visit = { href: string; title: string };
-
-  const read = (): Visit[] => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(STORE) ?? '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-  const here = location.pathname + location.search;
-  // Page titles read "Plan and usage — Workspace settings — ProjectFirma 2.0";
-  // only the page's own name fits a menu row (the rest wrapped it to three lines).
-  const title = document.title.split(' — ')[0].trim() || 'Untitled page';
-  const visits = [{ href: here, title }, ...read().filter((v) => v.href !== here)].slice(0, LIMIT + 1);
-  try {
-    localStorage.setItem(STORE, JSON.stringify(visits));
-  } catch {
-    /* private window — Recent just shows what it can */
-  }
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
   document.querySelectorAll<HTMLElement>('[data-firma2-utility-bar]').forEach((bar) => {
-    const recent = bar.querySelector<Menu>('[data-utility-recent]');
     const dialog = bar.querySelector<Dialog>('[data-utility-shortcuts-dialog]');
-    const others = visits.filter((v) => v.href !== here).slice(0, LIMIT);
 
-    void customElements.whenDefined('esa-dropdown-menu').then(() => {
-      if (recent) {
-        recent.items = others.length
-          ? others.map((v) => ({ label: v.title, action: `recent:${v.href}` }))
-          : [{ label: 'No recent pages', action: 'recent-empty', disabled: true }];
-      }
-    });
     bar.querySelector('[data-utility-help]')?.addEventListener('click', () => {
       window.dispatchEvent(new CustomEvent('firma2:help-open', { detail: { toggle: true } }));
     });
-    recent?.addEventListener('menu-action', (event) => {
-      const action = (event as CustomEvent<string>).detail;
-      if (action.startsWith('recent:')) window.location.href = action.slice('recent:'.length);
-    });
-
     if (!isMac) bar.querySelectorAll('[data-mod]').forEach((el) => (el.textContent = 'Ctrl'));
 
     const acting = bar.querySelector<HTMLElement>('[data-utility-acting]');

@@ -74,7 +74,6 @@ import EsaCollapsible from '@esa/ecology/esa-collapsible.astro';
 import Firma2HelpLink from '../shared/firma2-help-link.astro';
 import Firma2SidePanel from '../shared/firma2-side-panel.astro';
 import { SAMPLE_WORKBOOK } from '../../data/firma2-project-import';
-import { LIMITS } from '../../lib/plan-usage';
 import { withBase } from '../../lib/base';
 import '../settings/firma2-settings-table.css';
 import '../shared/firma2-data-grid-chrome.css';
@@ -83,10 +82,8 @@ const config = {
   sample: SAMPLE_WORKBOOK,
   hrefs: {
     projects: withBase('/prototypes/projects'),
-    plan: withBase('/prototypes/workspace-settings/plan'),
   },
 };
-const freeLimit = LIMITS.free.projects;
 const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
 ---
 <div class="firma2-project-import" data-config={JSON.stringify(config)}>
@@ -220,15 +217,6 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
 
           <!-- 4 · REVIEW IMPORT -->
           <section class="firma2-project-import__panel stack" data-gap="lg" data-step="4" aria-label={STEPS[3]} hidden>
-            <div data-limit hidden>
-              <EsaAlertBox variant="info" title={`Free includes ${freeLimit} projects`}>
-                <div class="stack" data-gap="sm">
-                  <p class="typography-body-md" data-limit-text></p>
-                  <span data-reader="admin" hidden><EsaButton variant="secondary" size="md" tag="a" href={config.hrefs.plan}>Compare plans</EsaButton></span>
-                  <p class="typography-body-md" data-reader="member" hidden>Ask an administrator to upgrade.</p>
-                </div>
-              </EsaAlertBox>
-            </div>
             <!-- REVIEW AS AN OUTLINE (user, 2026-11-17, picked over Sections, Ledger
                  and Queue in a prototype round): one collapsible line per outcome,
                  its count in the title. Only the rows that need you start open; the
@@ -994,8 +982,6 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
   import type { GridApi } from 'ag-grid-community';
   import { can, currentActor } from '../../lib/workspace-permissions';
   import { readProjectSource } from '../../lib/work-areas';
-  import { limitOf } from '../../lib/plan-usage';
-  import { readPlan } from '../../lib/workspace-plan';
 
   type Control = HTMLElement & { value?: unknown; options?: unknown; checked?: boolean; open?: boolean; message?: string; tabs?: unknown; activeIndex?: number };
 
@@ -1128,12 +1114,6 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
 
     /** What goes in: new rows and rows that change an existing project. */
     const going = () => rows.filter((r) => r.status === 'new' || r.status === 'update');
-    const overLimit = (): { limit: number; after: number } | null => {
-      const limit = limitOf('projects', readPlan());
-      if (limit === null) return null;
-      const after = seedProjects.length + importedProjects().length + rows.filter((r) => r.status === 'new').length;
-      return after > limit ? { limit, after } : null;
-    };
 
     const paintChrome = () => {
       root.querySelectorAll<HTMLElement>('[data-goto]').forEach((b) => {
@@ -1165,7 +1145,7 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
           : created ? `Create ${n(created)} ${noun(created)}`
           : updated ? `Update ${n(updated)} ${noun(updated)}`
           : 'Import projects';
-        setButton(root, '[data-next]', label(text), going().length > 0 && !overLimit());
+        setButton(root, '[data-next]', label(text), going().length > 0);
         const toFix = rows.filter((r) => r.status === 'fix').length;
         // Importing now leaves them out; say so before the click, not after.
         note.textContent = toFix ? `${plural(toFix, 'row still needs', 'rows still need')} a fix and will be left out` : '';
@@ -1178,7 +1158,6 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
     $('[data-off="source"]').hidden = !subscribed;
     $('[data-off="permission"]').hidden = subscribed || permitted;
     $('[data-on]').hidden = subscribed || !permitted;
-    root.querySelectorAll<HTMLElement>('[data-reader]').forEach((el) => (el.hidden = (el.dataset.reader === 'admin') !== admin));
 
     // ---- 1 · upload -------------------------------------------------------------------
     const uploadState = (s: 'empty' | 'reading' | 'file') =>
@@ -1718,14 +1697,6 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
       });
     };
 
-    const paintLimit = () => {
-      const over = overLimit();
-      $('[data-limit]').hidden = !over || committed;
-      if (over) {
-        $('[data-limit-text]').textContent = `This import would bring the workspace to ${over.after} projects. Upgrade to Agency for unlimited projects, or skip ${over.after - over.limit} ${over.after - over.limit === 1 ? 'row' : 'rows'}.`;
-      }
-    };
-
     customElements.whenDefined('esa-select').then(() => {
       const policy = $<Control>('[data-existing-policy]');
       policy.options = [
@@ -1755,7 +1726,6 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
       const changed = paintUpdated();
       const same = rows.filter((r) => r.status === 'same').length;
       const out = paintLeftOut();
-      paintLimit();
       paintSections({ created, changed, same, out });
       root.querySelectorAll<HTMLElement>('[data-review-only]').forEach((el) => (el.hidden = committed));
       paintChrome();
@@ -1764,7 +1734,7 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
 
     // ---- committing ---------------------------------------------------------------------
     const commit = () => {
-      if (phase !== 'steps' || !going().length || overLimit()) return;
+      if (phase !== 'steps' || !going().length) return;
       const writing = going();
       // The same rows the Left out tab lists once this is done.
       leftOut = rows.filter((r) => r.status === 'fix' || r.status === 'skipped' || r.status === 'existing' || r.status === 'total');
@@ -1799,7 +1769,6 @@ const STEPS = ['Upload file', 'Match columns', 'Match values', 'Review import'];
         committed = true;
         $('[data-results-done]').append(resultsEl);
         const out = paintLeftOut();
-        paintLimit();
         root.querySelectorAll<HTMLElement>('[data-review-only]').forEach((el) => (el.hidden = true));
         paintSections({ created, changed: updated, same: rows.filter((r) => r.status === 'same').length, out });
         show('done');

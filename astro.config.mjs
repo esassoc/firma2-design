@@ -60,9 +60,34 @@ const realWorkspace = () => {
   };
 };
 
+// AREA FILES, IN DEV ONLY, on the same terms: a spatial file converted to
+// docs/private/<tenant>/area-files.json sits beside the workspace it belongs
+// to and is served as `virtual:firma2-area-files`; every build gets `null`
+// (src/data/firma2-geospatial-areas.ts).
+const realAreaFiles = () => {
+  let serving = false;
+  return {
+    name: 'firma2-real-area-files',
+    configResolved(config) {
+      serving = config.command === 'serve' && !config.isProduction;
+    },
+    resolveId(source) {
+      return source === 'virtual:firma2-area-files' ? '\0virtual:firma2-area-files' : null;
+    },
+    load(id) {
+      if (id !== '\0virtual:firma2-area-files') return null;
+      const workspace = serving ? workspaceFile() : null;
+      const file = workspace ? workspace.replace(/workspace\.json$/, 'area-files.json') : null;
+      if (!file || !existsSync(file)) return 'export default null;';
+      this.addWatchFile(file);
+      return `export default ${readFileSync(file, 'utf8')};`;
+    },
+  };
+};
+
 export default defineConfig({
   site: 'https://esassoc.github.io',
   base,
   server: { port: 4330 },
-  vite: { plugins: [realWorkspace(), ...(process.env.ICONS === 'lucide' ? [] : [hugeicons])] },
+  vite: { plugins: [realWorkspace(), realAreaFiles(), ...(process.env.ICONS === 'lucide' ? [] : [hugeicons])] },
 });

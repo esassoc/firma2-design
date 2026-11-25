@@ -1,6 +1,6 @@
 // The behaviour of firma2-schema-board: a measure's BREAKDOWNS as group
-// headings and their options as rows, built the way firma2-tag-board builds
-// tag groups and tags. See the component's header for the pattern.
+// headings and their options as rows, built the way firma2-classification-roster builds
+// groups and classifications. See the component's header for the pattern.
 //
 // THE MEASURE OWNS ITS BREAKDOWNS (PM 2 reconciliation, 2026-10-09). There is
 // no shared list store any more: the board edits the measure's own copies, and
@@ -69,7 +69,7 @@ export function mountSchemaBoard(root: HTMLElement, hooks: SchemaBoardHooks): Sc
   let frozen = false;
   let seq = 0;
 
-  // ---- shared parts (firma2-tag-board's, without colour) ----------------------
+  // ---- shared parts (firma2-classification-roster's, without colour) ----------------------
 
   const textField = (label: string, value: string, placeholder = ''): Field => {
     const f = document.createElement('esa-text-field') as Field;

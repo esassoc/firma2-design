@@ -122,6 +122,20 @@ const uploadShapesHref = withBase(projectHref);
          and the two columns, which no esa- component does. Beacon is not
          cloned on this machine. -->
 
+    <!-- ===== NOT OFFERED =====
+         Reading a report sends it to an outside AI service, which is the
+         workspace's setting (spec decision 41; src/lib/ai-reading.ts). While it
+         is off or unavailable this page reads nothing: no file control, no
+         paste, no "Read it" — the line that says why, and the way back. The
+         script shows it; `style`, not `hidden`, because `.stack` sets a
+         display of its own. -->
+    <div class="stack" data-gap="md" data-ai-off style="display: none">
+      <p class="typography-body-md" data-ai-off-line></p>
+      <div>
+        <EsaButton variant="secondary" appearance="outline" size="md" tag="a" href={withBase(projectHref)}>Back to the project</EsaButton>
+      </div>
+    </div>
+
     <!-- ===== READ ===== -->
     <div class="firma2-report-import__read stack" data-gap="lg" data-step="read">
       <esa-button-toggle size="md" aria-label="Report source" data-source data-options={JSON.stringify(sourceOptions)}></esa-button-toggle>
@@ -321,6 +335,7 @@ const uploadShapesHref = withBase(projectHref);
   import { DROPPED_PARAM } from '../../data/firma2-report-import';
   import type { ImportDocument, ImportProposal, ImportReading } from '../../data/firma2-report-import';
   import { CURRENT_USER } from '../../data/firma2-directory';
+  import { aiReadingReason } from '../../lib/ai-reading';
   import { TODAY_ISO } from '../../data/firma2-publish-history';
   import { addImport, changeKey, importedChanges, nextImportId, takeHandoff } from '../../lib/report-imports';
   import type { ImportGroup, ImportedChange } from '../../lib/report-imports';
@@ -541,7 +556,29 @@ const uploadShapesHref = withBase(projectHref);
       setStep('review');
     };
 
+    // THE WORKSPACE'S SETTING (src/lib/ai-reading.ts). Tested when the page
+    // opens and again at every read, before anything is sent: if it has been
+    // turned off or made unavailable since, the choose step gives way to the
+    // line that says why, and the held file or pasted text is let go. A check
+    // step that is already open stays: that document had already been sent.
+    const withhold = (): boolean => {
+      const reason = aiReadingReason();
+      if (!reason) return false;
+      file = null;
+      fileName = '';
+      root.querySelectorAll<HTMLElement>('[data-step]').forEach((el) => (el.hidden = true));
+      $('[data-ai-off-line]').textContent = reason;
+      $('[data-ai-off]').style.display = '';
+      // The top bar's acts belong to the steps this page no longer shows.
+      document
+        .querySelectorAll<HTMLElement>('.firma2-report-import-actions [data-read-wrap], .firma2-report-import-actions [data-restart-wrap], .firma2-report-import-actions [data-add-wrap]')
+        .forEach((el) => (el.hidden = true));
+      announce(reason);
+      return true;
+    };
+
     const read = async (name: string) => {
+      if (withhold()) return;
       $('[data-reading-line]').textContent = `Reading ${name}…`;
       announce(`Reading ${name}`);
       $('[data-other-project-block]').hidden = true;
@@ -1085,6 +1122,7 @@ const uploadShapesHref = withBase(projectHref);
     };
 
     setStep('read');
-    arrive();
+    // Not offered at all while the workspace's setting is off or unavailable.
+    if (!withhold()) arrive();
   });
 </script>

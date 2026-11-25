@@ -1,0 +1,283 @@
+---
+// firma2-inbox — a queue worked through in one place: the items waiting on the
+// left, the selected one on the right, and each decision moving to the next
+// without leaving the page.
+//
+// THE REVIEW INBOX'S SHAPE, MADE REUSABLE (user, 2026-11-24: support requests
+// and access requests are "an action that needs like an inbox to go through").
+// firma2-review-inbox settled the shape on 2026-11-17 — a sticky selection
+// list, a pane with its acts pinned at the top, views switched by a segmented
+// toggle and kept in the address — but it is built around publishing, and
+// nothing else could use it. This is that shape with nothing about publishing
+// in it. firma2-review-inbox still carries its own copy of the layout; it
+// should move onto this shell, which is a refactor of a working screen and was
+// not done in the same pass.
+//
+// THE CALLER OWNS THE ROWS AND THE PANES; THE SHELL OWNS WHICH ONE SHOWS.
+//
+//   slot="list"     <li data-inbox-item="KEY" data-inbox-view="VIEW">
+//                     <button class="firma2-inbox__item" data-inbox-pick>…</button>
+//                   </li>
+//   default slot    <section data-inbox-pane="KEY">…</section>, one per item
+//   slot="empty"    <div data-inbox-empty="VIEW">…</div>, shown when that view
+//                   has no items
+//
+// An item belongs to the view named on its <li>. When a decision changes
+// that — a request is resolved, approved, declined — the caller rewrites
+// `data-inbox-view` (or removes the <li>) and fires `firma2:inbox-refresh` on
+// the shell: the item leaves the list and THE NEXT ONE IS SELECTED, which is
+// what makes it an inbox rather than a list beside a page. Rows and panes added
+// after load are picked up by the same event.
+//
+// ONE PANE FOR MANY ITEMS. A caller that fills a single pane in the browser
+// (items kept in this browser have no server-rendered pane) marks it
+// `data-inbox-pane="*"`: it shows whenever the selected item has no pane of
+// its own, and `firma2:inbox-select` (detail: { key, view }) tells it which.
+//
+// THE VIEW AND THE ITEM ARE IN THE ADDRESS (?view=, ?item=), so a selected
+// request can be linked to and a reload lands where the reader was.
+//
+// bcn-lego-checked: the view switch is esa-button-toggle. The list items are
+// native buttons in a list — a selection list like Linear's inbox; no esa-
+// lego is a master list with rich rows. The two-track grid is bespoke:
+// `.sidebar` wraps on content width and cannot keep the list sticky beside a
+// long pane (firma2-review-inbox's finding). Beacon is not cloned on this
+// machine. bcn-inbox would be the hub name; it stays firma2- while only this
+// spoke's sticky-origin variables place it.
+interface Props {
+  /** Names the list for assistive technology, e.g. "Support requests". */
+  label: string;
+  /** The views, in toggle order; the first is the default. Omit for a single queue. */
+  views?: { key: string; label: string }[];
+}
+
+const { label, views = [] } = Astro.props;
+---
+<div class="firma2-inbox-frame">
+  <div class="firma2-inbox" data-inbox data-views={JSON.stringify(views)}>
+    {views.length > 1 && (
+      <div class="firma2-inbox__views">
+        <esa-button-toggle size="md" aria-label="Show" data-inbox-toggle></esa-button-toggle>
+      </div>
+    )}
+    <nav class="firma2-inbox__list" aria-label={label}>
+      <ul role="list" data-inbox-list>
+        <slot name="list" />
+      </ul>
+    </nav>
+    <div class="firma2-inbox__pane">
+      <slot />
+      <slot name="empty" />
+    </div>
+  </div>
+</div>
+
+<style>
+  .firma2-inbox-frame {
+    container: firma2-inbox / inline-size;
+  }
+
+  .firma2-inbox {
+    display: grid;
+    grid-template-columns: 20rem minmax(0, 1fr);
+    gap: var(--spacing-300) var(--spacing-600);
+    align-items: start;
+  }
+
+  /* The switch spans the list and the pane. */
+  .firma2-inbox__views {
+    grid-column: 1 / -1;
+  }
+
+  /* The list holds still while a long pane scrolls beside it. */
+  .firma2-inbox__list {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px) + var(--spacing-400));
+    max-block-size: calc(var(--firma2-fold, 100dvh) - var(--firma2-band-height, 48px) - var(--spacing-800));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-inline-end: var(--spacing-300);
+    border-inline-end: 1px solid var(--color-border-default);
+  }
+
+  .firma2-inbox__list ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .firma2-inbox :global(.firma2-inbox__item) {
+    display: grid;
+    gap: 2px;
+    inline-size: 100%;
+    padding: var(--spacing-300);
+    border: 0;
+    border-radius: var(--radius-200);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    transition: background-color 150ms ease-out;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-inbox :global(.firma2-inbox__item:hover) {
+      background: var(--color-background-default-hover, rgba(0, 0, 0, 0.04));
+    }
+  }
+
+  .firma2-inbox :global(.firma2-inbox__item[aria-current='true']) {
+    background: var(--color-background-default-selected, rgba(0, 0, 0, 0.06));
+  }
+
+  .firma2-inbox :global(.firma2-inbox__item:focus-visible) {
+    outline: 2px solid var(--focus-ring-color, currentColor);
+    outline-offset: -2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .firma2-inbox :global(.firma2-inbox__item) {
+      transition: none;
+    }
+  }
+
+  /* A row's second and third lines, and a pane's byline. */
+  .firma2-inbox :global(.firma2-inbox__muted) {
+    margin: 0;
+    color: var(--color-content-default-secondary);
+  }
+
+  /* The selected item's name and its acts stay in view however long the pane runs. */
+  .firma2-inbox :global(.firma2-inbox__head) {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--firma2-band-height, 48px));
+    z-index: 2;
+    align-items: flex-start;
+    padding-block: var(--spacing-300);
+    border-block-end: 1px solid var(--color-border-default);
+    background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
+  }
+
+  .firma2-inbox :global(.firma2-inbox__head h2) {
+    margin: 0;
+  }
+
+  /* A rail open beside the inbox: the list gives room to the pane. */
+  @container firma2-inbox (max-width: 56rem) {
+    .firma2-inbox {
+      grid-template-columns: 15rem minmax(0, 1fr);
+      column-gap: var(--spacing-400);
+    }
+  }
+
+  /* Narrower than two readable columns: the list above, the pane below. */
+  @media (max-width: 64rem) {
+    .firma2-inbox {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .firma2-inbox__list {
+      position: static;
+      max-block-size: 20rem;
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--color-border-default);
+      padding-block-end: var(--spacing-300);
+    }
+
+    .firma2-inbox :global(.firma2-inbox__head) {
+      position: static;
+    }
+  }
+
+  .firma2-inbox :global([hidden]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+
+  type Toggle = HTMLElement & { options: { value: string; label: string }[]; value: string };
+
+  document.querySelectorAll<HTMLElement>('[data-inbox]').forEach((root) => {
+    const views: { key: string; label: string }[] = JSON.parse(root.dataset.views ?? '[]');
+    const list = root.querySelector<HTMLElement>('[data-inbox-list]')!;
+    const toggle = root.querySelector<Toggle>('[data-inbox-toggle]');
+    const params = new URLSearchParams(window.location.search);
+
+    const items = () => Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-inbox-item]'));
+    const inView = (li: HTMLElement) => views.length === 0 || li.dataset.inboxView === view;
+    const keyOf = (li: HTMLElement) => li.dataset.inboxItem ?? '';
+
+    let view = views.find((v) => v.key === params.get('view'))?.key ?? views[0]?.key ?? '';
+    let selected = params.get('item') ?? '';
+    // Where the selection sat among every item, so "next" survives its leaving.
+    let position = 0;
+
+    const remember = () => {
+      const url = new URL(window.location.href);
+      if (view && view !== views[0]?.key) url.searchParams.set('view', view);
+      else url.searchParams.delete('view');
+      if (selected) url.searchParams.set('item', selected);
+      else url.searchParams.delete('item');
+      history.replaceState(null, '', url);
+    };
+
+    const paintToggle = () => {
+      if (!toggle) return;
+      // Each view says how many wait in it: the reason to switch.
+      const all = items();
+      const options = views.map((v) => {
+        const n = all.filter((li) => li.dataset.inboxView === v.key).length;
+        return { value: v.key, label: n ? `${v.label} ${n}` : v.label };
+      });
+      customElements.whenDefined('esa-button-toggle').then(() => {
+        toggle.options = options;
+        toggle.value = view;
+      });
+    };
+
+    const render = () => {
+      const all = items();
+      const visible = all.filter(inView);
+      all.forEach((li) => (li.hidden = !inView(li)));
+      if (!visible.some((li) => keyOf(li) === selected)) {
+        // The item was decided (or the view changed): the next one down takes
+        // its place, else the last one left.
+        const after = all.slice(position).find(inView) ?? visible.at(-1);
+        selected = after ? keyOf(after) : '';
+      }
+      position = Math.max(0, all.findIndex((li) => keyOf(li) === selected));
+      all.forEach((li) => {
+        const current = keyOf(li) === selected;
+        li.querySelector('[data-inbox-pick]')?.setAttribute('aria-current', String(current));
+      });
+      const panes = Array.from(root.querySelectorAll<HTMLElement>('[data-inbox-pane]'));
+      const own = panes.some((p) => p.dataset.inboxPane === selected);
+      panes.forEach((p) => (p.hidden = !selected || (p.dataset.inboxPane === '*' ? own : p.dataset.inboxPane !== selected)));
+      root.querySelectorAll<HTMLElement>('[data-inbox-empty]').forEach((e) => {
+        e.hidden = visible.length > 0 || (views.length > 0 && e.dataset.inboxEmpty !== view);
+      });
+      paintToggle();
+      remember();
+      root.dispatchEvent(new CustomEvent('firma2:inbox-select', { bubbles: true, detail: { key: selected, view } }));
+    };
+
+    list.addEventListener('click', (event) => {
+      const pick = (event.target as HTMLElement).closest<HTMLElement>('[data-inbox-pick]');
+      const li = pick?.closest<HTMLElement>('[data-inbox-item]');
+      if (!li) return;
+      selected = keyOf(li);
+      render();
+    });
+    toggle?.addEventListener('change', (event) => {
+      view = (event as CustomEvent<{ value: string }>).detail.value;
+      position = 0;
+      render();
+    });
+    root.addEventListener('firma2:inbox-refresh', render);
+
+    render();
+  });
+</script>

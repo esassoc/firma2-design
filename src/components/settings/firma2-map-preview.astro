@@ -1,0 +1,145 @@
+---
+// firma2-map-preview — the Map layers page's live answer to "what will that
+// look like": the workspace's projects on a map built exactly as every other
+// map is (src/lib/leaflet), beside the settings that shape it. It opens on the
+// saved base map, draws the reference layers that are on when a map opens,
+// paints each project's work in the workspace's colouring, and carries the key.
+//
+// IT IS THE REAL PAINTER, NOT A PICTURE OF IT. Nothing here restates a style
+// rule: a change to a setting writes the store, and this map repaints from the
+// store like any map in another window would. Colours and opacity repaint the
+// shapes in place; a base map or a reference layer rebuilds the map on a fresh
+// canvas (Leaflet's panes and the layers control are built once per map), at
+// the view the administrator had moved to.
+//
+// STICKY, like Branding's preview: the layers list below is long, and a
+// preview that scrolls away previews nothing.
+//
+// bcn-lego-checked: firma2-rail-section (the titled section, as Branding's
+// preview). The canvas is Leaflet — no map lego exists (see
+// firma2-project-set-map); its frame is that component's. Beacon is not cloned.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+import { projects, projectSlug } from '../../data/firma2-projects';
+import { HYDROLOGIC_REGIONS, SUBWATERSHEDS, seedWorkAreas } from '../../data/firma2-geography';
+
+const config = {
+  projects: projects.map((p) => ({ slug: projectSlug(p), name: p.projectName, seed: seedWorkAreas(p) })),
+  geometry: { regions: HYDROLOGIC_REGIONS, subwatersheds: SUBWATERSHEDS },
+};
+---
+<aside class="firma2-map-preview" data-config={JSON.stringify(config)}>
+  <Firma2RailSection title="Preview">
+    <div class="firma2-map-preview__frame" data-frame></div>
+  </Firma2RailSection>
+</aside>
+
+<style>
+  .firma2-map-preview {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--spacing-400));
+    align-self: flex-start;
+  }
+
+  .firma2-map-preview__frame {
+    block-size: clamp(18rem, 60vh, 34rem);
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-md, 0.5rem);
+    overflow: hidden;
+    /* Leaflet's panes run to z-index 700; keep them under the app's chrome. */
+    isolation: isolate;
+  }
+
+  .firma2-map-preview__frame :global([data-canvas]) {
+    block-size: 100%;
+  }
+</style>
+
+<script>
+  import type { MapWorkArea, Region, Subwatershed } from '../../data/firma2-geography';
+  import { centroid } from '../../lib/geo';
+  import { addBasemaps, addColorKey, addReferenceLayers, createMap, loadLeaflet, markerStyle, projectColor, projectShapeStyle } from '../../lib/leaflet';
+  import type { Leaflet } from '../../lib/leaflet';
+  import { onGeoChange, readLayers, readMapStyle, readWorkAreas } from '../../lib/work-areas';
+
+  interface Config {
+    projects: { slug: string; name: string; seed: MapWorkArea[] }[];
+    geometry: { regions: Region[]; subwatersheds: Subwatershed[] };
+  }
+
+  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-map-preview').forEach(async (root) => {
+    const config: Config = JSON.parse(root.dataset.config ?? '{}');
+    const frame = root.querySelector<HTMLElement>('[data-frame]')!;
+    const L: Leaflet | null = await loadLeaflet().catch(() => null);
+    if (!L) {
+      root.hidden = true;
+      return;
+    }
+
+    // What a rebuild is for: the things Leaflet builds once per map.
+    const structure = () => JSON.stringify([readMapStyle().basemap, readLayers()]);
+    const DOT_ZOOM = 11;
+    let map: Leaflet = null;
+    let built = '';
+    let repaint: () => void = () => {};
+
+    const build = () => {
+      const view = map ? { center: map.getCenter(), zoom: map.getZoom() } : null;
+      map?.remove();
+      const canvas = document.createElement('div');
+      canvas.dataset.canvas = '';
+      canvas.setAttribute('role', 'application');
+      canvas.setAttribute('aria-label', 'Map preview');
+      frame.replaceChildren(canvas);
+      const mine = (map = createMap(L, canvas, { zoomSnap: 0.5 }, () => map === mine && repaint()));
+      map.setView([39.05, -120.07], 10);
+      addBasemaps(L, map, addReferenceLayers(L, map, readLayers(), config.geometry));
+      const drawKey = addColorKey(L, map);
+      const shapes = L.featureGroup().addTo(map);
+      const dots = L.featureGroup();
+      const syncDots = () => {
+        const out = map.getZoom() < DOT_ZOOM;
+        if (out && !map.hasLayer(dots)) dots.addTo(map);
+        if (!out && map.hasLayer(dots)) map.removeLayer(dots);
+      };
+      map.on('zoomend', syncDots);
+
+      repaint = () => {
+        shapes.clearLayers();
+        dots.clearLayers();
+        const drawn: string[] = [];
+        const all: [number, number][] = [];
+        config.projects.forEach((p) => {
+          const areas = readWorkAreas(p.slug, p.seed);
+          if (!areas.length) return;
+          drawn.push(p.slug);
+          const tip = { className: 'firma2-map-tip', direction: 'top' as const };
+          areas.forEach((area) => {
+            all.push(...area.path);
+            const style = projectShapeStyle(p.slug, area.kind);
+            (area.kind === 'point'
+              ? L.circleMarker(area.path[0], { ...style, radius: 6 })
+              : area.kind === 'reach'
+                ? L.polyline(area.path, style)
+                : L.polygon(area.path, style)
+            )
+              .bindTooltip(esc(p.name), { ...tip, sticky: true })
+              .addTo(shapes);
+          });
+          L.circleMarker(centroid(areas.flatMap((a) => a.path)), markerStyle(projectColor(p.slug))).bindTooltip(esc(p.name), tip).addTo(dots);
+        });
+        syncDots();
+        drawKey(drawn);
+        return all;
+      };
+      const all = repaint() as unknown as [number, number][];
+      if (view) map.setView(view.center, view.zoom, { animate: false });
+      else if (all.length) map.fitBounds(L.latLngBounds(all), { padding: [24, 24], maxZoom: 12 });
+      built = structure();
+    };
+
+    build();
+    onGeoChange(() => (structure() === built ? repaint() : build()));
+  });
+</script>

@@ -11,6 +11,13 @@
 // smallest tiles drop the count. COMPUTED from the public projects' funding
 // sources — whole-project grant amounts, public funders only.
 //
+// THE SMALL FUNDERS FOLD (2026-11-24, user: "when things are starting to cut
+// off … create another group"): a funder whose tile would fall below a
+// readable size (MIN_TILE, at the reference widths of a laptop's column and a
+// phone) joins one last tile, "N more funders", carrying their combined total.
+// That tile is a door down to them: a list under the treemap, each name with
+// its total, so no funder is credited less for being small.
+//
 // LEAD ORGANIZATIONS ARE TILES: initials, name, and how many projects each
 // leads. NAMES, NOT LOGOS — the workspace holds no organization logos; the
 // initials stand where a logo will.
@@ -40,12 +47,34 @@ interface Props {
 const { partners } = Astro.props;
 const organizationsHref = PUBLIC_NAV.find((item) => item.key === 'organizations')!.href;
 const compactUsd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
-const amounts = partners.funding.map((o) => o.amount ?? 0);
 // Two layouts of the same areas: a wide box, and a tall one for a phone.
 const WIDE = 2.4;
 const TALL = 0.62;
-const wide = treemap(amounts, WIDE);
-const tall = treemap(amounts, TALL);
+// Reference boxes the fold is judged at, in px: a laptop's column and a phone's.
+const WIDE_PX = 896;
+const TALL_PX = 352;
+// The smallest tile that holds a total and a two-line name without clipping.
+const MIN_TILE = { w: 120, h: 80 };
+const fits = (r: { w: number; h: number }, boxW: number, aspect: number) =>
+  r.w * boxW >= MIN_TILE.w && r.h * (boxW / aspect) >= MIN_TILE.h;
+// Fold the smallest funders, one at a time, until every tile — the folded one
+// included — is readable in both layouts. Funders arrive largest first.
+const allAmounts = partners.funding.map((o) => o.amount ?? 0);
+let kept = partners.funding.length;
+const layout = (k: number) => {
+  const values = k < allAmounts.length ? [...allAmounts.slice(0, k), allAmounts.slice(k).reduce((a, b) => a + b, 0)] : allAmounts;
+  return { values, wide: treemap(values, WIDE), tall: treemap(values, TALL) };
+};
+const readable = (k: number) => {
+  const { wide: w, tall: t } = layout(k);
+  return w.every((r) => fits(r, WIDE_PX, WIDE)) && t.every((r) => fits(r, TALL_PX, TALL));
+};
+// One folded funder is no group: fold two or more, or none.
+while (kept > 1 && !readable(kept)) kept = kept === partners.funding.length ? kept - 2 : kept - 1;
+const shownFunders = partners.funding.slice(0, kept);
+const folded = partners.funding.slice(kept);
+const foldedTotal = folded.reduce((sum, o) => sum + (o.amount ?? 0), 0);
+const { wide, tall } = layout(kept);
 const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
 // A tile's padding follows its size (a container cannot query itself).
 const pad = (i: number) => (Math.min(wide[i].w, tall[i].w * 3) < 0.12 ? 'var(--spacing-200)' : wide[i].w < 0.2 ? 'var(--spacing-400)' : 'var(--spacing-500)');
@@ -54,29 +83,47 @@ const place = (i: number) =>
 const count = (n: number) => `${n} project${n === 1 ? '' : 's'}`;
 ---
 {partners.funding.length + partners.leading.length > 0 && (
-  <section class="firma2-public-partners stack" data-gap="lg" aria-labelledby="firma2-public-partners-title">
+  <section class="firma2-public-partners stack" data-gap="lg" aria-labelledby="firma2-public-partners-title" data-partners-section>
     <div class="repel" data-align="center">
       <h2 id="firma2-public-partners-title" class="typography-heading-lg">Partners</h2>
       <EsaButton variant="ghost" href={withBase(organizationsHref)} iconRight="arrow-right">All organizations</EsaButton>
     </div>
     {partners.funding.length > 0 && (
-      <div class="stack" data-gap="sm">
+      <div class="stack" data-gap="sm" data-partners="funders">
         <h3 class="typography-title-sm-strong" id="firma2-public-partners-funding">Funders</h3>
         <ul class="firma2-public-partners__funders" style={`--wide: ${WIDE}; --tall: ${TALL}`} aria-labelledby="firma2-public-partners-funding">
-          {partners.funding.map((o, i) => (
+          {shownFunders.map((o, i) => (
             <li class="firma2-public-partners__funder" style={place(i)}>
               <div class="firma2-public-partners__cell">
-                <span class="firma2-public-partners__amount">{compactUsd.format(o.amount ?? 0)}</span>
+                <span class="firma2-public-partners__amount" data-partner-amount>{compactUsd.format(o.amount ?? 0)}</span>
                 <a class="firma2-public-partners__name" href={withBase(o.href)}>{o.name}</a>
                 <span class="firma2-public-partners__count">{count(o.projects)}</span>
               </div>
             </li>
           ))}
+          {folded.length > 0 && (
+            <li class="firma2-public-partners__funder" style={place(kept)}>
+              <div class="firma2-public-partners__cell firma2-public-partners__cell--more">
+                <span class="firma2-public-partners__amount" data-partner-amount>{compactUsd.format(foldedTotal)}</span>
+                <a class="firma2-public-partners__name" href="#firma2-public-partners-more">{folded.length} more funders</a>
+              </div>
+            </li>
+          )}
         </ul>
+        {folded.length > 0 && (
+          <ul id="firma2-public-partners-more" class="firma2-public-partners__more" aria-label={`${folded.length} more funders`}>
+            {folded.map((o) => (
+              <li>
+                <a class="typography-body-md" href={withBase(o.href)}>{o.name}</a>
+                <span class="typography-body-md firma2-public-partners__quiet" data-partner-amount>{compactUsd.format(o.amount ?? 0)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     )}
     {partners.leading.length > 0 && (
-      <div class="stack" data-gap="sm">
+      <div class="stack" data-gap="sm" data-partners="leads">
         <h3 class="typography-title-sm-strong" id="firma2-public-partners-leading">Leading projects</h3>
         <ul class="firma2-public-partners__leads grid" data-gap="md" aria-labelledby="firma2-public-partners-leading">
           {partners.leading.map((o) => (
@@ -218,6 +265,35 @@ const count = (n: number) => `${n} project${n === 1 ? '' : 's'}`;
       inline-size: var(--tw);
       block-size: var(--th);
     }
+  }
+  /* The folded tile reads as the rest of the set, a step quieter. */
+  .firma2-public-partners__cell--more {
+    background: var(--color-background-elevation-sunken);
+  }
+  .firma2-public-partners__cell--more .firma2-public-partners__amount {
+    color: var(--color-content-default);
+  }
+  /* The folded funders: name and total, in as many columns as fit. */
+  .firma2-public-partners__more {
+    columns: 18rem;
+    column-gap: var(--spacing-800);
+    scroll-margin-block-start: var(--spacing-800);
+  }
+  .firma2-public-partners__more li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    gap: var(--spacing-400);
+    break-inside: avoid;
+    padding-block: var(--spacing-200);
+    border-block-end: 1px solid var(--color-border-subtle);
+  }
+  .firma2-public-partners__more a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .firma2-public-partners__more a:hover {
+    text-decoration: underline;
   }
   /* ---- leads: the second line rolls ---- */
   .firma2-public-partners__tile {

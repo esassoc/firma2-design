@@ -23,6 +23,7 @@ import { demoProjectName, projects, projectSlug } from './firma2-projects';
 import type { Project } from './firma2-projects';
 import { projectDetails } from './firma2-project-detail';
 import { REAL, realCenter, realRecords } from './firma2-real-data';
+import { AREA_FILES, areaFileLayerId } from './firma2-geospatial-areas';
 import { centroid, pointInRing, ringAcres, pathMiles } from '../lib/geo';
 import type { LatLng } from '../lib/geo';
 
@@ -120,7 +121,8 @@ export const seedWorkAreas = (project: Project): MapWorkArea[] => {
 
 /** A point in the middle of Lake Tahoe: where the four shores meet, and the
  *  fallback center for anything without one. */
-export const LAKE: LatLng = realCenter ?? [39.09, -120.04];
+const TAHOE: LatLng = [39.09, -120.04];
+export const LAKE: LatLng = realCenter ?? TAHOE;
 
 /** Where a project's map opens: its authored center, which every project has. */
 export const projectCenter = (project: Project): LatLng =>
@@ -141,7 +143,7 @@ export interface Region {
 // that side), the Truckee River below the outlet, and the Upper Carson. The
 // four shores meet at a point in the lake, so the set tiles the basin with no
 // slivers at this resolution. Hand-drawn, never traced from a boundary.
-export const HYDROLOGIC_REGIONS: Region[] = [
+const BASIN_REGIONS: Region[] = [
   {
     id: 'truckee-river',
     name: 'Truckee River',
@@ -150,22 +152,22 @@ export const HYDROLOGIC_REGIONS: Region[] = [
   {
     id: 'north-shore',
     name: 'North Shore',
-    ring: [[39.42, -120.06], [39.42, -119.85], [39.22, -119.85], LAKE, [39.18, -120.17], [39.255, -120.17], [39.255, -120.06]],
+    ring: [[39.42, -120.06], [39.42, -119.85], [39.22, -119.85], TAHOE, [39.18, -120.17], [39.255, -120.17], [39.255, -120.06]],
   },
   {
     id: 'east-shore',
     name: 'East Shore',
-    ring: [[39.22, -119.85], [38.95, -119.8], [38.95, -119.93], LAKE],
+    ring: [[39.22, -119.85], [38.95, -119.8], [38.95, -119.93], TAHOE],
   },
   {
     id: 'south-shore',
     name: 'South Shore',
-    ring: [LAKE, [38.95, -119.93], [38.95, -119.8], [38.85, -119.8], [38.85, -119.97], [38.65, -119.98], [38.65, -120.12], [38.95, -120.12]],
+    ring: [TAHOE, [38.95, -119.93], [38.95, -119.8], [38.85, -119.8], [38.85, -119.97], [38.65, -119.98], [38.65, -120.12], [38.95, -120.12]],
   },
   {
     id: 'west-shore',
     name: 'West Shore',
-    ring: [LAKE, [38.95, -120.12], [38.95, -120.4], [39.15, -120.4], [39.18, -120.17]],
+    ring: [TAHOE, [38.95, -120.12], [38.95, -120.4], [39.15, -120.4], [39.18, -120.17]],
   },
   {
     id: 'upper-carson',
@@ -173,6 +175,16 @@ export const HYDROLOGIC_REGIONS: Region[] = [
     ring: [[38.85, -119.8], [38.65, -119.8], [38.65, -119.98], [38.85, -119.97]],
   },
 ];
+
+// A real workspace (dev only) sits somewhere else: the same six areas, moved so
+// they surround its projects. With the invented data the move is zero.
+export const HYDROLOGIC_REGIONS: Region[] = BASIN_REGIONS.map((region) => ({
+  ...region,
+  ring: region.ring.map(([lat, lng]): LatLng => [
+    Number((lat + LAKE[0] - TAHOE[0]).toFixed(4)),
+    Number((lng + LAKE[1] - TAHOE[1]).toFixed(4)),
+  ]),
+}));
 
 /** The region a location falls in, or null outside every ring. */
 export const regionAt = (point: LatLng): Region | null =>
@@ -272,6 +284,28 @@ export const subwatershedsNear = (project: Project, count = 4): Subwatershed[] =
 };
 
 // ---------------------------------------------------------------------------
+// Habitat areas — what the sample area-group file holds
+// ---------------------------------------------------------------------------
+
+/**
+ * Five invented habitat areas around the workspace's center: the shapes any
+ * file uploaded on Geospatial areas reads as (src/lib/geospatial-areas.ts says
+ * what is faked). They are not traced from anything.
+ */
+export const HABITAT_AREAS: (Region & { acres: number })[] = (
+  [
+    ['wet-meadow', 'Wet meadow', 0.1, -0.13, 0],
+    ['riparian-corridor', 'Riparian corridor', -0.02, -0.02, 1],
+    ['aspen-stand', 'Aspen stand', 0.13, 0.08, 1],
+    ['mixed-conifer-forest', 'Mixed conifer forest', -0.14, 0.11, 0],
+    ['shoreline-marsh', 'Shoreline marsh', -0.15, -0.14, 1],
+  ] as const
+).map(([id, name, dLat, dLng, pattern]) => {
+  const ring = blob([LAKE[0] + dLat, LAKE[1] + dLng], 0.065, pattern);
+  return { id, name, ring, acres: Math.round(ringAcres(ring)) };
+});
+
+// ---------------------------------------------------------------------------
 // Reference layers — what a workspace's maps are drawn against
 // ---------------------------------------------------------------------------
 
@@ -359,7 +393,10 @@ export interface ReferenceLayer {
   /** Print the pop-up field on each shape, instead of on hover only. */
   showLabels?: boolean;
   /** Which geometry in this file the prototype draws for it. Null: none to draw. */
-  draws: 'regions' | 'subwatersheds' | null;
+  /** `file`: an area file on disk (dev only), found by this layer's id. */
+  draws: 'regions' | 'subwatersheds' | 'habitat' | 'file' | null;
+  /** An uploaded file's layer: the fields its shapes carry. A service is asked instead. */
+  fields?: string[];
 }
 
 export const REFERENCE_LAYERS: ReferenceLayer[] = [
@@ -432,6 +469,27 @@ export const REFERENCE_LAYERS: ReferenceLayer[] = [
     fillOpacity: 0,
     draws: null,
   },
+  // Area files on disk (dev only): each is a layer, as an uploaded file would be.
+  ...AREA_FILES.map(
+    (file): ReferenceLayer => ({
+      id: areaFileLayerId(file),
+      name: file.layerName,
+      kind: 'geojson',
+      url: file.fileName,
+      description: file.credit,
+      popupField: file.nameField,
+      minZoom: null,
+      onByDefault: false,
+      active: true,
+      publisherColours: false,
+      stroke: '#8145b5',
+      strokeWidth: 1.5,
+      fill: '#8145b5',
+      fillOpacity: 0.04,
+      draws: 'file',
+      fields: file.fields,
+    }),
+  ),
 ];
 
 /** What "Check service" finds at each kind of URL — the probe, scripted. */

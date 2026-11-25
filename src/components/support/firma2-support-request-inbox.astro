@@ -1,0 +1,150 @@
+---
+// firma2-support-request-inbox — the Support requests page: the requests
+// waiting on the left, the selected one on the right, and Resolve and next
+// moving down the list without leaving the page.
+//
+// AN INBOX, NOT A TABLE (user, 2026-11-24: a support request is "an action
+// that needs like an inbox to go through", as Review's is). A table was built
+// first and answered "what is in the log"; nobody works a log. The job is to
+// read a request, answer it, and move to the next, so the request is beside
+// the list, not a page away from it.
+//
+// OPEN AND RESOLVED ARE THE TWO VIEWS, as Waiting and Held are on Review. A
+// resolved request leaves Open the moment it is resolved and the next one is
+// selected; Resolved is where it can be read again or reopened.
+//
+// THE ROW SAYS WHO, WHAT KIND AND WHETHER ANYONE HAS IT. The subject is the
+// sender's own words; under it who sent it, then the type, the day, and who is
+// answering — "Unassigned" in words, because nobody having picked it up is the
+// fact a second administrator scans for.
+//
+// THE PANE IS THE REQUEST, NOT A COPY OF IT: firma2-support-request-record,
+// the same component as the request's own page, drawing its own head here.
+// Its properties are in the rail beside the inbox (firma2-support-request-rail).
+//
+// REQUESTS SENT IN THIS BROWSER have no server-rendered row or pane. Their
+// rows are cloned from a template of the same markup, and they share one blank
+// pane that fills itself when one is picked (firma2-inbox's `*` pane).
+//
+// bcn-lego-checked: firma2-inbox is the shell (list, pane, views);
+// firma2-support-request-record each pane; esa-empty-state the empty views;
+// esa-snackbar-container the receipts. The rows are the shell's native
+// selection buttons. No <style> block.
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2Inbox from '../shared/firma2-inbox.astro';
+import Firma2SupportRequestRecord from './firma2-support-request-record.astro';
+import { supportRequestSlug, supportRequests } from '../../data/firma2-support-requests';
+
+const SHORT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const shortDay = (iso: string) => SHORT.format(new Date(`${iso}T00:00:00Z`));
+const from = (r: { requester: { name: string; organization: string } }) =>
+  r.requester.organization ? `${r.requester.name}, ${r.requester.organization}` : r.requester.name;
+---
+<div class="firma2-support-request-inbox" data-support-inbox>
+  <Firma2Inbox label="Support requests" views={[{ key: 'open', label: 'Open' }, { key: 'resolved', label: 'Resolved' }]}>
+    {supportRequests.map((r) => (
+      <li slot="list" data-inbox-item={supportRequestSlug(r.id)} data-inbox-view={r.status} data-request-id={r.id} data-seeded-status={r.status} data-seeded-assignee={r.assignedTo}>
+        <button type="button" class="firma2-inbox__item" data-inbox-pick>
+          <span class="typography-label-md-strong">{r.subject}</span>
+          <span class="typography-body-sm firma2-inbox__muted">{from(r)}</span>
+          <span class="typography-body-sm firma2-inbox__muted">
+            {`${r.kind} · ${shortDay(r.received)} · `}<span data-row-assignee>{r.assignedTo || 'Unassigned'}</span>
+          </span>
+        </button>
+      </li>
+    ))}
+
+    {supportRequests.map((r) => (
+      <section data-inbox-pane={supportRequestSlug(r.id)} hidden aria-label={r.subject}>
+        <Firma2SupportRequestRecord request={r} inbox />
+      </section>
+    ))}
+    {/* One blank pane for every request sent in this browser. */}
+    <section data-inbox-pane="*" hidden aria-label="Support request">
+      <Firma2SupportRequestRecord inbox />
+    </section>
+
+    <div slot="empty" data-inbox-empty="open" hidden>
+      <EsaEmptyState size="sm" title="No open requests" />
+    </div>
+    <div slot="empty" data-inbox-empty="resolved" hidden>
+      <EsaEmptyState size="sm" title="No resolved requests" />
+    </div>
+  </Firma2Inbox>
+
+  {/* The row a request sent in this browser is cloned from: the same markup. */}
+  <template data-row-template>
+    <li data-inbox-item="" data-inbox-view="open">
+      <button type="button" class="firma2-inbox__item" data-inbox-pick>
+        <span class="typography-label-md-strong" data-row-subject></span>
+        <span class="typography-body-sm firma2-inbox__muted" data-row-from></span>
+        <span class="typography-body-sm firma2-inbox__muted"><span data-row-meta></span><span data-row-assignee></span></span>
+      </button>
+    </li>
+  </template>
+
+  <esa-snackbar-container class="firma2-support-request__toasts"></esa-snackbar-container>
+</div>
+
+<script>
+  import '@esa/ecology/esa-snackbar-container';
+  import { addedSupportRequests, assigneeOf, localSlug, statusOf, takeJustSent } from '../../lib/support-request-edits';
+  import type { SupportRequestStatus } from '../../data/firma2-support-requests';
+
+  type Toasts = HTMLElement & { show: (c: { message: string; variant?: string }) => void };
+
+  document.querySelectorAll<HTMLElement>('[data-support-inbox]').forEach((root) => {
+    const shell = root.querySelector<HTMLElement>('[data-inbox]')!;
+    const list = root.querySelector<HTMLElement>('[data-inbox-list]')!;
+    const template = root.querySelector<HTMLTemplateElement>('[data-row-template]')!;
+    const short = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const refresh = () => shell.dispatchEvent(new CustomEvent('firma2:inbox-refresh'));
+    const rowOf = (id: string) => list.querySelector<HTMLElement>(`[data-request-id="${CSS.escape(id)}"]`);
+
+    // Requests sent in this browser go in at the top, newest first.
+    const sent = addedSupportRequests();
+    list.prepend(
+      ...sent.map((r) => {
+        const li = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+        li.dataset.inboxItem = localSlug(r.id);
+        li.dataset.requestId = r.id;
+        li.dataset.seededStatus = r.status;
+        li.dataset.seededAssignee = r.assignedTo;
+        li.querySelector('[data-row-subject]')!.textContent = r.subject;
+        li.querySelector('[data-row-from]')!.textContent = r.requester.organization ? `${r.requester.name}, ${r.requester.organization}` : r.requester.name;
+        li.querySelector('[data-row-meta]')!.textContent = `${r.kind} · ${short.format(new Date(`${r.received}T00:00:00Z`))} · `;
+        return li;
+      }),
+    );
+
+    // This browser's status and assignee over what the build drew.
+    list.querySelectorAll<HTMLElement>(':scope > [data-inbox-item]').forEach((li) => {
+      const id = li.dataset.requestId ?? '';
+      li.dataset.inboxView = statusOf(id, (li.dataset.seededStatus ?? 'open') as SupportRequestStatus);
+      li.querySelector('[data-row-assignee]')!.textContent = assigneeOf(id, li.dataset.seededAssignee ?? '') || 'Unassigned';
+    });
+    refresh();
+
+    // A request resolved or reopened in the pane changes views; the shell selects the next one.
+    root.addEventListener('firma2:support-status', (event) => {
+      const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail;
+      const li = rowOf(id);
+      if (li) li.dataset.inboxView = status;
+      refresh();
+    });
+    // Assigned in the rail beside the inbox, so heard on the document.
+    document.addEventListener('firma2:support-assignee', (event) => {
+      const { id, assignee } = (event as CustomEvent<{ id: string; assignee: string }>).detail;
+      const cell = rowOf(id)?.querySelector('[data-row-assignee]');
+      if (cell) cell.textContent = assignee || 'Unassigned';
+    });
+
+    // A request just sent from New request is confirmed once.
+    const justSent = takeJustSent();
+    if (justSent) {
+      customElements.whenDefined('esa-snackbar-container').then(() => {
+        root.querySelector<Toasts>('.firma2-support-request__toasts')?.show({ message: `Request ${justSent} sent`, variant: 'success' });
+      });
+    }
+  });
+</script>

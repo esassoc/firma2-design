@@ -35,15 +35,41 @@
 //   </bcn-sortable-list>
 //
 // LINKED LISTS. Lists that share a `group` attribute pass rows between them —
-// tags between tag groups. A row dragged over a linked list drops into it, and
+// menu rows between menu sections. A row dragged over a linked list drops into it, and
 // the grip's menu adds "Move to <label>" for every other list in the group
 // (each list's `label` attribute names it, or `move-label` gives the whole
-// item — "Remove from group" for the list of tags in none). An empty list stays a drop target
+// item — "Remove from group" for the list of rows in none). An empty list stays a drop target
 // if the consumer gives it a placeholder <li> with no data-sort-key; it is
 // hidden as soon as the list holds a real row.
 //
-//   <bcn-sortable-list group="tags" label="Partners">…</bcn-sortable-list>
-//   <bcn-sortable-list group="tags" label="Community">…</bcn-sortable-list>
+//   <bcn-sortable-list group="menu" label="Workspace">…</bcn-sortable-list>
+//   <bcn-sortable-list group="menu" label="More">…</bcn-sortable-list>
+//
+// LINKED LISTS MAY NEST — a group's list inside a row of its parent's. While
+// dragging, the innermost list under the pointer takes the row.
+//
+// SHOWING WHERE A ROW WILL LAND: `drop="line"` (the classification settings
+// tree, 2026-11-23 — user: "the UI for what becomes part of what is not good
+// … see apple examples"). By default the dragged row is moved through the
+// list as the pointer travels, and its neighbours slide aside: right for one
+// flat list, unreadable for a tree, where the question is WHICH GROUP the row
+// is about to join. With `drop="line"` nothing moves until the drop, as in
+// Finder and Reminders:
+//   - an INSERTION LINE marks the gap the row would take, drawn at the width
+//     and indent of the list it would join;
+//   - a row that holds a linked list is a place to drop INTO: over the middle
+//     of its own line it is marked `data-drop-into` (the consumer styles it),
+//     and the row joins the end of that list. A thin band at the top and
+//     bottom of the line still means before and after it;
+//   - an empty list's placeholder row is marked `data-drop-into` the same way;
+//   - the dragged row STAYS WHERE IT IS, dimmed, and a small label with its
+//     name follows the pointer, set off to one side so it never covers what
+//     is being aimed at. (The first version carried the whole row under the
+//     pointer: a group took everything inside it along, over the target.);
+//   - near the top or bottom edge of whatever scrolls the list, the page
+//     scrolls under the pointer, so a row can be carried to a group that was
+//     off screen when the drag began.
+// The attribute is read on the list the drag STARTS in.
 //
 // A list can turn rows away: `refuse="key1 key2"` names the keys it never
 // takes, so a drag skips it and the grip's menu leaves out "Move to" it — a
@@ -133,6 +159,66 @@ const STYLES = `
     background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
   }
   bcn-sortable-list li[data-dragging] [data-sort-grip] button { cursor: grabbing; }
+  /* drop="line": the row stays in place, dimmed, and out of the pointer's
+     way; a label with its name is what travels. */
+  bcn-sortable-list[drop='line'] li[data-dragging] {
+    opacity: 0.4;
+    pointer-events: none;
+    background: transparent;
+  }
+  .bcn-sortable-drag-label {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: var(--z-dropdown, 50);
+    box-sizing: border-box;
+    max-inline-size: 20rem;
+    padding: var(--spacing-150, 0.375rem) var(--spacing-300, 0.75rem);
+    overflow: hidden;
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-md, 0.5rem);
+    background: var(--color-background-elevation-floating, var(--color-background-default, #fcfcfc));
+    box-shadow: var(--elevation-4, 0 6px 24px -6px rgba(0, 0, 0, 0.18));
+    color: var(--color-content-default, #202020);
+    font-family: var(--typography-body-sm-font-family, inherit);
+    font-size: var(--typography-body-sm-font-size, 0.875rem);
+    line-height: var(--typography-body-sm-line-height, 1.4);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+  }
+  .bcn-sortable-drop-line {
+    position: fixed;
+    z-index: var(--z-dropdown, 50);
+    block-size: 2px;
+    margin-block-start: -1px;
+    border-radius: 1px;
+    background: var(--bcn-sortable-drop-color, var(--color-border-default-focus, #2a7e3b));
+    pointer-events: none;
+  }
+  /* The ring at its leading end says where the line starts — which is the
+     indent of the list the row would join. */
+  .bcn-sortable-drop-line::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: -4px;
+    inset-block-start: -3px;
+    box-sizing: border-box;
+    inline-size: 8px;
+    block-size: 8px;
+    border: 2px solid var(--bcn-sortable-drop-color, var(--color-border-default-focus, #2a7e3b));
+    border-radius: 50%;
+    background: var(--firma2-sheet-background, var(--color-background-default, #fcfcfc));
+  }
+  .bcn-sortable-drop-line[hidden] { display: none; }
+  /* A row about to take the dragged one. Consumers restyle it (a tree marks
+     the group's own line, not everything under it). */
+  bcn-sortable-list li[data-drop-into] {
+    outline: 2px solid var(--bcn-sortable-drop-color, var(--color-border-default-focus, #2a7e3b));
+    outline-offset: -2px;
+    border-radius: var(--radius-md, 0.5rem);
+  }
   bcn-sortable-list[data-sorting] { user-select: none; cursor: grabbing; }
   bcn-sortable-list :is(ol, ul):has(> li[data-sort-key]) > li[data-sort-placeholder] { display: none; }
   @media (prefers-reduced-motion: reduce) {
@@ -388,7 +474,20 @@ export class BcnSortableList extends HTMLElement {
       });
     };
 
+    let dragLabel: HTMLElement | null = null;
     const follow = (x: number, y: number) => {
+      if (this.getAttribute('drop') === 'line') {
+        // The row stays put; its name travels, below and beside the pointer.
+        if (!dragLabel) {
+          dragLabel = document.createElement('div');
+          dragLabel.className = 'bcn-sortable-drag-label';
+          dragLabel.setAttribute('aria-hidden', 'true');
+          dragLabel.textContent = li.dataset.sortLabel ?? '';
+          document.body.append(dragLabel);
+        }
+        dragLabel.style.transform = `translate(${Math.round(x + 14)}px, ${Math.round(y + 14)}px)`;
+        return;
+      }
       li.style.transform = '';
       const natural = li.getBoundingClientRect();
       li.style.transform = grid
@@ -396,7 +495,84 @@ export class BcnSortableList extends HTMLElement {
         : `translateY(${y - grabOffset - natural.top}px)`;
     };
 
+    // ---- drop="line": nothing moves until the drop --------------------------
+    const byLine = this.getAttribute('drop') === 'line';
+    let dropLine: HTMLElement | null = null;
+    let marked: HTMLElement | null = null;
+    /** Where the row will go on release: into `target`, before `next` (or last). */
+    let pending: { target: BcnSortableList; next?: HTMLLIElement } | null = null;
+    const mark = (row: HTMLElement | null): void => {
+      if (marked === row) return;
+      marked?.removeAttribute('data-drop-into');
+      marked = row;
+      row?.setAttribute('data-drop-into', '');
+    };
+    const showLine = (target: BcnSortableList, next: HTMLLIElement | undefined, others: HTMLLIElement[]): void => {
+      const box = (target.#list ?? target).getBoundingClientRect();
+      const last = others[others.length - 1];
+      const y = next ? next.getBoundingClientRect().top : last ? last.getBoundingClientRect().bottom : box.top;
+      if (!dropLine) {
+        dropLine = document.createElement('div');
+        dropLine.className = 'bcn-sortable-drop-line';
+        document.body.append(dropLine);
+      }
+      dropLine.hidden = false;
+      dropLine.style.insetBlockStart = `${Math.round(y)}px`;
+      dropLine.style.insetInlineStart = `${Math.round(box.left)}px`;
+      dropLine.style.inlineSize = `${Math.round(box.width)}px`;
+    };
+    /**
+     * The row under the pointer that the dragged one could be dropped INTO,
+     * BEFORE or AFTER: one whose own line holds the pointer and which carries
+     * a list linked to this drag.
+     */
+    const overRow = (x: number, y: number, peers: BcnSortableList[]): { row: HTMLLIElement; inner?: BcnSortableList; own?: BcnSortableList; edge: 'top' | 'bottom' | '' } | null => {
+      const under = document.elementFromPoint(x, y) as HTMLElement | null;
+      const row = under?.closest<HTMLLIElement>('li[data-sort-key]');
+      if (!row || row === li || li.contains(row)) return null;
+      const inner = peers.find((p) => p.closest('li') === row);
+      const own = row.parentElement?.closest('bcn-sortable-list') as BcnSortableList | null;
+      // Its own line ends where the first list inside it that takes up room begins.
+      const top = row.getBoundingClientRect().top;
+      const lists = Array.from(row.querySelectorAll<HTMLElement>('bcn-sortable-list')).filter((l) => l.closest('li') === row && l.getBoundingClientRect().height > 0);
+      const bottom = lists.length ? Math.min(...lists.map((l) => l.getBoundingClientRect().top)) : row.getBoundingClientRect().bottom;
+      if (y < top || y > bottom || bottom <= top) return null;
+      // A thin band at each edge means beside the row; the rest of it, into it.
+      const band = Math.min(10, (bottom - top) / 4);
+      const edge = y - top < band ? 'top' : bottom - y < band ? 'bottom' : '';
+      return { row, inner, own: own && peers.includes(own) ? own : undefined, edge };
+    };
+
+    // ---- carrying a row past the edge of the screen ---------------------------
+    const scroller = ((): HTMLElement | null => {
+      for (let node = this.parentElement; node; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowY;
+        if ((overflow === 'auto' || overflow === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+      }
+      return (document.scrollingElement as HTMLElement | null) ?? null;
+    })();
+    let last: { x: number; y: number } | null = null;
+    let scrolling = 0;
+    const EDGE = 64;
+    const autoScroll = (): void => {
+      scrolling = 0;
+      if (!dragging || !last || !scroller) return;
+      const box = scroller === document.scrollingElement ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect();
+      // Faster the nearer the edge, up to 18px a frame.
+      const up = Math.max(0, box.top + EDGE - last.y);
+      const down = Math.max(0, last.y - (box.bottom - EDGE));
+      const step = Math.round((Math.min(EDGE, down) - Math.min(EDGE, up)) / EDGE * 18);
+      if (step) {
+        const before = scroller.scrollTop;
+        scroller.scrollTop += step;
+        // What is under a still pointer has changed: aim again.
+        if (scroller.scrollTop !== before) onMove(new PointerEvent('pointermove', { clientX: last.x, clientY: last.y }));
+      }
+      scrolling = requestAnimationFrame(autoScroll);
+    };
+
     const onMove = (e: PointerEvent) => {
+      if (byLine && e.isTrusted !== false) last = { x: e.clientX, y: e.clientY };
       if (!dragging) {
         const travelled = grid ? Math.hypot(e.clientX - startX, e.clientY - startY) : Math.abs(e.clientY - startY);
         if (travelled < DRAG_SLOP) return;
@@ -405,18 +581,54 @@ export class BcnSortableList extends HTMLElement {
         grabOffsetX = startX - li.getBoundingClientRect().left;
         li.dataset.dragging = '';
         this.dataset.sorting = '';
+        if (byLine && !scrolling) scrolling = requestAnimationFrame(autoScroll);
       }
       e.preventDefault();
       const y = e.clientY;
       const x = e.clientX;
       // The list under the pointer — or, between lists, the nearest one.
       // Unlinked, that is always this list.
-      const peers = this.#peers().filter((p) => p.#takes(li.dataset.sortKey!));
+      // Never a list inside the dragged row itself.
+      const peers = this.#peers().filter((p) => p.#takes(li.dataset.sortKey!) && !li.contains(p));
+      if (byLine) {
+        const over = overRow(x, y, peers);
+        if (over && (over.inner || over.own)) {
+          const siblings = over.own ? over.own.#movable().filter((r) => r !== li) : [];
+          // The band at the top of a row of the same kind means before it;
+          // anywhere else on a row that holds a list means into it.
+          if (over.own && (over.edge === 'top' || !over.inner)) {
+            const next = over.edge === 'bottom' ? siblings[siblings.indexOf(over.row) + 1] : over.row;
+            pending = { target: over.own, next };
+            mark(null);
+            showLine(over.own, next, siblings);
+          } else if (over.own && over.edge === 'bottom' && over.inner && !over.inner.#movable().some((r) => r !== li && r.getBoundingClientRect().height > 0)) {
+            // Nothing showing inside it: the band at the bottom means after it.
+            const next = siblings[siblings.indexOf(over.row) + 1];
+            pending = { target: over.own, next };
+            mark(null);
+            showLine(over.own, next, siblings);
+          } else if (over.inner) {
+            pending = { target: over.inner };
+            mark(over.row);
+            if (dropLine) dropLine.hidden = true;
+          }
+          follow(x, y);
+          return;
+        }
+      }
       const distance = (p: BcnSortableList) => {
         const r = p.getBoundingClientRect();
         return y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
       };
-      const target = peers.reduce((best, p) => (distance(p) < distance(best) ? p : best), (li.closest('bcn-sortable-list') as BcnSortableList) ?? this);
+      // NESTED LISTS (the classification settings tree, 2026-11-23): a list
+      // inside a row of another holds the pointer whenever the outer one does,
+      // so on a tie the INNER list wins — over a group's contents the row goes
+      // into the group, over the group's own line it goes beside it.
+      const target = peers.reduce((best, p) => {
+        const d = distance(p);
+        const b = distance(best);
+        return d < b || (d === b && best !== p && best.contains(p)) ? p : best;
+      }, (li.closest('bcn-sortable-list') as BcnSortableList) ?? this);
       const others = target.#movable().filter((r) => r !== li);
       const everyRow = peers.flatMap((p) => p.#movable()).filter((r) => r !== li);
       // Find the first movable row whose midpoint is below the pointer: the
@@ -432,6 +644,20 @@ export class BcnSortableList extends HTMLElement {
         if (!rect.width) return false;
         return y < rect.top || (y <= rect.bottom && x < rect.left + rect.width / 2);
       });
+      if (byLine) {
+        pending = { target, next };
+        // An empty list shows its placeholder row as the place to drop.
+        const placeholder = others.length ? null : target.#list?.querySelector<HTMLElement>(':scope > li[data-sort-placeholder]');
+        if (placeholder && placeholder.getBoundingClientRect().height > 0) {
+          mark(placeholder);
+          if (dropLine) dropLine.hidden = true;
+        } else {
+          mark(null);
+          showLine(target, next, others);
+        }
+        follow(x, y);
+        return;
+      }
       const inTarget = li.parentElement === target.#list;
       const currentNext = inTarget ? target.#movable()[target.#movable().indexOf(li) + 1] : undefined;
       if (!inTarget || next !== currentNext) {
@@ -449,7 +675,24 @@ export class BcnSortableList extends HTMLElement {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
       window.removeEventListener('keydown', onKey, true);
+      dropLine?.remove();
+      dropLine = null;
+      dragLabel?.remove();
+      dragLabel = null;
+      mark(null);
+      if (scrolling) cancelAnimationFrame(scrolling);
+      scrolling = 0;
       if (!dragging) return;
+      // drop="line": the row goes where the line or the marked row said.
+      if (byLine && !cancelled && pending) {
+        const { target, next } = pending;
+        if (next) {
+          if (next !== li && li.nextElementSibling !== next) next.before(li);
+        } else if (target.#list && !(li.parentElement === target.#list && target.#movable()[target.#movable().length - 1] === li)) {
+          target.#list.append(li);
+        }
+      }
+      pending = null;
       // A drag always ends in a click on the grip; it must not open the menu.
       this.#suppressClick = true;
       setTimeout(() => (this.#suppressClick = false), 0);

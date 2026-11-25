@@ -362,14 +362,13 @@ programs and classifications merged into one list, the first entry building
 the page. The merge was half right.)*
 
 The merge was right that programs and plan goals were one axis. It was wrong to
-fold the kind of work in with them, because the three answer different
+fold the kind of work in with them, because they answer different
 questions and behave differently:
 
 | | Per project | Carries | Answers |
 |---|---|---|---|
 | **Project type** | exactly one | the record's fields and page layout | "what kind of work is this?" |
 | **Classifications** | one or more | KPIs: the catalog measures that list it, with goal targets | "which goals does it move?" |
-| **Tags** | any, possibly none | nothing but the label | "is it an education and outreach project?" |
 
 A classification is the initiative's goal (or another grouping, like a
 species), and its performance measures are the KPIs tracking progress against
@@ -377,10 +376,13 @@ it. That is why the Classifications page is a board of goals with progress
 meters, not a list of tagged projects. Kinds of work have no goal to report
 toward, so they left; a single type builds the page so no two values can
 compete over section order, which was the only thing the "first one is
-primary" rule ever bought. Tags are for functional filtering and nothing else.
+primary" rule ever bought.
+
+*(Revised 2026-11-24, user-directed: Tags, the third way a project was filed —
+labels with no measures, for filtering — were removed from the product.)*
 
 *Proved on: Classifications (index and detail), Workspace settings › Project
-types / Classifications / Tags, and the project detail page's Key facts.*
+types / Classifications, and the project detail page's Key facts.*
 
 ### Room and position are different currencies
 
@@ -599,7 +601,7 @@ a first-time setup, both 2026-08-20. The walk won.*
 
 ### Settings detail pages: state and acts up top, delete at the bottom
 
-Every settings record page (a tag, a classification, a group, a project type,
+Every settings record page (a classification, a group, a project type,
 a performance measure) has one anatomy:
 
 1. **Page header.** Crumb back to the list, the record's name as the title.
@@ -705,7 +707,7 @@ all their projects and brings each public page up to date. Three things follow.
   changed and changed back reads as nothing. A year between sweeps still
   yields at most a row per field, where a year of activity feed would be
   unreviewable. The change log keeps every entry; it is the evidence behind
-  the review, and the Updates feed is where a manager checks the trust given
+  the review, and organization Home's Latest updates is where a manager checks the trust given
   to editors between publishes.
 - **A sweep has to be completable.** The queue states the whole set ("15 of
   24 public pages up to date"), lists what waits oldest first, and the review
@@ -721,7 +723,7 @@ Publish records the changes that were on screen, not "the record as of now",
 so an edit made while the manager was reading does not go out unreviewed.
 Revert is per field and only back to the published value; a filed report or a
 redrawn boundary has no single value to restore, so its fix is on the record.
-The Updates feed folds one person's edits on one project in one day into a
+Latest updates folds one person's edits on one project in one day into a
 single row; reports, stage changes and publishes never fold.
 
 *Applies to: firma2-publish-history (the diff, built with each record),
@@ -774,7 +776,8 @@ a styling problem.
 | Track | **Projects index** | built |
 | Track | **Project detail** | built — the reference screen for this brief |
 | Track | **Import projects** (Projects › Import) | built — one page, not a wizard: columns, then values matched to the closed lists, then rows to fix; undoable |
-| Track | Organizations, Funding Sources | not built |
+| Track | **Organizations** (list; each organization's page, for every organization the reader may see), **Members** (list and a page per person), **Support requests** (list and a page per request) | built 2026-11-24 — reading pages; the records are still changed in Workspace settings |
+| Track | Funding Sources | being built |
 | Report | **Performance measures** catalog | built |
 | Report | **Measure setup** (one per measure) | built |
 | Report | **Progress Dashboard** | built — a grid of tiles (one number, bars by group, over time) assembled from the workspace's whole inventory of figures and dimensions; one add-on-demand filter for every tile; charts sized by dragging |
@@ -783,8 +786,8 @@ a styling problem.
 | Workspace settings › Administration | **Workspace**, **Organizations**, **Users**, **Security**, **Custom pages**, **Import & export** | built |
 | Workspace settings › Organizations | **Organization record** (each organization's page from the list, your own included) | built |
 | Workspace settings › Your organization | **Settings** (General, Members, Access, Notifications, Review schedule) | built |
-| Your organizations (app rail) | **Home**, **Projects**, **Updates**, **Review**, **Views** (+ one page per saved view), **Reports** — each scoped to one of the reader's organizations | built — reports list and price their coverage; the report itself is still unbuilt |
-| Workspace (app rail) | **Updates** (every project's feed), **Review** (every project's public page, and each organization's backlog) | built |
+| Your organizations (app rail) | **Home**, **Projects**, **Review**, **Reports** — each scoped to one of the reader's organizations | built — reports list and price their coverage; the report itself is still unbuilt |
+| Workspace (app rail) | **Review** (every project's public page, and each organization's backlog) | built |
 | Review | **Review a project** (one per project: the net diff, Revert, Publish and next) | built |
 
 The two built areas are deliberately different exercises: the project pages are

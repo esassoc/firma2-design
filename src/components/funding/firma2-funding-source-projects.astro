@@ -1,0 +1,90 @@
+---
+// firma2-funding-source-projects — every project with a funding row against
+// one funding source: what each asked for or holds, and where the request
+// stands.
+//
+// THE STATUS IS THE COLUMN THAT MATTERS HERE. On a project's own page three
+// rows almost always read "Secured"; here, on a source that is taking
+// requests, the rows are the slate: who asked, how much, and what was decided
+// (docs/data-model.md, decisions 7 and 17). Sorting by Status or Amount is the
+// reader's.
+//
+// NOT THE PORTFOLIO GRID. firma2-project-grid lists projects with their own
+// facts; this lists funding ROWS, and a project's amount and status against
+// this source are not columns that grid has. A second, smaller table is the
+// honest construction.
+//
+// bcn-lego-checked: AG Grid through shared/grid-chrome is this spoke's tabular
+// surface; esa-empty-state for a source no project links to yet. Beacon is not
+// cloned on this machine.
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import '../shared/firma2-data-grid-chrome.css';
+import { FUNDING_STATUS_LABEL } from '../../data/firma2-funding-sources';
+import type { FundingSourceRollup } from '../../data/firma2-funding-source-rollup';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  rollup: FundingSourceRollup;
+}
+
+const { rollup } = Astro.props;
+const rows = rollup.rows.map((row) => ({
+  name: row.project.projectName,
+  href: withBase(row.href),
+  lead: row.project.leadOrganization,
+  stage: row.project.stage,
+  status: FUNDING_STATUS_LABEL[row.status],
+  amount: row.amount,
+}));
+---
+<section class="firma2-funding-source-projects stack" data-gap="md" aria-labelledby="firma2-funding-source-projects-title">
+  <h2 id="firma2-funding-source-projects-title" class="typography-title-sm-strong" data-aliasable>Projects</h2>
+  {rows.length === 0 ? (
+    <EsaEmptyState size="sm" title="No projects yet" />
+  ) : (
+    <>
+      <div class="firma2-data-grid__grid" data-fsp-grid></div>
+      <footer class="firma2-data-grid__footer">
+        <span class="typography-meta" data-fsp-count>{rows.length} projects</span>
+      </footer>
+      <script type="application/json" data-fsp-data set:html={JSON.stringify(rows)}></script>
+    </>
+  )}
+</section>
+
+<style>
+  .firma2-funding-source-projects :global(.ag-cell-wrap-text) {
+    line-height: 1.45;
+    padding-block: var(--spacing-200, 0.5rem);
+  }
+</style>
+
+<script>
+  import { escGridHtml as esc, gridCurrencyFormatter as currency, wireDataGrid } from '../shared/grid-chrome';
+  import type { ColDef } from 'ag-grid-community';
+
+  type Row = { name: string; href: string; lead: string; stage: string; status: string; amount: number };
+
+  document.querySelectorAll<HTMLElement>('.firma2-funding-source-projects').forEach((root) => {
+    wireDataGrid<Row>({
+      root,
+      gridSelector: '[data-fsp-grid]',
+      dataSelector: '[data-fsp-data]',
+      countSelector: '[data-fsp-count]',
+      countNoun: 'projects',
+      csvFileName: 'projectfirma-funding-source-projects.csv',
+      columnDefs: [
+        {
+          headerName: 'Project', field: 'name', colId: 'name',
+          flex: 2, minWidth: 260, cellClass: 'firma2-grid-name', wrapText: true, autoHeight: true,
+          cellRenderer: (p: { data?: Row }) =>
+            p.data ? `<a class="firma2-grid-link" href="${esc(p.data.href)}">${esc(p.data.name)}</a>` : '',
+        },
+        { headerName: 'Lead organization', field: 'lead', colId: 'lead', flex: 2, minWidth: 200, wrapText: true, autoHeight: true },
+        { headerName: 'Stage', field: 'stage', colId: 'stage', width: 180 },
+        { headerName: 'Status', field: 'status', colId: 'status', width: 140 },
+        { headerName: 'Amount', field: 'amount', colId: 'amount', width: 140, type: 'numericColumn', valueFormatter: (p) => currency.format(Number(p.value)) },
+      ] satisfies ColDef[],
+    });
+  });
+</script>

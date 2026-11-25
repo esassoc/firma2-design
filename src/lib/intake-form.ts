@@ -16,15 +16,14 @@
 // Same honesty terms as every other draft store here (src/lib/measure-draft.ts):
 // localStorage, one browser, no backend. The versioned keys are the escape hatch.
 
-import { BUILTINS, DEFAULT_FORM_TITLE, SEED_FORM, SEED_PROPOSALS, STANDARD_FORM, builtin } from '../data/firma2-intake';
+import { BUILTINS, DEFAULT_FORM_TITLE, SEED_FORM, SEED_PROPOSALS, builtin } from '../data/firma2-intake';
 import type { Answers, Block, BuiltinKey, Condition, IntakeForm, IntakeProject, IntakeStatus, QuestionBlock, Screen } from '../data/firma2-intake';
 import type { FieldDefinition } from '../data/firma2-project-types';
 import { allFields } from './project-type-draft';
 import { PROJECT_TYPES } from '../data/firma2-project-types';
 import { CLASSIFICATIONS } from '../data/firma2-classifications';
-import { TAGS } from '../data/firma2-tags';
+import { STAGE_ORDER } from '../data/firma2-projects';
 import { organizations, users } from '../data/firma2-directory';
-import { planIncludes } from './workspace-plan';
 
 // ---------------------------------------------------------------------------
 // Rules
@@ -64,6 +63,7 @@ export const conditionOptions = (block: Block, fields: FieldDefinition[] = allFi
   if (block.type === 'text') return null;
   if (block.type === 'builtin') {
     if (block.key === 'projectType') return BUILTIN_OPTIONS.projectType();
+    if (block.key === 'stage') return BUILTIN_OPTIONS.stage();
     if (block.key === 'classifications') return BUILTIN_OPTIONS.classifications();
     return null;
   }
@@ -279,9 +279,9 @@ export const removeScreen = (form: IntakeForm, id: string): IntakeForm => {
 
 export const BUILTIN_OPTIONS = {
   projectType: (): string[] => PROJECT_TYPES.map((t) => t.name),
+  stage: (): string[] => [...STAGE_ORDER],
   classifications: (): string[] => CLASSIFICATIONS.map((c) => c.name),
   leadOrganization: (): string[] => [...new Set(organizations.map((o) => o.name))].sort(),
-  tags: (): string[] => TAGS.map((t) => t.name),
   contacts: (): string[] => [...new Set(users.map((u) => u.name))].sort(),
 };
 
@@ -311,8 +311,10 @@ export { BUILTINS };
 // ---------------------------------------------------------------------------
 
 // v2: the sample form was cleared to a blank start (2026-10-19).
-const FORM_KEY = 'firma2:intake-form:v2';
-const PROJECTS_KEY = 'firma2:intake-projects:v1';
+// v3 / v2: the form gained the locked Stage question and a status was renamed
+// (deferred to declined), so older stored copies are left behind.
+const FORM_KEY = 'firma2:intake-form:v3';
+const PROJECTS_KEY = 'firma2:intake-projects:v2';
 
 interface FormStore {
   working: IntakeForm;
@@ -355,9 +357,11 @@ const SEED_PUBLISHED_AT = '2026-10-02T17:30:00Z';
 // always carries its attribute's own name — the builder cannot rename one, and
 // a form saved before that rule is brought back in line here. A question whose
 // field is gone — one the builder used to create and never published — goes
-// with it: fields are made in Custom fields now (2026-10-20).
+// with it: fields are made in Custom fields now (2026-10-20). So does a
+// built-in the product no longer has (Tags, removed 2026-11-24).
 const named = (f: IntakeForm): IntakeForm => {
   const known = new Set(allFields().map((x) => x.id));
+  const builtins = new Set<string>(BUILTINS.map((x) => x.key));
   const { fields: _staged, ...rest } = f as IntakeForm & { fields?: unknown };
   return {
     ...rest,
@@ -365,7 +369,7 @@ const named = (f: IntakeForm): IntakeForm => {
     screens: f.screens.map((s) => ({
       ...s,
       blocks: s.blocks
-        .filter((b) => b.type !== 'field' || known.has(b.fieldId))
+        .filter((b) => (b.type === 'field' ? known.has(b.fieldId) : b.type !== 'builtin' || builtins.has(b.key)))
         .map((b) => (b.type === 'builtin' ? { ...b, label: builtin(b.key).label } : b)),
     })),
   };
@@ -392,15 +396,35 @@ export const publish = (): FormStore => {
   return store;
 };
 
-/** The form members fill — or the working copy, on a preview. A free workspace
- * has no customization (it needs Agency), so its members always get the standard form. */
+/** The form members fill — or the working copy, on a preview. */
 export const formFor = (preview: boolean): IntakeForm => {
-  if (!planIncludes('agency')) return clone(STANDARD_FORM);
   const store = readFormStore();
   return preview ? store.working : store.published;
 };
 
 export const isFormKey = (key: string | null): boolean => key === FORM_KEY;
+
+// ---- accepting new projects ------------------------------------------------
+//
+// ONE SWITCH FOR THE WORKSPACE (docs/data-model.md, decision 15, user
+// 2026-11-24): an administrator decides whether the workspace is accepting new
+// projects. Off, only administrators add projects; drafts already begun and
+// projects already submitted are untouched. It applies at once and is not part
+// of Publish: it is not a change to the form.
+//
+// FAKED: kept in this browser, like the form itself.
+
+const ACCEPTING_KEY = 'firma2:intake-accepting:v1';
+
+/** Fired on `document` when the switch changes. */
+export const ACCEPTING_EVENT = 'firma2:intake-accepting';
+
+export const isAcceptingProjects = (): boolean => readJson<boolean>(ACCEPTING_KEY) ?? true;
+
+export const setAcceptingProjects = (on: boolean): void => {
+  writeJson(ACCEPTING_KEY, on);
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent(ACCEPTING_EVENT));
+};
 
 // ---- intake projects -----------------------------------------------------
 
@@ -433,7 +457,7 @@ export const submitProject = (id: string, form: IntakeForm): IntakeProject | und
   return next;
 };
 
-export const decide = (id: string, status: Extract<IntakeStatus, 'approved' | 'returned' | 'deferred'>, by: string, comment?: string): IntakeProject | undefined => {
+export const decide = (id: string, status: Extract<IntakeStatus, 'approved' | 'returned' | 'declined'>, by: string, comment?: string): IntakeProject | undefined => {
   const p = getIntakeProject(id);
   if (!p) return undefined;
   const next: IntakeProject = { ...p, status, decidedAt: new Date().toISOString(), decidedBy: by, returnComment: status === 'returned' ? comment : undefined };
@@ -441,13 +465,9 @@ export const decide = (id: string, status: Extract<IntakeStatus, 'approved' | 'r
   return next;
 };
 
-export const STATUS_STAGE: Record<IntakeStatus, string> = {
-  draft: 'Proposal',
-  submitted: 'Proposal',
-  returned: 'Proposal',
-  approved: 'Planning & Design',
-  deferred: 'Deferred',
-};
+// NO STATUS-TO-STAGE MAP. Until 2026-11-24 a status implied a stage (every
+// entry was a Proposal until approved). Stage is now the form's own answer and
+// approval does not change it (docs/data-model.md, decision 12).
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 

@@ -1,13 +1,12 @@
 ---
-// firma2-taxonomy-danger-zone — removing a project type, classification or
-// tag. One act, its cost stated beside it, then a confirm.
+// firma2-taxonomy-danger-zone — removing a project type or
+// classification. One act, its cost stated beside it, then a confirm.
 //
 // WHAT REMOVING COSTS DECIDES WHETHER IT IS OFFERED. A project must have a
 // type, and a project working toward a goal is the goal's whole record of
 // progress — so a type or classification still in use cannot be removed, and
 // the button says why (brief §4, "Inert, not disabled": disabled must be
-// telling the truth, with the reason in view). A tag costs nothing but the
-// label, so it can always go; the confirm says how many projects lose it.
+// telling the truth, with the reason in view).
 // A classification group can go once it holds no classifications and no
 // groups, and is not the last group — decided in the browser, because classifications move
 // between groups there (groupRemovalBlock in src/lib/taxonomy-edits.ts).
@@ -30,8 +29,7 @@ interface Props {
 }
 
 const { kind, slug, inUse, listPath } = Astro.props;
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const blocked = inUse > 0 && kind !== 'tag';
+const blocked = inUse > 0;
 const body = {
   projectType: blocked
     ? `Give ${inUse === 1 ? 'its project' : `its ${inUse} projects`} another type first.`
@@ -39,10 +37,9 @@ const body = {
   classification: blocked
     ? `Take it off ${inUse === 1 ? 'its project' : `its ${inUse} projects`} first.`
     : 'No project works toward this goal.',
-  tag: inUse > 0 ? `${plural(inUse, 'project loses', 'projects lose')} this tag.` : 'No project has this tag.',
   classificationGroup: 'Nothing is in this group.',
 }[kind];
-const noun = { projectType: 'project type', classification: 'classification', tag: 'tag', classificationGroup: 'group' }[kind];
+const noun = { projectType: 'project type', classification: 'classification', classificationGroup: 'group' }[kind];
 ---
 <EsaDangerZone heading="Danger zone">
   <div class="firma2-taxonomy-danger-zone repel" data-gap="md" data-kind={kind} data-slug={slug} data-list-href={withBase(listPath)} data-body={body}>
@@ -59,7 +56,6 @@ const noun = { projectType: 'project type', classification: 'classification', ta
 <script>
   import '@esa/ecology/esa-confirm-dialog';
   import { getEntry, groupRemovalBlock, removeEntry } from '../../lib/taxonomy-edits';
-  import { projectsWithTag } from '../../lib/project-tags';
   import type { TaxonomyKind } from '../../lib/taxonomy-edits';
   import { recordSlug } from '../../lib/taxonomy-record';
 
@@ -71,21 +67,6 @@ const noun = { projectType: 'project type', classification: 'classification', ta
     const dialog = document.querySelector<Confirm>('.firma2-taxonomy-danger-zone__confirm');
     const button = root.querySelector<HTMLElement>('[data-remove]');
     if (!dialog || !button) return;
-    // Tags are assigned in the browser (src/lib/project-tags.ts), so the
-    // build's count can be stale: count now, for the row and the confirm.
-    // Re-counted whenever the tag's Projects section changes an assignment
-    // on this same page (firma2-tag-projects announces it).
-    if (kind === 'tag') {
-      const recount = () => {
-        const n = projectsWithTag(slug).length;
-        const text = n > 0 ? `${n} ${n === 1 ? 'project loses' : 'projects lose'} this tag.` : 'No project has this tag.';
-        root.dataset.body = text;
-        const reason = root.querySelector<HTMLElement>(`#danger-remove-${kind} .typography-body-sm`);
-        if (reason) reason.textContent = text;
-      };
-      recount();
-      document.addEventListener('firma2:tag-assignments', recount);
-    }
     if (kind === 'classificationGroup') {
       const block = groupRemovalBlock(slug);
       const reason = root.querySelector<HTMLElement>(`#danger-remove-${kind} .typography-body-sm`);

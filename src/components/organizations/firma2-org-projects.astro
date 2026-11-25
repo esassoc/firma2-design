@@ -1,0 +1,67 @@
+---
+// firma2-org-projects — the projects an organization leads or funds, on its
+// page: each one a door, with what the organization is to it.
+//
+// ONE LIST, LED AND FUNDED TOGETHER. "Which projects is this organization in"
+// is one question; Involvement says which way, and Funding is filled only
+// where it funds — an organization does not fund the project it leads, it
+// carries its cost (the summary's Estimated cost).
+//
+// LED FIRST, then A to Z: the work it answers for before the work it pays
+// toward.
+//
+// bcn-lego-checked: firma2-settings-table is the spoke's home for a list of a
+// few scannable columns (the organization's settings record lists the same
+// projects with it); each row carries the project peek button, so the page must
+// sit in firma2-project-peek-layout. esa-empty-state for none. No <style>.
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import Firma2SettingsTable from '../settings/firma2-settings-table.astro';
+import type { OrganizationProject } from '../../data/firma2-organization-pages';
+import { projectHref, projectSlug } from '../../data/firma2-projects';
+import { currencyFormatter as money } from '../../lib/format';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  rows: OrganizationProject[];
+  /** The organization's name, for the table's accessible name. */
+  name: string;
+}
+
+const { rows, name } = Astro.props;
+// A COLUMN THAT SAYS THE SAME THING ON EVERY ROW IS CUT. An organization that
+// only leads has no Funding to show and nothing for Involvement to tell apart;
+// one that only funds needs Funding and not Involvement. Both columns show only
+// for one that does both.
+const leadsAny = rows.some((r) => r.leads);
+const fundsAny = rows.some((r) => !r.leads);
+const columns = [
+  ...(leadsAny && fundsAny ? [{ key: 'part', label: 'Involvement' }] : []),
+  { key: 'stage', label: 'Stage' },
+  ...(fundsAny ? [{ key: 'amount', label: 'Funding secured', numeric: true }] : []),
+];
+const tableRows = [...rows]
+  .sort((a, b) => Number(b.leads) - Number(a.leads) || a.project.projectName.localeCompare(b.project.projectName))
+  .map(({ project, leads, amount }) => ({
+    name: project.projectName,
+    href: withBase(projectHref(project)),
+    peek: projectSlug(project),
+    cells: {
+      part: leads ? 'Leads' : 'Funds',
+      stage: project.stage,
+      amount: leads ? '' : money.format(amount),
+    },
+  }));
+---
+<section class="stack" data-gap="md" aria-labelledby="firma2-org-projects-title">
+  <h2 id="firma2-org-projects-title" class="typography-title-sm-strong" data-aliasable>Projects</h2>
+  {tableRows.length === 0 ? (
+    <EsaEmptyState size="sm" title="No projects yet" />
+  ) : (
+    <Firma2SettingsTable
+      label={`Projects ${name} leads or funds`}
+      nameLabel="Project"
+      columns={columns}
+      rows={tableRows}
+    />
+  )}
+</section>

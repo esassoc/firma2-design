@@ -1,0 +1,59 @@
+---
+// firma2-area-group-remove — the one irreversible act on an area group's page.
+// Removing a group stops projects being filed under its areas; the layer it
+// read is a Map layers record and stays where it is, which the row says
+// because "does this delete my layer?" is the question the button raises.
+//
+// bcn-lego-checked: esa-danger-zone, esa-button, esa-confirm-dialog — all
+// legos. Same construction as firma2-taxonomy-danger-zone, which is bound to
+// the taxonomy store's four kinds.
+import EsaDangerZone from '@esa/ecology/esa-danger-zone.astro';
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { withBase } from '../../lib/base';
+---
+<div class="firma2-area-group-remove" data-list-href={withBase('/prototypes/workspace-settings/geospatial-areas')}>
+  <EsaDangerZone heading="Danger zone">
+    <div class="repel" data-gap="md">
+      <div class="stack" data-gap="3xs" id="area-group-remove">
+        <span class="typography-label-md-strong">Remove this area group</span>
+        <span class="typography-body-sm">Projects are no longer filed under its areas. Its layer stays on Map layers.</span>
+      </div>
+      <EsaButton variant="danger" appearance="soft" size="md" aria-describedby="area-group-remove" data-remove>Remove</EsaButton>
+    </div>
+  </EsaDangerZone>
+  <div><esa-confirm-dialog class="firma2-area-group-remove__confirm" variant="danger" confirm-label="Remove"></esa-confirm-dialog></div>
+</div>
+
+<style>
+  .firma2-area-group-remove[hidden] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-confirm-dialog';
+  import { areaGroup } from '../../lib/geospatial-areas';
+  import { readAreaGroups, writeAreaGroups } from '../../lib/work-areas';
+
+  type Confirm = HTMLElement & { heading: string; message: string; show?: () => void };
+
+  document.querySelectorAll<HTMLElement>('.firma2-area-group-remove').forEach((root) => {
+    const id = new URLSearchParams(window.location.search).get('id') ?? '';
+    if (!areaGroup(id)) {
+      root.hidden = true;
+      return;
+    }
+    const dialog = root.querySelector<Confirm>('.firma2-area-group-remove__confirm')!;
+    root.querySelector('[data-remove]')?.addEventListener('click', async () => {
+      await customElements.whenDefined('esa-confirm-dialog');
+      // Assigned only after define, or the props shadow the lego's setters.
+      dialog.heading = `Remove ${areaGroup(id)?.name ?? 'this area group'}?`;
+      dialog.message = 'Projects are no longer filed under its areas. Its layer stays on Map layers.';
+      dialog.show?.();
+    });
+    dialog.addEventListener('confirm', () => {
+      writeAreaGroups(readAreaGroups().filter((g) => g.id !== id));
+      window.location.assign(root.dataset.listHref ?? '/');
+    });
+  });
+</script>

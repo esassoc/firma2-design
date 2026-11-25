@@ -3,6 +3,7 @@
 Prototype harnesses (throwaway, delete on promotion):
 - Internal record page: `/proto/project-detail?p=<slug>&v=<n>`
 - Public page: `/proto/public-project?p=<slug>&v=<n>`
+- Internal page, whole-page round with the 2026-11-24 data-model changes (awaiting a pick): `/proto/project-record/<variant>/<slug>`, sources in `src/proto/project-record/` and `src/pages/proto/project-record/`. Variants: current, sections, document, years.
 - Sources: `src/proto/project-detail/`, `src/pages/proto/project-detail/`, `src/pages/proto/public-project/`
 
 ## Decisions so far (2026-11-02)

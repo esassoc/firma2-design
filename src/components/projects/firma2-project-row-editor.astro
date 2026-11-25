@@ -1,0 +1,371 @@
+---
+// firma2-project-row-editor — the one sheet that corrects or removes a funding
+// source or a contact on the project page.
+//
+// WHY IT EXISTS (story 81, .scratch/project-updates/requirements/stories/; user
+// decision 2026-11-23). Import a report's Undo lives only on its toast. Once
+// that is gone, a wrong imported value is corrected by hand on this page. Key
+// facts and measure entries could already be; a funding source and a contact
+// could not, so a wrong imported amount had no way off the record. Both
+// collections now have per-row Edit, and Remove inside it.
+//
+// ONE CONSTRUCTION, TWO MODES. Funding sources live in the main column and
+// contacts in the rail, but correcting a row is the same act in both: open the
+// row, change its values, save; or remove it, confirmed once. So there is one
+// sheet with two field groups, opened by an event either section fires
+// (EDIT_ROW_EVENT, src/lib/project-rows.ts), not a sheet per section. It is
+// mounted by firma2-project-funding, in the main column: a sheet inside the
+// rail would leave with the rail when the sheet takes the rail's place.
+//
+// THE FIELDS CARRY THE COLUMN'S OWN WORDS. The sheet docks beside the row it
+// edits, so "Funding source", "Status" and "Amount" are the table's headers,
+// and a reader matches field to cell without translating.
+//
+// REMOVE IS IN THE SHEET, NOT ON THE ROW. A funding table of three rows with a
+// destructive control on each is three ways to lose a funder by a slip. Remove
+// sits at the sheet's foot, away from Save, and asks once, naming the row.
+//
+// EVERY VALUE IS HELD TO ONE RULE WHEREVER IT IS TYPED: these are the check
+// step's rules (Import a report), so a figure that is valid there is valid
+// here.
+//
+// A FUNDING ROW PICKS A FUNDING SOURCE; IT DOES NOT TYPE ONE (docs/data-model.md,
+// decisions 1, 7 and 16, user 2026-11-24). The source is chosen from the
+// workspace's funding sources, and the organization offering it comes with it.
+// The row then says where the request stands: requested, secured or not
+// awarded. A REQUEST can only go to a source that is accepting requests today;
+// money already secured can be recorded against any source. The same sheet
+// ADDS a row ("Add source" on the card): it opens empty, on Requested, with
+// nothing to remove.
+//
+// Saved to src/lib/project-rows.ts, in this browser. The sections repaint from
+// that store's event, so this component never touches the table or the list.
+//
+// bcn-lego-checked: every control here IS a lego — bcn-side-sheet (the spoke's
+// docked esa-side-dialog), esa-text-field, esa-combobox, esa-select, esa-confirm-dialog,
+// esa-button; `.stack`, `.repel` and `.cluster` are the only layout. No CSS.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import { FUNDING_STATUSES, FUNDING_STATUS_LABEL } from '../../data/firma2-funding-sources';
+import { fundingSourceRollups } from '../../data/firma2-funding-source-rollup';
+import { TODAY_ISO } from '../../data/firma2-publish-history';
+
+// One option per funding source. Its label carries the organization, because
+// a lead organization's own match is the same name under every organization.
+const sourceOptions = fundingSourceRollups().map((rollup) => ({
+  label: `${rollup.source.name}, ${rollup.source.organization}`,
+  value: rollup.source.slug,
+  name: rollup.source.name,
+  organization: rollup.source.organization,
+  accepting: rollup.source.accepting,
+  closes: rollup.source.closes ?? '',
+}));
+const statusOptions = FUNDING_STATUSES.map((status) => ({ label: FUNDING_STATUS_LABEL[status], value: status }));
+
+---
+<div
+  class="firma2-project-row-editor"
+  data-sources={JSON.stringify(sourceOptions)}
+  data-statuses={JSON.stringify(statusOptions)}
+  data-today={TODAY_ISO}
+>
+  <!-- EACH DIALOG IN ITS OWN ELEMENT. Two sibling custom-element dialogs can
+       come out nested in the parsed tree, and the inner one then never draws. -->
+  <div>
+  <bcn-side-sheet class="firma2-project-row-editor__sheet" heading="Edit funding source" size="md" position="right">
+    <div class="stack" data-gap="lg" data-row-fields="funding">
+      <esa-combobox data-funding-source label="Funding source" size="md" mode="autocomplete" required></esa-combobox>
+      <esa-select data-funding-status label="Status" size="md" required></esa-select>
+      <esa-text-field data-funding-amount label="Amount" size="md" inputmode="numeric" prefix="$" required></esa-text-field>
+    </div>
+    <div class="stack" data-gap="lg" data-row-fields="contact">
+      <esa-text-field data-contact-name label="Name" size="md" required></esa-text-field>
+      <esa-text-field data-contact-role label="Role on this project" size="md"></esa-text-field>
+      <esa-text-field data-contact-organization label="Organization" size="md"></esa-text-field>
+      <esa-text-field data-contact-email label="Email" size="md" type="email" inputmode="email" autocomplete="off"></esa-text-field>
+    </div>
+    <div slot="footer" class="repel">
+      <EsaButton variant="danger" appearance="soft" size="md" data-row-remove>Remove</EsaButton>
+      <span class="cluster" data-gap="xs">
+        <EsaButton variant="ghost" size="md" data-row-cancel>Cancel</EsaButton>
+        <EsaButton variant="primary" size="md" data-row-save>Save</EsaButton>
+      </span>
+    </div>
+  </bcn-side-sheet>
+  </div>
+
+  <div>
+    <esa-confirm-dialog class="firma2-project-row-editor__confirm" variant="danger"></esa-confirm-dialog>
+  </div>
+</div>
+
+<script>
+  import '../shared/bcn-side-sheet';
+  import '@esa/ecology/esa-text-field';
+  import '@esa/ecology/esa-combobox';
+  import '@esa/ecology/esa-select';
+  import '@esa/ecology/esa-confirm-dialog';
+  import { announce } from '@esa/ecology/announcer';
+  import { currencyFormatter as currency } from '../../lib/format';
+  import {
+    EDIT_ROW_EVENT,
+    addFunding,
+    removeContact,
+    removeFunding,
+    sameText,
+    saveContact,
+    saveFunding,
+  } from '../../lib/project-rows';
+  import type { EditRowRequest } from '../../lib/project-rows';
+  import type { FundingStatus } from '../../data/firma2-funding-sources';
+  import { acceptingState, isOpen } from '../../lib/funding-source-edits';
+
+  interface SourceOption {
+    label: string;
+    value: string;
+    name: string;
+    organization: string;
+    /** As built. An administrator's later choice is in src/lib/funding-source-edits.ts. */
+    accepting: boolean;
+    closes: string;
+  }
+
+  type Field = HTMLElement & { value?: unknown; options?: unknown; errorText?: string };
+  type Sheet = HTMLElement & { show: () => void; close: () => void; heading: string };
+  type Confirm = HTMLElement & { heading: string; message: string; show: () => void };
+
+  // Whole dollars with separators, no symbol: the field's own prefix is the "$".
+  const plainAmount = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+  const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const LIMIT = 1_000_000_000_000;
+  /** The combobox value standing for a row's own source when the workspace's list lacks it. */
+  const UNLISTED = '__held__';
+
+  document.querySelectorAll<HTMLElement>('.firma2-project-row-editor').forEach((root) => {
+    const sheet = root.querySelector<Sheet>('.firma2-project-row-editor__sheet');
+    const confirm = root.querySelector<Confirm>('.firma2-project-row-editor__confirm');
+    const field = (name: string): Field | null => root.querySelector<Field>(`[data-${name}]`);
+    const fundingSource = field('funding-source');
+    const fundingStatus = field('funding-status');
+    const fundingAmount = field('funding-amount');
+    const contactName = field('contact-name');
+    const contactRole = field('contact-role');
+    const contactOrganization = field('contact-organization');
+    const contactEmail = field('contact-email');
+    if (
+      !sheet || !confirm || !fundingSource || !fundingStatus || !fundingAmount ||
+      !contactName || !contactRole || !contactOrganization || !contactEmail
+    ) return;
+
+    const sources = JSON.parse(root.dataset.sources ?? '[]') as SourceOption[];
+    const statuses = JSON.parse(root.dataset.statuses ?? '[]') as { label: string; value: FundingStatus }[];
+    const removeButton = root.querySelector<HTMLElement>('[data-row-remove]');
+    const today = root.dataset.today ?? '';
+    /** Whether a project may ask this source for money today: this browser's choice over the built one. */
+    const takesRequests = (option: SourceOption): boolean =>
+      isOpen(acceptingState(option.value, { accepting: option.accepting, closes: option.closes || undefined }), today);
+    /** The option for a row's source: by its two facts, since a row carries no slug. */
+    const optionFor = (name: string, organization: string): SourceOption | undefined =>
+      sources.find((option) => sameText(option.name, name) && sameText(option.organization, organization));
+    const groups = [...root.querySelectorAll<HTMLElement>('[data-row-fields]')];
+    const text = (control: Field): string => String(control.value ?? '').trim();
+
+    /** The row being edited. Null while the sheet is closed. */
+    let request: EditRowRequest | null = null;
+
+    const clearErrors = (): void => {
+      [fundingSource, fundingStatus, fundingAmount, contactName, contactEmail].forEach((control) => {
+        control.errorText = '';
+      });
+    };
+
+    const open = (next: EditRowRequest): void => {
+      request = next;
+      clearErrors();
+      const adding = next.kind === 'funding' && next.adding === true;
+      sheet.heading = next.kind === 'contact' ? 'Edit contact' : adding ? 'Add funding source' : 'Edit funding source';
+      // Nothing to remove from a row that does not exist yet. The wrapper is
+      // what EsaButton renders; `display`, because a lego's own display rule
+      // beats the UA rule for [hidden].
+      const removeBox = removeButton?.closest<HTMLElement>('.esa-button') ?? removeButton;
+      if (removeBox) removeBox.style.display = adding ? 'none' : '';
+      // `style.display`, not `hidden`: `.stack` sets a display of its own, which
+      // beats the UA rule for [hidden] and leaves both groups showing.
+      groups.forEach((group) => {
+        group.style.display = group.dataset.rowFields === next.kind ? '' : 'none';
+      });
+
+      // VALUES GO IN AFTER THE ELEMENTS UPGRADE. A value set on a custom element
+      // that has not been defined yet is shadowed by the class field its
+      // constructor installs, and the control renders empty.
+      const ready = Promise.all(
+        ['esa-text-field', 'esa-combobox', 'esa-select'].map((tag) => customElements.whenDefined(tag)),
+      );
+      void ready.then(() => {
+        if (next.kind === 'funding') {
+          // The row's own source is offered even when the workspace's list does
+          // not hold it (an import can name one that is not there yet), so
+          // opening a row never empties a value it holds.
+          const held = optionFor(next.values.name, next.values.organization);
+          const unlisted = !held && next.values.name !== '';
+          fundingSource.options = unlisted
+            ? [{ label: `${next.values.name}, ${next.values.organization}`, value: UNLISTED }, ...sources]
+            : sources;
+          fundingSource.value = held?.value ?? (unlisted ? UNLISTED : '');
+          fundingStatus.options = statuses;
+          fundingStatus.value = next.values.status ?? 'secured';
+          fundingAmount.value = next.adding ? '' : plainAmount.format(next.values.amount);
+        } else {
+          contactName.value = next.values.name;
+          contactRole.value = next.values.role;
+          contactOrganization.value = next.values.organization;
+          contactEmail.value = next.values.email;
+        }
+      });
+
+      sheet.show();
+    };
+
+    const close = (): void => {
+      sheet.close();
+    };
+
+    // Focus goes back to the row's own control when it is still there. After a
+    // removal it is not, and the sheet's own return (the opener) has nowhere to
+    // land, which is the browser's to resolve.
+    sheet.addEventListener('close', () => {
+      const opener = request?.opener;
+      request = null;
+      if (opener?.isConnected) opener.focus();
+    });
+
+    document.addEventListener(EDIT_ROW_EVENT, (event) => {
+      open((event as CustomEvent<EditRowRequest>).detail);
+    });
+
+    root.querySelector('[data-row-cancel]')?.addEventListener('click', close);
+
+    /** The amount as whole dollars, or the reason it is not one. */
+    const readAmount = (): { amount: number } | { error: string } => {
+      // "$48,000" is what a person pastes out of a spreadsheet; it is the figure.
+      const typed = text(fundingAmount).replace(/[$,\s]/g, '');
+      if (typed === '' || !/^\d+(\.\d+)?$/.test(typed)) return { error: 'Enter an amount above zero.' };
+      if (typed.includes('.') && Number(typed) % 1 !== 0) return { error: 'Enter whole dollars, without cents.' };
+      const amount = Number(typed);
+      if (!(amount > 0) || amount >= LIMIT) return { error: 'Enter an amount above zero.' };
+      return { amount };
+    };
+
+    const saveFundingRow = (current: Extract<EditRowRequest, { kind: 'funding' }>): boolean => {
+      const picked = text(fundingSource);
+      const option = sources.find((candidate) => candidate.value === picked);
+      // The row's own unlisted source stays as it is unless another is picked.
+      const source = option
+        ? { name: option.name, organization: option.organization, open: takesRequests(option) }
+        : picked === UNLISTED
+          ? { name: current.values.name, organization: current.values.organization, open: false }
+          : null;
+      const status = (statuses.find((candidate) => candidate.value === text(fundingStatus))?.value ?? 'secured') as FundingStatus;
+      const amount = readAmount();
+      let valid = true;
+      if (!source) {
+        fundingSource.errorText = 'Choose a funding source from the list.';
+        valid = false;
+      }
+      // A REQUEST NEEDS AN OPEN SOURCE (decision 16). A row that was already a
+      // request to this source keeps its standing: the date governs submitting,
+      // and that one was submitted.
+      const alreadyAsked =
+        !current.adding && current.values.status === 'requested' && source !== null &&
+        sameText(source.name, current.values.name) && sameText(source.organization, current.values.organization);
+      if (source && status === 'requested' && !source.open && !alreadyAsked) {
+        fundingStatus.errorText = `${source.name} isn’t accepting requests.`;
+        valid = false;
+      }
+      if ('error' in amount) {
+        fundingAmount.errorText = amount.error;
+        valid = false;
+      }
+      // One row per funding source on a project.
+      if (valid && source && current.others.some((other) => sameText(other.name, source.name) && sameText(other.organization, source.organization))) {
+        fundingSource.errorText = 'This project already has that funding source.';
+        valid = false;
+      }
+      if (!valid || !source || 'error' in amount) return false;
+      const values = { name: source.name, organization: source.organization, amount: amount.amount, status };
+      if (current.adding) {
+        addFunding(current.slug, values);
+        announce('Funding source added.');
+      } else {
+        saveFunding(current.slug, current.id, values);
+        announce('Funding source saved.');
+      }
+      return true;
+    };
+
+    const saveContactRow = (current: Extract<EditRowRequest, { kind: 'contact' }>): boolean => {
+      const name = text(contactName);
+      const email = text(contactEmail);
+      let valid = true;
+      if (name === '') {
+        contactName.errorText = 'Enter a name.';
+        valid = false;
+      }
+      if (email !== '' && !EMAIL.test(email)) {
+        contactEmail.errorText = 'Enter an email address, such as name@example.org.';
+        valid = false;
+      } else if (email !== '' && current.others.some((other) => sameText(other, email))) {
+        contactEmail.errorText = 'This project already has a contact with that email.';
+        valid = false;
+      }
+      if (!valid) return false;
+      saveContact(current.slug, current.id, {
+        name,
+        role: text(contactRole),
+        organization: text(contactOrganization),
+        email,
+      });
+      announce('Contact saved.');
+      return true;
+    };
+
+    root.querySelector('[data-row-save]')?.addEventListener('click', () => {
+      if (!request) return;
+      clearErrors();
+      const saved = request.kind === 'funding' ? saveFundingRow(request) : saveContactRow(request);
+      if (saved) close();
+    });
+
+    root.querySelector('[data-row-remove]')?.addEventListener('click', () => {
+      const current = request;
+      if (!current) return;
+      // THE SENTENCE IS THE SAFETY CHECK: it names the row and what leaves with
+      // it, so a person who opened the wrong row reads that before confirming.
+      if (current.kind === 'funding') {
+        confirm.heading = 'Remove this funding source?';
+        confirm.message = `${current.values.name}, ${currency.format(current.values.amount)}, will no longer be listed on this project.`;
+      } else {
+        confirm.heading = 'Remove this contact?';
+        confirm.message = current.values.role
+          ? `${current.values.name} will no longer be listed as ${current.values.role} on this project.`
+          : `${current.values.name} will no longer be listed on this project.`;
+      }
+      confirm.setAttribute('confirm-label', 'Remove');
+      confirm.addEventListener(
+        'resolved',
+        (event) => {
+          if (!(event as CustomEvent<{ confirmed: boolean }>).detail.confirmed) return;
+          if (current.kind === 'funding') {
+            removeFunding(current.slug, current.id);
+            announce('Funding source removed.');
+          } else {
+            removeContact(current.slug, current.id);
+            announce('Contact removed.');
+          }
+          close();
+        },
+        { once: true },
+      );
+      confirm.show();
+    });
+  });
+</script>

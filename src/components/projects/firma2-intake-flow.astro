@@ -76,7 +76,7 @@ const config = {
       <span data-status="returned" hidden><EsaBadge variant="warning" size="md" value="Returned" /></span>
       <span data-status="submitted" hidden><EsaBadge variant="info" size="md" value="Waiting for approval" /></span>
       <span data-status="approved" hidden><EsaBadge variant="success" size="md" value="Approved" /></span>
-      <span data-status="deferred" hidden><EsaBadge variant="warning" size="md" value="Deferred" /></span>
+      <span data-status="declined" hidden><EsaBadge variant="secondary" size="md" value="Declined" /></span>
     </span>
     <span slot="actions" class="cluster" data-gap="xs" data-decide hidden>
       <EsaButton variant="primary" size="md" data-approve>Approve</EsaButton>
@@ -98,12 +98,19 @@ const config = {
     </EsaAlertBox>
   </div>
   <div data-banner="submitted" hidden>
-    <EsaAlertBox variant="success" title="Proposal submitted">
+    <EsaAlertBox variant="success" title="Project submitted">
       <div data-after-submit></div>
     </EsaAlertBox>
   </div>
+  <!-- THE WORKSPACE IS NOT ACCEPTING NEW PROJECTS (docs/data-model.md, decision
+       15). Shown in place of the first screen to anyone but an administrator. -->
+  <div data-banner="closed" hidden>
+    <EsaAlertBox variant="info" title="This workspace isn’t accepting new projects">
+      <p class="typography-body-md">Ask an administrator to add yours.</p>
+    </EsaAlertBox>
+  </div>
   <div data-banner="missing-draft" hidden>
-    <EsaAlertBox variant="warning" title="This proposal isn’t in this browser">
+    <EsaAlertBox variant="warning" title="This project isn’t in this browser">
       <p class="typography-body-md">Start a new project instead.</p>
     </EsaAlertBox>
   </div>
@@ -126,7 +133,7 @@ const config = {
       <span data-back-wrap><EsaButton variant="secondary" size="md" data-back>Back</EsaButton></span>
       <span data-next-wrap><EsaButton variant="primary" size="md" data-next>Continue</EsaButton></span>
       <p class="typography-body-sm firma2-intake-flow__lead-wait" data-lead-wait hidden></p>
-      <span data-submit-wrap hidden><EsaButton variant="primary" size="md" data-submit>Submit proposal</EsaButton></span>
+      <span data-submit-wrap hidden><EsaButton variant="primary" size="md" data-submit>Submit for approval</EsaButton></span>
     </div>
     </div>
   </div>
@@ -134,10 +141,10 @@ const config = {
   <!-- THE PROPOSAL, READ BACK -->
   <div class="stack" data-gap="xl" data-summary hidden></div>
 
-  <esa-dialog class="firma2-intake-flow__return" heading="Return this proposal" size="md" show-close-button>
+  <esa-dialog class="firma2-intake-flow__return" heading="Return this project" size="md" show-close-button>
     <esa-textarea label="What needs to change?" size="md" rows="4" required data-return-text></esa-textarea>
     <div class="cluster" data-gap="xs" slot="footer">
-      <EsaButton variant="primary" size="md" data-return-confirm>Return proposal</EsaButton>
+      <EsaButton variant="primary" size="md" data-return-confirm>Return project</EsaButton>
       <EsaButton variant="secondary" size="md" data-return-cancel>Cancel</EsaButton>
     </div>
   </esa-dialog>
@@ -458,6 +465,7 @@ const config = {
     decide,
     formFor,
     getIntakeProject,
+    isAcceptingProjects,
     isAnswered,
     isQuestion,
     missingRequired,
@@ -803,7 +811,7 @@ const config = {
       labelled(submitBtn.closest<HTMLElement>('.esa-button') ?? submitBtn, 'Submitting…');
       const next = submitProject(project.id, form);
       if (!next) {
-        labelled(submitBtn.closest<HTMLElement>('.esa-button') ?? submitBtn, 'Submit proposal');
+        labelled(submitBtn.closest<HTMLElement>('.esa-button') ?? submitBtn, 'Submit for approval');
         return paint();
       }
       location.assign(`${intakeHref}?id=${encodeURIComponent(next.id)}&submitted=1`);
@@ -887,12 +895,12 @@ const config = {
       start();
     });
     customElements.whenDefined('esa-dropdown-menu').then(() => {
-      $<Menu>('[data-more]').items = [{ label: 'Move to Deferred', action: 'defer' }];
+      $<Menu>('[data-more]').items = [{ label: 'Decline', action: 'decline' }];
     });
     $('[data-more]').addEventListener('menu-action', (e) => {
-      if ((e as CustomEvent<{ action: string }>).detail.action !== 'defer' || !project) return;
-      project = decide(project.id, 'deferred', CURRENT_USER.name);
-      toasts.show({ message: `${projectName(project!)} moved to Deferred.`, variant: 'success' });
+      if ((e as CustomEvent<{ action: string }>).detail.action !== 'decline' || !project) return;
+      project = decide(project.id, 'declined', CURRENT_USER.name);
+      toasts.show({ message: `${projectName(project!)} declined.`, variant: 'success' });
       start();
     });
 
@@ -967,6 +975,13 @@ const config = {
       $('[data-decide]').hidden = true;
       banner('returned', false);
       banner('preview', preview);
+      // Starting a new one is what the switch governs; a draft already begun
+      // carries on, and the builder's Preview always runs.
+      if (mode === 'new' && !preview && !isAcceptingProjects() && currentActor().role !== 'Administrator') {
+        banner('closed', true);
+        $('[data-steps]').hidden = true;
+        return;
+      }
       if (mode === 'draft' && !project) {
         banner('missing-draft', true);
         $('[data-steps]').hidden = true;

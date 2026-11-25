@@ -14,19 +14,36 @@
 import BaseLayout from './BaseLayout.astro';
 import Firma2PublicHeader from '../components/public/firma2-public-header.astro';
 import Firma2PublicFooter from '../components/public/firma2-public-footer.astro';
+import { publicSiteDefaults } from '../data/firma2-public-site';
 import type { PublicNavKey } from '../data/firma2-public-site';
 
 interface Props {
   title: string;
   /** The header destination this page belongs to. */
   current?: PublicNavKey;
-  /** The signed-in reader's way back to this page's record; the header defaults to the workspace's home. */
+  /** The signed-in reader's way to this page's record, first in the header's account menu. */
   workspaceDoor?: { label: string; href: string };
 }
 
 const { title, current, workspaceDoor } = Astro.props;
 ---
 <BaseLayout title={title}>
+  {/* THE SITE'S SETTINGS (Workspace settings › Public site). The defaults ride
+      in the page as JSON; src/lib/public-site-apply.ts lays the published
+      settings over them. The inline script holds the frame back for the one
+      beat that takes, only when this browser has settings stored, so a
+      rearranged home never shows its default order first — and lets go after
+      two seconds whatever happens. The key is a DELIBERATE DUPLICATE of
+      PUBLIC_SITE_KEY: an inline script has no module graph. */}
+  <script type="application/json" data-public-site-defaults set:html={JSON.stringify(publicSiteDefaults()).replace(/</g, '\\u003c')} />
+  <script is:inline>
+    try {
+      if (localStorage.getItem('firma2:public-site:v1')) {
+        document.documentElement.setAttribute('data-public-site-pending', '');
+        setTimeout(function () { document.documentElement.removeAttribute('data-public-site-pending'); }, 2000);
+      }
+    } catch (e) {}
+  </script>
   <div class="firma2-public-frame">
     <Firma2PublicHeader current={current} workspaceDoor={workspaceDoor} />
     <main class="firma2-public-frame__main">
@@ -55,4 +72,18 @@ const { title, current, workspaceDoor } = Astro.props;
   .firma2-public-frame__main {
     flex: 1 0 auto;
   }
+  /* `hidden` MEANS HIDDEN on a public page. The site's settings hide sections,
+     results and links with the attribute, and a layout class (`.stack`,
+     `.grid`) or a lego's own display rule would otherwise out-rank it. */
+  :global(.firma2-public-frame [hidden]) {
+    display: none !important;
+  }
+  :global(html[data-public-site-pending]) .firma2-public-frame {
+    visibility: hidden;
+  }
 </style>
+
+<script>
+  import { applyPublicSite } from '../lib/public-site-apply';
+  applyPublicSite();
+</script>

@@ -17,13 +17,18 @@
 // THE WHOLE MENU IS ALWAYS IN THE DOCUMENT. Wide: the row of links. Narrow:
 // the same links in one native <details> menu, in the markup open or closed.
 //
-// ONE DOOR, AND IT KNOWS WHO IS READING. Signed out: Sign in. Signed in
-// (src/lib/session.ts): the way back into the workspace in its place — "Open
-// workspace", or the page's own record when the page passes one (a project's
-// public page passes "Open project"; user, 2026-11-23). Both are in the markup
-// and an inline script right after them marks <html> before first paint, so
-// the wrong door never flashes. The key is a DELIBERATE DUPLICATE of the one
-// in session.ts — an inline script has no module graph.
+// ONE CORNER, AND IT KNOWS WHO IS READING. Signed out: Sign in. Signed in
+// (src/lib/session.ts): an ACCOUNT MENU in its place (user, 2026-11-23, picked
+// from /proto/public-session over a staff bar and a floating dock —
+// .scratch/public-views/signed-in-doors-decision.md). The menu holds the page's
+// own record when the page passes one (a project's public page passes "Open
+// project"), the review when the page says changes are waiting
+// (firma2-public-review-notice), Open workspace, and Sign out. Sign out stays
+// on the page and reloads it, so the reader sees it as the public does.
+// Both corners are in the markup and an inline script right after them marks
+// <html> before first paint, so the wrong one never flashes. The key is a
+// DELIBERATE DUPLICATE of the one in session.ts — an inline script has no
+// module graph.
 //
 // THE THEME SWITCH sits beside Sign in: one icon button that flips light and
 // dark and remembers the choice (src/lib/scheme.ts — the same preference the
@@ -32,7 +37,8 @@
 // right glyph is there before any script runs.
 //
 // Every control is a lego: esa-app-bar (the bar), EsaButton chrome (links),
-// esa-nav-dropdown (Pages, and the narrow Menu), EsaButton secondary (Sign in).
+// esa-nav-dropdown (Pages, and the narrow Menu), EsaButton secondary (Sign in),
+// esa-dropdown-menu on an EsaButton holding an esa-avatar (the account menu).
 // bcn-lego-checked: esa-header-nav was considered — its user menu is the
 // signed-in app's shape, and its own header says to compose esa-app-bar +
 // bricks for a public nav. Beacon is not cloned on this machine.
@@ -51,31 +57,40 @@ import {
 } from '../../data/firma2-public-site';
 import type { PublicNavKey } from '../../data/firma2-public-site';
 import { HOME_HREF } from '../../data/firma2-nav';
+import { CURRENT_USER } from '../../data/firma2-directory';
+import EsaAvatar from '@esa/ecology/esa-avatar.astro';
 
 interface Props {
   /** The destination this page belongs to — marked as the current one. */
   current?: PublicNavKey;
-  /** The signed-in reader's way back: this page's record in the workspace. Base-less. Defaults to the workspace's home. */
+  /** The signed-in reader's way to this page's record in the workspace, first in the account menu. Base-less. */
   workspaceDoor?: { label: string; href: string };
 }
 
-const { current, workspaceDoor = { label: 'Open workspace', href: HOME_HREF } } = Astro.props;
+const { current, workspaceDoor } = Astro.props;
+const accountDoors = [
+  ...(workspaceDoor ? [{ label: workspaceDoor.label, href: withBase(workspaceDoor.href) }] : []),
+  { label: 'Open workspace', href: withBase(HOME_HREF) },
+];
 ---
 <EsaAppBar as="header" tone="surface" class="firma2-public-header">
   <a slot="start" class="firma2-public-header__owner typography-label-md-strong" href={withBase(PUBLIC_HOME_HREF)}>
-    {PUBLIC_SITE_OWNER.name}
+    {/* The logo is the workspace's own (Public site settings › General); the
+        apply script fills and shows it. */}
+    <img class="firma2-public-header__logo" alt="" hidden data-site-logo />
+    <span data-site-name>{PUBLIC_SITE_OWNER.name}</span>
   </a>
 
-  <nav class="firma2-public-header__links" aria-label="Site">
+  <nav class="firma2-public-header__links" aria-label="Site" data-nav-row>
     {PUBLIC_NAV.map((item) => (
-      <EsaButton variant="chrome" href={withBase(item.href)} current={item.key === current}>{item.label}</EsaButton>
+      <EsaButton variant="chrome" href={withBase(item.href)} current={item.key === current} data-nav-key={item.key}>{item.label}</EsaButton>
     ))}
     {PUBLIC_PAGES.length > 0 && (
-      <div class="firma2-public-header__dropdown">
+      <div class="firma2-public-header__dropdown" data-nav-key="pages">
         <EsaNavDropdown label={PUBLIC_PAGES_LABEL}>
           <div class="stack" data-gap="2xs">
             {PUBLIC_PAGES.map((page) => (
-              <EsaButton variant="chrome" href={withBase(page.href)}>{page.label}</EsaButton>
+              <EsaButton variant="chrome" href={withBase(page.href)} data-page-id={page.id}>{page.label}</EsaButton>
             ))}
           </div>
         </EsaNavDropdown>
@@ -83,15 +98,19 @@ const { current, workspaceDoor = { label: 'Open workspace', href: HOME_HREF } } 
     )}
   </nav>
 
+  {/* A link an administrator added (Public site settings › Navigation): the
+      apply script clones this for the row and for the narrow menu. */}
+  <template data-nav-link-template><EsaButton variant="chrome" href="#" target="_blank" rel="noopener">Link</EsaButton></template>
+
   <div slot="end" class="firma2-public-header__end">
     <nav class="firma2-public-header__menu firma2-public-header__dropdown" aria-label="Site">
       <EsaNavDropdown label="Menu" align="end">
-        <div class="stack" data-gap="2xs">
+        <div class="stack" data-gap="2xs" data-nav-menu>
           {PUBLIC_NAV.map((item) => (
-            <EsaButton variant="chrome" href={withBase(item.href)} current={item.key === current}>{item.label}</EsaButton>
+            <EsaButton variant="chrome" href={withBase(item.href)} current={item.key === current} data-nav-key={item.key}>{item.label}</EsaButton>
           ))}
           {PUBLIC_PAGES.map((page) => (
-            <EsaButton variant="chrome" href={withBase(page.href)}>{page.label}</EsaButton>
+            <EsaButton variant="chrome" href={withBase(page.href)} data-page-id={page.id}>{page.label}</EsaButton>
           ))}
         </div>
       </EsaNavDropdown>
@@ -99,7 +118,13 @@ const { current, workspaceDoor = { label: 'Open workspace', href: HOME_HREF } } 
     <span class="firma2-public-header__scheme" data-set-scheme="dark"><EsaIconButton icon="moon" label="Switch to dark theme" /></span>
     <span class="firma2-public-header__scheme" data-set-scheme="light"><EsaIconButton icon="sun" label="Switch to light theme" /></span>
     <span class="firma2-public-header__door" data-door="out"><EsaButton variant="secondary" href={withBase(PUBLIC_SIGN_IN_HREF)}>Sign in</EsaButton></span>
-    <span class="firma2-public-header__door" data-door="in"><EsaButton variant="secondary" href={withBase(workspaceDoor.href)}>{workspaceDoor.label}</EsaButton></span>
+    <span class="firma2-public-header__door" data-door="in">
+      <esa-dropdown-menu position="below-end" data-account-menu data-doors={JSON.stringify(accountDoors)}>
+        <EsaButton variant="chrome" aria-label={`Account, ${CURRENT_USER.name}`}>
+          <EsaAvatar name={CURRENT_USER.name} size="sm" />
+        </EsaButton>
+      </esa-dropdown-menu>
+    </span>
     <script is:inline>
       try {
         if (localStorage.getItem('firma2:signed-in') === '1') document.documentElement.setAttribute('data-signed-in', '');
@@ -117,8 +142,27 @@ const { current, workspaceDoor = { label: 'Open workspace', href: HOME_HREF } } 
     gap: var(--spacing-500);
   }
 
+  /* On the brand colour the bar's text is the colour chosen FOR that brand
+     (dark on the house green, white on a navy), not the lego's fixed white. */
+  :global(.firma2-public-header.esa-app-bar--brand) {
+    color: var(--color-content-on-brand);
+  }
+
+  /* SIGN IN ON A COLOURED BAR. The secondary button draws its words and its
+     outline in the brand colour, which is the bar itself here, so on the two
+     coloured bars both take the bar's own text colour. A deviation from the
+     lego's variant, kept to this one button on these two grounds. */
+  :global(.firma2-public-header:is(.esa-app-bar--brand, .esa-app-bar--brand-strong)) .firma2-public-header__door :global(.esa-button__native) {
+    color: inherit;
+    border-color: currentColor;
+    background: transparent;
+  }
+
   .firma2-public-header__owner {
-    color: var(--color-content-default);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-200);
+    color: inherit;
     text-decoration: none;
     white-space: nowrap;
   }
@@ -126,6 +170,17 @@ const { current, workspaceDoor = { label: 'Open workspace', href: HOME_HREF } } 
     outline: var(--focus-ring-width) solid var(--focus-ring-color);
     outline-offset: var(--focus-ring-offset);
     border-radius: var(--radius-sm);
+  }
+
+  /* Height only: a logo is as wide as its own proportions make it. */
+  .firma2-public-header__logo {
+    block-size: 2rem;
+    inline-size: auto;
+    max-inline-size: 10rem;
+    object-fit: contain;
+  }
+  .firma2-public-header__logo[hidden] {
+    display: none;
   }
 
   .firma2-public-header__links,
@@ -195,15 +250,29 @@ const { current, workspaceDoor = { label: 'Open workspace', href: HOME_HREF } } 
       display: block;
     }
   }
-  /* SIGNED IN, THE GATE IS HIGHER: "Open workspace" is 73px wider than Sign
-     in, and at 80rem it pushed the Pages chevron under the theme button. */
-  @media (max-width: 84rem) {
-    :global(html[data-signed-in] .firma2-public-header .esa-app-bar__main) {
-      display: none;
-    }
-    :global(html[data-signed-in]) .firma2-public-header__menu {
-      display: block;
-    }
+  /* THE SAME FOLD, MEASURED. The tabs are the workspace's to rename, reorder
+     and add to (Public site settings › Navigation), so the row can outgrow the
+     bar at any width; src/lib/public-site-apply.ts measures it and folds it
+     when it does. Hidden, not removed, so it can be measured again. */
+  :global(.firma2-public-header[data-collapsed] .esa-app-bar__main) {
+    visibility: hidden;
+    block-size: 0;
+    overflow: hidden;
+  }
+  :global(.firma2-public-header[data-collapsed]) .firma2-public-header__menu {
+    display: block;
+  }
+  /* SIBLINGS MATCH: the avatar must not make its button taller or wider than
+     the theme button beside it. */
+  .firma2-public-header__door :global(.esa-button__native:has(.esa-avatar)) {
+    padding-inline: var(--spacing-100);
+  }
+  .firma2-public-header__door :global(.esa-avatar) {
+    flex: none;
+    /* Out of the button's height, and a hair of side room so the button is
+       as wide as it is tall. */
+    margin-block: -0.5rem;
+    margin-inline: 1.5px;
   }
   @media (max-width: 45rem) {
     :global(.firma2-public-header > .esa-app-bar__row) {
@@ -222,8 +291,46 @@ const { current, workspaceDoor = { label: 'Open workspace', href: HOME_HREF } } 
 </style>
 
 <script>
+  import '@esa/ecology/esa-dropdown-menu';
   import { setScheme, watchSystemScheme } from '../../lib/scheme';
+  import { setSignedIn } from '../../lib/session';
   import type { SchemePreference } from '../../lib/scheme';
+
+  // THE ACCOUNT MENU. Built when it opens, so a review notice that showed
+  // itself after load is in it: the page's record, the review when changes are
+  // waiting, the workspace, then Sign out.
+  type AccountItem = { label: string; action?: string; divider?: boolean; variant?: 'danger' };
+  const account = document.querySelector<HTMLElement & { items: AccountItem[] }>('[data-account-menu]');
+  if (account) {
+    const doors: { label: string; href: string }[] = JSON.parse(account.dataset.doors ?? '[]');
+    const build = (): { label: string; href: string }[] => {
+      const review = document.querySelector<HTMLAnchorElement>('.firma2-public-review-notice:not([hidden]) a[href]');
+      const count = review?.closest<HTMLElement>('.firma2-public-review-notice')?.dataset.count;
+      const all = [...doors];
+      if (review) all.splice(Math.min(1, doors.length - 1), 0, { label: count ? `Review changes (${count})` : 'Review changes', href: review.href });
+      return all;
+    };
+    let open = build();
+    const paint = (): void => {
+      open = build();
+      account.items = [
+        ...open.map((door, i) => ({ label: door.label, action: String(i) })),
+        { label: '', divider: true },
+        { label: 'Sign out', action: 'sign-out', variant: 'danger' },
+      ];
+    };
+    void customElements.whenDefined('esa-dropdown-menu').then(paint);
+    account.addEventListener('click', paint, true);
+    account.addEventListener('menu-action', (event) => {
+      const action = (event as CustomEvent<string>).detail;
+      if (action === 'sign-out') {
+        setSignedIn(false);
+        window.location.reload();
+      } else if (open[Number(action)]) {
+        window.location.href = open[Number(action)].href;
+      }
+    });
+  }
 
   // The theme switch: each button sets the scheme it names and keeps focus on
   // the button that replaces it.

@@ -19,7 +19,6 @@
 //     the project's own     project type, stage, lead organization and its
 //                           type, county, start year, completion year
 //     classifications       plan goal, and one dimension per practice group
-//     labels                tag
 //     who paid              funder, funding program
 //     custom fields         every CHOICE custom field
 //
@@ -28,7 +27,7 @@
 // about the project, not figures of it), and geography beyond county (regions
 // and subwatersheds are drawn on the map but not yet stored on a project).
 import { projects } from './firma2-projects';
-import { getProjectDetail } from './firma2-project-detail';
+import { getProjectDetail, securedFunding } from './firma2-project-detail';
 import { measures, isSummable, liveOptions, askedBreakdowns } from './firma2-performance-measures';
 import { measurePortfolio } from './firma2-classification-rollup';
 import { PRACTICE_GROUP, childGroups, classificationsUnderGroup, goalClassifications } from './firma2-classifications';
@@ -68,9 +67,8 @@ export const dashboardDataset = (): Dataset => {
     { key: 'county', label: 'County', plural: 'counties' },
     { key: 'goal', label: 'Plan goal', plural: 'plan goals', overlapping: true },
     ...practiceGroups.map((g) => ({ key: `cg-${g.slug}`, label: g.name, plural: g.name.toLowerCase(), overlapping: true })),
-    { key: 'tag', label: 'Tag', plural: 'tags', overlapping: true },
     { key: 'funder', label: 'Funder', plural: 'funders', overlapping: true, shares: true },
-    { key: 'program', label: 'Funding program', plural: 'funding programs', overlapping: true, shares: true },
+    { key: 'program', label: 'Funding source', plural: 'funding sources', overlapping: true, shares: true },
     { key: 'start', label: 'Start year', plural: 'start years' },
     { key: 'end', label: 'Completion year', plural: 'completion years' },
     ...choiceFields.map((d) => ({ key: `cf-${d.id}`, label: d.label, plural: d.label.toLowerCase() })),
@@ -79,7 +77,7 @@ export const dashboardDataset = (): Dataset => {
   const dsProjects = all.map(({ p, detail }) => {
     const sum = (key: 'organization' | 'name') => {
       const out: Record<string, number> = {};
-      detail.funding.forEach((f) => (out[f[key]] = Number(((out[f[key]] ?? 0) + f.share).toFixed(6))));
+      securedFunding(detail.funding).forEach((f) => (out[f[key]] = Number(((out[f[key]] ?? 0) + f.share).toFixed(6))));
       return out;
     };
     const funder = sum('organization');
@@ -91,7 +89,6 @@ export const dashboardDataset = (): Dataset => {
       orgtype: organizations.filter((o) => o.name === p.leadOrganization).map((o) => o.type),
       county: [p.county],
       goal: p.classifications.filter((c) => goals.has(c)),
-      tag: [...p.tags],
       funder: Object.keys(funder),
       program: Object.keys(program),
       start: [String(p.implementationStartYear)],
@@ -236,7 +233,7 @@ export const dashboardDataset = (): Dataset => {
         group: 'Money',
         timeless: true,
         shared: true,
-        rows: each(({ detail }) => detail.funding.reduce((a, f) => a + f.amount, 0)),
+        rows: each(({ detail }) => securedFunding(detail.funding).reduce((a, f) => a + f.amount, 0)),
       },
       {
         ...base,

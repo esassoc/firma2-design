@@ -1,0 +1,147 @@
+---
+// firma2-area-group-map — an area group on a map: its areas in the layer's own
+// style, and every located project as a dot in its usual colour, so "three
+// projects in North Shore" can be checked by eye against the table beside it.
+//
+// AREAS ARE DRAWN FROM THE SAME SHAPES THE COUNTS USE (src/lib/geospatial-areas),
+// not through the reference-layer painter: a project sitting visibly outside
+// an area it is counted in would be the one thing this map exists to rule out.
+// A hovered area names itself and its projects; a row hovered in the table
+// lights its area here.
+//
+// STICKY, like the Map layers preview: the areas list is long.
+//
+// bcn-lego-checked: firma2-rail-section (the titled section). The canvas is
+// Leaflet through src/lib/leaflet — no map lego exists; the frame is
+// firma2-map-preview's. firma2-map-preview itself was not extended: it draws
+// the workspace's default layers through the shared painter, and this map must
+// draw one group's areas from the filing. Beacon is not cloned.
+import Firma2RailSection from '../shared/firma2-rail-section.astro';
+
+interface Props {
+  /** The group to draw. Omitted on the settings page, which reads `?id=`. */
+  group?: string;
+  /** Draw this one area and its projects only: an area's own page. */
+  area?: string;
+  /** Stay in view while the page scrolls: beside a long list. Off inside a page's own flow. */
+  sticky?: boolean;
+}
+
+const { group, area, sticky = true } = Astro.props;
+---
+<aside class="firma2-area-group-map" data-group={group} data-area={area} data-sticky={sticky ? '' : undefined}>
+  <Firma2RailSection title="Map">
+    <div class="firma2-area-group-map__frame">
+      <div data-canvas role="application" aria-label="Areas and projects"></div>
+    </div>
+  </Firma2RailSection>
+</aside>
+
+<style>
+  .firma2-area-group-map[data-sticky] {
+    position: sticky;
+    top: calc(var(--firma2-sticky-origin, 0px) + var(--spacing-400));
+    align-self: flex-start;
+  }
+
+  .firma2-area-group-map[hidden] {
+    display: none;
+  }
+
+  .firma2-area-group-map__frame {
+    block-size: clamp(18rem, 60vh, 34rem);
+    border: 1px solid var(--color-border-default, #cecece);
+    border-radius: var(--radius-md, 0.5rem);
+    overflow: hidden;
+    /* Leaflet's panes run to z-index 700; keep them under the app's chrome. */
+    isolation: isolate;
+  }
+
+  .firma2-area-group-map__frame [data-canvas] {
+    block-size: 100%;
+  }
+</style>
+
+<script>
+  import { dashOf, lineStyleOf } from '../../data/firma2-geography';
+  import { areaColor, areaGroup, filing } from '../../lib/geospatial-areas';
+  import { addBasemaps, addColorKey, addReferenceLayers, createMap, loadLeaflet, markerStyle, projectColor } from '../../lib/leaflet';
+  import type { Leaflet } from '../../lib/leaflet';
+  import { onGeoChange } from '../../lib/work-areas';
+
+  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-area-group-map').forEach(async (root) => {
+    const id = root.dataset.group ?? new URLSearchParams(window.location.search).get('id') ?? '';
+    const only = root.dataset.area ?? '';
+    const L: Leaflet | null = areaGroup(id) ? await loadLeaflet().catch(() => null) : null;
+    if (!L) {
+      root.hidden = true;
+      return;
+    }
+    const canvas = root.querySelector<HTMLElement>('[data-canvas]')!;
+    let paint: () => void = () => {};
+    const map = createMap(L, canvas, { zoomSnap: 0.5 }, () => paint());
+    map.setView([39.05, -120.07], 9);
+    // No reference layers of the workspace's: this map is about one group's areas.
+    addBasemaps(L, map, addReferenceLayers(L, map, [], { regions: [], subwatersheds: [] }));
+    const drawKey = addColorKey(L, map);
+    const areas = L.featureGroup().addTo(map);
+    const dots = L.featureGroup().addTo(map);
+    const byId = new Map<string, { shape: Leaflet; style: Record<string, unknown> }>();
+    let fitted = '';
+
+    paint = () => {
+      const group = areaGroup(id);
+      areas.clearLayers();
+      dots.clearLayers();
+      byId.clear();
+      if (!group) return;
+      const whole = filing(group);
+      // One area's page: that area, and the projects in it.
+      const f = only ? { ...whole, areas: whole.areas.filter((a) => a.area.id === only), outside: [] } : whole;
+      const layer = f.layer;
+      const base = layer
+        ? {
+            color: layer.stroke,
+            weight: Math.max(1, layer.strokeWidth),
+            opacity: 0.9,
+            fillColor: layer.fill || layer.stroke,
+            // A hairline of fill at least, so an area is a target for the pointer.
+            fillOpacity: Math.max(0.04, layer.fillOpacity),
+            dashArray: dashOf(lineStyleOf(layer), layer.strokeWidth),
+          }
+        : {};
+      const tip = { className: 'firma2-map-tip', sticky: true };
+      f.areas.forEach(({ area, projects }) => {
+        const tint = areaColor(group, layer, area.id);
+        const style = { ...base, color: tint, fillColor: tint };
+        const names = projects.slice(0, 6).map((p) => esc(p.name));
+        if (projects.length > 6) names.push(`and ${projects.length - 6} more`);
+        const shape = L.polygon(area.parts ? area.parts.map((part) => [part]) : area.ring, { ...style, pane: 'reference' })
+          .bindTooltip(`<strong>${esc(area.name)}</strong>${names.length ? `<br>${names.join('<br>')}` : '<br>No projects'}`, tip)
+          .addTo(areas);
+        byId.set(area.id, { shape, style });
+      });
+      const located = [...new Map([...f.areas.flatMap((a) => a.projects), ...f.outside].map((p) => [p.slug, p])).values()];
+      located.forEach((p) => L.circleMarker(p.at, markerStyle(projectColor(p.slug))).bindTooltip(esc(p.name), { className: 'firma2-map-tip', direction: 'top' }).addTo(dots));
+      drawKey(located.map((p) => p.slug));
+      // Fit once per layer: a repaint for a colour or a name must not move the view.
+      const extent = `${group.layerId}:${f.areas.length}`;
+      if (extent !== fitted) {
+        const points = f.areas.length ? f.areas.flatMap((a) => (a.area.parts ? a.area.parts.flat() : a.area.ring)) : located.map((p) => p.at);
+        if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [24, 24], maxZoom: 12 });
+        fitted = extent;
+      }
+    };
+    paint();
+    onGeoChange(paint);
+
+    document.addEventListener('firma2:area-hover', (event) => {
+      const on = (event as CustomEvent<{ id: string | null }>).detail.id;
+      byId.forEach(({ shape, style }, areaId) =>
+        shape.setStyle(areaId === on ? { ...style, weight: 3, fillOpacity: 0.3, dashArray: undefined } : style),
+      );
+    });
+  });
+</script>

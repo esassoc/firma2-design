@@ -1,7 +1,7 @@
 ---
 // firma2-project-facts — the project record's PROPERTIES: the structured
 // attributes that live on the ProjectFirma project RECORD (stage, project type,
-// classifications, tags, lead organization, county, timeline, estimated cost)
+// classifications, lead organization, county, timeline, estimated cost)
 // and nothing else. It is the row from the Projects table, turned on its side
 // for the one project you opened. Two layouts, one list of fields:
 //
@@ -21,8 +21,8 @@
 // same firma2-editable-field rows, so a commit in one repaints the other
 // (firma2-editable-field's mirrorSave) and there is one edit path, not two.
 //
-// WHAT THE STRIP DOES NOT CARRY. County, Project type, Classifications and
-// Tags stay rail-only: the strip's job is identity at a glance, not
+// WHAT THE STRIP DOES NOT CARRY. County, Project type and Classifications
+// stay rail-only: the strip's job is identity at a glance, not
 // completeness, and the rail is one click away. No "…" overflow either —
 // Linear's strip has one, and ours stops at four because the full list is
 // already on screen beside it.
@@ -89,7 +89,6 @@ import { projects, projectSlug, STAGE_TONE } from '../../data/firma2-projects';
 import { badgeTone } from '../../lib/badge-tone';
 import { CLASSIFICATIONS, CLASSIFICATION_GROUPS } from '../../data/firma2-classifications';
 import { PROJECT_TYPES } from '../../data/firma2-project-types';
-import { TAGS } from '../../data/firma2-tags';
 import { classificationHref } from '../../data/firma2-classification-rollup';
 import { withBase } from '../../lib/base';
 import type { ProjectDetail } from '../../data/firma2-project-detail';
@@ -142,8 +141,6 @@ import { currencyFormatter as money } from '../../lib/format';
 // edited record and an untouched one read alike.
 const classificationOptions = CLASSIFICATIONS.map((c) => c.name);
 const shownClassifications = classificationOptions.filter((n) => project.classifications.includes(n));
-const tagOptions = TAGS.map((t) => t.name);
-const shownTags = tagOptions.filter((n) => project.tags.includes(n));
 
 // Hover-card context for EVERY classification in the vocabulary, not just this
 // project's — a member added in the editor needs its card the moment it lands.
@@ -210,7 +207,7 @@ const classificationCards = Object.fromEntries(
   </div>
 ) : (
 <!-- Contents-only wrapper: the field labels name renameable nouns (src/lib/vocabulary.ts). -->
-<div data-aliasable-labels data-tags-project={projectSlug(project)} style="display: contents">
+<div data-aliasable-labels style="display: contents">
 <Firma2RailSection title="Key facts" titleHidden={titleHidden}>
   <!-- NO SECTION-LEVEL EDIT CONTROL. There was a pencil here, and it went when
        the fields themselves became editable: every row below now carries its
@@ -346,23 +343,6 @@ const classificationCards = Object.fromEntries(
             memberHrefs={classificationHrefs}
             memberCards={classificationCards}
           />
-
-          <!-- TAGS: functional labels with no KPIs (src/data/firma2-tags.ts). A
-               set like classifications, so the same chips and combobox — but no
-               door and no card: a tag has no page of its own, and the Projects
-               grid's Tags filter is where "which projects are tagged this" is
-               answered. Chips without a destination are the field's own edit
-               buttons. -->
-          <Firma2EditableField
-            field="tags"
-            label="Tags"
-            value={shownTags.join(', ')}
-            values={shownTags}
-            control="multi-select"
-            format="list"
-            options={tagOptions}
-            placeholder="No tags"
-          />
         </dl>
       </EsaCollapsible>
     </div>
@@ -415,46 +395,10 @@ const classificationCards = Object.fromEntries(
 </style>
 
 <script>
-  // TAGS ARE KEPT, from either side. The Tags row offers the tags list as
-  // Workspace settings has it now (added and renamed ones included), shows
-  // this project's tags as saved in this browser, and saves a change the
-  // moment the row commits — the same store a tag's own settings page writes
-  // when it assigns projects (src/lib/project-tags.ts).
-  import { currentTags, setProjectTags, tagSlugsFromNames, tagsOfProject } from '../../lib/project-tags';
   // No type guidance on the record: a helper line under the open select would
   // grow the row, and record fields never change size when they open
   // (inline-edit geometry continuity). Guidance shows where types are first
   // chosen — the intake form and New project.
-
-  document.querySelectorAll<HTMLElement>('[data-tags-project]').forEach((root) => {
-    // The peek sheet clones this panel from a template per project; only a
-    // live panel with its own row is wired here.
-    if (root.closest('template')) return;
-    const slug = root.dataset.tagsProject ?? '';
-    const row = root.querySelector<HTMLElement>('[data-editable-field][data-field="tags"]');
-    const input = row?.querySelector<HTMLElement & { options?: unknown }>('[data-field-input]');
-    if (!row || !input) return;
-
-    const options = currentTags().map((t) => ({ value: t.name, label: t.name }));
-    input.dataset.options = JSON.stringify(options);
-    customElements.whenDefined(input.localName).then(() => (input.options = options));
-
-    const held = JSON.stringify(tagsOfProject(slug).map((t) => t.name));
-    if (held !== row.dataset.raw) {
-      document.dispatchEvent(new CustomEvent('firma2:field-set', { detail: { field: 'tags', raw: held } }));
-    }
-
-    row.addEventListener('firma2:field-save', (event) => {
-      const raw = (event as CustomEvent<{ raw?: string }>).detail?.raw ?? '[]';
-      let names: string[] = [];
-      try {
-        names = JSON.parse(raw);
-      } catch {
-        names = [];
-      }
-      setProjectTags(slug, tagSlugsFromNames(names));
-    });
-  });
 
   // A CLOSED GROUP STAYS CLOSED for this reader, on every project and in the
   // peek: Key facts' groups are the same three everywhere, so the choice is

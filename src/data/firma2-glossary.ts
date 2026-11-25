@@ -60,10 +60,6 @@ export const GLOSSARY: GlossaryTerm[] = [
     article: 'connected-organizations',
   },
   {
-    term: 'Plan',
-    definition: 'Free, Agency or Program: what a workspace can use, and how much of it.',
-  },
-  {
     term: 'Performance measure',
     definition: 'A question asked of every project, forever: how much of what did it accomplish?',
     article: 'performance-measures',

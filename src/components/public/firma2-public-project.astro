@@ -65,7 +65,7 @@ import { withBase } from '../../lib/base';
 import { currencyFormatter } from '../../lib/format';
 import { photoSrc } from '../../lib/project-photos';
 import { treemap } from '../../lib/treemap';
-import { seededFeatured } from '../../data/firma2-featured-photos';
+import { leadPair, leadPhoto, plainPhotos } from '../../lib/photo-meta';
 
 interface Props {
   detail: ProjectDetail;
@@ -137,7 +137,7 @@ const results = detail.measures.map((m) => {
 
 // ---- Funding: a treemap of the sources the public sees; a source withheld
 // from the last publish is listed after it, hidden, until a publish reveals it.
-const sources = [...detail.funding].sort((a, b) => b.amount - a.amount);
+const sources = detail.funding.filter((row) => row.status === 'secured').sort((a, b) => b.amount - a.amount);
 const shownSources = sources.filter((f) => !published?.withheldFunding.includes(f.name));
 const withheldSources = sources.filter((f) => published?.withheldFunding.includes(f.name));
 const fundingTotal = shownSources.reduce((sum, f) => sum + f.amount, 0);
@@ -181,13 +181,20 @@ const label = (key: string) => PAGE_SECTIONS.find((s) => s.key === key)?.label ?
 // The Featured photo, tall, for the hero's right half. Every candidate's URL
 // rides along so this browser's choice can swap in without a rebuild.
 const slug = projectSlug(project);
-const featuredAt = seededFeatured(slug, detail.photos.length);
-const leadPhotos = detail.photos.map((photo) => ({ src: photoSrc(photo, 1100, 1240, 70), caption: photo.caption, date: photo.date }));
-const lead = featuredAt >= 0 && !hiddenAtBuild.has('gallery') ? leadPhotos[featuredAt] : undefined;
+const seedPhotos = plainPhotos(slug, detail.photos);
+// A private photo never leads the page, and never fills the compare: the
+// seed's choice here, this browser's edits laid over it by the script below.
+const featuredId = leadPhoto(seedPhotos)?.id;
+const leadPhotos = detail.photos.map((photo, i) => ({ id: `p${i}`, public: photo.public, src: photoSrc(photo, 1100, 1240, 70), caption: photo.caption, date: photo.date }));
+const lead = featuredId && !hiddenAtBuild.has('gallery') ? leadPhotos.find((p) => p.id === featuredId) : undefined;
 
-// Before and after: the record's oldest photo against its newest.
-const before = detail.photos.length > 1 ? detail.photos[0] : undefined;
-const after = detail.photos.length > 1 ? detail.photos[detail.photos.length - 1] : undefined;
+// Before and after: two photos at one photo point, a Before and an After.
+// The wide crops of every photo ride along so an edit made in this browser
+// can re-pick the pair without a rebuild.
+const pair = leadPair(seedPhotos);
+const before = pair?.before;
+const after = pair?.after;
+const wide = Object.fromEntries(detail.photos.map((photo, i) => [`p${i}`, photoSrc(photo, 1600, 800, 70)]));
 ---
 <!-- bcn-lego-checked: the bands, hero, facts strip, result cards, treemap and
      spending columns are layout for this page's sections — no esa- component
@@ -368,20 +375,18 @@ const after = detail.photos.length > 1 ? detail.photos[detail.photos.length - 1]
 
     <section data-section="gallery" data-aliasable-title class="firma2-public-project__band" style={`order:${orderIndex.get('gallery')}`} hidden={hiddenAtBuild.has('gallery')}>
       <div class="firma2-public-project__col stack" data-gap="lg">
-        {before && after && (
-          <figure class="firma2-public-project__compare stack" data-gap="sm">
-            <div class="firma2-public-project__wipe" data-wipe style="--split: 50%">
-              <img src={photoSrc(after, 1600, 800, 70)} alt={after.caption} width="1600" height="800" loading="lazy" decoding="async" />
-              <img class="firma2-public-project__wipe-before" src={photoSrc(before, 1600, 800, 70)} alt={before.caption} width="1600" height="800" loading="lazy" decoding="async" />
-              <span class="firma2-public-project__wipe-line" aria-hidden="true"><span></span></span>
-              <span class="firma2-public-project__when firma2-public-project__when--before typography-label-sm-strong" aria-hidden="true">{before.date}</span>
-              <span class="firma2-public-project__when firma2-public-project__when--after typography-label-sm-strong" aria-hidden="true">{after.date}</span>
-              <input class="firma2-public-project__wipe-range" type="range" min="0" max="100" value="50" aria-label={`Compare ${before.date} with ${after.date}`} data-wipe-range />
-            </div>
-            <figcaption class="firma2-public-project__quiet typography-body-sm">{before.caption} ({before.date}) · {after.caption} ({after.date})</figcaption>
-          </figure>
-        )}
-        <Firma2ProjectGallery photos={detail.photos} readonly />
+        <figure class="firma2-public-project__compare stack" data-gap="sm" data-compare data-wide={JSON.stringify(wide)} hidden={!(before && after)}>
+          <div class="firma2-public-project__wipe" data-wipe style="--split: 50%">
+            <img src={after ? wide[after.id] : ''} alt={after?.alt || after?.caption || ''} width="1600" height="800" loading="lazy" decoding="async" data-compare-after />
+            <img class="firma2-public-project__wipe-before" src={before ? wide[before.id] : ''} alt={before?.alt || before?.caption || ''} width="1600" height="800" loading="lazy" decoding="async" data-compare-before />
+            <span class="firma2-public-project__wipe-line" aria-hidden="true"><span></span></span>
+            <span class="firma2-public-project__when firma2-public-project__when--before typography-label-sm-strong" aria-hidden="true" data-compare-before-date>{before?.date}</span>
+            <span class="firma2-public-project__when firma2-public-project__when--after typography-label-sm-strong" aria-hidden="true" data-compare-after-date>{after?.date}</span>
+            <input class="firma2-public-project__wipe-range" type="range" min="0" max="100" value="50" aria-label={before && after ? `Compare ${before.date} with ${after.date}` : 'Compare before and after'} data-wipe-range />
+          </div>
+          <figcaption class="firma2-public-project__quiet typography-body-sm" data-compare-caption>{before && after ? `${before.caption} (${before.date}) · ${after.caption} (${after.date})` : ''}</figcaption>
+        </figure>
+        <Firma2ProjectGallery photos={detail.photos} readonly slug={slug} />
       </div>
     </section>
 
@@ -838,6 +843,10 @@ const after = detail.photos.length > 1 ? detail.photos[detail.photos.length - 1]
     block-size: 100%;
     object-fit: cover;
   }
+  .firma2-public-project__compare[hidden] {
+    display: none;
+  }
+
   .firma2-public-project__wipe img.firma2-public-project__wipe-before {
     clip-path: inset(0 calc(100% - var(--split)) 0 0);
   }
@@ -987,18 +996,56 @@ const after = detail.photos.length > 1 ? detail.photos[detail.photos.length - 1]
 </script>
 
 <script>
-  // THE FEATURED PHOTO, as this browser last chose it on the record.
-  import { readFeatured } from '../../lib/featured-photo';
+  // THE FEATURED PHOTO AND THE PAIR, as this browser last edited them on the
+  // record: this browser's metadata laid over the seed the gallery carries.
+  import { PHOTO_META_EVENT, leadPair, leadPhoto, resolvePhotos, type ResolvedPhoto } from '../../lib/photo-meta';
+  import { FEATURED_EVENT } from '../../lib/featured-photo';
 
-  document.querySelectorAll<HTMLElement>('[data-featured-slug]').forEach((figure) => {
-    const photos: { src: string; caption: string; date: string }[] = JSON.parse(figure.dataset.featuredPhotos ?? '[]');
-    const photo = photos[readFeatured(figure.dataset.featuredSlug ?? '', photos.length)];
-    const img = figure.querySelector<HTMLImageElement>('[data-featured-image]');
-    if (!photo || !img || img.getAttribute('src') === photo.src) return;
-    img.src = photo.src;
-    figure.querySelector('[data-featured-caption]')!.textContent = photo.caption;
-    figure.querySelector('[data-featured-date]')!.textContent = photo.date;
-  });
+  const apply = (): void => {
+    const seedEl = document.querySelector<HTMLScriptElement>('[data-photos-seed]');
+    const figure = document.querySelector<HTMLElement>('[data-featured-slug]');
+    const compare = document.querySelector<HTMLElement>('[data-compare]');
+    const slug = figure?.dataset.featuredSlug ?? document.querySelector<HTMLElement>('[data-gallery]')?.dataset.slug ?? '';
+    if (!seedEl || !slug) return;
+    const photos: ResolvedPhoto[] = resolvePhotos(slug, JSON.parse(seedEl.textContent ?? '[]'));
+
+    if (figure) {
+      const leads: { id: string; src: string; caption: string; date: string }[] = JSON.parse(figure.dataset.featuredPhotos ?? '[]');
+      const chosen = leadPhoto(photos);
+      const photo = leads.find((l) => l.id === chosen?.id);
+      const img = figure.querySelector<HTMLImageElement>('[data-featured-image]');
+      if (photo && img && img.getAttribute('src') !== photo.src) {
+        img.src = photo.src;
+        figure.querySelector('[data-featured-caption]')!.textContent = photo.caption;
+        figure.querySelector('[data-featured-date]')!.textContent = photo.date;
+      }
+    }
+
+    if (compare) {
+      const wide: Record<string, string> = JSON.parse(compare.dataset.wide ?? '{}');
+      const pair = leadPair(photos);
+      const usable = !!pair && !!wide[pair.before.id] && !!wide[pair.after.id];
+      compare.hidden = !usable;
+      if (usable && pair) {
+        const set = (hook: string, attr: 'src' | 'alt', value: string): void => {
+          const el = compare.querySelector<HTMLImageElement>(hook);
+          if (el && el[attr] !== value) el[attr] = value;
+        };
+        set('[data-compare-before]', 'src', wide[pair.before.id]);
+        set('[data-compare-after]', 'src', wide[pair.after.id]);
+        set('[data-compare-before]', 'alt', pair.before.alt || pair.before.caption);
+        set('[data-compare-after]', 'alt', pair.after.alt || pair.after.caption);
+        compare.querySelector('[data-compare-before-date]')!.textContent = pair.before.date;
+        compare.querySelector('[data-compare-after-date]')!.textContent = pair.after.date;
+        compare.querySelector('[data-compare-caption]')!.textContent =
+          `${pair.before.caption} (${pair.before.date}) · ${pair.after.caption} (${pair.after.date})`;
+      }
+    }
+  };
+
+  apply();
+  window.addEventListener(PHOTO_META_EVENT, apply);
+  window.addEventListener(FEATURED_EVENT, apply);
 </script>
 
 <script>

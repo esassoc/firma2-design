@@ -26,16 +26,15 @@
 // the same here as on its card.
 //
 // bcn-lego-checked: firma2-rail is the rail, esa-button the door, esa-badge
-// the group (as on the classification page's header); the swatch is the
-// goal card's 12px square (no esa- swatch lego). Layout is .stack/.repel/
-// .cluster. Beacon is not cloned on this machine.
+// the group, tinted with the group's colour through the lego's own colour
+// hooks. Layout is .stack/.repel/.cluster. Beacon is not cloned on this machine.
 import EsaBadge from '@esa/ecology/esa-badge.astro';
 import EsaButton from '@esa/ecology/esa-button.astro';
 import Firma2Rail from '../shared/firma2-rail.astro';
 import Firma2RailSection from '../shared/firma2-rail-section.astro';
 import Firma2KpiProgress from './firma2-kpi-progress.astro';
 import Firma2ClassificationSummary from './firma2-classification-summary.astro';
-import { CLASSIFICATIONS, CLASSIFICATION_GROUPS } from '../../data/firma2-classifications';
+import { CLASSIFICATIONS, CLASSIFICATION_GROUPS, listColorOf } from '../../data/firma2-classifications';
 import { classificationHref, rollupClassification } from '../../data/firma2-classification-rollup';
 import { withBase } from '../../lib/base';
 
@@ -63,14 +62,15 @@ const records = CLASSIFICATIONS.map((c) => ({
   <header class="firma2-classification-peek__head stack" data-gap="sm">
     <h2 class="firma2-classification-peek__title typography-title">
       <a class="firma2-classification-peek__door cluster" data-gap="xs" data-peek-door href="#">
-        <span class="firma2-classification-peek__swatch" aria-hidden="true" data-peek-swatch></span>
         <span data-peek-name></span>
       </a>
     </h2>
     <div class="repel" data-gap="sm">
       <span data-peek-group>
         <span class="visually-hidden">Classification group </span>
-        <EsaBadge value="" variant="secondary" size="md" />
+        <!-- The default variant, because it is the one that reads the lego's
+             own colour hooks (see the style below). -->
+        <EsaBadge value="" size="md" />
       </span>
       <EsaButton variant="secondary" appearance="outline" size="md" href="#" data-peek-open>
         Open classification
@@ -81,7 +81,7 @@ const records = CLASSIFICATIONS.map((c) => ({
   <div data-peek-record-host></div>
 
   {records.map(({ c, rollup, group, href }) => (
-    <template data-classification-peek={c.slug} data-name={c.name} data-color={c.color} data-group={group} data-href={href}>
+    <template data-classification-peek={c.slug} data-name={c.name} data-color={listColorOf(c)} data-group={group} data-href={href}>
       <div class="stack" data-gap="2xl">
         <Firma2ClassificationSummary classification={c} rollup={rollup} />
         {rollup.kpis.length > 0 && (
@@ -110,6 +110,17 @@ const records = CLASSIFICATIONS.map((c) => ({
 </Firma2Rail>
 
 <style>
+  /* THE GROUP'S BADGE IS THE GROUP'S COLOUR (user, 2026-11-23: it was the
+     brand-muted green of variant="secondary" beside a red swatch). A tint of
+     the colour under default ink, through esa-badge's own --badge-bg and
+     --badge-text-color hooks, so the name stays readable whatever colour an
+     administrator picks. */
+  /* Whole selector global: the rail's root belongs to firma2-rail. */
+  :global(.firma2-classification-peek [data-peek-group]) {
+    --badge-bg: color-mix(in srgb, var(--firma2-group-color, var(--color-border-default, #cecece)) 16%, var(--color-background-default, #fcfcfc));
+    --badge-text-color: var(--color-content-default, #202020);
+  }
+
   .firma2-classification-peek__title {
     margin: 0;
     /* The rail's toggle sits at this row's trailing end. */
@@ -139,14 +150,6 @@ const records = CLASSIFICATIONS.map((c) => ({
     outline-offset: var(--focus-ring-offset, 2px);
   }
 
-  /* The goal card's swatch. */
-  .firma2-classification-peek__swatch {
-    inline-size: 0.75rem;
-    block-size: 0.75rem;
-    border-radius: var(--radius-sm, 4px);
-    flex: none;
-  }
-
   /* Two-up, never three and an orphan, at every width this track allows —
      the summary's own rule (13rem) is tuned for the page's column. */
   .firma2-classification-peek :global(.firma2-classification-summary__figures) {
@@ -170,11 +173,10 @@ const records = CLASSIFICATIONS.map((c) => ({
 
   document.querySelectorAll<HTMLElement>('.firma2-classification-peek').forEach((panel) => {
     const nameEl = panel.querySelector<HTMLElement>('[data-peek-name]');
-    const swatch = panel.querySelector<HTMLElement>('[data-peek-swatch]');
     const door = panel.querySelector<HTMLAnchorElement>('[data-peek-door]');
     const groupEl = panel.querySelector<HTMLElement>('[data-peek-group]');
     const openLink = panel.querySelector<HTMLAnchorElement>('a[data-peek-open]');
-    if (!nameEl || !swatch || !door || !groupEl) return;
+    if (!nameEl || !door || !groupEl) return;
 
     initRecordPeek(panel, {
       trigger: 'data-open-classification',
@@ -184,10 +186,15 @@ const records = CLASSIFICATIONS.map((c) => ({
         const edit = getEntry('classification', slug);
         const href = template.dataset.href ?? '#';
         nameEl.textContent = edit?.name ?? template.dataset.name ?? '';
-        swatch.style.background = edit?.color ?? template.dataset.color ?? '';
+        // The colour of the group it is in (listColorOf), as edited here.
+        const groupEdit = edit?.group ? getEntry('classificationGroup', edit.group) : undefined;
+        const groupColor = groupEdit?.color ?? template.dataset.color ?? '';
+        // The group's badge is the one place the colour shows: a square
+        // beside the title only repeated it (user, 2026-11-23).
+        groupEl.style.setProperty('--firma2-group-color', groupColor);
         door.href = href;
         openLink?.setAttribute('href', href);
-        const group = edit?.group ? getEntry('classificationGroup', edit.group)?.name : undefined;
+        const group = groupEdit?.name;
         const label = group ?? template.dataset.group ?? '';
         groupEl.hidden = !label;
         const badge = groupEl.querySelector('.esa-badge__text');

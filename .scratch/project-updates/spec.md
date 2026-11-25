@@ -64,9 +64,11 @@ reviews one net diff per project and publishes it.
 | 16 | A field kept by a data source appears as "Kept by *source*" with no proposed change. |
 | 17 | One optional note to the manager per import. |
 | 18 | One button in the top bar states the count ("Add 9 changes") and returns to the project page. A toast offers Undo for everything that import added. |
-| 19 | The document is kept as the source of those changes, reachable from the change log and the review. No Files list. Visible only to people who can edit or publish that project; never public. |
+| 19 | The document is kept as the source of those changes, reachable from the change log and the review. No Files list. Visible only to people who can edit or publish that project; never public. *(Replaced by 42, 2026-11-23.)* |
 | 20 | One document per import. A document covering several projects is later; the existing warning stays when a report names another project. |
 | 21 | Available to anyone who can edit the project, on every plan. Typed or pasted text stays as a source; speech input is dropped. |
+| 41 | Reading a report with an outside AI service is a workspace setting. It is off until an administrator of the workspace agrees and turns it on; the administrator can turn it off again; and it can be made unavailable to a workspace altogether, where that client's terms do not allow its documents to go to an outside provider. While it is off or unavailable, Import a report is not offered for that workspace, and the place it would be says why. *(2026-11-23.)* |
+| 42 | The report or spreadsheet is used only to read data from. The file is not kept after the import is added (or abandoned); pasted text likewise. What stays with each imported change is the document's name and the words it was read from (its quote). A manager reviewing an imported change sees that quote and the document's name beside the change, not the document. Nothing opens the file later, because there is no file. *(2026-11-23; replaces 19, amends 31.)* |
 
 ### Data sources (specified, not built)
 
@@ -87,7 +89,7 @@ reviews one net diff per project and publishes it.
 | # | Decision |
 |---|----------|
 | 30 | The existing review is the one stream: workspace queue, one net-diff page per project, Publish and next, Skip. No second queue. |
-| 31 | Each row shows its source. For a document, it opens beside the diff at the passage. (Build 1.) |
+| 31 | Each row shows its source. For a document, it opens beside the diff at the passage. (Build 1.) *(Amended by 42, 2026-11-23.)* |
 | 32 | An import's note sits above the changes that import produced. (Build 1.) |
 | 33 | **Hold** one row with a required note and publish the rest. The held value stays on the record and returns in the next review with its note. This partly reverses the earlier cut of a "send back" state. (Build 2.) |
 | 34 | **Revert** requires a reason and extends to measure entries filed since the last publish. Boundaries stay without one. (Build 2.) |

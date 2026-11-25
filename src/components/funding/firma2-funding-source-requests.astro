@@ -1,0 +1,103 @@
+---
+// firma2-funding-source-requests — whether a project may ask this funding
+// source for money, and until when.
+//
+// THIS IS HOW A CALL FOR PROPOSALS OPENS AND CLOSES (docs/data-model.md,
+// decisions 16 and 17, user 2026-11-24). There is no solicitation entity: a
+// funding source accepts requests or does not, with an optional last day. A
+// project asks with a funding row on its own page, status Requested; the row
+// sheet there refuses a new request once this is off or the day has passed.
+//
+// THE DAY GOVERNS SUBMITTING. A request already on a project stays as it is
+// when the source closes; only new ones are refused.
+//
+// SAVES AS IT CHANGES, like every setting here; there is no Save.
+//
+// FAKED: the choice is kept in this browser (src/lib/funding-source-edits.ts),
+// and "today" is the prototype's fixed date, so the same build always reads
+// the same way.
+//
+// bcn-lego-checked: esa-switch-toggle and esa-date-picker are the controls;
+// `.stack` and `.cluster` are the layout. No CSS. Beacon is not cloned on this
+// machine.
+import type { FundingSource } from '../../data/firma2-funding-sources';
+import { TODAY_ISO } from '../../data/firma2-publish-history';
+
+interface Props {
+  source: FundingSource;
+}
+
+const { source } = Astro.props;
+---
+<section
+  class="firma2-funding-source-requests stack"
+  data-gap="md"
+  aria-labelledby="firma2-funding-source-requests-title"
+  data-slug={source.slug}
+  data-accepting={source.accepting ? 'true' : 'false'}
+  data-closes={source.closes ?? ''}
+  data-today={TODAY_ISO}
+>
+  <h2 id="firma2-funding-source-requests-title" class="typography-title-sm-strong">Requests</h2>
+  <div class="cluster" data-gap="xl">
+    <esa-switch-toggle label="Accepting requests" label-position="before" checked={source.accepting ? true : undefined} data-requests-accepting></esa-switch-toggle>
+    <esa-date-picker label="Last day to submit" size="md" data-requests-closes></esa-date-picker>
+  </div>
+  <p class="typography-body-md" aria-live="polite" data-requests-state></p>
+</section>
+
+<script>
+  import '@esa/ecology/esa-switch-toggle';
+  import '@esa/ecology/esa-date-picker';
+  import { acceptingState, isOpen, saveAcceptingState } from '../../lib/funding-source-edits';
+
+  type Toggle = HTMLElement & { checked: boolean };
+  type DateField = HTMLElement & { value: string; disabled: boolean };
+
+  const DAY = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  const day = (iso: string): string => DAY.format(new Date(`${iso}T00:00:00Z`));
+
+  document.querySelectorAll<HTMLElement>('.firma2-funding-source-requests').forEach((root) => {
+    const toggle = root.querySelector<Toggle>('[data-requests-accepting]');
+    const closes = root.querySelector<DateField>('[data-requests-closes]');
+    const line = root.querySelector<HTMLElement>('[data-requests-state]');
+    const slug = root.dataset.slug;
+    const today = root.dataset.today ?? '';
+    if (!toggle || !closes || !line || !slug) return;
+
+    const seed = { accepting: root.dataset.accepting === 'true', closes: root.dataset.closes || undefined };
+    let state = acceptingState(slug, seed);
+
+    // What a sponsor would find today, in one sentence.
+    const paint = (): void => {
+      closes.disabled = !state.accepting;
+      line.textContent = !state.accepting
+        ? 'Projects can’t request funding from this source.'
+        : isOpen(state, today)
+          ? state.closes
+            ? `Projects can request funding through ${day(state.closes)}.`
+            : 'Projects can request funding. No closing date.'
+          : `Closed to new requests since ${day(state.closes!)}.`;
+    };
+
+    // VALUES GO IN AFTER THE ELEMENTS UPGRADE: a value set on an undefined
+    // custom element is shadowed by its class field.
+    void Promise.all(['esa-switch-toggle', 'esa-date-picker'].map((tag) => customElements.whenDefined(tag))).then(() => {
+      toggle.checked = state.accepting;
+      closes.value = state.closes ?? '';
+      paint();
+    });
+
+    toggle.addEventListener('change', (event) => {
+      state = { ...state, accepting: (event as CustomEvent<{ checked: boolean }>).detail.checked };
+      saveAcceptingState(slug, state);
+      paint();
+    });
+    closes.addEventListener('change', (event) => {
+      const value = (event as CustomEvent<{ value: string }>).detail.value;
+      state = { ...state, closes: value || undefined };
+      saveAcceptingState(slug, state);
+      paint();
+    });
+  });
+</script>

@@ -19,6 +19,9 @@ Look before asking: find the route directory, the component directory, any proto
 - How to run it: <command and URL shape>
 - Usual prototype artifacts: <how this repo fakes storage, responses, data>
 
+## Unfinished screens
+- <screens or features the user says are not complete; what is missing there is not a decision>
+
 ## Context documents
 - Glossary: <path>
 - Decision records: <path>

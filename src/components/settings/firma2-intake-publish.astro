@@ -6,14 +6,14 @@
 // unpublished the status says when the form went live and the button leaves,
 // rather than sitting disabled and inviting "why".
 //
-// BELOW AGENCY the same slots say what is true there: a "Standard form"
-// badge, Preview, and Upgrade in the primary's place — the call to action the
-// locked builder below it repeats (.scratch/form-canvas/spec.md #19, #23).
-//
 // It talks to firma2-intake-builder through two document events:
 // `firma2:intake-saved` (in — repaint) and `firma2:intake-publish` (out).
 //
-// bcn-lego-checked: esa-badge (unpublished), esa-button (Preview,
+// ACCEPTING NEW PROJECTS sits here too: the one setting about the form that
+// is not part of the form. Off, only administrators add projects.
+//
+// bcn-lego-checked: esa-badge (unpublished), esa-switch-toggle (accepting
+// new projects), esa-button (Preview,
 // Publish); the status text is a typography composite. Spans carry the
 // toggles because a hidden attribute on a lego's own root does not hold.
 import EsaBadge from '@esa/ecology/esa-badge.astro';
@@ -24,15 +24,15 @@ interface Props {
   slot?: string;
 }
 const previewHref = withBase('/prototypes/projects/new?preview=1');
-const planHref = withBase('/prototypes/workspace-settings/plan');
 ---
 <span class="firma2-intake-publish cluster" data-gap="sm">
+  <!-- APPLIES AT ONCE, NOT ON PUBLISH: whether the workspace takes new projects
+       is not a change to the form (docs/data-model.md, decision 15). -->
+  <esa-switch-toggle label="Accepting new projects" label-position="before" checked data-accepting></esa-switch-toggle>
   <span data-unpublished hidden><EsaBadge variant="warning" size="md" value="Unpublished changes" /></span>
-  <span data-standard hidden><EsaBadge variant="secondary" size="md" value="Standard form" /></span>
   <span class="typography-body-md firma2-intake-publish__when" data-published-at></span>
   <EsaButton variant="secondary" size="md" href={previewHref} target="_blank">Preview</EsaButton>
   <span data-publish-wrap hidden><EsaButton variant="primary" size="md" data-publish>Publish</EsaButton></span>
-  <span data-upgrade-wrap hidden><EsaButton variant="primary" size="md" href={planHref}>Upgrade</EsaButton></span>
 </span>
 
 <style>
@@ -61,17 +61,10 @@ const planHref = withBase('/prototypes/workspace-settings/plan');
 </style>
 
 <script>
-  import { readFormStore } from '../../lib/intake-form';
-  import { planIncludes } from '../../lib/workspace-plan';
-  import { currentActor } from '../../lib/workspace-permissions';
+  import '@esa/ecology/esa-switch-toggle';
+  import { isAcceptingProjects, readFormStore, setAcceptingProjects } from '../../lib/intake-form';
 
   document.querySelectorAll<HTMLElement>('.firma2-intake-publish').forEach((root) => {
-    if (!planIncludes('agency')) {
-      root.querySelector<HTMLElement>('[data-standard]')!.hidden = false;
-      // Only an administrator can upgrade; the locked note tells anyone else whom to ask.
-      root.querySelector<HTMLElement>('[data-upgrade-wrap]')!.hidden = currentActor().role !== 'Administrator';
-      return;
-    }
     let wasDirty: boolean | null = null;
     const paint = () => {
       const { dirty, publishedAt } = readFormStore();
@@ -90,6 +83,13 @@ const planHref = withBase('/prototypes/workspace-settings/plan');
     };
     root.querySelector('[data-publish]')!.addEventListener('click', () => {
       document.dispatchEvent(new CustomEvent('firma2:intake-publish'));
+    });
+    const accepting = root.querySelector<HTMLElement & { checked: boolean }>('[data-accepting]')!;
+    void customElements.whenDefined('esa-switch-toggle').then(() => {
+      accepting.checked = isAcceptingProjects();
+    });
+    accepting.addEventListener('change', (event) => {
+      setAcceptingProjects((event as CustomEvent<{ checked: boolean }>).detail.checked);
     });
     document.addEventListener('firma2:intake-saved', paint);
     paint();

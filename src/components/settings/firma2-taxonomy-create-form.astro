@@ -1,6 +1,6 @@
 ---
-// firma2-taxonomy-create-form — the add page for a project type, a
-// classification or a tag. One form for the three because they are one shape:
+// firma2-taxonomy-create-form — the add page for a project type or a
+// classification. One form for both because they are one shape:
 // a name, a line saying what it is, and for a classification the group it
 // sorts into. A classification group uses it too: it is the same shape.
 //
@@ -10,7 +10,9 @@
 //
 // A GROUP MAY START INSIDE ANOTHER (user, 2026-11-23): its form offers a
 // parent group, "None" for the top level, and `?parent=<slug>` preselects
-// one — a group's own "Add group" door passes it.
+// one.
+// (The settings list adds rows in place; these pages are the no-script path
+// and the door from a group's own page.)
 //
 // ASKS ONLY WHAT EVERYTHING ELSE DEPENDS ON, then hands back the new record's
 // own page — the measure-setup rule ("setup is not a wizard"): a type's fields
@@ -30,7 +32,7 @@ interface Props {
 }
 
 const { kind } = Astro.props;
-const COPY: Record<TaxonomyKind, { noun: string; list: string; records?: string; describe?: string; descLabel?: string }> = {
+const COPY: Record<TaxonomyKind, { noun: string; list: string; records?: string; describe?: string }> = {
   projectType: {
     noun: 'project type',
     list: '/prototypes/workspace-settings/project-types',
@@ -44,11 +46,6 @@ const COPY: Record<TaxonomyKind, { noun: string; list: string; records?: string;
     noun: 'group',
     list: '/prototypes/workspace-settings/classifications',
     records: '/prototypes/workspace-settings/classifications/groups',
-  },
-  tag: {
-    noun: 'tag',
-    list: '/prototypes/workspace-settings/tags',
-    descLabel: 'When to use it',
   },
 };
 const copy = COPY[kind];
@@ -64,7 +61,7 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
   data-record-href={withBase(`${copy.records ?? copy.list}/draft`)}
 >
   <esa-text-field name="name" label="Name" size="md" required data-name></esa-text-field>
-  <esa-textarea name="description" label={copy.descLabel ?? 'Description'} size="md" rows="2" help-text={copy.describe} data-description></esa-textarea>
+  <esa-textarea name="description" label="Description" size="md" rows="2" help-text={copy.describe} data-description></esa-textarea>
   {kind === 'classification' && (
     <esa-select
       name="group"
@@ -76,10 +73,10 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
     ></esa-select>
   )}
   {kind === 'classificationGroup' && (
-    <esa-select name="parent" label="Parent group" size="md" options={JSON.stringify([{ value: 'none', label: 'None' }, ...groupOptions])} data-seed="none" data-parent></esa-select>
+    <esa-select name="parent" label="Parent group" size="md" options={JSON.stringify([{ value: 'none', label: 'None' }, ...groupOptions])} data-parent></esa-select>
   )}
   <div class="cluster" data-gap="xs">
-    <EsaButton variant="primary" size="md" type="submit">{`Add ${copy.noun}`}</EsaButton>
+    <EsaButton variant="primary" size="md" type="submit" data-submit>{`Add ${copy.noun}`}</EsaButton>
     <EsaButton variant="ghost" size="md" tag="a" href={listHref}>Cancel</EsaButton>
   </div>
 </form>
@@ -105,23 +102,25 @@ const groupOptions = CLASSIFICATION_GROUPS.map((g) => ({ value: g.slug, label: g
     // Options from the store, so groups added in this browser are offered; the
     // build's list is only the no-script fallback.
     const parent = form.querySelector<Field>('[data-parent]');
+    // esa-select has no empty value to offer; "None" stands for the top level.
     const TOP = 'none';
-    // Each group by its full path, parents before children.
-    const groups = groupOutline();
     const query = new URLSearchParams(window.location.search);
     if (group) {
+      // Each group by its full path, parents before children.
+      const homes = groupOutline();
       const asked = query.get('group');
-      const seed = groups.some((g) => g.entry.slug === asked) ? asked! : groups[0]?.entry.slug ?? group.dataset.seed ?? '';
+      const seed = homes.some((g) => g.entry.slug === asked) ? asked! : homes[0]?.entry.slug ?? group.dataset.seed ?? '';
       customElements.whenDefined('esa-select').then(() => {
-        (group as Field & { options: unknown }).options = groups.map((g) => ({ value: g.entry.slug, label: g.label }));
+        (group as Field & { options: unknown }).options = homes.map((g) => ({ value: g.entry.slug, label: g.label }));
         group.value = seed;
       });
     }
     if (parent) {
+      const homes = groupOutline();
       const asked = query.get('parent');
       customElements.whenDefined('esa-select').then(() => {
-        (parent as Field & { options: unknown }).options = [{ value: TOP, label: 'None' }, ...groups.map((g) => ({ value: g.entry.slug, label: g.label }))];
-        parent.value = groups.some((g) => g.entry.slug === asked) ? asked! : TOP;
+        (parent as Field & { options: unknown }).options = [{ value: TOP, label: 'None' }, ...homes.map((g) => ({ value: g.entry.slug, label: g.label }))];
+        parent.value = homes.some((g) => g.entry.slug === asked) ? asked! : TOP;
       });
     }
 

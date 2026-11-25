@@ -16,7 +16,7 @@ step 3 is the features that customize them.
   organization's projects are not public.
 - **Stage switch** (Workspace settings › Stages): "Shown on the public site",
   per stage.
-- **Public site switches** (Workspace settings › Custom pages › Public site):
+- **Public site switches** (Workspace settings › Public site › Site details; on Custom pages until 2026-11-24):
   *Public access* ("Published projects, pages and the map, without signing
   in") and *Contact details* (off by default; names always show).
 - **Requesters never see managers**: no manager names or emails in page data.
@@ -39,16 +39,17 @@ step 3 is the features that customize them.
 | 10 | Progress Dashboard `progress-dashboard`, added dashboards `pages/dashboard/[template]` | Public dashboard | Not built | Read mode only. Needs a per-dashboard public choice; none exists. |
 | 11 | Custom page `pages/page` | Public custom page | Not built | Visibility choice "Everyone, including the public site" exists; nothing renders it. |
 | 12 | Custom document `pages/document` | Public document page | Not built | PDF in place. Same visibility choice. |
-| 13 | — (the workspace has no home; Map is the editor's landing) | Public home | **Built 2026-11-20** (`public/index`), no twin | Announcement strip; dark hero (`firma2-public-hero`: name, description, results at poster size, featured projects as three tall photographs); full-width map band with the four figures on a panel; goals against targets; recently updated projects; partners. Authored content is seeded in `PUBLIC_HOME` (`firma2-public-site.ts`); its editors are step 3. Goal and organization doors lead to the index stubs until those pages exist. |
+| 13 | — (the workspace has no home; Map is the editor's landing) | Public home | **Built 2026-11-20** (`public/index`), no twin | Announcement strip; dark hero (`firma2-public-hero`: name, description, results at poster size, featured projects as three tall photographs); full-width map band with the four figures on a panel; goals against targets; recently updated projects; partners. Authored content is seeded in `PUBLIC_HOME` (`firma2-public-site.ts`) and edited in Workspace settings › Public site (2026-11-24). Goal and organization doors lead to the index stubs until those pages exist. |
 
 ## B. Not pages, but every public page needs them
 
 | Piece | State |
 |---|---|
-| Public shell: tenant header, public navigation, footer, Sign in door | **Built 2026-11-20** — `PublicLayout`, `firma2-public-header`, `firma2-public-footer`, menu in `src/data/firma2-public-site.ts`; the project page wears it; six destination routes exist as not-built-yet pages |
+| Public shell: tenant header, public navigation, footer, Sign in door | **Built 2026-11-20** — `PublicLayout`, `firma2-public-header`, `firma2-public-footer`, menu in `src/data/firma2-public-site.ts`; the project page wears it; six destination routes exist as not-built-yet pages |; **signed in (2026-11-23):** an account menu replaces Sign in — see `signed-in-doors-decision.md`
+| Settings that customize the site (step 3) | **Built 2026-11-24** for the home, navigation, theme, footer and identity: Workspace settings › Public site. See `.scratch/public-site-settings/spec.md` |
 | Public search | Not built |
 | Not-public states: unpublished project (built), private organization, hidden stage, public access off, page not shared publicly | One of five built |
-| "View public page" door from each paired app page | Built for projects only (Review, Branding preview) |
+| "View public page" door from each paired app page | Built for projects only (project page top bar since 2026-11-23, Review, Branding preview) |
 
 ## C. Decided 2026-11-20 (user: "go with your recommendations")
 

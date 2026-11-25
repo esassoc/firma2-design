@@ -109,8 +109,11 @@ for p in sorted((OUT / "stories").glob("*.md")):
     for l in oq_part.splitlines():
         if l.startswith("- "):
             lead, _, rest = l.partition(" — ")
+            # "Q-n (proposed) — …" or "(decided)" is an answer the story is built on, not an open question.
+            settled = re.search(r"\((proposed|decided)[^)]*\)", lead)
             for q in re.findall(r"Q-\d+", lead):
-                qs.append(q); q_lines.append((q, rest))
+                q_lines.append((q, rest))
+                if not settled: qs.append(q)
     trace = collections.OrderedDict()
     notes = t.split("<details", 1)[1] if "<details" in t else ""
     for m in re.finditer(r"^\| (R\d+) \| ([^|]*) \| ([^|]*) \|\s*$", notes, re.M):
@@ -128,7 +131,7 @@ for p in sorted((OUT / "stories").glob("*.md")):
         "type": f("Type"), "epic": f("Epic"), "release": f("Release"), "status": f("Status"),
         "blocked_raw": f("Blocked by"), "blocked": re.findall(r"\b\d\d\b", f("Blocked by")),
         "covers_raw": covers_raw, "covers": re.findall(ID, covers_raw.split("(")[0]),
-        "reqs": reqs, "scens": scens, "trace": trace, "qs": sorted(set(qs), key=qn), "q_lines": q_lines,
+        "reqs": reqs, "scens": scens, "trace": trace, "qs": sorted(set(qs), key=qn), "cited": sorted({q for q, _ in q_lines}, key=qn), "q_lines": q_lines,
         "gaps": re.findall(r"^- inventory gap.*$", oq_part, re.M), "sections": re.findall(r"^## (.*)$", t, re.M),
         "pre": pre, "scen_part": scen_part, "stub": "This story is a stub" in t, "has_uat": bool(uat),
     }
@@ -257,7 +260,7 @@ for n, s in stories.items():
         if re.search(r"localStorage|IndexedDB|browser-local|scripted|mock data|object URL", text, re.I): flag("requirement that mentions a prototype artifact", f"{n} {r}")
         elif re.search(r"\bprototype\b|developer-machine", text, re.I): flag("requirement line that says what the prototype does (judgement: context for an undecided part, or a requirement?)", f"{n} {r}")
         for q in re.findall(r"Q-\d+", text):
-            if q not in s["qs"] and q not in q_answered: flag("requirement names an open question the story's Open questions does not list", f"{n} {r}: {q}")
+            if q not in s["cited"] and q not in q_answered: flag("requirement names an open question the story's Open questions does not list", f"{n} {r}: {q}")
     for q in s["qs"]:
         if q not in q_blocks: flag("story cites a question that is not in the open-questions file", f"{n}: {q}")
         elif q in q_answered: flag("story cites a question that is already answered", f"{n}: {q}")
@@ -291,7 +294,7 @@ for n, s in stories.items():
     if col(row, "Release") != s["release"]: flag("map and story disagree on Release", n)
     if col(row, "Type") != s["type"]: flag("map and story disagree on Type", n)
     if col(row, "Epic") and not s["epic"].startswith(col(row, "Epic")): flag("map and story disagree on Epic", f"{n}: map {col(row, 'Epic')} / story {s['epic']}")
-    if map_q and map_q.get(n, []) != s["qs"]: flag("map and story disagree on open questions", f"{n}: map {map_q.get(n)} / story {s['qs']}")
+    if map_q and map_q.get(n, []) != s["cited"]: flag("map and story disagree on the questions a story cites", f"{n}: map {map_q.get(n)} / story {s['cited']}")
     if s["type"] == "enabler":
         unb = sorted(re.findall(r"\d\d", col(row, "Unblocks")))
         real = sorted(o for o, os_ in stories.items() if n in os_["blocked"])
@@ -358,7 +361,7 @@ for x, text in dec.items():
 cnt = {k: [0, 0, 0] for k in KINDS}
 for i in items: cnt[i[:3]][0 if i in cover else 1 if i in excl else 2] += 1
 tot = [sum(cnt[k][j] for k in ("SCR", "STA", "ACN", "RUL")) for j in range(3)]
-allq = sorted({q for s in stories.values() for q in s["qs"]}, key=qn)
+allq = sorted({q for s in stories.values() for q in s["cited"]}, key=qn)
 over8 = [n for n, s in stories.items() if len(s["scens"]) > 12]; over170 = [n for n, s in stories.items() if s["lines"] > 220]
 first_waves = waves(lambda s: s["release"] == "first"); other = [n for n, s in stories.items() if s["release"] != "first"]
 
@@ -417,6 +420,7 @@ if WRITE:
     # A reviewer's own notes survive a re-run: everything from "## Added by hand" to the end is carried over.
     old = (OUT / "coverage.md").read_text() if (OUT / "coverage.md").exists() else ""
     if "## Added by hand" in old:
+        if "## Added by hand" in doc: doc = doc[:doc.index("## Added by hand")]
         doc = doc.rstrip("\n") + "\n\n" + old[old.index("## Added by hand"):]
     (OUT / "coverage.md").write_text(doc)
     print("\nwrote", OUT / "coverage.md")

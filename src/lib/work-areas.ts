@@ -24,6 +24,8 @@
 
 import { REFERENCE_LAYERS, SEED_SUBSCRIPTION } from '../data/firma2-geography';
 import type { MapWorkArea, ReferenceLayer, Subscription } from '../data/firma2-geography';
+import { AREA_GROUPS } from '../data/firma2-geospatial-areas';
+import type { AreaGroup } from '../data/firma2-geospatial-areas';
 
 export const GEO_CHANGE_EVENT = 'firma2:geo-change';
 
@@ -33,7 +35,10 @@ const LAYERS_KEY = 'firma2:reference-layers:v1';
 const SUBSCRIPTIONS_KEY = 'firma2:subscriptions:v1';
 const DRAFT_KEY = 'firma2:subscription-draft:v1';
 const MAP_STYLE_KEY = 'firma2:map-style:v1';
-export const GEO_KEYS = [WORK_AREAS_KEY, SOURCE_KEY, LAYERS_KEY, SUBSCRIPTIONS_KEY, DRAFT_KEY, MAP_STYLE_KEY];
+// v2: lists saved under v1 held the invented groups beside a real workspace's own.
+const AREA_GROUPS_KEY = 'firma2:area-groups:v2';
+const AREA_DETAILS_KEY = 'firma2:area-details:v1';
+export const GEO_KEYS = [WORK_AREAS_KEY, SOURCE_KEY, LAYERS_KEY, SUBSCRIPTIONS_KEY, DRAFT_KEY, MAP_STYLE_KEY, AREA_GROUPS_KEY, AREA_DETAILS_KEY];
 
 const read = <T>(key: string, fallback: T): T => {
   try {
@@ -91,8 +96,35 @@ export const writeProjectSource = (source: ProjectSource): void => write(SOURCE_
 
 // ---- reference layers -------------------------------------------------------------
 
-export const readLayers = (): ReferenceLayer[] => read<ReferenceLayer[]>(LAYERS_KEY, REFERENCE_LAYERS);
+// A layer or group that comes from an area file on disk (dev only) is always
+// there: a browser that saved its lists before the file arrived still gets it.
+const withFileSeeds = <T extends { id: string }>(stored: T[], seeds: T[]): T[] => [
+  ...stored,
+  ...seeds.filter((seed) => seed.id.startsWith('file-') && !stored.some((s) => s.id === seed.id)),
+];
+
+export const readLayers = (): ReferenceLayer[] => withFileSeeds(read<ReferenceLayer[]>(LAYERS_KEY, REFERENCE_LAYERS), REFERENCE_LAYERS);
 export const writeLayers = (layers: ReferenceLayer[]): void => write(LAYERS_KEY, layers);
+
+// ---- geospatial area groups ------------------------------------------------------
+
+export const readAreaGroups = (): AreaGroup[] => withFileSeeds(read<AreaGroup[]>(AREA_GROUPS_KEY, AREA_GROUPS), AREA_GROUPS);
+export const writeAreaGroups = (groups: AreaGroup[]): void => write(AREA_GROUPS_KEY, groups);
+
+/**
+ * What a person adds to one area: the layer gives its shape and name, and these
+ * are kept beside it, by area key (src/lib/geospatial-areas `areaKey`). Its
+ * performance measures and targets are in the taxonomy store under the same key.
+ */
+export interface AreaDetails {
+  description?: string;
+  /** Its own colour; unset, it wears its group's. */
+  color?: string;
+}
+
+export const readAreaDetails = (key: string): AreaDetails => read<Record<string, AreaDetails>>(AREA_DETAILS_KEY, {})[key] ?? {};
+export const writeAreaDetails = (key: string, details: AreaDetails): void =>
+  write(AREA_DETAILS_KEY, { ...read<Record<string, AreaDetails>>(AREA_DETAILS_KEY, {}), [key]: details });
 
 // ---- map style ---------------------------------------------------------------------
 
@@ -117,9 +149,15 @@ export interface MapStyle {
   reachColor: string | null;
   /** 0 to 1. The wash inside an area's edge. */
   areaFillOpacity: number;
+  /**
+   * What a project's work is coloured by: `stage`, `projectType`,
+   * `group:<classification group slug>`, or `none` — the two fixed colours
+   * above (src/lib/map-color.ts).
+   */
+  colorBy: string;
 }
 
-export const DEFAULT_MAP_STYLE: MapStyle = { basemap: 'map', areaColor: null, reachColor: null, areaFillOpacity: 0.18 };
+export const DEFAULT_MAP_STYLE: MapStyle = { basemap: 'map', areaColor: null, reachColor: null, areaFillOpacity: 0.18, colorBy: 'stage' };
 
 export const readMapStyle = (): MapStyle => ({ ...DEFAULT_MAP_STYLE, ...read<Partial<MapStyle>>(MAP_STYLE_KEY, {}) });
 export const writeMapStyle = (style: MapStyle): void => write(MAP_STYLE_KEY, style);

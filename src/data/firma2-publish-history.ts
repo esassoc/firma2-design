@@ -23,7 +23,7 @@
 // DETERMINISTIC. Every date is authored or derived from the record; no clock.
 
 import type { Project, ProjectStage } from './firma2-projects';
-import type { AuditEntry, FundingSource, PerformanceMeasure } from './firma2-project-detail';
+import type { AuditEntry, ProjectFunding, PerformanceMeasure } from './firma2-project-detail';
 import { REAL } from './firma2-real-data';
 
 /** The fixture's present — firma2-directory's TODAY, restated to keep this module import-free. */
@@ -51,7 +51,7 @@ export const daysBetween = (fromIso: string, toIso: string = TODAY_ISO): number 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const costChange = (from: number, to: number) => `Estimated total cost changed from ${usd.format(from)} to ${usd.format(to)}`;
 
-/** The log sentence a publish leaves. Read by the Updates feed as its own kind. */
+/** The log sentence a publish leaves. Read by an organization's Latest updates as its own kind. */
 export const PUBLISHED_CHANGE = 'Published to the public page';
 
 // ---------------------------------------------------------------------------
@@ -149,6 +149,10 @@ const SEEDS: Record<string, PublishSeed> = {
 // The diff
 // ---------------------------------------------------------------------------
 
+/** A funding row as the review reads it: the amount, where the request stands, and who offers it. */
+const fundingLine = (row: ProjectFunding): string =>
+  `${usd.format(row.amount)} ${row.status === 'secured' ? 'from' : row.status === 'requested' ? 'requested from' : 'not awarded by'} ${row.organization}`;
+
 export type ChangeGroup = 'Key facts' | 'Performance measures' | 'Funding sources' | 'Work areas';
 
 /** The editable field a change can be reverted through — firma2-editable-field's key and raw format. */
@@ -219,7 +223,7 @@ const parseUsd = (s: string): number => Number(s.replace(/[$,]/g, ''));
 interface Context {
   description: string;
   measures: PerformanceMeasure[];
-  funding: FundingSource[];
+  funding: ProjectFunding[];
   people: Record<Who, string>;
 }
 
@@ -329,7 +333,7 @@ export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Conte
       published.withheldReports.push({ measure, year: Number(year) });
     } else if ((m = e.change.match(/^Funding source added: (.+)$/))) {
       const source = ctx.funding.find((f) => f.name === m![1]);
-      touch(`funding:${m[1]}`, () => ({ key: `funding:${m![1]}`, group: 'Funding sources', label: m![1], to: source ? `${usd.format(source.amount)} from ${source.organization}` : undefined }), e);
+      touch(`funding:${m[1]}`, () => ({ key: `funding:${m![1]}`, group: 'Funding sources', label: m![1], to: source ? fundingLine(source) : undefined }), e);
       published.withheldFunding.push(m[1]);
     } else if ((m = e.change.match(/^Work area boundary revised: (.+)$/))) {
       touch(`area:${m[1]}`, () => ({ key: `area:${m[1]}`, group: 'Work areas', label: m![1], to: 'Boundary redrawn' }), e);
@@ -355,7 +359,7 @@ export const applyPublishing = (project: Project, base: AuditEntry[], ctx: Conte
     add('timeline', 'Timeline', years);
     add('estimatedTotalCost', 'Estimated total cost', usd.format(project.estimatedTotalCost));
     add('description', 'Description', ctx.description);
-    for (const f of ctx.funding) rows.set(`funding:${f.name}`, { key: `funding:${f.name}`, group: 'Funding sources', label: f.name, to: `${usd.format(f.amount)} from ${f.organization}`, editors: [first.user], edits: 1, lastIso: first.iso });
+    for (const f of ctx.funding) rows.set(`funding:${f.name}`, { key: `funding:${f.name}`, group: 'Funding sources', label: f.name, to: fundingLine(f), editors: [first.user], edits: 1, lastIso: first.iso });
   }
 
   // What the public page still shows, for every row the diff kept.

@@ -1,4 +1,4 @@
-// Keeps a server-rendered list of project types, classifications or tags in
+// Keeps a server-rendered list of project types or classifications in
 // step with this browser's edits (src/lib/taxonomy-edits.ts): removed rows go,
 // renamed and re-described rows update, and rows added here are appended —
 // cloned from the first row so they are the same markup, their figures filled
@@ -16,7 +16,7 @@ export const syncTaxonomyList = (
   tbody: HTMLElement,
   kind: TaxonomyKind,
   opts: {
-    /** Base-less list path, "/prototypes/workspace-settings/tags". */
+    /** Base-less list path, "/prototypes/workspace-settings/classifications". */
     listPath: string;
     /** Only entries this list shows (a classification table shows one group). */
     include?: (e: TaxonomyEntry) => boolean;

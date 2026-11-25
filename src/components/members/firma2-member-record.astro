@@ -1,0 +1,90 @@
+---
+// firma2-member-record — one member's page: who they are in the workspace, how
+// to reach them, and the organizations they are with.
+//
+// A READING PAGE. A member's role and memberships are set elsewhere — the role
+// in Workspace settings › Users, a membership and its Manager flag on that
+// organization's Members settings — so nothing here edits. The reader's own
+// page gets one door, to their profile settings, which is where a name is
+// changed.
+//
+// NO "ABOUT" HEADING (2026-11-24). The page is the person; a heading saying so
+// over two facts was a label for the obvious. The facts sit directly under the
+// name, as an organization's do (firma2-fact-grid).
+//
+// ROLE FIRST, IN ITS OWN WORDS. The role decides what this person can do
+// everywhere, and a newcomer does not know what "Contributor" reaches; the
+// line under it is the same one the change-role dialog reads out on Users.
+//
+// ORGANIZATIONS ARE A TABLE, NOT A FACT ROW: each is a door, and each carries
+// what the person is THERE (Manager outranks the Contributor it sits on; the
+// primary contact is named beside it, in the one column, because a column of
+// its own was a blank on almost every row). A member of no organization —
+// a Viewer who follows the program — is told so in a line, not shown an empty
+// table.
+//
+// bcn-lego-checked: firma2-fact-grid the facts, firma2-settings-table the
+// organizations (a handful of rows at most), esa-button the door to profile
+// settings. All composed unchanged; `.stack` and `.repel` space them. No
+// <style> block.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import Firma2FactGrid from '../shared/firma2-fact-grid.astro';
+import Firma2SettingsTable from '../settings/firma2-settings-table.astro';
+import { CURRENT_USER, CURRENT_USER_ORGANIZATIONS, getOrganization, organizationSlug } from '../../data/firma2-directory';
+import type { WorkspaceUser } from '../../data/firma2-directory';
+import { organizationPageHref } from '../../data/firma2-organization-pages';
+import { roleIn } from '../../data/firma2-members';
+import { withBase } from '../../lib/base';
+
+interface Props {
+  member: WorkspaceUser;
+}
+
+const { member } = Astro.props;
+const you = member.email === CURRENT_USER.email;
+
+// What each role reaches — the lines Users' change-role dialog shows.
+const ROLE_REACH: Record<WorkspaceUser['role'], string> = {
+  Administrator: 'Every setting, organization and role.',
+  Contributor: 'Edits their organizations’ projects.',
+  Viewer: 'Read-only.',
+};
+
+const organizationRows = member.organizations.map((name) => {
+  const org = getOrganization(organizationSlug(name));
+  const visible = org && (org.visibility !== 'private' || CURRENT_USER_ORGANIZATIONS.includes(name));
+  return {
+    name,
+    href: visible ? withBase(organizationPageHref(org.slug)) : undefined,
+    cells: {
+      role: `${roleIn(member, name)}${org?.primaryContact === member.name ? ', primary contact' : ''}`,
+    },
+  };
+});
+---
+<div class="stack" data-gap="xl">
+  <div class="repel">
+    <Firma2FactGrid
+      label={`About ${member.name}`}
+      facts={[
+        { label: 'Role', value: member.role, note: ROLE_REACH[member.role] },
+        { label: 'Email', value: member.email, href: `mailto:${member.email}` },
+      ]}
+    />
+    {you && <EsaButton variant="chrome" size="sm" tag="a" href={withBase('/prototypes/settings/profile')}>Edit profile</EsaButton>}
+  </div>
+
+  <section class="stack" data-gap="md" aria-labelledby="firma2-member-organizations-title">
+    <h2 id="firma2-member-organizations-title" class="typography-title-sm-strong" data-aliasable>Organizations</h2>
+    {organizationRows.length === 0 ? (
+      <p class="typography-body-md">Not a member of any organization.</p>
+    ) : (
+      <Firma2SettingsTable
+        label={`Organizations ${member.name} belongs to`}
+        nameLabel="Organization"
+        columns={[{ key: 'role', label: 'Role' }]}
+        rows={organizationRows}
+      />
+    )}
+  </section>
+</div>

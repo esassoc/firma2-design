@@ -62,6 +62,9 @@ export const navItems: Firma2NavItem[] = [
   { key: 'projects', label: 'Projects', href: '/prototypes/projects', icon: 'folder', group: 'Workspace', aliasable: true },
   // No index route yet — only one page per classification — so the row is inert.
   { key: 'classifications', label: 'Classifications', href: '/prototypes/classifications', icon: 'list', group: 'Workspace', aliasable: true },
+  // The same reading for places: what is happening in each watershed, habitat
+  // area or district (.scratch/geospatial-areas/spec.md, decision 1).
+  { key: 'geospatial-areas', label: 'Geospatial areas', href: '/prototypes/geospatial-areas', icon: 'map', group: 'Workspace' },
   // READ HERE, SET UP IN SETTINGS (user, 2026-10-09): the reading index of
   // performance measures, beside Classifications — the same two-page split
   // that entity has. The catalog stays in Workspace settings › Projects.
@@ -69,14 +72,14 @@ export const navItems: Firma2NavItem[] = [
   // The Progress Dashboard left this group on 2026-11-12 for a Dashboards group
   // of its own (src/data/firma2-pages.ts, MAIN_DASHBOARD), where the dashboards
   // an administrator adds sit beside it.
-  // THE ADMINISTRATOR'S SWEEP (user, 2026-10-09): every change on every
-  // project, and the queue of public pages that are behind. The same two
-  // pages each organization has, at workspace scope.
-  { key: 'updates', label: 'Updates', href: '/prototypes/updates', icon: 'activity', group: 'Workspace' },
+  // THE ADMINISTRATOR'S SWEEP (user, 2026-10-09): the queue of public pages
+  // that are behind — each organization's Review page, at workspace scope.
+  // The workspace Updates feed was removed on 2026-11-24 (user: not needed);
+  // each organization keeps its own.
   { key: 'review', label: 'Review', href: '/prototypes/review', icon: 'circle-check', group: 'Workspace' },
   // MORE: the workspace's less-visited lists, one expandable row so the
-  // everyday rows above stay short. Members and Support Requests have no route
-  // yet, so they render dimmed (the navItems contract). Performance measures left
+  // everyday rows above stay short. All four have a list and a page per record
+  // since 2026-11-24 (Funding Sources is built in a parallel pass). Performance measures left
   // More on 2026-10-08 and returned as a Workspace row on 2026-10-09 (above).
   {
     key: 'more',
@@ -84,10 +87,11 @@ export const navItems: Firma2NavItem[] = [
     icon: 'ellipsis',
     group: 'Workspace',
     children: [
-      { key: 'organizations', label: 'Organizations', icon: 'users', aliasable: true },
-      { key: 'funding-sources', label: 'Funding Sources', icon: 'database', aliasable: true },
-      { key: 'members', label: 'Members', icon: 'user' },
-      { key: 'support-requests', label: 'Support Requests', icon: 'circle-question-mark' },
+      { key: 'organizations', label: 'Organizations', href: '/prototypes/organizations', icon: 'users', aliasable: true },
+      { key: 'funding-sources', label: 'Funding Sources', href: '/prototypes/funding-sources', icon: 'database', aliasable: true },
+      { key: 'members', label: 'Members', href: '/prototypes/members', icon: 'user' },
+      { key: 'access-requests', label: 'Access Requests', href: '/prototypes/access-requests', icon: 'circle-check' },
+      { key: 'support-requests', label: 'Support Requests', href: '/prototypes/support-requests', icon: 'circle-question-mark' },
     ],
   },
 ];
@@ -112,7 +116,7 @@ export const YOUR_ORGANIZATIONS_GROUP =
   CURRENT_USER_ORGANIZATIONS.length === 1 ? 'Your organization' : 'Your organizations';
 
 // YOUR ORGANIZATIONS: one expandable row per organization the reader belongs
-// to, each holding the same six pages scoped to it
+// to, each holding the same pages scoped to it
 // (src/pages/prototypes/organizations/[organization]/). Keys carry the slug, and
 // each page marks itself with organizationNavKey() so its row shows current.
 export const organizationNavItems: Firma2NavItem[] = CURRENT_USER_ORGANIZATIONS.map((name) => {
@@ -125,9 +129,7 @@ export const organizationNavItems: Firma2NavItem[] = CURRENT_USER_ORGANIZATIONS.
     children: [
       { key: organizationNavKey(slug, 'home'), label: 'Home', href: organizationPageHref(slug, 'home'), icon: 'home' },
       { key: organizationNavKey(slug, 'projects'), label: 'Projects', href: organizationPageHref(slug, 'projects'), icon: 'folder', aliasable: true },
-      { key: organizationNavKey(slug, 'updates'), label: 'Updates', href: organizationPageHref(slug, 'updates'), icon: 'activity' },
       { key: organizationNavKey(slug, 'review'), label: 'Review', href: organizationPageHref(slug, 'review'), icon: 'circle-check' },
-      { key: organizationNavKey(slug, 'views'), label: 'Views', href: organizationPageHref(slug, 'views'), icon: 'eye' },
       { key: organizationNavKey(slug, 'reports'), label: 'Reports', href: organizationPageHref(slug, 'reports'), icon: 'file-text' },
     ],
   };
@@ -163,6 +165,8 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   // make a reader guess which one holds the name. Branding is the look; labels
   // and definitions are the language.
   { key: 'ws-branding', label: 'Branding', href: '/prototypes/workspace-settings/branding', icon: 'eye', group: 'Look and language' },
+  // The public site's own settings: five parts under one row, which stays active on each.
+  { key: 'ws-public-site', label: 'Public site', href: '/prototypes/workspace-settings/public-site/home', icon: 'globe', group: 'Look and language' },
   { key: 'ws-labels', label: 'Terminology', href: '/prototypes/workspace-settings/labels', icon: 'file-text', group: 'Look and language' },
   // Where everyone's app menu starts; each person can rearrange their own (2026-10-19).
   { key: 'ws-menu-order', label: 'Menu order', href: '/prototypes/workspace-settings/menu-order', icon: 'list-ordered', group: 'Look and language' },
@@ -178,7 +182,6 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   // features/0010_project_performance_measures, beside the original until the
   // team picks one. Not aliasable: "(PM 2)" is a prototype label, not a noun.
   { key: 'ws-pm2', label: 'Performance measures (PM 2)', href: '/prototypes/workspace-settings/pm2', icon: 'trending-up', group: 'Projects' },
-  { key: 'ws-tags', label: 'Tags', href: '/prototypes/workspace-settings/tags', icon: 'list', group: 'Projects' },
   { key: 'ws-stages', label: 'Stages', href: '/prototypes/workspace-settings/stages', icon: 'activity', group: 'Projects' },
   { key: 'ws-custom-fields', label: 'Custom fields', href: '/prototypes/workspace-settings/custom-fields', icon: 'pencil', group: 'Projects' },
   // How a new project starts: the form every proposal fills (2026-10-19).
@@ -190,6 +193,7 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   { key: 'ws-gis-subscriptions', label: 'GIS subscriptions', href: '/prototypes/workspace-settings/gis-subscriptions', icon: 'rotate-ccw', group: 'Maps' },
   { key: 'ws-gis-sync', label: 'GIS sync', href: '/prototypes/workspace-settings/gis-sync', icon: 'rotate-ccw', group: 'Maps' },
   { key: 'ws-map-layers', label: 'Map layers', href: '/prototypes/workspace-settings/map-layers', icon: 'map-pin', group: 'Maps' },
+  { key: 'ws-geospatial-areas', label: 'Geospatial areas', href: '/prototypes/workspace-settings/geospatial-areas', icon: 'map', group: 'Maps' },
 
   { key: 'ws-funding-fields', label: 'Funding source fields', href: '/prototypes/workspace-settings/funding-source-fields', icon: 'database', group: 'Funding' },
 
@@ -205,8 +209,6 @@ export const workspaceSettingsNavItems: Firma2NavItem[] = [
   { key: 'ws-security', label: 'Security', href: '/prototypes/workspace-settings/security', icon: 'shield', group: 'Administration' },
   { key: 'ws-custom-pages', label: 'Custom pages', href: '/prototypes/workspace-settings/custom-pages', icon: 'file-text', group: 'Administration' },
   { key: 'ws-import-export', label: 'Import and export', href: '/prototypes/workspace-settings/import-export', icon: 'upload', group: 'Administration' },
-  // Where every plan-locked page's Upgrade leads (2026-10-19, .scratch/form-canvas/spec.md).
-  { key: 'ws-plan', label: 'Plan and usage', href: '/prototypes/workspace-settings/plan', icon: 'credit-card', group: 'Administration' },
 
   // The index of the organization's settings pages (General, Members, …) and
   // the way out of it. Its sub-pages keep this row active.

@@ -17,7 +17,7 @@ import { projectPeekButton } from './project-peek';
 
 export interface GoalData {
   /** Per seeded classification slug: its build-time links, targets and figures. */
-  seeded: Record<string, { kpis: string[]; targets: GoalTarget[]; figures: Record<string, KpiFigures> }>;
+  seeded: Record<string, { kpis: string[]; reported?: string[]; targets: GoalTarget[]; figures: Record<string, KpiFigures> }>;
   /** Every catalog measure, for one linked to a classification added in this browser. */
   catalog: Record<string, { name: string; unit: string; decimals: number }>;
 }
@@ -25,7 +25,9 @@ export interface GoalData {
 /** This classification's KPIs as this browser has them: links, targets, figures. */
 const linkedKpis = (slug: string, data: GoalData): { f: KpiFigures; t?: GoalTarget }[] => {
   const seed = data.seeded[slug];
-  const linked = kpiSlugs(slug, seed?.kpis ?? []);
+  const edited = kpiSlugs(slug, seed?.kpis ?? []);
+  // Linked measures first, then the ones only projects report (Q-234).
+  const linked = [...edited, ...(seed?.reported ?? []).filter((ms) => !edited.includes(ms))];
   const targets = targetsFor(slug, seed?.targets ?? []);
   return linked.map((ms) => {
     const c = data.catalog[ms];

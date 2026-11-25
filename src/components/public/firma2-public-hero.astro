@@ -43,11 +43,13 @@ import { withBase } from '../../lib/base';
 import { photoSrc } from '../../lib/project-photos';
 
 interface Props {
+  /** Every result the settings can choose among; the first `shown` show until they say otherwise. */
   totals: PublicMeasureTotal[];
+  shown?: number;
   featured: PublicFeatured[];
 }
 
-const { totals, featured } = Astro.props;
+const { totals, featured, shown = 4 } = Astro.props;
 const measuresHref = PUBLIC_NAV.find((item) => item.key === 'performance-measures')!.href;
 const figure = (t: PublicMeasureTotal) =>
   t.reported.toLocaleString('en-US', { maximumFractionDigits: t.reported >= 100 ? 0 : t.measure.decimalPlaces });
@@ -55,13 +57,13 @@ const figure = (t: PublicMeasureTotal) =>
 <header class="firma2-public-hero">
   <div class="firma2-public-hero__text stack" data-gap="xl">
     <div class="stack" data-gap="md">
-      <h1 class="typography-display">{PUBLIC_SITE_OWNER.name}</h1>
-      {PUBLIC_HOME.description && <p class="firma2-public-hero__description typography-body-lg">{PUBLIC_HOME.description}</p>}
+      <h1 class="typography-display" data-hero-headline>{PUBLIC_SITE_OWNER.name}</h1>
+      <p class="firma2-public-hero__description typography-body-lg" data-hero-description hidden={!PUBLIC_HOME.description}>{PUBLIC_HOME.description}</p>
     </div>
     {totals.length > 0 && (
-      <ul class="firma2-public-hero__results" aria-label="Results to date">
-        {totals.map((t) => (
-          <li>
+      <ul class="firma2-public-hero__results" aria-label="Results to date" data-hero-results>
+        {totals.map((t, i) => (
+          <li data-result={t.measure.slug} hidden={i >= shown}>
             <a href={withBase(measuresHref)} data-count-host>
               <span class="firma2-public-hero__figure" data-count>{figure(t)}</span>
               <span class="firma2-public-hero__measure typography-label-lg">{t.measure.name}</span>
@@ -71,8 +73,22 @@ const figure = (t: PublicMeasureTotal) =>
       </ul>
     )}
   </div>
-  {featured.length > 0 && (
-    <ul class="firma2-public-hero__projects" aria-label="Featured projects">
+  {/* Always in the document, so the settings can feature projects on a home
+      that started with none. The template is one photograph, for the apply
+      script to fill (src/lib/public-site-apply.ts). */}
+  <template data-hero-featured-template>
+    <li>
+      <a href="#">
+        <img src="" alt="" width="720" height="1080" decoding="async" />
+        <span class="firma2-public-hero__caption stack" data-gap="2xs">
+          <span class="firma2-public-hero__name typography-label-lg-strong"><span data-name></span><span class="firma2-public-hero__arrow" aria-hidden="true"> →</span></span>
+          <span class="typography-body-sm" data-meta></span>
+        </span>
+      </a>
+    </li>
+  </template>
+  {(
+    <ul class="firma2-public-hero__projects" aria-label="Featured projects" data-hero-featured hidden={featured.length === 0}>
       {featured.map((p, i) => (
         <li>
           <a href={withBase(p.href)}>
@@ -97,9 +113,13 @@ const figure = (t: PublicMeasureTotal) =>
 </header>
 
 <style>
+  .firma2-public-hero [hidden] {
+    display: none;
+  }
   .firma2-public-hero {
-    /* The brand's solid step reads as a bright ink on the inverse ground. */
-    --_accent: var(--color-background-brand);
+    /* The brand's solid step reads as a bright ink on the inverse ground. A
+       workspace's own accent (Public site settings › Theme) replaces it. */
+    --_accent: var(--firma2-public-accent, var(--color-background-brand));
     --_gutter: var(--firma2-public-gutter, var(--spacing-600));
     --_ground: var(--color-background-inverse);
     --_ink: var(--color-content-inverse);
@@ -112,6 +132,23 @@ const figure = (t: PublicMeasureTotal) =>
   :global(html[data-scheme='dark']) .firma2-public-hero {
     --_ground: var(--color-background-elevation-sunken);
     --_ink: var(--color-content-default);
+  }
+  /* THE BAND'S OTHER TWO GROUNDS (Public site settings › Theme). On the brand
+     colour the figures take the text colour chosen for it; on the page's own
+     ground they take the brand as text. Photograph captions stay light on
+     their scrim in all three. */
+  :global(html[data-public-hero='brand']) .firma2-public-hero {
+    --_ground: var(--color-background-brand);
+    --_ink: var(--color-content-on-brand);
+    --_accent: var(--firma2-public-accent, var(--color-content-on-brand));
+  }
+  :global(html[data-public-hero='light']) .firma2-public-hero {
+    --_ground: var(--color-background-default);
+    --_ink: var(--color-content-default);
+    --_accent: var(--firma2-public-accent, var(--color-content-brand));
+  }
+  .firma2-public-hero__caption {
+    color: #fff;
   }
   .firma2-public-hero__text {
     box-sizing: border-box;

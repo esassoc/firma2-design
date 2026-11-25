@@ -19,7 +19,7 @@
 // firma2-performance-measures.ts.
 
 import raw from 'virtual:firma2-workspace';
-import type { ClassificationName, Project, ProjectStage, ProjectTypeName, TagName } from './firma2-projects';
+import type { ClassificationName, Project, ProjectStage, ProjectTypeName } from './firma2-projects';
 
 export interface RealMeasureRow {
   measure: string;
@@ -121,14 +121,12 @@ const projectTypeOf = (p: RealProject): ProjectTypeName => {
 const countyOf = (p: RealProject): string => (p.latitude !== null && p.latitude > 45.4615 ? 'Multnomah' : 'Clackamas');
 
 /** The classification systems a project is filed in, beyond its taxonomy leaf.
- *  "Project Types" is left out: it is a set of labels, read as tags. */
-const TAG_SYSTEM = 'Project Types';
+ *  "Project Types" is left out: it is a set of yes/no labels with no measures,
+ *  and the product has nowhere to file those since Tags were removed
+ *  (2026-11-24). */
+const LABEL_SYSTEM = 'Project Types';
 export const realSystems = (): string[] =>
-  Array.from(new Set(visible.flatMap((p) => Object.keys(p.classifications)))).filter((s) => s !== TAG_SYSTEM);
-
-export const realTagNames: string[] = Array.from(
-  new Set(visible.flatMap((p) => (p.classifications[TAG_SYSTEM] ?? []).map((c) => c.name))),
-).sort();
+  Array.from(new Set(visible.flatMap((p) => Object.keys(p.classifications)))).filter((s) => s !== LABEL_SYSTEM);
 
 export const realProjects: Project[] | null = REAL
   ? visible.map((p) => {
@@ -141,7 +139,6 @@ export const realProjects: Project[] | null = REAL
           ...(p.otherLimitingFactors ?? []),
           ...realSystems().flatMap((s) => (p.classifications[s] ?? []).map((c) => c.name)),
         ] as ClassificationName[],
-        tags: (p.classifications[TAG_SYSTEM] ?? []).map((c) => c.name) as TagName[],
         leadOrganization: p.organizations.find((o) => o.role === 'Lead Implementer')!.name,
         county: countyOf(p),
         stage: STAGES[p.stage] ?? 'Deferred',

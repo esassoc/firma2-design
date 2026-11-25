@@ -76,6 +76,14 @@ export const prototypes: Prototype[] = [
     createdAt: '2026-10-01',
     status: 'in-progress',
   },
+  {
+    slug: 'public-site-settings',
+    title: 'Public site settings',
+    description: 'Arrange the public home, its bar, fonts and footer',
+    route: '/prototypes/workspace-settings/public-site/home',
+    createdAt: '2026-11-24',
+    status: 'in-progress',
+  },
   // Ported from ProjectFirma2's hackathon team 5 (project updates).
   // Renamed Map on 2026-11-02: the map-based view became the whole page.
   {
@@ -95,15 +103,6 @@ export const prototypes: Prototype[] = [
     route: `/prototypes/projects/${demoProjectSlug('cosumnes-floodplain-reconnection')}`,
     createdAt: '2026-10-02',
     status: 'in-progress',
-  },
-  // Archived 2026-11-02 when the map-based My Projects took over the Map row.
-  {
-    slug: 'portfolio-map',
-    title: 'Portfolio map',
-    description: 'Every project on one map',
-    route: '/prototypes/archive/portfolio-map',
-    createdAt: '2026-10-02',
-    status: 'archived',
   },
   {
     slug: 'gis-subscriptions',
@@ -127,6 +126,14 @@ export const prototypes: Prototype[] = [
     description: 'Reference boundaries for every map',
     route: '/prototypes/workspace-settings/map-layers',
     createdAt: '2026-10-02',
+    status: 'in-progress',
+  },
+  {
+    slug: 'geospatial-areas',
+    title: 'Geospatial areas',
+    description: 'Groups of areas that file projects by location',
+    route: '/prototypes/workspace-settings/geospatial-areas',
+    createdAt: '2026-11-24',
     status: 'in-progress',
   },
   {

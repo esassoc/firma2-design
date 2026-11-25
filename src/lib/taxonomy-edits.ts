@@ -1,5 +1,5 @@
-// Browser-local edits to the three ways a project is filed — project types,
-// classifications and tags — and to the groups classifications sort into: what was added, renamed, re-described or removed,
+// Browser-local edits to the two ways a project is filed — project types
+// and classifications — and to the groups classifications sort into: what was added, renamed, re-described or removed,
 // and, for classifications, which KPIs track them and their goal targets.
 // Same honesty terms as every other draft store in this prototype
 // (src/lib/measure-draft.ts): localStorage, one browser, no backend.
@@ -9,13 +9,13 @@
 // a browser that renamed something else. Entries added here are stored whole,
 // with a `local-` slug so they can always be told from a seed.
 //
-// ONE MODULE FOR THE THREE because they are one shape (a name, a description,
-// and for two of them a colour) and the settings screens that edit them are
+// ONE MODULE FOR BOTH because they are one shape (a name, a description
+// and a colour) and the settings screens that edit them are
 // built from the same parts. Everything particular to a kind — fields and
 // page sections for a type (src/lib/project-type-draft.ts), KPIs and targets
 // for a classification (below) — keys off the same slug.
 //
-// CLASSIFICATION GROUPS ARE A FOURTH KIND, not a side table: a group is the
+// CLASSIFICATION GROUPS ARE A THIRD KIND, not a side table: a group is the
 // same shape (a name and a line of description), is added, renamed and
 // removed on the same screens, and a classification's `group` is a group
 // slug. What only groups need is ORDER — the order groups appear in, and the
@@ -26,37 +26,43 @@
 // Groups are ordered per parent. A group can never be moved inside itself or
 // a group beneath it (`groupMoveTargets`).
 //
-// TAG GROUPS ARE A FIFTH KIND on the same terms: a tag's `group` is a tag
-// group slug — or empty, for a tag in no group — groups and the tags within
-// each are ordered per list, and both carry a colour an administrator can
-// change in place. A new tag or group is dealt a colour at random.
+// THE TREE IS FREE (user, 2026-11-23). A group may hold groups and
+// classifications together, any group may be moved under any other or to the
+// top level (never inside itself), and a classification may sit in any group
+// or in none. A classification can BECOME a group and a group a
+// classification (`convertToGroup`, `convertToClassification`). Declared
+// levels, a uniform depth and a groups-or-classifications rule were each
+// built and withdrawn the same day.
 //
 // Every access is wrapped: storage can be missing or throw (private windows,
 // blocked site data), and the page must still work — it just forgets.
 
+import { seededIcon } from '../data/firma2-classification-icons';
 import { PROJECT_TYPES } from '../data/firma2-project-types';
 import { CLASSIFICATIONS, CLASSIFICATION_GROUPS, GOAL_GROUP } from '../data/firma2-classifications';
 import type { GoalTarget } from '../data/firma2-classifications';
-import { TAGS, TAG_GROUPS, randomTagColor } from '../data/firma2-tags';
 
-export type TaxonomyKind = 'projectType' | 'classification' | 'tag' | 'classificationGroup' | 'tagGroup';
+export type TaxonomyKind = 'projectType' | 'classification' | 'classificationGroup';
 
 export interface TaxonomyEntry {
   slug: string;
   name: string;
   description: string;
-  /** Project types, classifications, classification groups, tags and tag groups: the swatch. */
+  /** The swatch. */
   color?: string;
   /**
-   * Classifications: the CLASSIFICATION_GROUPS slug. Tags: the TAG_GROUPS slug.
+   * Classifications: the CLASSIFICATION_GROUPS slug.
    * Classification groups: the group this one sits inside, empty at the top level.
    */
   group?: string;
+  /** Classifications and classification groups: a Hugeicons export name, and its markup. */
+  icon?: string;
+  iconPaths?: string;
 }
 
 interface KindEdits {
   added: TaxonomyEntry[];
-  edited: Record<string, Partial<Pick<TaxonomyEntry, 'name' | 'description' | 'group' | 'color'>>>;
+  edited: Record<string, Partial<Pick<TaxonomyEntry, 'name' | 'description' | 'group' | 'color' | 'icon' | 'iconPaths'>>>;
   removed: string[];
 }
 
@@ -91,7 +97,7 @@ const read = (): Store => {
     if (raw) {
       const s = JSON.parse(raw) as Partial<Store>;
       return {
-        kinds: { projectType: empty(), classification: empty(), tag: empty(), classificationGroup: empty(), tagGroup: empty(), ...(s.kinds ?? {}) },
+        kinds: { projectType: empty(), classification: empty(), classificationGroup: empty(), ...(s.kinds ?? {}) },
         kpis: s.kpis ?? {},
         targets: s.targets ?? {},
         order: s.order ?? {},
@@ -101,7 +107,7 @@ const read = (): Store => {
     // Blocked or corrupt storage reads as no edits.
   }
   return {
-    kinds: { projectType: empty(), classification: empty(), tag: empty(), classificationGroup: empty(), tagGroup: empty() },
+    kinds: { projectType: empty(), classification: empty(), classificationGroup: empty() },
     kpis: {},
     targets: {},
     order: {},
@@ -121,25 +127,20 @@ const seeds = (kind: TaxonomyKind): TaxonomyEntry[] =>
   kind === 'projectType'
     ? PROJECT_TYPES.map((t) => ({ slug: t.slug, name: t.name, description: t.description, color: t.color }))
     : kind === 'classification'
-      ? CLASSIFICATIONS.map((c) => ({ slug: c.slug, name: c.name, description: c.description, color: c.color, group: c.group }))
-      : kind === 'classificationGroup'
-        ? CLASSIFICATION_GROUPS.map((g) => ({ slug: g.slug, name: g.name, description: g.description, color: g.color, group: g.parent ?? '' }))
-        : kind === 'tagGroup'
-          ? TAG_GROUPS.map((g) => ({ slug: g.slug, name: g.name, description: g.description, color: g.color }))
-          : TAGS.map((t) => ({ slug: t.slug, name: t.name, description: t.description, group: t.group, color: t.color }));
+      ? CLASSIFICATIONS.map((c) => ({ slug: c.slug, name: c.name, description: c.description, color: c.color, group: c.group, ...seededIcon(c.name) }))
+      : CLASSIFICATION_GROUPS.map((g) => ({ slug: g.slug, name: g.name, description: g.description, color: g.color, group: g.parent ?? '', ...seededIcon(g.slug) }));
 
 export const isLocal = (slug: string): boolean => slug.startsWith('local-');
 
 /**
- * The list an entry is ordered within: tag groups are one list; classification
- * groups are one list PER PARENT (the top level keeps the bare key);
- * classifications and tags are one list PER GROUP. Project types are not
- * reorderable.
+ * The list an entry is ordered within: classification groups are one list
+ * PER PARENT (the top level keeps the bare key); classifications are one list
+ * PER GROUP. Project types are not reorderable.
  */
 export const listKey = (kind: TaxonomyKind, e?: Pick<TaxonomyEntry, 'group'>): string | null =>
-  kind === 'tagGroup' || (kind === 'classificationGroup' && !e?.group)
+  kind === 'classificationGroup' && !e?.group
     ? kind
-    : kind === 'classification' || kind === 'tag' || kind === 'classificationGroup'
+    : kind === 'classification' || kind === 'classificationGroup'
       ? `${kind}:${e?.group ?? ''}`
       : null;
 
@@ -153,16 +154,11 @@ export const entries = (kind: TaxonomyKind): TaxonomyEntry[] => {
   const list = [...seeds(kind), ...k.added]
     .filter((e) => !k.removed.includes(e.slug))
     .map((e) => ({ ...e, ...(k.edited[e.slug] ?? {}) }));
-  // Tags read group by group, in the groups' own order, so every picker
-  // offers them as the settings page arranges them.
-  const groupRank = new Map<string, number>(kind === 'tag' ? entries('tagGroup').map((g, i) => [g.slug, i]) : []);
   const rank = (e: TaxonomyEntry, i: number): number => {
     const key = listKey(kind, e);
     const at = key ? (store.order[key] ?? []).indexOf(e.slug) : -1;
     // Listed slugs first, in their stored order; the rest after, as they came.
-    const within = at >= 0 ? at : 1e6 + i;
-    // Tags in no group come first, as the settings page lists them.
-    return kind === 'tag' ? (groupRank.get(e.group ?? '') ?? -1) * 1e7 + within : within;
+    return at >= 0 ? at : 1e6 + i;
   };
   return list.map((e, i) => ({ e, r: rank(e, i) })).sort((a, b) => a.r - b.r).map((x) => x.e);
 };
@@ -180,7 +176,7 @@ export const getEntry = (kind: TaxonomyKind, slug: string): TaxonomyEntry | unde
 /** Was this seeded entry removed in this browser? */
 export const isRemoved = (kind: TaxonomyKind, slug: string): boolean => read().kinds[kind].removed.includes(slug);
 
-/** Names compare without case or surrounding space: "Tribal Partnership" is taken. */
+/** Names compare without case or surrounding space: "Fish Passage" is taken. */
 export const nameTaken = (kind: TaxonomyKind, name: string, exceptSlug?: string): boolean => {
   const n = name.trim().toLowerCase();
   return entries(kind).some((e) => e.slug !== exceptSlug && e.name.trim().toLowerCase() === n);
@@ -202,35 +198,23 @@ export const addEntry = (
     slug,
     name: input.name.trim(),
     description: input.description.trim(),
-    ...(kind === 'projectType' || kind === 'classification' || kind === 'classificationGroup'
-      ? { color: NEW_COLORS[store.kinds[kind].added.length % NEW_COLORS.length] }
-      : {}),
+    color: input.color || NEW_COLORS[store.kinds[kind].added.length % NEW_COLORS.length],
     // Inside the group it was added from, or at the top level.
     ...(kind === 'classificationGroup'
       ? { group: entries('classificationGroup').some((g) => g.slug === input.group) ? input.group : '' }
       : {}),
-    ...(kind === 'classification' ? { group: input.group || entries('classificationGroup')[0]?.slug || GOAL_GROUP } : {}),
-    ...(kind === 'tag' || kind === 'tagGroup' ? tagLook(kind, input) : {}),
+    // Its group as asked — '' is no group. Only an add that says nothing gets a default.
+    ...(kind === 'classification' ? { group: input.group ?? (groupOutline()[0]?.entry.slug || GOAL_GROUP) } : {}),
   };
   store.kinds[kind].added.push(entry);
   write(store);
   return entry;
 };
 
-/**
- * A new tag joins the group it was added in, or none; a new tag or group
- * wears a colour dealt at random until given its own.
- */
-const tagLook = (kind: TaxonomyKind, input: { group?: string; color?: string }): Partial<TaxonomyEntry> => {
-  const color = input.color || randomTagColor();
-  if (kind === 'tagGroup') return { color };
-  return { group: entries('tagGroup').some((g) => g.slug === input.group) ? input.group : '', color };
-};
-
 export const editEntry = (
   kind: TaxonomyKind,
   slug: string,
-  patch: Partial<Pick<TaxonomyEntry, 'name' | 'description' | 'group' | 'color'>>,
+  patch: Partial<Pick<TaxonomyEntry, 'name' | 'description' | 'group' | 'color' | 'icon' | 'iconPaths'>>,
 ): boolean => {
   const store = read();
   const k = store.kinds[kind];
@@ -251,9 +235,8 @@ export const removeEntry = (kind: TaxonomyKind, slug: string): boolean => {
     delete store.kpis[slug];
     delete store.targets[slug];
   }
-  if (kind === 'classificationGroup' || kind === 'tagGroup') {
-    const member = kind === 'tagGroup' ? 'tag' : 'classification';
-    delete store.order[`${member}:${slug}`];
+  if (kind === 'classificationGroup') {
+    delete store.order[`classification:${slug}`];
     delete store.order[`${kind}:${slug}`];
     for (const key of Object.keys(store.order)) {
       if (key === kind || key.startsWith(`${kind}:`)) store.order[key] = store.order[key].filter((s) => s !== slug);
@@ -266,9 +249,16 @@ export const removeEntry = (kind: TaxonomyKind, slug: string): boolean => {
 // Classification groups
 // ---------------------------------------------------------------------------
 
-/** The classifications filed directly in a group, in their stored order. */
-export const classificationsIn = (groupSlug: string): TaxonomyEntry[] =>
-  entries('classification').filter((e) => e.group === groupSlug);
+/**
+ * The classifications filed directly in a group, in their stored order. The
+ * empty slug is the classifications in no group — including any whose group
+ * is gone.
+ */
+export const classificationsIn = (groupSlug: string): TaxonomyEntry[] => {
+  if (groupSlug) return entries('classification').filter((e) => e.group === groupSlug);
+  const groups = new Set(entries('classificationGroup').map((g) => g.slug));
+  return entries('classification').filter((e) => !groups.has(e.group ?? ''));
+};
 
 /**
  * The groups directly inside a group, in their stored order; the empty slug
@@ -308,10 +298,60 @@ export const groupOutline = (parentSlug = '', depth = 0, prefix = ''): { entry: 
     return [{ entry, depth, label }, ...groupOutline(entry.slug, depth + 1, label)];
   });
 
-/** Where a group may be moved: any group but itself and the groups beneath it. */
+/** Where a group may be moved, besides the top level: any group that is not itself or beneath it. */
 export const groupMoveTargets = (slug: string): { entry: TaxonomyEntry; depth: number; label: string }[] => {
   const within = groupAndDescendants(slug);
   return groupOutline().filter((o) => !within.includes(o.entry.slug));
+};
+
+/**
+ * Put what is directly inside a group back in alphabetical order: its
+ * classifications among themselves, and its groups among themselves. The
+ * empty slug is the top level's groups. Numbers inside names sort as
+ * numbers ("Biennium 2" before "Biennium 10"), and case is ignored.
+ */
+export const sortAlphabetically = (home: string): boolean => {
+  const store = read();
+  const byName = (a: TaxonomyEntry, b: TaxonomyEntry): number => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  store.order[listKey('classificationGroup', { group: home }) ?? 'classificationGroup'] = groupsIn(home).sort(byName).map((e) => e.slug);
+  if (home) store.order[`classification:${home}`] = classificationsIn(home).sort(byName).map((e) => e.slug);
+  return write(store);
+};
+
+// ---- becoming the other kind --------------------------------------------------
+
+/**
+ * A classification becomes a group of its own name, colour and description,
+ * where it stood. Its measures and targets go with it: a group has none.
+ * Returns the new group, or null when a group already has the name.
+ */
+export const convertToGroup = (slug: string): TaxonomyEntry | null => {
+  const c = getEntry('classification', slug);
+  if (!c || nameTaken('classificationGroup', c.name)) return null;
+  removeEntry('classification', slug);
+  return addEntry('classificationGroup', { name: c.name, description: c.description, group: c.group ?? '', color: c.color });
+};
+
+/**
+ * A group becomes a classification of its own name, colour and description,
+ * where it stood. What it held is either KEPT — moved up to where the group
+ * was, the top level for a top-level group — or REMOVED, every group and
+ * classification beneath it. Returns the new classification, or null when a
+ * classification already has the name.
+ */
+export const convertToClassification = (slug: string, contents: 'keep' | 'remove'): TaxonomyEntry | null => {
+  const g = getEntry('classificationGroup', slug);
+  if (!g || nameTaken('classification', g.name)) return null;
+  const home = entries('classificationGroup').some((x) => x.slug === g.group) ? g.group ?? '' : '';
+  if (contents === 'keep') {
+    for (const child of groupsIn(slug)) editEntry('classificationGroup', child.slug, { group: home });
+    for (const child of classificationsIn(slug)) editEntry('classification', child.slug, { group: home });
+  } else {
+    for (const child of classificationsUnder(slug)) removeEntry('classification', child.slug);
+    for (const child of groupAndDescendants(slug).filter((x) => x !== slug)) removeEntry('classificationGroup', child);
+  }
+  removeEntry('classificationGroup', slug);
+  return addEntry('classification', { name: g.name, description: g.description, group: home, color: g.color });
 };
 
 /**
@@ -332,37 +372,24 @@ export const groupRemovalBlock = (groupSlug: string): string | null => {
   return null;
 };
 
-// ---------------------------------------------------------------------------
-// Tag groups
-// ---------------------------------------------------------------------------
-
 /**
- * A group's tags, in their stored order. The empty slug is the tags in no
- * group — including any whose group is gone.
+ * Store a whole arrangement of the classification tree at once, as the
+ * settings list shows it after a drag or a "Move to": each list's home group
+ * and its keys in order. A classification or group found in a list that is
+ * not its own has moved there. The top-level groups' own order is the list
+ * whose home is ''.
  */
-export const tagsIn = (groupSlug: string): TaxonomyEntry[] => {
-  if (groupSlug) return entries('tag').filter((e) => e.group === groupSlug);
-  const groups = new Set(entries('tagGroup').map((g) => g.slug));
-  return entries('tag').filter((e) => !groups.has(e.group ?? ''));
-};
-
-/**
- * Store a whole arrangement at once: the groups' order, and each group's tags
- * in order — the empty slug for tags in no group. A tag found under another
- * group has moved there.
- */
-export const arrangeTags = (groups: { slug: string; tags: string[] }[]): boolean => {
+export const arrangeClassifications = (lists: { kind: 'classification' | 'classificationGroup'; home: string; keys: string[] }[]): boolean => {
   const store = read();
-  const k = store.kinds.tag;
-  const current = new Map(entries('tag').map((e) => [e.slug, e.group]));
-  store.order.tagGroup = groups.map((g) => g.slug).filter(Boolean);
-  for (const g of groups) {
-    store.order[`tag:${g.slug}`] = g.tags;
-    for (const slug of g.tags) {
-      if (current.get(slug) === g.slug) continue;
+  for (const list of lists) {
+    const k = store.kinds[list.kind];
+    const current = new Map(entries(list.kind).map((e) => [e.slug, e.group ?? '']));
+    store.order[listKey(list.kind, { group: list.home }) ?? list.kind] = list.keys;
+    for (const slug of list.keys) {
+      if (current.get(slug) === list.home) continue;
       const local = k.added.find((e) => e.slug === slug);
-      if (local) local.group = g.slug;
-      else k.edited[slug] = { ...(k.edited[slug] ?? {}), group: g.slug };
+      if (local) local.group = list.home;
+      else k.edited[slug] = { ...(k.edited[slug] ?? {}), group: list.home };
     }
   }
   return write(store);

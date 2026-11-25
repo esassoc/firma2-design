@@ -1,6 +1,17 @@
 ---
-// firma2-org-summary — the top of an organization's Home: how much work it is
-// in, what it has put in, and whether last year's reports came back.
+// firma2-org-summary — the top of an organization's page: what it says about
+// itself, how much work it is in and what it has put in, and the facts that
+// place it (type, website and whether it is verified, who to ask).
+//
+// WHO IT IS COMES FIRST (2026-11-24). The page opened on four figures and never
+// said what the organization was; a reader arriving from the Organizations list
+// has not met it. Same order as a funding source's summary: the stored
+// description, the figures, the facts.
+//
+// THE LAST TILE FOLLOWS THE READER. A member sees whether last year's reports
+// came back; anyone else sees how many members it has — an organization's
+// unfiled reports are its own business to chase, not a figure on its public
+// face.
 //
 // THE FIGURES FOLLOW THE ORGANIZATION'S ROLE. A funder's money is what it
 // committed to other people's projects; a lead's is the cost of the work it
@@ -12,44 +23,81 @@
 // that has not started cannot be late, and counting it would make every new
 // organization look delinquent.
 //
-// Layout is the hub's `.grid` primitive and esa-stat throughout — the same
-// construction as firma2-classification-summary.
+// bcn-lego-checked: esa-stat for the figures on the hub's `.grid` primitive
+// (firma2-classification-summary's construction); the facts are
+// firma2-fact-grid. Beacon is not cloned on this machine.
 import EsaStat from '@esa/ecology/esa-stat.astro';
+import Firma2FactGrid from '../shared/firma2-fact-grid.astro';
+import type { Fact } from '../shared/firma2-fact-grid.astro';
+import { verifiedDomain } from '../../data/firma2-directory';
+import type { Organization } from '../../data/firma2-directory';
 import type { OrganizationProject, Coverage } from '../../data/firma2-organization-pages';
+import { isMember, memberHref, members } from '../../data/firma2-members';
 import { currencyFormatter as currency } from '../../lib/format';
+import { withBase } from '../../lib/base';
 
 interface Props {
+  /** Whose page this is: its description leads and its facts follow the figures. */
+  organization: Organization;
   rows: OrganizationProject[];
   coverage: Coverage;
+  /** The reader belongs to this organization: the page may say "you", and shows whether last year's reports came back. */
+  own?: boolean;
 }
 
-const { rows, coverage } = Astro.props;
+const { organization: org, rows, coverage, own = true } = Astro.props;
 const led = rows.filter((r) => r.leads);
 const funded = rows.filter((r) => !r.leads);
 const roles = [led.length && `${led.length} led`, funded.length && `${funded.length} funded`].filter(Boolean).join(', ');
 const committed = funded.reduce((sum, r) => sum + r.amount, 0);
 const leadCost = led.reduce((sum, r) => sum + r.project.estimatedTotalCost, 0);
 const owing = coverage.due - coverage.reported;
+const memberCount = members.filter((m) => m.organizations.includes(org.name)).length;
+const website = org.website ? (/^https?:\/\//.test(org.website) ? org.website : `https://${org.website}`) : '';
+const contactHref = org.primaryContact && isMember(org.primaryContact) ? withBase(memberHref(org.primaryContact)) : '';
+// VERIFIED IS A NOTE UNDER THE WEBSITE, in a word: the site already spells the
+// domain, so the mark's own "cwrb.org" beside it said the same thing twice.
+const facts: Fact[] = [
+  { label: 'Type', value: org.type },
+  ...(org.website ? [{ label: 'Website', value: org.website, href: website, note: verifiedDomain(org) ? 'Verified domain' : undefined }] : []),
+  ...(org.primaryContact ? [{ label: 'Primary contact', value: org.primaryContact, href: contactHref || undefined }] : []),
+];
 ---
-<section class="firma2-org-summary grid" data-gap="md" aria-label="Summary">
-  <EsaStat value={rows.length} label="Projects" sub={roles || undefined} />
-  {funded.length > 0 && (
-    <EsaStat value={currency.format(committed)} label="Funding committed" />
-  )}
-  {led.length > 0 && (
-    <EsaStat value={currency.format(leadCost)} label="Estimated cost" sub="Projects you lead" />
-  )}
-  <EsaStat
-    value={coverage.due ? `${coverage.reported} of ${coverage.due}` : 'None due'}
-    label={coverage.due ? `${coverage.year} reports filed` : `${coverage.year} reports`}
-    sub={owing ? `${owing} project${owing === 1 ? '' : 's'} still owe${owing === 1 ? 's' : ''} one` : undefined}
-  />
+<section class="firma2-org-summary stack" data-gap="lg" aria-label="Summary">
+  {/* THE DESCRIPTION IS A DATUM, not a lede: the sentence stored on the
+      organization. One that has none shows none. */}
+  {org.description && <p class="firma2-org-summary__description typography-body-lg">{org.description}</p>}
+  <div class="firma2-org-summary__figures grid" data-gap="md">
+    <EsaStat value={rows.length} label="Projects" sub={roles || undefined} />
+    {funded.length > 0 && (
+      <EsaStat value={currency.format(committed)} label="Funding secured" sub={own ? 'On projects you fund' : 'On projects it funds'} />
+    )}
+    {led.length > 0 && (
+      <EsaStat value={currency.format(leadCost)} label="Estimated cost" sub={own ? 'Projects you lead' : 'Projects it leads'} />
+    )}
+    {own ? (
+      <EsaStat
+        value={coverage.due ? `${coverage.reported} of ${coverage.due}` : 'None due'}
+        label={coverage.due ? `${coverage.year} reports filed` : `${coverage.year} reports`}
+        sub={owing ? `${owing} project${owing === 1 ? '' : 's'} still owe${owing === 1 ? 's' : ''} one` : undefined}
+      />
+    ) : (
+      <EsaStat value={memberCount} label={memberCount === 1 ? 'Member' : 'Members'} />
+    )}
+  </div>
+  <Firma2FactGrid label={`About ${org.name}`} facts={facts} />
 </section>
 
 <style>
   /* Four tiles fit four-up at the content cap and halve cleanly below it — the
      classification summary's track minimum. */
-  .firma2-org-summary {
+  .firma2-org-summary__figures {
     --grid-min: 13rem;
+  }
+
+  /* The stored sentence reads at a reading measure, not the full pane. */
+  .firma2-org-summary__description {
+    margin: 0;
+    max-inline-size: 70ch;
   }
 </style>

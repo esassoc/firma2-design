@@ -46,7 +46,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     slug: 'publishing',
     title: 'Publishing and review',
-    paths: ['/prototypes/review', '/prototypes/public', '/prototypes/updates', '/prototypes/workspace-settings/organization-settings/review'],
+    paths: ['/prototypes/review', '/prototypes/public', '/prototypes/workspace-settings/organization-settings/review'],
     body: [
       'Editors change records freely and every change saves. The public page shows what a manager or administrator last published.',
       'Review shows what changed since the last publish, one row per field. Publish and next moves on to the next project waiting.',
@@ -78,13 +78,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     slug: 'connected-organizations',
     title: 'Connected organizations',
-    paths: ['/prototypes/workspace-settings/plan'],
+    paths: [],
     body: [
       'A workspace can connect to a program and appear in it as a connected organization. It keeps its own workspace, project types and fields.',
       'A shared project is one record. The organization edits it; the program sees it live and reviews it.',
       'The program says which projects it wants and which fields and measures each must answer. Nothing is shared until the organization says yes.',
       'If sharing stops, the program keeps a frozen copy of the last published version.',
-      'Accepting connected organizations needs the Program plan. Connecting to a program works on any plan.',
     ],
   },
   {

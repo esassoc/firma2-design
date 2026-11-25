@@ -25,7 +25,6 @@ import Firma2HelpSheet from '../components/shared/firma2-help-sheet.astro';
 import Firma2RequestNotice from '../components/welcome/firma2-request-notice.astro';
 import { seedEntries } from '../data/firma2-pages';
 import { pagesNavItems, dashboardNavItems } from '../lib/custom-pages';
-import { users } from '../data/firma2-directory';
 
 interface Props {
   /** Document title. The shell's wordmark is the product name and does not change. */
@@ -95,7 +94,6 @@ const railItems = nav === 'app' ? [...items, ...dashboardNavItems(seedEntries, u
 // THE WORKSPACE MENU NAMES THE PLAN AND THE HEADCOUNT (firma2 batch D): a
 // returning administrator's first two questions about the workspace. Members
 // are people who can sign in now; invitations and suspended accounts don't count.
-const memberCount = users.filter((u) => u.status === 'Active').length;
 const searchEntries = searchIndex.map((entry) => ({ ...entry, id: withBase(entry.id) }));
 
 // THE ACCOUNT MENU: JOIN AN ORGANIZATION, THEN SIGN OUT. The shell's default
@@ -136,7 +134,7 @@ const userMenu = [
       } catch (e) { /* blocked or corrupt — the default width stands */ }
     })();
   </script>
-  <div class="firma2-app-frame" data-nav={nav} data-member-count={memberCount}>
+  <div class="firma2-app-frame" data-nav={nav}>
     <EsaAppShell
       title="ProjectFirma 2.0"
       active={active}
@@ -180,6 +178,7 @@ const userMenu = [
   import { withBase } from '../lib/base';
   import { SETTINGS_HOME } from '../data/firma2-nav';
   import { setSignedIn } from '../lib/session';
+  import { readRecentVisits, recordRecentVisit } from '../lib/recent-pages';
 
   const ROUTES: Record<string, string> = {
     // The workspace menu on the rail's wordmark emits the same event. Settings
@@ -188,7 +187,6 @@ const userMenu = [
     // Root-relative: the listener below adds the base once. (Sign out was
     // based here too, which doubled it on the deployed site.)
     join: '/prototypes/join',
-    plan: '/prototypes/workspace-settings/plan',
     'sign-out': '/prototypes/sign-in',
   };
 
@@ -204,6 +202,36 @@ const userMenu = [
     if (action === 'sign-out') setSignedIn(false);
     const route = ROUTES[action];
     if (route) window.location.href = withBase(route);
+  });
+
+  // RECENT, IN THE GLOBAL SEARCH (user, 2026-11-24). Every app page is
+  // recorded in this browser's history (src/lib/recent-pages.ts), and the
+  // omnibox — esa-entity-search, which shows its `recent` list when the query
+  // is empty — opens on the last pages you had, the current one left out.
+  // Each visit borrows its subtitle and scope from the search index when the
+  // page is in it, so a recent project reads exactly as it does in results.
+  // Assigned after define: a property set before the upgrade would shadow the
+  // lego's accessor for good.
+  recordRecentVisit();
+  customElements.whenDefined('esa-entity-search').then(() => {
+    type Entity = { id: string; title: string; subtitle?: string; scope?: string; url?: string };
+    const here = location.pathname + location.search;
+    document.querySelectorAll<HTMLElement & { entities: Entity[]; recent: Entity[] }>('esa-entity-search').forEach((panel) => {
+      const fill = () => {
+        const byUrl = new Map((panel.entities ?? []).map((e) => [e.url, e]));
+        panel.recent = readRecentVisits()
+          .filter((v) => v.href !== here)
+          .slice(0, 6)
+          .map((v, i) => {
+            const known = byUrl.get(v.href);
+            return known ? { ...known, id: `recent-${i}` } : { id: `recent-${i}`, title: v.title, url: v.href };
+          });
+      };
+      // The shell sets `entities` in its own island script; fill now and again
+      // on open, so the subtitles land whichever script ran first.
+      fill();
+      panel.addEventListener('focusin', fill, { once: true });
+    });
   });
 
   // G THEN S OPENS SETTINGS — the two-key "go to" convention Linear and GitHub
@@ -238,7 +266,6 @@ const userMenu = [
 <script>
   // Staggers bcn-progress-ring's draw-in across every ring on the page.
   import '../lib/ring-stagger';
-  import { PLAN_NAME, readPlan } from '../lib/workspace-plan';
   import { ICON_PATHS } from '@esa/ecology/icon-registry';
   // Registers <bcn-edge-handle>, the grip mountRailEdgeHandle appends to the
   // rail's edge below. A side-effect import: the module defines a custom element
@@ -506,11 +533,7 @@ const userMenu = [
     // needs it full-width; there is no hook, so the same adopted-sheet move as
     // stackRailHead below.
     customElements.whenDefined('esa-dropdown-menu').then(() => {
-      // The plan and headcount close the menu, after a divider, and open Plan and
-      // usage. Last rather than first: the G S shortcut is drawn on the first item.
-      const members = Number(document.querySelector<HTMLElement>('.firma2-app-frame')?.dataset.memberCount ?? 0);
-      const about = `${PLAN_NAME[readPlan()]} plan · ${members} ${members === 1 ? 'member' : 'members'}`;
-      (menu as HTMLElement & { items: unknown }).items = [...WORKSPACE_MENU, { label: '', divider: true }, { label: about, action: 'plan' }];
+      (menu as HTMLElement & { items: unknown }).items = WORKSPACE_MENU;
       requestAnimationFrame(() => {
         const root = menu.shadowRoot;
         if (!root) return;

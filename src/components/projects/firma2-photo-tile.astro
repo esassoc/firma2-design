@@ -1,0 +1,205 @@
+---
+// firma2-photo-tile — one photo in the project gallery: a 4:3 frame with its
+// controls, then the caption and what the record knows about the shot (stage,
+// photo point, Featured, whether the public sees it).
+//
+// ONE MARKUP, TWO USES. firma2-project-gallery renders a tile per seeded photo
+// at build time, and renders one more inside a <template> that its script
+// clones for a photo added in the browser — the .astro legos (EsaButton,
+// EsaBadge) cannot be built at runtime, so the template is how a runtime tile
+// gets them. Everything the script repaints carries a data- hook.
+//
+// bcn-lego-checked: every control is a lego (EsaButton iconOnly, EsaBadge).
+// The <figure> and its frame are the gallery's idiom, unchanged from before
+// the metadata arrived; no esa- lego is an image tile (catalog walked
+// 2026-11-24). Beacon is not cloned on this machine. This file is the
+// gallery's tile and its only home.
+import EsaButton from '@esa/ecology/esa-button.astro';
+import EsaBadge from '@esa/ecology/esa-badge.astro';
+
+interface Props {
+  id: string;
+  /** Position in the gallery, for the controls that open the viewer. */
+  index: number;
+  src: string;
+  caption: string;
+  alt: string;
+  date: string;
+  stageLabel: string;
+  point?: string;
+  /** Visitors cannot edit: no star, no Edit, no grip. */
+  readonly: boolean;
+  /** The tile's controls need a project to act on. A peek has none. */
+  editable: boolean;
+}
+
+const { id, index, src, caption, alt, date, stageLabel, point, readonly, editable } = Astro.props;
+---
+<li data-photo-id={id} data-sort-key={id} data-sort-label={caption || 'Photo'}>
+  <figure class="firma2-photo-tile">
+    <div class="firma2-photo-tile__frame">
+      {/* alt describes what is visible; the figcaption says what the work is.
+          Empty until someone writes one, because an alt that repeats the
+          caption makes a screen reader say it twice. */}
+      <img
+        class="firma2-photo-tile__image"
+        data-no-lightbox
+        data-photo-image
+        src={src}
+        alt={alt}
+        width="640"
+        height="480"
+        loading="lazy"
+        decoding="async"
+      />
+      {/* The affordances are hidden at rest and raised by hover or keyboard
+          focus, and always shown where hover does not exist: an invisible tap
+          target is a control nobody was told about. */}
+      <EsaButton
+        class="firma2-photo-tile__expand"
+        variant="secondary"
+        size="sm"
+        iconOnly
+        icon="expand"
+        label={`View photo: ${caption}`}
+        data-lightbox-open={String(index)}
+        data-photo-expand
+      />
+      {!readonly && editable && (
+        <span class="firma2-photo-tile__feature" data-feature-wrap hidden>
+          <EsaButton variant="secondary" size="sm" iconOnly icon="star" label={`Make featured: ${caption}`} data-feature data-edit-only data-photo-feature />
+        </span>
+      )}
+      {!readonly && editable && (
+        <span class="firma2-photo-tile__edit">
+          <EsaButton variant="secondary" size="sm" iconOnly icon="pencil" label={`Edit details: ${caption}`} data-photo-edit data-edit-only />
+        </span>
+      )}
+      {!readonly && editable && <span class="firma2-photo-tile__grip" data-sort-grip-slot></span>}
+    </div>
+    <figcaption class="firma2-photo-tile__caption">
+      <span class="typography-body-sm" data-photo-caption>{caption}</span>
+      <span class="firma2-photo-tile__meta typography-meta" data-photo-meta>
+        <span data-photo-stage>{stageLabel}</span>
+        <span aria-hidden="true" data-photo-sep hidden={!date}>·</span>
+        <span data-photo-date>{date}</span>
+      </span>
+      <span class="firma2-photo-tile__point typography-meta" data-photo-point hidden={!point}>{point}</span>
+      {!readonly && (
+        <span class="cluster" data-gap="xs" data-align="center">
+          <span data-featured-badge hidden><EsaBadge variant="secondary" value="Featured" size="sm" /></span>
+          <span data-internal-badge hidden><EsaBadge variant="secondary" value="Not public" size="sm" /></span>
+        </span>
+      )}
+    </figcaption>
+  </figure>
+</li>
+
+<style>
+  .firma2-photo-tile {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-200, 0.5rem);
+  }
+
+  /* The controls' positioning context. The frame takes its size from the
+     image, so the tile's geometry is what it was before any control existed. */
+  .firma2-photo-tile__frame {
+    position: relative;
+  }
+
+  /* One aspect for every frame: a gallery scans as a gallery because the
+     frames agree. aspect-ratio holds the box before the image arrives. */
+  .firma2-photo-tile__image {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border: var(--border-width-default, 1px) solid var(--color-border-default-subtle, #e3e5e2);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-background-elevation-sunken, #f4f5f4);
+    cursor: zoom-in;
+  }
+
+  .firma2-photo-tile__caption {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-050, 0.125rem);
+    color: var(--color-content-default, #1d211c);
+  }
+
+  .firma2-photo-tile__meta,
+  .firma2-photo-tile__point {
+    color: var(--color-content-default-secondary, #60655f);
+  }
+  .firma2-photo-tile__meta {
+    display: flex;
+    gap: var(--spacing-100, 0.25rem);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Four corners, four jobs: expand top-right, star top-left, edit bottom-right,
+     the grip bottom-left (placed by bcn-sortable-list). All hidden at rest. */
+  .firma2-photo-tile__frame :global(.firma2-photo-tile__expand),
+  .firma2-photo-tile__feature,
+  .firma2-photo-tile__edit,
+  .firma2-photo-tile__grip {
+    position: absolute;
+    opacity: 0;
+    transition-property: opacity;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+  .firma2-photo-tile__frame :global(.firma2-photo-tile__expand) {
+    inset-block-start: var(--spacing-200, 0.5rem);
+    inset-inline-end: var(--spacing-200, 0.5rem);
+  }
+  .firma2-photo-tile__feature {
+    inset-block-start: var(--spacing-200, 0.5rem);
+    inset-inline-start: var(--spacing-200, 0.5rem);
+  }
+  .firma2-photo-tile__edit {
+    inset-block-end: var(--spacing-200, 0.5rem);
+    inset-inline-end: var(--spacing-200, 0.5rem);
+  }
+  .firma2-photo-tile__grip {
+    inset-block-end: var(--spacing-200, 0.5rem);
+    inset-inline-start: var(--spacing-200, 0.5rem);
+  }
+
+  .firma2-photo-tile__frame :global(.firma2-photo-tile__expand:focus-within),
+  .firma2-photo-tile__feature:focus-within,
+  .firma2-photo-tile__edit:focus-within,
+  .firma2-photo-tile__grip:focus-within {
+    opacity: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .firma2-photo-tile__frame:hover :global(.firma2-photo-tile__expand),
+    .firma2-photo-tile__frame:hover .firma2-photo-tile__feature,
+    .firma2-photo-tile__frame:hover .firma2-photo-tile__edit,
+    .firma2-photo-tile__frame:hover .firma2-photo-tile__grip {
+      opacity: 1;
+    }
+  }
+  @media (hover: none) {
+    .firma2-photo-tile__frame :global(.firma2-photo-tile__expand),
+    .firma2-photo-tile__feature,
+    .firma2-photo-tile__edit,
+    .firma2-photo-tile__grip {
+      opacity: 1;
+    }
+  }
+
+  /* The photo opens the viewer too, so it is the primary target; the controls
+     sit over it. [hidden] must win over the display rules above. */
+  .firma2-photo-tile [hidden] {
+    display: none !important;
+  }
+
+  /* Decorative layers never steal the click from the photo. */
+  .firma2-photo-tile__grip:empty {
+    pointer-events: none;
+  }
+</style>

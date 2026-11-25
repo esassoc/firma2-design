@@ -3,40 +3,39 @@
 Type: enabler
 Epic: B — What a report can change
 Release: later
-Status: needs-info
+Status: needs-triage
+Built on proposals awaiting validation: Q-33, Q-61, Q-66, Q-98, Q-149, Q-150
 Revision: 1
 Blocked by: 02, 07, 14, 15, 19
-Covers: RUL-78, RUL-216, RUL-217, RUL-218, RUL-219, RUL-220, RUL-221
+Covers: RUL-78, RUL-216, RUL-219, RUL-220, RUL-221
 Sources: `/prototypes/projects/deer-creek-riparian-corridor-enhancement/import-report` (developer-machine reader only); no spec decision; interview 2026-11-23, Q-62
 Snapshot: not yet captured
 Read with: `../epics/E-B-what-a-report-can-change.md` · `../standing-requirements.md` · `../terms.md` · `../fixtures.md`
 Look up IDs in: `../inventory.md` (RUL) · `../../../open-questions.md` (Q-n)
 
-Can start: nothing in the first release; this enabler is `later`. When it is taken up: R1 to R7, once enabler 02 exists and stories 07, 14, 15 and 19 are built (the breakdown choices, the flagged change, Key facts changes and "Not used" are theirs, used here). Every requirement here is what the developer-machine reader does, confirmed as a requirement for a later release and not otherwise written down. Waiting: the parts marked "Not decided" or "open", each on the question named beside it.
+Can start: nothing in the first release; this enabler is `later`. When it is taken up: R1 to R4, once enabler 02 exists and stories 07, 14, 15 and 19 are built (the flagged change, Key facts changes and "Not used" are theirs, used here). Waiting: a recorded model answer that trips these checks, which is to be made (see Verification). Nothing waits on a question.
+
+Renumbered on 2026-11-23, when three checks moved to the first release. Old to new: R1 is R1; R2 left (stories 07, 14 and 30); R3 left (story 07); R4 is R2; R5 left (story 15); R6 is R3; R7 is R4.
 
 ## Capability
 
-This enabler adds checks in code to the reading (enabler 02). What goes in: what the model returned for one document, and what the project can take (its performance measures, their breakdown questions and options, its closed reporting periods, and the Key facts fields offered with their formats). What comes back: the same reading with whatever does not fit the project removed, moved to "Not used", or flagged. It unblocks nothing in the first release, which relies on the person checking each change (Q-62); once built, stories 14, 15 and 19 receive readings that have passed these checks. Split from enabler 26 on 2026-11-23, which keeps the checks on units.
+This enabler adds checks in code to the reading (enabler 02). What goes in: what the model returned for one document, and what the project can take (its performance measures and the Key facts fields it offered). What comes back: the same reading with whatever does not fit the project moved to "Not used", or flagged. It unblocks nothing in the first release; once built, stories 14, 15 and 19 receive readings that have passed these checks. The checks on units are enabler 26.
 
 ## Description
 
-The reading has a model read the document and map it to the project (enabler 02). A model can return something the project cannot hold: a measure it is not asked, a year it has no reporting period for, an answer that is not an option. This enabler is the code that catches those before the person sees any change. The checks exist only in the developer-machine reader, and were confirmed as requirements for a later release (Q-62).
+The reading has a model read the document and map it to the project (enabler 02). A model can return something the project cannot hold. The first release already catches three such cases on the check step, in code, and this enabler does not repeat them: a reporting period the project does not offer, a breakdown answer that is not an option, and a Key facts value that does not fit its field (see Needs to know). What is left for later is here: a measure the project is not asked, a Key facts field the project did not offer, and a figure the model itself is not confident of. These checks exist only in the developer-machine reader, and were confirmed as requirements for a later release (Q-62).
 
 ## Requirements
 
-R1. A figure the model returns for a performance measure the project is not asked is not proposed as a change. It is added to "Not used", after the lines the model listed there, as "`<figure>` `<unit as the document writes it>`: `<the words read>`". A measure is the project's when the model's name for it is the measure's name, or differs only in case, in characters that are not letters, or in a final s.
+R1. A figure the model returns for a performance measure the project is not asked is not proposed as a change. It is listed under "Not used", after the items the model listed there, in the report's own words and with the reason that no performance measure asks for it, as story 19 words that reason. A measure is the project's when the model's name for it is the measure's name, or differs only in case, in characters that are not letters, or in a final s.
 
-R2. A figure the model files under a year that is not one of the project's closed reporting periods is proposed under the latest closed reporting period, and "`<year>` is not a reporting period on this project, so this is under `<latest>`." is added after any note the reading gave. A change the reading called a match is then flagged as a change with two readings is (story 14, R4), its amount kept; one the reading had already flagged keeps its flag and gets the note too. Not decided: a project with no closed reporting period (Q-43).
+R2. A Key facts change is proposed only for a field the project offered to the reading. One for any other field is not dropped: it is listed under "Not used", after the reading's own items, as "`<Field>`: `<value>`. This project has no `<Field>` field."
 
-R3. A breakdown answer the model returns is kept only when it names one of the measure's breakdown questions and one of that question's options, each letter for letter. Otherwise the change arrives with that question unanswered; it is not flagged for this. Not decided: whether the person is told that an answer was dropped (Q-149).
+R3. A change the model is not confident of does not arrive ticked, and the person is told why. The confidence is internal to the reading: no level is shown to the person and none is stored on a change.
+- A performance measure figure the reading otherwise settled arrives flagged as story 14 has it: unticked, "Needs you", with the note "The reading wasn't sure of this figure. Check it against the document." Its amount is empty, as for any figure that is not settled; the figure is in the quote.
+- A Key facts change, which has nothing to fill, arrives unticked with "Needs you", its value shown, and the same note with "value" in place of "figure". The person ticks it or leaves it out.
 
-R4. A Key facts change is proposed only for a field the project offered to the reading. One for any other field is dropped. Not decided: whether it is listed under "Not used" instead (Q-150).
-
-R5. A Timeline is proposed only when it is two years, each from 1900 to 2099; otherwise it is dropped, as in R4. No other field's value is checked. Not decided: a first year later than the second, and the check for every other kind of field (Q-71).
-
-R6. A change the model marks as low-confidence does not arrive ticked: a performance measure change the reading called a match, or a Key facts change, is flagged: it arrives unticked with its value kept, as a figure with two readings does (story 14, R4), and no note says why. No confidence is shown to the person. Not decided: whether the reading keeps a confidence at all (Q-66), and what tells the person why such a change waits (Q-149).
-
-R7. Each check runs on every change, with the unit checks of enabler 26. A change that trips several is flagged once and carries every note, in this order: the reading's own, the unit's (once enabler 26 is built), the reporting period's. A change that counts something else (story 14, R3) stays so whatever else applies.
+R4. Each check runs on every change, with the unit checks of enabler 26. A change that trips several is flagged once, carries one badge and shows every sentence, in this order: the reading's own, the unit's (once enabler 26 is built), the low-confidence note. A change the reading did not settle stays so whatever else applies.
 
 Standing requirements apply: see `../standing-requirements.md`.
 
@@ -45,99 +44,96 @@ Standing requirements apply: see `../standing-requirements.md`.
 - A figure in another unit: converting it, or flagging it — enabler 26.
 - The model reading and mapping the document, and what passes to and from it — enabler 02.
 - What the person sees and does with a flagged change — story 14.
-- The "Not used" list — story 19.
+- The "Not used" list and its fixed set of reasons — story 19.
 - Which Key facts fields a project offers — story 15.
 
 ## Needs to know from elsewhere
 
-- The reading is handed the project's performance measures with their breakdown questions and options, its closed reporting periods, and each Key facts field offered with its format; it returns proposed changes, "Not used" lines and "Skipped" lines — owned by enabler 02.
-- An entry can be filed only under a closed reporting period — owned by `performance-measures`; story 07 holds the rule on the check step, and that a breakdown question may arrive unanswered for the person to set or leave (R3, R5).
-- A change is ready or flagged; a ready change arrives ticked and a flagged one unticked — owned by stories 06 and 14. A change with two readings arrives with one reading in its amount; one that counts something else arrives with its amount empty — story 14 (R3, R4).
-- What the document says that the import did not use is listed under "Not used", one line each — owned by story 19. Its fixture line "Watershed: South Fork American River. This project has no Watershed field." is the model's own line, not this enabler's.
-- A figure in another unit is converted or flagged, and its note comes before the reporting period's — owned by enabler 26 (R7, R8).
+Three checks that were this enabler's are in the first release, each made in code on the check step. This enabler no longer states them:
+
+- A reporting period the project does not offer: the change arrives with "Reporting period" empty (story 07, R3), flagged and unticked with its amount kept (story 14, R10), and cannot be added until a period is picked (story 30, R2). It is never filed under the latest period, which is what the developer-machine reader did.
+- A breakdown answer that is not one of the question's options: the question arrives unanswered, with the note "The report says “`<answer>`”, which is not an option."; the change stays ready (story 07, R5).
+- A Key facts value that does not fit its field, a one-year Timeline among them: it is never proposed and is listed under "Not used" with its reason (story 15; the reasons are story 19's).
+
+Also:
+
+- The reading is handed the project's performance measures with their breakdown questions and options, its closed reporting periods, and each Key facts field offered; it returns proposed changes, "Not used" items and "Skipped" items — enabler 02.
+- A change is ready or flagged; a flagged change carries the one badge "Needs you" and arrives unticked; a figure that is not settled arrives with its amount empty — stories 06 and 14 (R2 to R5).
+- A Key facts change can be ticked or left out, not edited — story 07 (R6) and story 15.
+- "Not used" lists each item in the report's words with a reason worded by the product, a line shown once however often it is returned — story 19 (R1, R2). The sample line "Watershed: South Fork American River. This project has no Watershed field." is the reading's own item; R2 writes the same form for a field the model proposed as a change.
+- A figure in another unit is converted or flagged, and its sentence comes before the low-confidence note — enabler 26 (R7, R8).
 
 ## Scenarios
 
-No recorded reading in `../fixtures.md` shows these checks: each recording is a reading that already fits Deer Creek. Each scenario describes what the model returns by kind, against Deer Creek as the fixture has it.
+No recorded sample in `../fixtures.md` shows these checks: each recording is a reading that already fits Deer Creek. Each scenario describes what the model returns by kind, against Deer Creek as the fixture has it.
 
 **S1 — A measure the project is not asked** (proves R1)
 - Given the model returns a figure for a performance measure that is not one of Deer Creek's seven
 - When the reading comes back
-- Then no change is proposed for it, and "Not used" ends with a line made of the figure, its unit as written, a colon and the words read
+- Then no change is proposed for it, and "Not used" lists it after the reading's own items, in the report's words, with the reason that no performance measure asks for it
 
-**S2 — A year that is not a reporting period** (proves R2)
-- Given Deer Creek's closed reporting periods are 2025, 2024 and 2023, and the model files a figure under 2021
+**S2 — A field the project did not offer** (proves R2)
+- Given Deer Creek has no Watershed field, and the model returns a Key facts change for Watershed with the value South Fork American River
 - When the reading comes back
-- Then the change is under 2025 and flagged, its amount holds the figure, and its note reads "2021 is not a reporting period on this project, so this is under 2025."
+- Then no change is proposed for Watershed, and "Not used" ends with "Watershed: South Fork American River. This project has no Watershed field."
 
-**S3 — A breakdown answer that is not an option** (proves R3)
-- Given "Riparian treatment" offers Planting, Invasive removal and Natural recruitment, and the model answers it with a word that is none of the three
+**S3 — A figure the model is not confident of** (proves R3)
+- Given the model returns a settled figure for one of Deer Creek's measures and marks it low-confidence
 - When the reading comes back
-- Then the change for "Acres of riparian habitat restored" arrives with "Riparian treatment" unanswered, and it is ready
+- Then that change is unticked with "Needs you", its amount is empty, it reads "The reading wasn't sure of this figure. Check it against the document.", and nothing on it shows a level of confidence
 
-**S4 — A field the project did not offer** (proves R4)
-- Given Deer Creek has no Watershed field, and the model returns a Key facts change for Watershed
+**S4 — A Key facts value the model is not confident of** (proves R3)
+- Given the model returns a County for Deer Creek that differs from the record's and marks it low-confidence
 - When the reading comes back
-- Then no change is proposed for Watershed, and this check adds no line to "Not used"
+- Then the change is unticked with "Needs you", shows its value, and carries the low-confidence note
 
-**S5 — A value in the wrong format** (proves R5)
-- Given the Timeline is two years, and the model returns a Timeline that is one year
+**S5 — A change that trips more than one check** (proves R4)
+- Given the model returns a figure it did not settle, with a reason of its own, and also marks it low-confidence
 - When the reading comes back
-- Then no change is proposed for the Timeline
-
-**S6 — A low-confidence figure** (proves R6)
-- Given the model calls one figure a match and marks it low-confidence
-- When the reading comes back
-- Then that change is flagged and not ticked, its amount holds the figure, and nothing on it shows a confidence
-
-**S7 — A flagged change that also trips a check** (proves R7)
-- Given the model returns a figure it says supports two readings, with a note of its own, and files it under 2021
-- When the reading comes back
-- Then the change is under 2025 and flagged once, and its note is the model's own followed by "2021 is not a reporting period on this project, so this is under 2025."
+- Then the change is flagged once, with one badge, and shows the reading's reason followed by the low-confidence note
 
 ## Verification
 
-Not runnable yet: no fixture holds a model answer with these cases. The steps are written against one made for the purpose, described under Test data, and stop at the cases a screen can show.
+Not runnable yet: no sample holds a model answer with these cases. One is to be made when this enabler is taken up, as described under Test data. The steps stop at the cases a screen can show.
 
-Preconditions: this enabler and enabler 02 are built; stories 07, 14, 15 and 19 are built, and with them 01, 04 and 06, so the check step shows the changes, their ticks, the reporting period, the flags and "Not used". Signed in as someone who can edit Deer Creek, which is in its starting state.
-Test data: a recorded model answer for one document, holding: a figure for a measure Deer Creek is not asked; a figure filed under 2021; an answer to "Riparian treatment" that is not one of its options. `../fixtures.md` has none, so one is made for the purpose.
-Reset: none needed if you leave by the breadcrumb without adding. Otherwise not known (Q-88).
+Preconditions: this enabler and enabler 02 are built; stories 07, 14, 15 and 19 are built, and with them 01, 04 and 06, so the check step shows the changes, their ticks, the badge and "Not used". Signed in as someone who can edit Deer Creek, which is in its starting state. The test environment serves the model answer described below, before these checks are applied.
+Test data: a recorded model answer for one document (to be made), holding: a figure for a measure Deer Creek is not asked; a Key facts change for a field Deer Creek does not have; a settled figure for one of Deer Creek's measures marked low-confidence.
+Reset: none needed if you leave by the breadcrumb without adding. Otherwise reset the sample project in the test environment.
 
 | # | Do this | You should see |
 |---|---|---|
 | 1 | On Deer Creek, open Import a report, choose the document and press "Read it" | The check step |
-| 2 | Look for a change for the measure Deer Creek is not asked | None; "Not used" lists the figure |
-| 3 | Find the change whose figure was filed under 2021 | Its reporting period is 2025; it is flagged and not ticked, with the note "2021 is not a reporting period on this project, so this is under 2025." |
-| 4 | Find the change for "Acres of riparian habitat restored" | "Riparian treatment" has no answer chosen |
+| 2 | Look for a change for the measure Deer Creek is not asked | None; "Not used" lists the figure with the reason that no performance measure asks for it |
+| 3 | Look for a change for the field Deer Creek does not have | None; "Not used" ends with a line naming the field, its value, and "This project has no `<Field>` field." |
+| 4 | Find the change whose figure was marked low-confidence | Unticked, "Needs you", an empty amount, and "The reading wasn't sure of this figure. Check it against the document." |
 
 ## Open questions
 
-- Q-43 — R2: with no closed reporting period there is no "latest" to file under; the answer says what the check does then.
-- Q-61 — R2, R6 and R7: if the flagged states become one, whether a kept amount and an empty one both survive.
-- Q-66 — R6 and S6: if the reading keeps no confidence, R6 goes.
-- Q-71 — R5 and S5: what the first release does with a value that does not fit its field may decide whether this check drops the change, as stated, or flags it; and which fields beside the Timeline are checked.
-- Q-88 — the Reset line, and how a recorded model answer is served.
-- Q-149 — would change R3 and R6: each would add a note to the change, and R3 might flag it.
-- Q-150 — would change R4, R5, S4 and S5: a Key facts change turned away would become a "Not used" line.
+None open. The enabler rests on these proposed answers:
+
+- Q-98 (proposed) — R1: the item is in the report's words and the reason is one of story 19's fixed set, worded by the product.
+- Q-150 (proposed) — R2: a field the project did not offer is listed under "Not used", not dropped.
+- Q-149 (proposed) — R3: the low-confidence note.
+- Q-66 (proposed) — R3: confidence is internal, never shown or stored.
+- Q-33 (proposed) — R3: a figure that is not settled arrives with its amount empty, a low-confidence one included.
+- Q-61 (proposed) — R3, R4: the one badge, "Needs you".
+
+Three more proposals took checks out of this enabler: Q-114 (the reporting period), Q-115 (the breakdown answer), Q-71 with Q-125 (a Key facts value that does not fit). If the user disagrees with one, its check comes back here.
 
 <details>
 <summary>Notes for whoever builds it</summary>
 
 | Requirement | Tag | Inventory IDs |
 |---|---|---|
-| R1 | shown, developer-machine reader only | RUL-78, RUL-216 |
-| R2 | shown, developer-machine reader only | RUL-78, RUL-217 |
-| R3 | shown, developer-machine reader only | RUL-78, RUL-218 |
-| R4 | shown, developer-machine reader only | RUL-78; RUL-219 |
-| R5 | shown, developer-machine reader only | RUL-78, RUL-219 |
-| R6 | shown, developer-machine reader only | RUL-78, RUL-220 |
-| R7 | shown, developer-machine reader only | RUL-221 |
+| R1 | shown, developer-machine reader only; proposed (Q-98) | RUL-78, RUL-216 (reworded: the line is the report's words and a fixed reason) |
+| R2 | proposed (Q-150) | RUL-78; RUL-219 (reworded: listed under "Not used"; the Timeline half left for story 15) |
+| R3 | shown, developer-machine reader only; proposed (Q-149, Q-66, Q-33, Q-61) | RUL-78, RUL-220 (reworded: the note; the amount is empty) |
+| R4 | shown, developer-machine reader only; proposed (Q-61) | RUL-221 (reworded: no reporting period note) |
+The checks of RUL-78 were confirmed as requirements for a later release (interview 2026-11-23, Q-62); three of them were then brought into the first release by Q-71, Q-114 and Q-115.
 
-The six of RUL-78 were confirmed as requirements for a later release (interview 2026-11-23, Q-62).
-
-- Prototype files: `scripts/report-reader.mjs` (a measure not asked, 365-367; the order of the checks and their notes, 372-391; breakdown answers, 395-399; Key facts fields and the Timeline's format, 419-435; how two names are compared, 169-174 and 337; runs on a developer's machine only).
-- Data shapes, as the prototype models them: for each proposed figure the model returns the measure by name, the year, breakdown answers, a verdict (match, needs a decision, no match) and a confidence; for each Key facts change, the field and the value.
-- What the reader does where nothing is decided (not requirements): with no closed reporting period the "latest" is not a year at all (Q-43); a dropped breakdown answer and a low-confidence flag leave no trace (Q-149); a Key facts change for a field not offered vanishes, while the funder report sample lists one under "Not used" in the model's words (Q-150). The reader also sorts the changes, ready first, then two readings, then counts something else (lines 441-443): that is the order of the reading, enabler 02 and Q-67, not a check.
-- Do not copy: the developer-machine reader itself, which calls a model through one person's local login; the "Check this" and "Unsure" badges the prototype draws from a confidence (struck, Q-25).
+- Left this enabler's Covers: RUL-217 (the reporting period; reversed by Q-114) and RUL-218 (the breakdown answer; now story 07).
+- Prototype files: `scripts/report-reader.mjs` (a measure not asked, 365-367; the order of the checks and their notes, 372-391; Key facts fields, 419-435; how two names are compared, 169-174 and 337; runs on a developer's machine only).
+- Data shapes, as the prototype models them: for each proposed figure the model returns the measure by name, the year, breakdown answers, a verdict and a confidence; for each Key facts change, the field and the value.
+- Do not copy: the developer-machine reader itself, which calls a model through one person's local login; a figure for a year the project does not offer filed under the latest period; a Key facts change for a field not offered vanishing without a line; a low-confidence flag that leaves no trace and keeps its figure in the amount; the "Check this" and "Unsure" badges the prototype draws from a confidence (struck, Q-25).
 
 </details>

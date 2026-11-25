@@ -7,7 +7,7 @@
 //     performance measures, and also project counts, money, mapped work
 //     areas, reporting, and the number custom fields.
 //   - DIMENSIONS (Dataset.dimensions): every way to split or filter them —
-//     the project's own attributes, its classifications by group, tags,
+//     the project's own attributes, its classifications by group,
 //     funders, years, and the choice custom fields.
 // A tile is one figure, shown as one number, as bars by a dimension, or over
 // time. compute() decides what is LEGAL to draw:

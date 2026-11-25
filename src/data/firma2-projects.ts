@@ -25,8 +25,8 @@
 import { realProjects } from './firma2-real-data';
 
 /**
- * THREE WAYS A PROJECT IS FILED, each answering a different question
- * (settled 2026-10-03, user-directed):
+ * TWO WAYS A PROJECT IS FILED, each answering a different question
+ * (settled 2026-10-03, user-directed; Tags, the third, removed 2026-11-24):
  *
  *   Project type     ONE per project. What kind of work it is, and so what
  *                    its page asks and shows (fields + section layout — see
@@ -35,9 +35,6 @@ import { realProjects } from './firma2-real-data';
  *                    like a species) the project works toward. They carry KPIs
  *                    — the catalog measures that track progress against them
  *                    (src/data/firma2-classifications.ts).
- *   Tags             ANY NUMBER, possibly none. Functional labels with no KPIs
- *                    — "is this an education and outreach project?"
- *                    (src/data/firma2-tags.ts).
  *
  * Union types rather than `string`, for the same reason AUTHORED keys are
  * checked against project names: a misspelled value would silently split a
@@ -51,14 +48,6 @@ export type ProjectTypeName =
   | 'Meadow & wetland restoration'
   | 'Aquatic habitat restoration'
   | 'Stormwater & water quality';
-
-export type TagName =
-  | 'Education & outreach'
-  | 'Volunteer-led'
-  | 'Tribal partnership'
-  | 'Private landowners'
-  | 'Climate adaptation'
-  | 'Post-fire recovery';
 
 export type ClassificationName =
   | 'Salmon & steelhead recovery'
@@ -125,8 +114,6 @@ export interface Project {
    * classification's KPIs, where it has any.
    */
   classifications: ClassificationName[];
-  /** Functional labels. May be empty. */
-  tags: TagName[];
   leadOrganization: string;
   county: string;
   stage: ProjectStage;
@@ -158,30 +145,30 @@ export interface Project {
 }
 
 const MOCK_PROJECTS: Project[] = [
-  { projectName: 'Deer Creek Riparian Corridor Enhancement', projectType: 'Riparian revegetation', classifications: ['Salmon & steelhead recovery', 'Riparian & wetland habitat', 'Native planting'], tags: ['Volunteer-led', 'Private landowners', 'Education & outreach'], leadOrganization: 'Deer Creek Watershed Alliance', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2023, completionYear: 2027, estimatedTotalCost: 412000, estimatedAnnualOperatingCost: 18000 },
-  { projectName: 'Scott River Fish Passage Barrier Removal', projectType: 'Fish passage', classifications: ['Salmon & steelhead recovery', 'Barrier removal & fish screens'], tags: ['Private landowners'], leadOrganization: 'Scott Valley Resource District', county: 'Placer', stage: 'Planning & Design', implementationStartYear: 2025, completionYear: 2028, estimatedTotalCost: 1240000, estimatedAnnualOperatingCost: 6500 },
-  { projectName: 'Suisun Slough Tidal Marsh Enhancement', projectType: 'Meadow & wetland restoration', classifications: ['Riparian & wetland habitat', 'Flood risk reduction', 'Meadow & marsh rewetting'], tags: ['Climate adaptation'], leadOrganization: 'Suisun Basin Conservancy', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2022, completionYear: 2026, estimatedTotalCost: 876500, estimatedAnnualOperatingCost: 41000 },
-  { projectName: 'Red Clover Valley Meadow Reconnection', projectType: 'Meadow & wetland restoration', classifications: ['Water supply reliability', 'Riparian & wetland habitat', 'Meadow & marsh rewetting'], tags: ['Tribal partnership', 'Climate adaptation'], leadOrganization: 'Feather Headwaters Trust', county: 'Alpine', stage: 'Completed', implementationStartYear: 2018, completionYear: 2023, estimatedTotalCost: 305000, estimatedAnnualOperatingCost: 9500 },
-  { projectName: 'Cosumnes Floodplain Reconnection', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Flood risk reduction', 'Side channels & floodplains'], tags: ['Private landowners', 'Climate adaptation'], leadOrganization: 'Cosumnes Valley Conservancy', county: 'Nevada', stage: 'Proposal', implementationStartYear: 2027, completionYear: 2031, estimatedTotalCost: 2150000, estimatedAnnualOperatingCost: 62000 },
-  { projectName: 'Bear River Gravel Augmentation', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'], tags: [], leadOrganization: 'Bear River Watershed Council', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2024, completionYear: 2026, estimatedTotalCost: 528000, estimatedAnnualOperatingCost: 4000 },
-  { projectName: 'Yuba Headwaters Fuels Reduction', projectType: 'Forest health & fuels', classifications: ['Wildfire resilience', 'Water supply reliability', 'Forest thinning', 'Prescribed fire'], tags: ['Tribal partnership'], leadOrganization: 'Yuba Headwaters Partnership', county: 'Washoe', stage: 'Implementation', implementationStartYear: 2019, completionYear: 2033, estimatedTotalCost: 9640000, estimatedAnnualOperatingCost: 185000 },
-  { projectName: 'Butte Creek Canyon Fuel Break', projectType: 'Forest health & fuels', classifications: ['Wildfire resilience', 'Fuel breaks'], tags: ['Post-fire recovery', 'Education & outreach'], leadOrganization: 'Upper Butte Fire Safe Alliance', county: 'Douglas', stage: 'Post-Implementation', implementationStartYear: 2019, completionYear: 2024, estimatedTotalCost: 1690000, estimatedAnnualOperatingCost: 74000 },
-  { projectName: 'Navarro River Large Wood Placement', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'], tags: ['Tribal partnership'], leadOrganization: 'Navarro Coastal Stewardship', county: 'El Dorado', stage: 'Completed', implementationStartYear: 2020, completionYear: 2024, estimatedTotalCost: 447000, estimatedAnnualOperatingCost: 8000 },
-  { projectName: 'Salinas River Arundo Removal', projectType: 'Riparian revegetation', classifications: ['Water supply reliability', 'Riparian & wetland habitat', 'Invasive plant removal'], tags: ['Private landowners'], leadOrganization: 'Salinas Basin Water Alliance', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2022, completionYear: 2027, estimatedTotalCost: 962000, estimatedAnnualOperatingCost: 55000 },
-  { projectName: 'Alameda Creek Culvert Retrofit', projectType: 'Fish passage', classifications: ['Salmon & steelhead recovery', 'Flood risk reduction', 'Barrier removal & fish screens'], tags: ['Education & outreach'], leadOrganization: 'East Bay Stream Partners', county: 'Washoe', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2029, estimatedTotalCost: 1875000, estimatedAnnualOperatingCost: 21000 },
-  { projectName: 'Truckee River Streambank Stabilization', projectType: 'Stormwater & water quality', classifications: ['Water quality', 'Erosion & sediment control'], tags: [], leadOrganization: 'Truckee Basin Conservancy', county: 'Nevada', stage: 'Implementation', implementationStartYear: 2024, completionYear: 2027, estimatedTotalCost: 734000, estimatedAnnualOperatingCost: 16500 },
-  { projectName: 'Elk River Sediment Reduction', projectType: 'Stormwater & water quality', classifications: ['Water quality', 'Flood risk reduction', 'Erosion & sediment control'], tags: ['Private landowners'], leadOrganization: 'Humboldt Bay Watershed Trust', county: 'Placer', stage: 'Deferred', implementationStartYear: 2025, completionYear: 2029, estimatedTotalCost: 1120000, estimatedAnnualOperatingCost: 28000 },
-  { projectName: 'Carmel Valley Steelhead Habitat', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'], tags: ['Volunteer-led'], leadOrganization: 'Carmel Watershed Collaborative', county: 'Placer', stage: 'Post-Implementation', implementationStartYear: 1999, completionYear: 2023, estimatedTotalCost: 4260000, estimatedAnnualOperatingCost: 96000 },
-  { projectName: 'Owens Valley Spring Channel Restoration', projectType: 'Meadow & wetland restoration', classifications: ['Riparian & wetland habitat', 'Water supply reliability', 'Meadow & marsh rewetting', 'Groundwater recharge'], tags: ['Tribal partnership'], leadOrganization: 'Eastern Sierra Land Coalition', county: 'Placer', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2030, estimatedTotalCost: 1340000, estimatedAnnualOperatingCost: 34000 },
-  { projectName: 'Putah Creek Riparian Planting', projectType: 'Riparian revegetation', classifications: ['Riparian & wetland habitat', 'Native planting'], tags: ['Volunteer-led', 'Education & outreach'], leadOrganization: 'Lower Putah Stewardship Group', county: 'Douglas', stage: 'Completed', implementationStartYear: 2019, completionYear: 2022, estimatedTotalCost: 218000, estimatedAnnualOperatingCost: 11500 },
-  { projectName: 'San Luis Rey Arroyo Toad Habitat', projectType: 'Aquatic habitat restoration', classifications: ['Riparian & wetland habitat', 'Invasive plant removal'], tags: [], leadOrganization: 'Inland Rivers Conservancy', county: 'Douglas', stage: 'Proposal', implementationStartYear: 2027, completionYear: 2030, estimatedTotalCost: 845000, estimatedAnnualOperatingCost: 19000 },
-  { projectName: 'Klamath Tributary Thermal Refugia', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'], tags: ['Tribal partnership', 'Climate adaptation'], leadOrganization: 'Klamath Tributaries Stewardship Group', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2023, completionYear: 2028, estimatedTotalCost: 1560000, estimatedAnnualOperatingCost: 37500 },
-  { projectName: 'Mokelumne Meadow Rewetting', projectType: 'Meadow & wetland restoration', classifications: ['Water supply reliability', 'Riparian & wetland habitat', 'Meadow & marsh rewetting'], tags: ['Private landowners'], leadOrganization: 'Highland Sierra Trust', county: 'El Dorado', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2029, estimatedTotalCost: 597000, estimatedAnnualOperatingCost: 14000 },
-  { projectName: 'Pescadero Marsh Tidal Exchange', projectType: 'Meadow & wetland restoration', classifications: ['Salmon & steelhead recovery', 'Water quality', 'Meadow & marsh rewetting'], tags: ['Climate adaptation'], leadOrganization: 'Coastside Wetlands Group', county: 'El Dorado', stage: 'Deferred', implementationStartYear: 2024, completionYear: 2028, estimatedTotalCost: 2310000, estimatedAnnualOperatingCost: 68000 },
-  { projectName: 'Battle Creek Diversion Screening', projectType: 'Fish passage', classifications: ['Salmon & steelhead recovery', 'Barrier removal & fish screens'], tags: ['Private landowners'], leadOrganization: 'North Valley Fisheries Trust', county: 'Placer', stage: 'Implementation', implementationStartYear: 2022, completionYear: 2026, estimatedTotalCost: 1985000, estimatedAnnualOperatingCost: 89000 },
-  { projectName: 'Cache Creek Floodplain Terracing', projectType: 'Aquatic habitat restoration', classifications: ['Riparian & wetland habitat', 'Flood risk reduction', 'Side channels & floodplains'], tags: ['Tribal partnership'], leadOrganization: 'Capay Valley Land Council', county: 'El Dorado', stage: 'Proposal', implementationStartYear: 2028, completionYear: 2032, estimatedTotalCost: 1470000, estimatedAnnualOperatingCost: 33000 },
-  { projectName: 'Trinity River Side-Channel Construction', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Side channels & floodplains'], tags: ['Tribal partnership'], leadOrganization: 'Trinity Restoration Alliance', county: 'Carson City', stage: 'Post-Implementation', implementationStartYear: 2017, completionYear: 2022, estimatedTotalCost: 2740000, estimatedAnnualOperatingCost: 12000 },
-  { projectName: 'Arroyo Seco Urban Greenway', projectType: 'Stormwater & water quality', classifications: ['Water quality', 'Public access & recreation', 'Stormwater capture'], tags: ['Education & outreach', 'Volunteer-led'], leadOrganization: 'Central LA Watershed Coalition', county: 'Placer', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2030, estimatedTotalCost: 3120000, estimatedAnnualOperatingCost: 115000 },
+  { projectName: 'Deer Creek Riparian Corridor Enhancement', projectType: 'Riparian revegetation', classifications: ['Salmon & steelhead recovery', 'Riparian & wetland habitat', 'Native planting'], leadOrganization: 'Deer Creek Watershed Alliance', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2023, completionYear: 2027, estimatedTotalCost: 412000, estimatedAnnualOperatingCost: 18000 },
+  { projectName: 'Scott River Fish Passage Barrier Removal', projectType: 'Fish passage', classifications: ['Salmon & steelhead recovery', 'Barrier removal & fish screens'], leadOrganization: 'Scott Valley Resource District', county: 'Placer', stage: 'Planning & Design', implementationStartYear: 2025, completionYear: 2028, estimatedTotalCost: 1240000, estimatedAnnualOperatingCost: 6500 },
+  { projectName: 'Suisun Slough Tidal Marsh Enhancement', projectType: 'Meadow & wetland restoration', classifications: ['Riparian & wetland habitat', 'Flood risk reduction', 'Meadow & marsh rewetting'], leadOrganization: 'Suisun Basin Conservancy', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2022, completionYear: 2026, estimatedTotalCost: 876500, estimatedAnnualOperatingCost: 41000 },
+  { projectName: 'Red Clover Valley Meadow Reconnection', projectType: 'Meadow & wetland restoration', classifications: ['Water supply reliability', 'Riparian & wetland habitat', 'Meadow & marsh rewetting'], leadOrganization: 'Feather Headwaters Trust', county: 'Alpine', stage: 'Completed', implementationStartYear: 2018, completionYear: 2023, estimatedTotalCost: 305000, estimatedAnnualOperatingCost: 9500 },
+  { projectName: 'Cosumnes Floodplain Reconnection', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Flood risk reduction', 'Side channels & floodplains'], leadOrganization: 'Cosumnes Valley Conservancy', county: 'Nevada', stage: 'Proposal', implementationStartYear: 2027, completionYear: 2031, estimatedTotalCost: 2150000, estimatedAnnualOperatingCost: 62000 },
+  { projectName: 'Bear River Gravel Augmentation', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'], leadOrganization: 'Bear River Watershed Council', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2024, completionYear: 2026, estimatedTotalCost: 528000, estimatedAnnualOperatingCost: 4000 },
+  { projectName: 'Yuba Headwaters Fuels Reduction', projectType: 'Forest health & fuels', classifications: ['Wildfire resilience', 'Water supply reliability', 'Forest thinning', 'Prescribed fire'], leadOrganization: 'Yuba Headwaters Partnership', county: 'Washoe', stage: 'Implementation', implementationStartYear: 2019, completionYear: 2033, estimatedTotalCost: 9640000, estimatedAnnualOperatingCost: 185000 },
+  { projectName: 'Butte Creek Canyon Fuel Break', projectType: 'Forest health & fuels', classifications: ['Wildfire resilience', 'Fuel breaks'], leadOrganization: 'Upper Butte Fire Safe Alliance', county: 'Douglas', stage: 'Post-Implementation', implementationStartYear: 2019, completionYear: 2024, estimatedTotalCost: 1690000, estimatedAnnualOperatingCost: 74000 },
+  { projectName: 'Navarro River Large Wood Placement', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'], leadOrganization: 'Navarro Coastal Stewardship', county: 'El Dorado', stage: 'Completed', implementationStartYear: 2020, completionYear: 2024, estimatedTotalCost: 447000, estimatedAnnualOperatingCost: 8000 },
+  { projectName: 'Salinas River Arundo Removal', projectType: 'Riparian revegetation', classifications: ['Water supply reliability', 'Riparian & wetland habitat', 'Invasive plant removal'], leadOrganization: 'Salinas Basin Water Alliance', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2022, completionYear: 2027, estimatedTotalCost: 962000, estimatedAnnualOperatingCost: 55000 },
+  { projectName: 'Alameda Creek Culvert Retrofit', projectType: 'Fish passage', classifications: ['Salmon & steelhead recovery', 'Flood risk reduction', 'Barrier removal & fish screens'], leadOrganization: 'East Bay Stream Partners', county: 'Washoe', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2029, estimatedTotalCost: 1875000, estimatedAnnualOperatingCost: 21000 },
+  { projectName: 'Truckee River Streambank Stabilization', projectType: 'Stormwater & water quality', classifications: ['Water quality', 'Erosion & sediment control'], leadOrganization: 'Truckee Basin Conservancy', county: 'Nevada', stage: 'Implementation', implementationStartYear: 2024, completionYear: 2027, estimatedTotalCost: 734000, estimatedAnnualOperatingCost: 16500 },
+  { projectName: 'Elk River Sediment Reduction', projectType: 'Stormwater & water quality', classifications: ['Water quality', 'Flood risk reduction', 'Erosion & sediment control'], leadOrganization: 'Humboldt Bay Watershed Trust', county: 'Placer', stage: 'Deferred', implementationStartYear: 2025, completionYear: 2029, estimatedTotalCost: 1120000, estimatedAnnualOperatingCost: 28000 },
+  { projectName: 'Carmel Valley Steelhead Habitat', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'], leadOrganization: 'Carmel Watershed Collaborative', county: 'Placer', stage: 'Post-Implementation', implementationStartYear: 1999, completionYear: 2023, estimatedTotalCost: 4260000, estimatedAnnualOperatingCost: 96000 },
+  { projectName: 'Owens Valley Spring Channel Restoration', projectType: 'Meadow & wetland restoration', classifications: ['Riparian & wetland habitat', 'Water supply reliability', 'Meadow & marsh rewetting', 'Groundwater recharge'], leadOrganization: 'Eastern Sierra Land Coalition', county: 'Placer', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2030, estimatedTotalCost: 1340000, estimatedAnnualOperatingCost: 34000 },
+  { projectName: 'Putah Creek Riparian Planting', projectType: 'Riparian revegetation', classifications: ['Riparian & wetland habitat', 'Native planting'], leadOrganization: 'Lower Putah Stewardship Group', county: 'Douglas', stage: 'Completed', implementationStartYear: 2019, completionYear: 2022, estimatedTotalCost: 218000, estimatedAnnualOperatingCost: 11500 },
+  { projectName: 'San Luis Rey Arroyo Toad Habitat', projectType: 'Aquatic habitat restoration', classifications: ['Riparian & wetland habitat', 'Invasive plant removal'], leadOrganization: 'Inland Rivers Conservancy', county: 'Douglas', stage: 'Proposal', implementationStartYear: 2027, completionYear: 2030, estimatedTotalCost: 845000, estimatedAnnualOperatingCost: 19000 },
+  { projectName: 'Klamath Tributary Thermal Refugia', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Instream habitat structures'], leadOrganization: 'Klamath Tributaries Stewardship Group', county: 'El Dorado', stage: 'Implementation', implementationStartYear: 2023, completionYear: 2028, estimatedTotalCost: 1560000, estimatedAnnualOperatingCost: 37500 },
+  { projectName: 'Mokelumne Meadow Rewetting', projectType: 'Meadow & wetland restoration', classifications: ['Water supply reliability', 'Riparian & wetland habitat', 'Meadow & marsh rewetting'], leadOrganization: 'Highland Sierra Trust', county: 'El Dorado', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2029, estimatedTotalCost: 597000, estimatedAnnualOperatingCost: 14000 },
+  { projectName: 'Pescadero Marsh Tidal Exchange', projectType: 'Meadow & wetland restoration', classifications: ['Salmon & steelhead recovery', 'Water quality', 'Meadow & marsh rewetting'], leadOrganization: 'Coastside Wetlands Group', county: 'El Dorado', stage: 'Deferred', implementationStartYear: 2024, completionYear: 2028, estimatedTotalCost: 2310000, estimatedAnnualOperatingCost: 68000 },
+  { projectName: 'Battle Creek Diversion Screening', projectType: 'Fish passage', classifications: ['Salmon & steelhead recovery', 'Barrier removal & fish screens'], leadOrganization: 'North Valley Fisheries Trust', county: 'Placer', stage: 'Implementation', implementationStartYear: 2022, completionYear: 2026, estimatedTotalCost: 1985000, estimatedAnnualOperatingCost: 89000 },
+  { projectName: 'Cache Creek Floodplain Terracing', projectType: 'Aquatic habitat restoration', classifications: ['Riparian & wetland habitat', 'Flood risk reduction', 'Side channels & floodplains'], leadOrganization: 'Capay Valley Land Council', county: 'El Dorado', stage: 'Proposal', implementationStartYear: 2028, completionYear: 2032, estimatedTotalCost: 1470000, estimatedAnnualOperatingCost: 33000 },
+  { projectName: 'Trinity River Side-Channel Construction', projectType: 'Aquatic habitat restoration', classifications: ['Salmon & steelhead recovery', 'Side channels & floodplains'], leadOrganization: 'Trinity Restoration Alliance', county: 'Carson City', stage: 'Post-Implementation', implementationStartYear: 2017, completionYear: 2022, estimatedTotalCost: 2740000, estimatedAnnualOperatingCost: 12000 },
+  { projectName: 'Arroyo Seco Urban Greenway', projectType: 'Stormwater & water quality', classifications: ['Water quality', 'Public access & recreation', 'Stormwater capture'], leadOrganization: 'Central LA Watershed Coalition', county: 'Placer', stage: 'Planning & Design', implementationStartYear: 2026, completionYear: 2030, estimatedTotalCost: 3120000, estimatedAnnualOperatingCost: 115000 },
 ];
 
 export const projects: Project[] = realProjects ?? MOCK_PROJECTS;
@@ -261,7 +248,9 @@ export const classifications: ClassificationName[] = Array.from(
 ).sort();
 
 /**
- * One entry in the signed-in user's "Recently viewed" row.
+ * One entry in the signed-in user's Recently viewed list — the SEED that the
+ * Projects search shows until this browser has opened a project
+ * (firma2-recent-projects; the real list is src/lib/recent-pages.ts).
  *
  * Recency is SESSION state, not a project attribute: a project is recent for
  * one person and not for the next. Keeping it beside the portfolio rather than
@@ -302,10 +291,10 @@ const recentSeed: { projectName: string; viewedAt: string }[] = realProjects
   : RECENTLY_VIEWED;
 
 /**
- * Most recent first — the order the Recently viewed row renders. Resolved by
+ * Most recent first — the order the Recently viewed list renders. Resolved by
  * name against `projects` so the row can never drift into showing a stage,
  * organization, or cost the table disagrees with; renaming a project without
- * updating RECENTLY_VIEWED fails the build instead of silently dropping a card.
+ * updating RECENTLY_VIEWED fails the build instead of silently dropping a row.
  */
 export const recentlyViewed: RecentlyViewedProject[] = recentSeed.map(
   ({ projectName, viewedAt }) => {

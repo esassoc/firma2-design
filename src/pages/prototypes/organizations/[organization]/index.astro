@@ -1,35 +1,41 @@
 ---
-// Organization Home — one organization's front page: how much work it is in,
-// which of last year's reports did not come back, and what changed lately.
-// The first of the five pages under each of the reader's organizations in the
-// app rail (src/data/firma2-organization-pages.ts).
+// Organization — one organization's page: who it is, the work it is in, the
+// money it offers and the people in it. Opened from the Organizations list
+// for any organization the reader may see, and the Home row under each of the
+// reader's own organizations in the app rail
+// (src/data/firma2-organization-pages.ts).
 //
 // The brief's five (docs/product-brief.md §5):
 //
-// 1. ONE QUESTION: "Is our organization's work reported, and what has
-//    happened on it lately?"
-// 2. READERS: program staff at a funder or a lead organization, checking in;
-//    the executive asking whether the organization's portfolio is in hand.
-//    Hardest: the executive, who will not open a project to find out. WHO IS
-//    NOT HERE: the reporter who owes the missing value — this page names the
-//    gap; the project page is where it is filled.
-// 3. SERIES/SCALAR: the totals are scalars, stated once at the top; the
-//    missing reports and the latest updates are short lists; the map is the
-//    one picture of where the projects are, coloured led or funded.
+// 1. ONE QUESTION: "Who is this organization, and what does it do here?"
+// 2. READERS: program staff and executives looking an organization up; a
+//    partner or newcomer who followed its name from a project. Hardest: the
+//    newcomer, who has not met it — so the page opens on what it says about
+//    itself and the facts that place it, before any figure. WHO IS NOT HERE:
+//    the administrator or manager changing the record (Workspace settings).
+// 3. SERIES/SCALAR: the description, the totals and the facts are scalars, at
+//    the top; projects, funding sources and members are series, each a table;
+//    the map is the one picture of where the work is.
 // 4. IRREVERSIBLE: nothing. The page reads; every figure is derived from the
 //    project records.
-// 5. CUT: the portfolio map's controls (color-by, tags, coverage — the Map
-//    page has them; firma2-project-set-map is the canvas alone), a performance-measure
-//    roll-up (the
-//    classification pages answer it per goal), and a member list (Organization
-//    settings › Members has it).
+// 5. CUT: the portfolio map's controls on the overview (the Map tab has them),
+//    a performance-measure roll-up (the classification pages answer it per
+//    goal), and editing anything here.
+//
+// ONE PAGE, AND A MEMBER SEES TWO MORE SECTIONS (2026-11-24). It was the
+// members' Home only — four figures, the unfiled reports, a map — and said
+// nothing about who the organization was (user: "abysmal"). It is now the
+// organization's record in the order it is questioned, the shape of a funding
+// source's page: who it is, then what it is in. Which of last year's reports
+// did not come back, and the latest updates, are an organization's own
+// business: they show only to its members, with the rail's Home row marked.
+// Anyone else gets the trail back to the list and copy that never says "you".
 //
 // NO RAIL OF ITS OWN. A Connections graph (the projects the organization
 // leads or funds) held the peek's track from 2026-10-09 until the user
-// removed it from the product (2026-10-22); the summary and the map carry the
-// same projects. The peek still docks.
+// removed it from the product (2026-10-22). The peek still docks.
 //
-// TWO VIEWS, AS TABS (user, 2026-10-09): Overview is the page as it was;
+// TWO VIEWS, AS TABS (user, 2026-10-09): Overview is the record;
 // Map is the workspace Map page's map (firma2-portfolio-map) scoped to the
 // projects the organization leads or funds, with led or funded as one more
 // colour-by choice (user, 2026-10-20: "Map" must read the same everywhere —
@@ -48,7 +54,12 @@ import Firma2PortfolioMap from '../../../../components/map/firma2-portfolio-map.
 import Firma2PortfolioExport from '../../../../components/map/firma2-portfolio-export.astro';
 import { projectSlug } from '../../../../data/firma2-projects';
 import Firma2OrgUpdates from '../../../../components/organizations/firma2-org-updates.astro';
+import Firma2OrgProjects from '../../../../components/organizations/firma2-org-projects.astro';
+import Firma2OrgFundingSources from '../../../../components/organizations/firma2-org-funding-sources.astro';
+import Firma2OrgMembers from '../../../../components/organizations/firma2-org-members.astro';
+import { CURRENT_USER_ORGANIZATIONS, organizations } from '../../../../data/firma2-directory';
 import type { Organization } from '../../../../data/firma2-directory';
+import { withBase } from '../../../../lib/base';
 import {
   LAST_CLOSED_YEAR,
   coverage,
@@ -56,11 +67,13 @@ import {
   organizationPageHref,
   organizationProjects,
   organizationUpdates,
-  readerOrganizations,
 } from '../../../../data/firma2-organization-pages';
 
 export function getStaticPaths() {
-  return readerOrganizations().map((organization) => ({ params: { organization: organization.slug }, props: { organization } }));
+  // Every organization the reader may see: a private one only if they are in it.
+  return organizations
+    .filter((o) => o.visibility !== 'private' || CURRENT_USER_ORGANIZATIONS.includes(o.name))
+    .map((organization) => ({ params: { organization: organization.slug }, props: { organization } }));
 }
 
 interface Props {
@@ -68,6 +81,9 @@ interface Props {
 }
 
 const { organization } = Astro.props;
+const own = CURRENT_USER_ORGANIZATIONS.includes(organization.name);
+// An organization the reader is not in has no rail row of its own: the list it was opened from is where they are.
+const crumbs = own ? undefined : [{ label: 'Organizations', href: withBase('/prototypes/organizations') }, { label: organization.name }];
 const rows = organizationProjects(organization.name);
 const lastYear = coverage(rows.map((r) => r.project), LAST_CLOSED_YEAR);
 const ledOrFunded = Object.fromEntries(rows.map((r) => [projectSlug(r.project), r.leads ? 'Led' : 'Funded']));
@@ -79,30 +95,36 @@ const ledOrFunded = Object.fromEntries(rows.map((r) => [projectSlug(r.project), 
     - page header    -> firma2-page-header        (export action: firma2-portfolio-export)
     - views          -> firma2-page-tabs          (Overview | Map, ?view=map)
       overview:
-        - summary        -> firma2-org-summary        (projects, money, last year's reports)
-        - missing report -> firma2-org-report-gaps    (who owes what for the last closed year)
-        - map            -> firma2-project-set-map    (the organization's work areas, led vs funded)
-        - latest updates -> firma2-org-updates        (newest five, linked to Updates)
+        - summary         -> firma2-org-summary          (description; projects, money, members or last year's reports; type, website, primary contact)
+        - missing report  -> firma2-org-report-gaps      (members only: who owes what for the last closed year)
+        - projects        -> firma2-org-projects         (every project it leads or funds)
+        - funding sources -> firma2-org-funding-sources  (the sources it offers; absent when none)
+        - members         -> firma2-org-members          (who is in it, and their role there)
+        - map             -> firma2-project-set-map      (its work areas, led vs funded)
+        - latest updates  -> firma2-org-updates          (members only: newest five)
       map:
-        - map            -> firma2-portfolio-map      (the Map page's map, scoped; led or funded as a colour-by)
+        - map             -> firma2-portfolio-map        (the Map page's map, scoped; led or funded as a colour-by)
 -->
-<AppLayout title={`${organization.name} — ProjectFirma 2.0`} active={organizationNavKey(organization.slug, 'home')} width="full">
+<AppLayout title={`${organization.name} — ProjectFirma 2.0`} active={own ? organizationNavKey(organization.slug, 'home') : 'organizations'} width="full">
   <Firma2ProjectPeekLayout>
     <div class="stack" data-gap="xl">
-      <Firma2PageHeader title={organization.name}>
+      <Firma2PageHeader title={organization.name} crumbs={crumbs}>
         <Firma2PortfolioExport slot="actions" />
       </Firma2PageHeader>
       <Firma2PageTabs views={[{ key: 'overview', label: 'Overview' }, { key: 'map', label: 'Map' }]}>
         <div slot="overview" class="stack" data-gap="xl">
-          <Firma2OrgSummary rows={rows} coverage={lastYear} />
-          <Firma2OrgReportGaps coverage={lastYear} />
+          <Firma2OrgSummary organization={organization} rows={rows} coverage={lastYear} own={own} />
+          {own && <Firma2OrgReportGaps coverage={lastYear} />}
+          <Firma2OrgProjects rows={rows} name={organization.name} />
+          <Firma2OrgFundingSources name={organization.name} />
+          <Firma2OrgMembers organization={organization} />
           <Firma2ProjectSetMap
             title="Where the work is"
             label="Map of this organization's projects"
             items={rows.map((r) => ({ project: r.project, group: r.leads ? 'led' : 'funded' }))}
             groups={[{ key: 'led', label: 'Led' }, { key: 'funded', label: 'Funded' }]}
           />
-          <Firma2OrgUpdates updates={organizationUpdates(organization.name)} limit={5} allHref={organizationPageHref(organization.slug, 'updates')} />
+          {own && <Firma2OrgUpdates updates={organizationUpdates(organization.name)} limit={5} />}
         </div>
         <div slot="map">
           <Firma2PortfolioMap

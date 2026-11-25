@@ -1,0 +1,88 @@
+---
+// firma2-area-groups — every geospatial area group the workspace files
+// projects by, and how much each one holds: the layer it reads, how many areas
+// that gives, and how many projects fall in one.
+//
+// A TABLE, like every Workspace settings list. The rows are drawn in the
+// browser because both halves of each row live there: the groups themselves,
+// and the work areas and layers the counts are worked out from
+// (src/lib/geospatial-areas.ts).
+//
+// A GROUP THAT CANNOT FILE SAYS SO IN ITS ROW. Its layer may have been deleted
+// on Map layers, or may send no shapes; either way the row names the problem
+// where the count would be, so the list never shows a quiet zero.
+//
+// bcn-lego-checked: the shared firma2-settings-table rules (no esa- table lego
+// exists; see firma2-settings-table.css) with runtime rows, as
+// firma2-organization-members does; esa-empty-state for none. Beacon is not cloned.
+import EsaEmptyState from '@esa/ecology/esa-empty-state.astro';
+import { withBase } from '../../lib/base';
+import './firma2-settings-table.css';
+---
+<div class="firma2-area-groups" data-record-href={withBase('/prototypes/workspace-settings/geospatial-areas/group')}>
+  <div class="firma2-settings-table-scroll" data-table>
+    <table class="firma2-settings-table" aria-label="Geospatial area groups">
+      <thead>
+        <tr>
+          <th scope="col">Area group</th>
+          <th scope="col">Layer</th>
+          <th scope="col" class="firma2-settings-table__num">Areas</th>
+          <th scope="col" class="firma2-settings-table__num" data-aliasable>Projects</th>
+        </tr>
+      </thead>
+      <tbody data-rows></tbody>
+    </table>
+  </div>
+  <div data-none hidden>
+    <EsaEmptyState title="No geospatial areas yet" description="Add them from a map layer or a file." />
+  </div>
+</div>
+
+<style>
+  .firma2-area-groups [hidden] {
+    display: none !important;
+  }
+
+  .firma2-area-groups :global(.firma2-settings-table__name) {
+    color: var(--color-content-link);
+  }
+
+  .firma2-area-groups :global([data-problem]) {
+    color: var(--color-text-secondary);
+  }
+</style>
+
+<script>
+  import { filing } from '../../lib/geospatial-areas';
+  import { onGeoChange, readAreaGroups } from '../../lib/work-areas';
+
+  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+  document.querySelectorAll<HTMLElement>('.firma2-area-groups').forEach((root) => {
+    const rows = root.querySelector<HTMLElement>('[data-rows]')!;
+    const table = root.querySelector<HTMLElement>('[data-table]')!;
+    const none = root.querySelector<HTMLElement>('[data-none]')!;
+    const paint = () => {
+      const groups = readAreaGroups();
+      table.hidden = !groups.length;
+      none.hidden = Boolean(groups.length);
+      rows.innerHTML = groups
+        .map((group) => {
+          const f = filing(group);
+          const href = `${root.dataset.recordHref}?id=${encodeURIComponent(group.id)}`;
+          return `<tr data-slug="${esc(group.id)}">
+            <th scope="row">
+              <a class="firma2-settings-table__name" href="${esc(href)}">${esc(group.name)}</a>
+              ${group.description ? `<span class="firma2-settings-table__meta typography-body-sm">${esc(group.description)}</span>` : ''}
+            </th>
+            <td>${f.layer ? esc(f.layer.name) : '<span data-problem>Layer deleted</span>'}</td>
+            <td class="firma2-settings-table__num">${f.status === 'ok' ? f.areas.length : f.status === 'unread' ? '<span data-problem>Not read</span>' : '—'}</td>
+            <td class="firma2-settings-table__num">${f.status === 'ok' ? f.filed : '—'}</td>
+          </tr>`;
+        })
+        .join('');
+    };
+    paint();
+    onGeoChange(paint);
+  });
+</script>

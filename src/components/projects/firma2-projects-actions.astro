@@ -14,6 +14,9 @@
 // both rather than putting two secondaries beside the primary. Importing
 // projects also needs the Import data permission (Security settings).
 //
+// NEW PROJECT ALSO LEAVES when the workspace is not accepting new projects
+// and the reader is not an administrator (docs/data-model.md, decision 15).
+//
 // bcn-lego-checked: esa-dropdown-menu with an esa-button trigger, beside an
 // esa-button; spans carry the toggle because a hidden attribute on
 // esa-button's own root does not hold.
@@ -43,7 +46,8 @@ const hrefs = {
 <script>
   import '@esa/ecology/esa-dropdown-menu';
   import { onGeoChange, readProjectSource } from '../../lib/work-areas';
-  import { can } from '../../lib/workspace-permissions';
+  import { can, currentActor } from '../../lib/workspace-permissions';
+  import { ACCEPTING_EVENT, isAcceptingProjects } from '../../lib/intake-form';
   import { label } from '../../lib/vocabulary';
 
   type Menu = HTMLElement & { items: { label: string; action: string }[] };
@@ -56,8 +60,11 @@ const hrefs = {
     // needs Import data. Absent for a reader who may not, like both for a synced workspace.
     const paint = () => {
       const app = readProjectSource() === 'app';
+      // A workspace that is not accepting new projects still lets an
+      // administrator add one (Workspace settings › Intake form).
+      const mayCreate = can('perm-projects') && (isAcceptingProjects() || currentActor().role === 'Administrator');
       root.querySelectorAll<HTMLElement>('[data-app-only]').forEach((el) => {
-        el.hidden = !app || (el.hasAttribute('data-create') && !can('perm-projects'));
+        el.hidden = !app || (el.hasAttribute('data-create') && !mayCreate);
       });
       customElements.whenDefined('esa-dropdown-menu').then(() => {
         menu.items = [
@@ -72,6 +79,7 @@ const hrefs = {
       if (key && hrefs[key]) window.location.href = hrefs[key];
     });
     onGeoChange(paint);
+    document.addEventListener(ACCEPTING_EVENT, paint);
     paint();
   });
 </script>

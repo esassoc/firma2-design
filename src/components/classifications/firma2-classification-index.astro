@@ -1,0 +1,102 @@
+---
+// firma2-classification-index — the Classifications index body: the tree of
+// groups and classifications in one of two views, switched by a segmented
+// toggle (user, 2026-11-23).
+//
+//   OUTLINE (the default)  the whole tree as one table — every group and
+//                          classification, compared down columns.
+//   BROWSE                 one group at a time, every measure drawn in full.
+//
+// TWO VIEWS BECAUSE THEY ANSWER DIFFERENT QUESTIONS: "where do we stand
+// across everything" and "what is in this branch". Chosen from four
+// directions; the card board and a filter-by-state layout were rejected
+// (.scratch/classifications/spec.md, decision 6).
+//
+// THE VIEW IS REMEMBERED PER READER (localStorage, a convenience — Outline
+// when storage is unavailable). Both views are in the page; one attribute on
+// the root shows one of them. A link to a group or classification in Browse
+// (the URL's hash, "#g:…" or "#c:…") opens Browse whatever was remembered;
+// switching to Outline clears the hash, so the choice survives a reload.
+//
+// NO FLASH: a blocking inline script sets the view before the first paint.
+// The module script, which loads later, only wires the toggle.
+//
+// bcn-lego-checked: esa-button-toggle is the switch (the segmented control a
+// classification's measures use for Simple / Detailed); the two views are
+// firma2-classification-outline and firma2-classification-browse. Beacon is
+// not cloned on this machine.
+import Firma2ClassificationOutline from './firma2-classification-outline.astro';
+import Firma2ClassificationBrowse from './firma2-classification-browse.astro';
+---
+<div class="firma2-classification-index stack" data-gap="lg" data-view="outline" data-classification-index>
+  <div class="firma2-classification-index__bar">
+    <esa-button-toggle size="md" data-index-view></esa-button-toggle>
+  </div>
+  <div data-index-pane="outline"><Firma2ClassificationOutline /></div>
+  <div data-index-pane="browse"><Firma2ClassificationBrowse /></div>
+</div>
+<!-- Before first paint: the remembered view, or Browse for a link into it. -->
+<script is:inline>
+  (() => {
+    const root = document.currentScript.previousElementSibling;
+    let view = 'outline';
+    try {
+      if (localStorage.getItem('firma2:classification-index:view') === 'browse') view = 'browse';
+    } catch {}
+    if (/^#[gc]:/.test(decodeURIComponent(location.hash))) view = 'browse';
+    root.dataset.view = view;
+  })();
+</script>
+
+<style>
+  .firma2-classification-index__bar {
+    display: flex;
+  }
+
+  /* ONE VIEW AT A TIME. */
+  [data-view='outline'] > [data-index-pane='browse'],
+  [data-view='browse'] > [data-index-pane='outline'] {
+    display: none;
+  }
+</style>
+
+<script>
+  import '@esa/ecology/esa-button-toggle';
+
+  type Toggle = HTMLElement & { options?: unknown; value?: string };
+  const KEY = 'firma2:classification-index:view';
+
+  document.querySelectorAll<HTMLElement>('[data-classification-index]').forEach((root) => {
+    const toggle = root.querySelector<Toggle>('[data-index-view]');
+    if (!toggle) return;
+    // Set before first paint by the inline script beside the root.
+    const view = root.dataset.view === 'browse' ? 'browse' : 'outline';
+    // Options are a property, safe to assign before the element upgrades.
+    toggle.options = [
+      { label: 'Outline', value: 'outline' },
+      { label: 'Browse', value: 'browse' },
+    ];
+    toggle.value = view;
+    customElements.whenDefined('esa-button-toggle').then(() =>
+      requestAnimationFrame(() =>
+        toggle.shadowRoot?.querySelector('[role="radiogroup"]')?.setAttribute('aria-label', 'Classifications view'),
+      ),
+    );
+    // A link into Browse followed on this page (only the hash changes) opens it too.
+    window.addEventListener('hashchange', () => {
+      if (!/^#[gc]:/.test(decodeURIComponent(location.hash))) return;
+      root.dataset.view = 'browse';
+      toggle.value = 'browse';
+    });
+    toggle.addEventListener('change', () => {
+      const next = toggle.value === 'browse' ? 'browse' : 'outline';
+      root.dataset.view = next;
+      // Browse keeps its choice in the hash; left there, it would reopen
+      // Browse on the next load whatever was chosen here.
+      if (next === 'outline' && location.hash) history.replaceState(null, '', location.pathname + location.search);
+      try {
+        localStorage.setItem(KEY, next);
+      } catch {}
+    });
+  });
+</script>

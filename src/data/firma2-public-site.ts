@@ -19,7 +19,7 @@ import { organizations } from './firma2-directory';
 import { PAGES_GROUP, seedEntries } from './firma2-pages';
 import { measures } from './firma2-performance-measures';
 import type { PerformanceMeasureDefinition } from './firma2-performance-measures';
-import { getProjectDetail } from './firma2-project-detail';
+import { getProjectDetail, securedFunding } from './firma2-project-detail';
 import { demoProjectSlug, projects, projectSlug } from './firma2-projects';
 import { REAL } from './firma2-real-data';
 import { seededFeatured } from './firma2-featured-photos';
@@ -27,6 +27,8 @@ import type { ProjectPhoto } from './firma2-project-detail';
 import type { Project, ProjectStage } from './firma2-projects';
 import { TENANT_NAME } from './firma2-project-types';
 import { workspaceGeneral } from './firma2-workspace-settings';
+import { photoSrc } from '../lib/project-photos';
+import type { PublicSiteDefaults } from '../lib/public-site-config';
 
 export const PUBLIC_HOME_HREF = '/prototypes/public';
 export const PUBLIC_SIGN_IN_HREF = '/prototypes/sign-in';
@@ -271,7 +273,7 @@ export const publicPartners = (): PublicPartners => {
   for (const p of shown) leads.set(p.project.leadOrganization, (leads.get(p.project.leadOrganization) ?? 0) + 1);
   const funders = new Map<string, { amount: number; projects: Set<string> }>();
   for (const p of shown) {
-    for (const source of getProjectDetail(p.project).funding) {
+    for (const source of securedFunding(getProjectDetail(p.project).funding)) {
       // A lead that part-funds its own project is credited once, as a lead.
       if (!isPublic(source.organization) || leads.has(source.organization)) continue;
       const entry = funders.get(source.organization) ?? { amount: 0, projects: new Set<string>() };
@@ -288,5 +290,84 @@ export const publicPartners = (): PublicPartners => {
       .filter(([name]) => isPublic(name))
       .map(([name, projects]) => ({ name, href: publicOrganizationHref(name), projects }))
       .sort((a, b) => a.name.localeCompare(b.name)),
+  };
+};
+
+// ---------------------------------------------------------------------------
+// The site's settings (Workspace settings › Public site)
+// ---------------------------------------------------------------------------
+
+/** Recently updated projects, featured ones included: the page leaves out whichever the settings feature. */
+export const publicRecentPool = (limit: number): PublicFeatured[] =>
+  publicProjects()
+    .sort((a, b) => b.publishedIso.localeCompare(a.publishedIso) || a.project.projectName.localeCompare(b.project.projectName))
+    .flatMap((p) => {
+      const { photos } = getProjectDetail(p.project);
+      const at = seededFeatured(projectSlug(p.project), photos.length);
+      return at < 0 ? [] : [{ ...p, photo: photos[at], before: at > 0 ? photos[0] : undefined }];
+    })
+    .slice(0, limit);
+
+/** How many results and featured projects the settings can choose among. */
+const RESULT_CHOICES = 12;
+const FEATURED_CHOICES = 24;
+
+/**
+ * The settings a workspace starts with, and what each of their lists can hold.
+ * Written into every public page and every Public site settings screen as
+ * JSON, so the browser never imports the fixtures (src/lib/public-site-config.ts).
+ * The starting settings reproduce the home as it was before it could be changed.
+ */
+let defaultsMemo: PublicSiteDefaults | undefined;
+export const publicSiteDefaults = (): PublicSiteDefaults => (defaultsMemo ??= buildDefaults());
+
+const buildDefaults = (): PublicSiteDefaults => {
+  const shown = publicProjects();
+  const totals = publicMeasureTotals(RESULT_CHOICES);
+  const goals = publicGoals();
+  const partners = publicPartners();
+  const featured = publicFeatured();
+  const withPhoto = shown.flatMap((p) => {
+    const slug = projectSlug(p.project);
+    const { photos } = getProjectDetail(p.project);
+    const at = seededFeatured(slug, photos.length);
+    return at < 0 ? [] : [{ value: slug, label: p.project.projectName, href: p.href, meta: `${p.stage} · ${p.project.leadOrganization}`, photo: photoSrc(photos[at], 720, 1080, 65), alt: photos[at].caption }];
+  });
+  const featuredSlugs = featured.map((p) => projectSlug(p.project));
+  const projectChoices = [
+    ...withPhoto.filter((p) => featuredSlugs.includes(p.value)),
+    ...withPhoto.filter((p) => !featuredSlugs.includes(p.value)).sort((a, b) => a.label.localeCompare(b.label)),
+  ].slice(0, FEATURED_CHOICES);
+  const notice = PUBLIC_HOME.announcement;
+  return {
+    config: {
+      access: { public: true, contacts: false },
+      identity: { name: PUBLIC_SITE_OWNER.name, logo: '', icon: '', shareText: PUBLIC_HOME.description, shareImage: 'featured' },
+      announcement: { on: Boolean(notice), text: notice?.text ?? '', linkLabel: notice?.linkLabel ?? '', href: notice?.href ?? '', from: '', until: '' },
+      home: {
+        order: ['hero', 'map', 'goals', 'recent', 'partners'],
+        hero: { headline: PUBLIC_SITE_OWNER.name, description: PUBLIC_HOME.description, results: totals.slice(0, 4).map((t) => t.measure.slug), featured: featuredSlugs },
+        map: { base: 'terrain', area: 'all' },
+        goals: { shown: goals.map((g) => g.goal.slug) },
+        recent: { count: '3' },
+        partners: { funders: true, leads: true, amounts: true },
+        blocks: {},
+      },
+      nav: { order: [...PUBLIC_NAV.map((item) => item.key), 'pages'], labels: {}, links: {}, hiddenPages: [] },
+      theme: { fonts: 'standard', bar: 'neutral', hero: 'dark', accent: '' },
+      footer: { contact: true, funders: false, links: [], social: [] },
+    },
+    measures: totals.map((t) => ({ value: t.measure.slug, label: t.measure.name })),
+    goals: goals.map((g) => ({ value: g.goal.slug, label: g.goal.name })),
+    projects: projectChoices,
+    pages: PUBLIC_PAGES.map((page) => ({ value: page.id, label: page.label })),
+    counties: [...new Set(shown.map((p) => p.project.county))].sort().map((county) => ({ value: county, label: `${county} County` })),
+    navItems: [...PUBLIC_NAV.map((item) => ({ value: item.key as string, label: item.label })), { value: 'pages', label: PUBLIC_PAGES_LABEL }],
+    empty: {
+      ...(shown.length === 0 ? { map: 'No project is public yet.' } : {}),
+      ...(goals.length === 0 ? { goals: 'No public project carries a goal yet.' } : {}),
+      ...(withPhoto.length === 0 ? { recent: 'No public project has a photo yet.' } : {}),
+      ...(partners.funding.length + partners.leading.length === 0 ? { partners: 'No public organization leads or funds a public project yet.' } : {}),
+    },
   };
 };

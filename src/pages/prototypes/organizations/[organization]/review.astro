@@ -12,18 +12,27 @@
 //    needs to know where to start — oldest wait first. WHO IS NOT HERE: the
 //    editors; between publishes they are trusted, and the project page is
 //    theirs.
-// 3. SERIES/SCALAR: three scalars (up to date, longest wait, schedule), then
-//    two lists — waiting, and up to date.
-// 4. IRREVERSIBLE: nothing here. Each project publishes from its own review
-//    page, with the diff in front of the manager.
-// 5. CUT: bulk publish, and setting the schedule here — it lives with the
-//    organization's other settings (Organization settings › Review schedule).
+// 3. SERIES/SCALAR: no scalars and no Up to date list — the same inbox as the
+//    workspace Review (user, 2026-11-24: "why does the organization's review
+//    page look nothing like the workspace's?"): Proposals / Waiting / Held
+//    beside the selected project's review, its Key facts in the rail. Scoped to
+//    this organization's projects, overdue on this organization's schedule.
+// 4. IRREVERSIBLE: Publish, one project at a time, with its changes in front
+//    of the manager (firma2-review-inbox); the sweep happens here. Each
+//    project's own review page stays, for links from the project.
+// 5. CUT: bulk publish, the three figures, and setting the schedule here — it
+//    lives with the organization's other settings (Organization settings ›
+//    Review schedule).
+//
+// The h1 is not drawn: the top bar names the page, as on the workspace's.
 //
 // Zero page CSS.
 import AppLayout from '../../../../layouts/AppLayout.astro';
 import Firma2PageHeader from '../../../../components/shared/firma2-page-header.astro';
-import Firma2PlanLock from '../../../../components/shared/firma2-plan-lock.astro';
 import Firma2ReviewQueue from '../../../../components/review/firma2-review-queue.astro';
+import Firma2ReviewInbox from '../../../../components/review/firma2-review-inbox.astro';
+import Firma2SidePanel from '../../../../components/shared/firma2-side-panel.astro';
+import Firma2ReviewProjectRail from '../../../../components/review/firma2-review-project-rail.astro';
 import type { Organization } from '../../../../data/firma2-directory';
 import { organizationNavKey, organizationPageHref, readerOrganizations } from '../../../../data/firma2-organization-pages';
 import { withBase } from '../../../../lib/base';
@@ -38,25 +47,31 @@ interface Props {
 }
 
 const { organization } = Astro.props;
+const queue = organizationQueue(organization.name);
 ---
 <!-- manifest:
-  layout: stack(xl)
+  layout: stack(lg)
   sections:
-    - page header -> firma2-page-header
-    - plan lock   -> firma2-plan-lock (wraps the sections below; read-only below Program)
-    - queue       -> firma2-review-queue (organization scope: summary, waiting, up to date)
+    - page header -> firma2-page-header (title hidden; crumbs name the organization)
+    - project rail -> firma2-side-panel (firma2-rail) holding firma2-review-project-rail: the selected project's Key facts
+    - queue       -> firma2-review-queue (organization scope)
+      - waiting   -> firma2-review-inbox (slot "waiting": Proposals / Waiting / Held beside the selected item)
 -->
-<AppLayout title={`Review — ${organization.name} — ProjectFirma 2.0`} active={organizationNavKey(organization.slug, 'review')}>
-  <div class="stack" data-gap="xl">
+<AppLayout title={`Review — ${organization.name} — ProjectFirma 2.0`} active={organizationNavKey(organization.slug, 'review')} width="full">
+  <Firma2SidePanel id="review-project" title="Key facts" panelWidth="22rem">
+  <Firma2ReviewProjectRail slot="panel" items={queue.pending} />
+  <div class="stack" data-gap="lg">
     <Firma2PageHeader
       title="Review"
+      hideTitle
       crumbs={[
         { label: organization.name, href: withBase(organizationPageHref(organization.slug)) },
         { label: 'Review' },
       ]}
     />
-    <Firma2PlanLock gap="xl" needs="program" message="Upgrade to Program to review changes before they're published.">
-      <Firma2ReviewQueue queue={organizationQueue(organization.name)} organization={organization.name} />
-    </Firma2PlanLock>
+    <Firma2ReviewQueue queue={queue} organization={organization.name} upToDate={false} summary={false}>
+      <Firma2ReviewInbox slot="waiting" items={queue.pending} overdue={new Set(queue.overdue.map((i) => i.slug))} />
+    </Firma2ReviewQueue>
   </div>
+  </Firma2SidePanel>
 </AppLayout>

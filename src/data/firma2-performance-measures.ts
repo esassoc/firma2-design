@@ -143,22 +143,26 @@ export const isSummable = (m: Pick<PerformanceMeasureDefinition, 'countingRule'>
  * aggregated — `acres`, `Acres` and `ac` do not total. It has to be COMPLETE,
  * though: anything this list omits is a measure the product cannot express, so
  * the bar for leaving something out is high.
+ *
+ * THE MERGED LIST: this model's units and PM 2's, 25 in all (docs/data-model.md,
+ * decision 6, user 2026-11-24). Inches, millimeters, acre-feet and
+ * acre-feet/acre are the legacy hydrology units PM 2 carries; they stay.
  */
 export const UNITS = [
   // extent and length
-  'acres', 'square feet', 'miles', 'linear feet',
+  'acres', 'square feet', 'miles', 'linear feet', 'inches', 'millimeters',
   // counts
   'each', 'plants', 'people', 'events',
-  // mass and load
-  'pounds', 'tons', 'tons per year',
+  // mass, load and volume
+  'pounds', 'tons', 'tons per year', 'cubic yards',
   // water
-  'acre-feet per year',
+  'acre-feet', 'acre-feet per year', 'acre-feet/acre',
   // carbon
   'tonnes CO2e per year',
   // effort and money
   'hours', 'dollars',
   // condition readings
-  'percent', 'degrees Celsius', 'cubic feet per second', 'parts per million',
+  'percent', 'degrees Celsius', 'degrees Fahrenheit', 'cubic feet per second', 'parts per million',
 ] as const;
 export type MeasureUnit = (typeof UNITS)[number];
 
@@ -368,7 +372,7 @@ const MOCK_MEASURES: PerformanceMeasureDefinition[] = [
   },
   // ---- KPIs added so every goal is tracked (2026-10-03). A classification is
   // a goal; the measures that list it are its KPIs, two to five each. Work
-  // types carry none: they are becoming tags, which track without KPIs. ----
+  // types carry none: a kind of work is not a goal. ----
   {
     slug: 'native-plants-installed',
     claim: 'I need to report how many native plants we put in the ground each season.',
